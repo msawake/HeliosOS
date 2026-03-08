@@ -5,8 +5,8 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: aicompany
-      POSTGRES_USER: aicompany_admin
+      POSTGRES_DB: leadforge
+      POSTGRES_USER: leadforge_admin
       POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
     ports:
       - "5432:5432"
@@ -14,7 +14,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ../database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aicompany_admin -d aicompany"]
+      test: ["CMD-SHELL", "pg_isready -U leadforge_admin -d leadforge"]
       interval: 5s
       retries: 5
 
@@ -36,7 +36,7 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - DATABASE_URL=postgresql://aicompany_admin:${DB_PASSWORD:-changeme}@postgres:5432/aicompany
+      - DATABASE_URL=postgresql://leadforge_admin:${DB_PASSWORD:-changeme}@postgres:5432/leadforge
       - REDIS_URL=redis://redis:6379
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - PYTHONPATH=/app

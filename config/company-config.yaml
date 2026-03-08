@@ -1,7 +1,7 @@
 company:
-  name: "Digital AI Corp"
-  domain: "digitalai.corp"
-  mission: "Operate as a fully autonomous AI-native company"
+  name: "LeadForge AI"
+  domain: "leadforge.ai"
+  mission: "Deliver qualified B2B sales pipeline to clients through AI-powered prospect research, multi-channel outreach, and data-driven lead scoring."
 
 budgets:
   daily_token_budget: 10_000_000
@@ -10,15 +10,12 @@ budgets:
   monthly_infrastructure_budget_usd: 5000
 
   department_daily_tokens:
-    engineering: 4_000_000
-    product: 2_000_000
-    sales: 1_500_000
-    marketing: 1_000_000
-    support: 500_000
+    sales: 3_000_000
+    marketing: 2_500_000
     finance: 500_000
-    hr: 200_000
-    legal: 200_000
-    operations: 100_000
+    hr: 100_000
+    legal: 300_000
+    operations: 600_000
 
 agent_defaults:
   max_retries: 3
@@ -49,7 +46,9 @@ hitl:
   financial_approval_sla_hours: 24
   content_approval_sla_hours: 4
   contract_approval_sla_hours: 48
-  hiring_approval_sla_hours: 48
+  client_agreement_sla_hours: 48
+  outreach_compliance_sla_hours: 4
+  ad_spend_approval_sla_hours: 12
   security_exception_sla_hours: 4
 
   default_denials:
@@ -59,10 +58,10 @@ hitl:
     data_deletion: true
 
   audit_sampling:
-    support_responses: 0.10
-    sales_outreach: 0.15
-    content_published: 1.00
-    budget_allocations: 0.20
+    outreach_emails: 0.10
+    ad_spend_changes: 0.15
+    client_reports: 1.00
+    nurture_sequences: 0.20
 
 models:
   orchestrator_default: "claude-opus-4-6"
@@ -79,16 +78,16 @@ polling_intervals:
 swarm_types:
   standing:
     description: "Always-on agents for continuous workloads"
-    examples: ["cs-tier1", "ops-monitoring"]
+    examples: ["sales-sdr", "ops-monitoring"]
     session_type: "persistent"
   sprint:
     description: "Project-duration agent teams"
-    examples: ["engineering-sprint", "marketing-campaign"]
+    examples: ["outbound-campaign", "client-onboarding"]
     session_type: "team"
     max_teammates: 8
   burst:
     description: "Dynamic per-task agent groups"
-    examples: ["security-audit", "incident-response"]
+    examples: ["lead-research", "compliance-audit"]
     session_type: "stateless"
 
 database:
@@ -115,14 +114,17 @@ mcp_servers:
       package: "@stripe/mcp"
       required: true
   tier2:
-    - name: "linear"
-      package: "linear-mcp"
+    - name: "crm"
+      package: "crm-mcp"
       required: false
-    - name: "playwright"
-      package: "@anthropic/mcp-server-playwright"
+    - name: "google-ads"
+      package: "google-ads-mcp"
       required: false
     - name: "pinecone"
       package: "pinecone-mcp"
+      required: false
+    - name: "linkedin"
+      package: "linkedin-mcp"
       required: false
   tier3:
     - name: "datadog"

@@ -1,4 +1,4 @@
-"""Tests for workflow definitions and the workflow engine."""
+"""Tests for LeadForge AI workflow definitions and the workflow engine."""
 
 import pytest
 from src.workflows.definitions import (
@@ -7,15 +7,15 @@ from src.workflows.definitions import (
     TaskStatus,
     WorkflowEngine,
     WorkflowStatus,
-    create_bug_fix_workflow,
+    create_client_onboarding_workflow,
     create_compliance_audit_workflow,
-    create_customer_onboarding_workflow,
-    create_feature_workflow,
-    create_financial_reporting_workflow,
-    create_hiring_workflow,
-    create_incident_response_workflow,
+    create_lead_nurture_workflow,
+    create_lead_qualification_workflow,
+    create_leadforge_sales_workflow,
     create_marketing_campaign_workflow,
-    create_sales_pipeline_workflow,
+    create_outbound_campaign_workflow,
+    create_abm_campaign_workflow,
+    create_financial_reporting_workflow,
 )
 
 
@@ -41,7 +41,7 @@ class TestTaskGraphBuilder:
             .build()
         )
         ready = wf.get_ready_tasks()
-        assert len(ready) == 3  # a, b, c are all ready
+        assert len(ready) == 3
         assert all(t.name in ("a", "b", "c") for t in ready)
 
     def test_blocked_by_creates_blocks(self):
@@ -76,10 +76,8 @@ class TestWorkflowDefinition:
             .task("b", "agent-2", blocked_by=["a"])
             .build()
         )
-        # Complete task a
         task_a = [t for t in wf.tasks.values() if t.name == "a"][0]
         task_a.status = TaskStatus.COMPLETED
-
         ready = wf.get_ready_tasks()
         assert len(ready) == 1
         assert ready[0].name == "b"
@@ -111,55 +109,63 @@ class TestWorkflowDefinition:
 
 
 class TestWorkflowTemplates:
-    def test_bug_fix_workflow(self):
-        wf = create_bug_fix_workflow(
-            "Payment failure",
-            "Payments fail on checkout",
-            reporter="customer",
-            severity="high",
+    def test_lead_qualification_workflow(self):
+        wf = create_lead_qualification_workflow(
+            "Sarah Chen", "sarah@techcorp.com", "TechCorp", "Acme SaaS"
+        )
+        assert len(wf.tasks) == 5
+        assert wf.workflow_type == "operational"
+        ready = wf.get_ready_tasks()
+        assert any(t.name == "research" for t in ready)
+
+    def test_lead_nurture_workflow(self):
+        wf = create_lead_nurture_workflow(
+            "John Doe", "john@example.com", "ExampleCo", "Acme SaaS"
+        )
+        assert len(wf.tasks) == 5
+        assert wf.workflow_type == "operational"
+        ready = wf.get_ready_tasks()
+        assert any(t.name == "design_sequence" for t in ready)
+
+    def test_outbound_campaign_workflow(self):
+        wf = create_outbound_campaign_workflow(
+            "Acme SaaS", "Q2 Outbound", "VP Sales at B2B SaaS",
+            channels=["email", "linkedin"], daily_volume=50,
         )
         assert len(wf.tasks) == 8
-        assert wf.workflow_type == "incident"
-        # Triage should be the first ready task
-        ready = wf.get_ready_tasks()
-        assert any(t.name == "triage" for t in ready)
-
-    def test_feature_workflow(self):
-        wf = create_feature_workflow(
-            "AI Search",
-            "Add semantic search",
-        )
-        assert len(wf.tasks) == 14
         assert wf.workflow_type == "project"
-        # Requirements and research should be ready first
         ready = wf.get_ready_tasks()
-        ready_names = {t.name for t in ready}
-        assert "requirements" in ready_names
-        assert "research" in ready_names
+        assert any(t.name == "icp_definition" for t in ready)
 
-    def test_customer_onboarding_workflow(self):
-        wf = create_customer_onboarding_workflow("Acme Corp", "acme@corp.com")
-        assert len(wf.tasks) == 5
+    def test_abm_campaign_workflow(self):
+        wf = create_abm_campaign_workflow(
+            "Acme SaaS", ["TechCorp", "DataFlow", "CloudBase"]
+        )
+        assert len(wf.tasks) == 7
+        assert wf.workflow_type == "project"
 
-    def test_sales_pipeline_workflow(self):
-        wf = create_sales_pipeline_workflow("John", "john@acme.com", company="Acme")
+    def test_client_onboarding_workflow(self):
+        wf = create_client_onboarding_workflow(
+            "Acme SaaS", "cto@acme.com", 5000, ["email", "linkedin"]
+        )
+        assert len(wf.tasks) == 8
+        assert wf.workflow_type == "operational"
+        ready = wf.get_ready_tasks()
+        assert any(t.name == "contract_review" for t in ready)
+
+    def test_leadforge_sales_workflow(self):
+        wf = create_leadforge_sales_workflow(
+            "John Smith", "john@prospect.com", company="ProspectCo"
+        )
         assert len(wf.tasks) == 7
 
     def test_financial_reporting_workflow(self):
-        wf = create_financial_reporting_workflow("monthly", "2026-02-28")
-        assert len(wf.tasks) == 6
-
-    def test_hiring_workflow(self):
-        wf = create_hiring_workflow("Backend Engineer", "engineering", ["Python", "PostgreSQL"])
-        assert len(wf.tasks) == 8
-
-    def test_incident_response_workflow(self):
-        wf = create_incident_response_workflow("Data breach", "Unauthorized access detected")
-        assert len(wf.tasks) == 8
+        wf = create_financial_reporting_workflow("monthly")
+        assert len(wf.tasks) == 4
 
     def test_marketing_campaign_workflow(self):
         wf = create_marketing_campaign_workflow(
-            "Q2 Launch", "Drive signups", 15000, ["email", "blog"]
+            "Q2 Launch", "Drive signups", 15000, ["google_ads", "email", "seo"]
         )
         assert len(wf.tasks) == 9
 
@@ -192,8 +198,6 @@ class TestWorkflowEngine:
             .build()
         )
         engine.register_workflow(wf)
-
-        # First tick: only a should dispatch
         dispatches = await engine.tick()
         assert len(dispatches) == 1
         assert dispatches[0]["task_name"] == "a"
@@ -207,22 +211,18 @@ class TestWorkflowEngine:
             .build()
         )
         engine.register_workflow(wf)
-
-        # Tick to dispatch
         await engine.tick()
-
-        # Manually complete the task
         task = list(wf.tasks.values())[0]
         task.status = TaskStatus.COMPLETED
-
-        # Tick to check completion
         await engine.tick()
         assert wf.status == WorkflowStatus.COMPLETED
 
     def test_progress_report(self):
         engine = WorkflowEngine()
-        wf = create_bug_fix_workflow("Test bug", "Description")
+        wf = create_lead_qualification_workflow(
+            "Test Lead", "test@example.com", "TestCo", "Client"
+        )
         engine.register_workflow(wf)
         report = engine.get_progress_report(wf.workflow_id)
         assert report["workflow"] == wf.name
-        assert report["progress"]["total"] == 8
+        assert report["progress"]["total"] == 5

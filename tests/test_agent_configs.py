@@ -1,4 +1,4 @@
-"""Tests for agent configuration and registry."""
+"""Tests for LeadForge AI agent configuration and registry."""
 
 import pytest
 from src.config.agent_configs import (
@@ -13,7 +13,7 @@ from src.core.agent_invoker import AgentTier
 
 class TestAgentCatalog:
     def test_all_agents_defined(self):
-        assert len(AGENT_DEFINITIONS) >= 42
+        assert len(AGENT_DEFINITIONS) == 26
 
     def test_all_agents_have_system_prompts(self):
         for defn in AGENT_DEFINITIONS:
@@ -31,14 +31,14 @@ class TestAgentCatalog:
             tiers[tier] += 1
 
         assert tiers["EXECUTIVE"] == 3
-        assert tiers["DEPARTMENT_LEAD"] >= 9
-        assert tiers["WORKER"] >= 29
+        assert tiers["DEPARTMENT_LEAD"] == 6
+        assert tiers["WORKER"] == 17
 
     def test_department_coverage(self):
         departments = {d["dept"] for d in AGENT_DEFINITIONS}
         expected = {
-            "executive", "engineering", "product", "sales", "marketing",
-            "support", "finance", "hr", "legal", "operations",
+            "executive", "sales", "marketing",
+            "finance", "hr", "legal", "operations",
         }
         assert departments == expected
 
@@ -46,12 +46,12 @@ class TestAgentCatalog:
 class TestSubagentMap:
     def test_executive_agents_can_delegate(self):
         assert "exec-ceo" in SUBAGENT_MAP
-        assert len(SUBAGENT_MAP["exec-ceo"]) >= 10
+        assert len(SUBAGENT_MAP["exec-ceo"]) == 8
 
     def test_department_leads_can_delegate(self):
         leads = [d["id"] for d in AGENT_DEFINITIONS if d["tier"] == AgentTier.DEPARTMENT_LEAD]
         for lead in leads:
-            assert lead in SUBAGENT_MAP, f"Lead {lead} has no subagents"
+            assert lead in SUBAGENT_MAP, f"Lead {lead} has no subagents entry"
 
     def test_workers_cannot_delegate(self):
         workers = [d["id"] for d in AGENT_DEFINITIONS if d["tier"] == AgentTier.WORKER]
@@ -63,6 +63,14 @@ class TestSubagentMap:
         for parent, subs in SUBAGENT_MAP.items():
             for sub in subs:
                 assert sub in all_ids, f"Subagent {sub} of {parent} not in definitions"
+
+    def test_sales_lead_has_full_team(self):
+        assert "sales-lead" in SUBAGENT_MAP
+        assert len(SUBAGENT_MAP["sales-lead"]) == 6
+
+    def test_mkt_lead_has_full_team(self):
+        assert "mkt-lead" in SUBAGENT_MAP
+        assert len(SUBAGENT_MAP["mkt-lead"]) == 6
 
 
 class TestToolPermissions:
@@ -87,8 +95,6 @@ class TestToolPermissions:
             has_db = any("postgres" in t.lower() for t in tools)
             has_email_send = "mcp__google-workspace__send_gmail_message" in tools
 
-            # Agents with direct DB access should not send emails directly
-            # (except finance agents that legitimately need both for invoicing)
             if has_db and has_email_send:
                 defn = next((d for d in AGENT_DEFINITIONS if d["id"] == agent_id), None)
                 assert defn and defn["dept"] in ("finance",), (
@@ -99,7 +105,7 @@ class TestToolPermissions:
 class TestRegistry:
     def test_build_registry(self):
         registry = build_registry()
-        assert len(registry.all_agents()) >= 42
+        assert len(registry.all_agents()) == 26
 
     def test_registry_lookup(self):
         registry = build_registry()
@@ -111,8 +117,8 @@ class TestRegistry:
 
     def test_registry_by_department(self):
         registry = build_registry()
-        eng = registry.list_by_department("engineering")
-        assert len(eng) == 8  # lead + 7 workers
+        sales = registry.list_by_department("sales")
+        assert len(sales) == 7  # lead + 6 workers
 
     def test_registry_by_tier(self):
         registry = build_registry()
@@ -122,7 +128,7 @@ class TestRegistry:
     def test_subagent_definitions_populated(self):
         registry = build_registry()
         ceo = registry.get("exec-ceo")
-        assert len(ceo.subagents) >= 10
+        assert len(ceo.subagents) == 8
 
-        eng_lead = registry.get("eng-lead")
-        assert len(eng_lead.subagents) == 7
+        sales_lead = registry.get("sales-lead")
+        assert len(sales_lead.subagents) == 6

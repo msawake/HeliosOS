@@ -1,9 +1,9 @@
 """
-Company Bootstrap Script.
+LeadForge AI Bootstrap Script.
 
-This is the "power switch" for the digital company. It:
+This is the "power switch" for LeadForge AI. It:
 1. Loads company configuration
-2. Builds the agent registry (all 42 agents)
+2. Builds the agent registry (all 26 agents)
 3. Initializes the company subsystems (event bus, HITL, knowledge base, metrics)
 4. Seeds the knowledge base with company policies
 5. Creates the workflow engine
@@ -31,11 +31,13 @@ from src.core.hooks import create_hook_chain
 from src.mcp.custom_tools import CompanySystem
 from src.workflows.definitions import (
     WorkflowEngine,
-    WorkflowStatus,
-    create_bug_fix_workflow,
+    create_client_onboarding_workflow,
     create_compliance_audit_workflow,
-    create_feature_workflow,
-    create_financial_reporting_workflow,
+    create_lead_qualification_workflow,
+    create_lead_nurture_workflow,
+    create_leadforge_sales_workflow,
+    create_marketing_campaign_workflow,
+    create_outbound_campaign_workflow,
 )
 
 logging.basicConfig(
@@ -80,7 +82,7 @@ class CompanyBootstrap:
         await self._init_subsystems()
 
         # Phase 2: Build agent registry
-        logger.info("[Phase 2] Building agent registry (42 agents)...")
+        logger.info("[Phase 2] Building agent registry (26 agents)...")
         await self._build_registry()
 
         # Phase 3: Seed knowledge base
@@ -162,7 +164,7 @@ class CompanyBootstrap:
     async def _start_standing_swarms(self):
         """Start always-on agent swarms."""
         standing_agents = [
-            ("cs-tier1", "Customer Support Tier 1", 3),   # 3 instances
+            ("sales-sdr", "Sales SDR", 3),                  # 3 instances
             ("ops-monitoring", "System Monitoring", 1),     # 1 instance
         ]
 
@@ -255,89 +257,100 @@ class CompanyBootstrap:
 # Demo: run a sample workflow
 # ---------------------------------------------------------------------------
 
-async def run_demo(bootstrap: CompanyBootstrap):
-    """Run a demo showcasing the system's capabilities."""
-    logger.info("\n" + "=" * 60)
-    logger.info("RUNNING DEMO SCENARIO")
-    logger.info("=" * 60)
+def run_demo():
+    """Run a demo showcasing LeadForge AI capabilities."""
+    from src.config.agent_configs import build_registry
+    from src.mcp.custom_tools import CompanySystem
 
-    # Demo 1: Bug fix workflow
-    logger.info("\n--- Demo 1: Bug Fix Workflow ---")
-    bug_workflow = create_bug_fix_workflow(
-        bug_title="Amex payments failing on checkout",
-        bug_description="Customer reports Amex cards fail at checkout since v2.34.1",
-        reporter="customer",
-        severity="high",
+    print("\n" + "=" * 70)
+    print("  LeadForge AI — Demo Mode")
+    print("  AI-Powered B2B Lead Generation Agency")
+    print("=" * 70)
+
+    system = CompanySystem()
+    system.seed_knowledge_base()
+
+    # Demo 1: Lead Qualification Workflow
+    print("\n📋 Demo 1: Lead Qualification Workflow")
+    print("-" * 50)
+    wf = create_lead_qualification_workflow(
+        prospect_name="Sarah Chen",
+        prospect_email="sarah.chen@techcorp.com",
+        prospect_company="TechCorp",
+        client_name="Acme SaaS",
+        source="inbound",
     )
-    wf_id = bootstrap.workflow_engine.register_workflow(bug_workflow)
-    logger.info("Created workflow: %s", bug_workflow.name)
+    print(f"  Created workflow: {wf.name}")
+    print(f"  Tasks: {len(wf.tasks)}")
+    ready = wf.get_ready_tasks()
+    print(f"  Ready to execute: {[t.name for t in ready]}")
 
-    # Run a few ticks to show task dispatch
-    for i in range(3):
-        dispatches = await bootstrap.workflow_engine.tick()
-        for d in dispatches:
-            logger.info(
-                "  Dispatched: %s -> %s (%s)",
-                d["task_name"], d["agent"], d["priority"],
-            )
-
-    progress = bootstrap.workflow_engine.get_progress_report(wf_id)
-    logger.info("Progress: %s", progress["progress"])
-
-    # Demo 2: Feature workflow
-    logger.info("\n--- Demo 2: Feature Development Workflow ---")
-    feature_workflow = create_feature_workflow(
-        feature_name="AI-Powered Search",
-        feature_description="Add semantic search to the customer dashboard",
-        requested_by="prod-lead",
+    # Demo 2: Client Onboarding Workflow
+    print("\n📋 Demo 2: Client Onboarding Workflow")
+    print("-" * 50)
+    wf2 = create_client_onboarding_workflow(
+        client_name="Acme SaaS",
+        client_contact_email="cto@acmesaas.com",
+        retainer_amount_usd=5000,
+        services=["outbound email", "LinkedIn outreach", "lead scoring"],
     )
-    wf_id2 = bootstrap.workflow_engine.register_workflow(feature_workflow)
-    logger.info("Created workflow: %s (%d tasks)", feature_workflow.name, len(feature_workflow.tasks))
+    print(f"  Created workflow: {wf2.name}")
+    print(f"  Tasks: {len(wf2.tasks)}")
+    ready2 = wf2.get_ready_tasks()
+    print(f"  Ready to execute: {[t.name for t in ready2]}")
 
-    # Demo 3: HITL approval
-    logger.info("\n--- Demo 3: HITL Approval Request ---")
-    approval_id = bootstrap.system.hitl.request_approval(
-        requesting_agent="sales-ae",
-        department="sales",
-        category="financial",
-        title="Enterprise deal discount: 25% for Acme Corp",
-        description="Acme Corp requesting 25% discount on annual plan ($120K deal). Exceeds 15% threshold.",
-        risk_assessment="medium",
-        context={"deal_value": 120000, "discount_pct": 25},
+    # Demo 3: HITL Approval Request
+    print("\n📋 Demo 3: HITL Approval — Google Ads Budget Increase")
+    print("-" * 50)
+    req_id = system.hitl.request_approval(
+        requesting_agent="mkt-ppc",
+        department="marketing",
+        category="ad_spend",
+        title="Increase Google Ads daily budget from $200 to $350",
+        description="Campaign 'B2B Lead Gen — Non-Brand' showing strong ROAS of 4.2x. "
+                    "Recommend increasing daily budget by 75% to capture more impression share. "
+                    "Expected additional spend: $4,500/month.",
     )
-    logger.info("Created approval request: %s", approval_id[:8])
+    pending = system.hitl.get_pending()
+    print(f"  Approval request created: {req_id[:8]}...")
+    print(f"  Pending approvals: {len(pending)}")
+    print(f"  Category: {pending[0]['category']}")
 
-    # Demo 4: Cross-department event
-    logger.info("\n--- Demo 4: Cross-Department Event ---")
-    event_id = bootstrap.system.event_bus.publish(
-        source_agent="sales-ae",
+    # Demo 4: Cross-Department Event
+    print("\n📋 Demo 4: Cross-Department Event — Sales → Marketing")
+    print("-" * 50)
+    event_id = system.event_bus.publish(
+        source_agent="sales-lead",
         source_department="sales",
-        target_department="engineering",
+        target_department="marketing",
         event_type="REQUEST",
-        category="FEATURE_REQUEST",
+        category="CONTENT_REQUEST",
         payload={
-            "title": "Custom SSO integration for Acme Corp",
-            "deal_value": 120000,
-            "deadline": "2026-04-01",
+            "client": "Acme SaaS",
+            "request": "Need case study for enterprise SaaS prospects",
+            "target_persona": "VP of Sales at B2B SaaS companies",
+            "deadline": "2026-03-15",
         },
-        priority="P1_HIGH",
+        priority="P2_MEDIUM",
     )
-    logger.info("Published event: %s", event_id[:8])
+    events = system.event_bus.query(target_department="marketing")
+    print(f"  Event published: {event_id[:8]}...")
+    print(f"  Pending marketing events: {len(events)}")
 
-    # Demo 5: Knowledge base query
-    logger.info("\n--- Demo 5: Knowledge Base Query ---")
-    results = bootstrap.system.knowledge.search("financial approval")
-    for r in results:
-        logger.info("  Found: %s (score: %d)", r["title"], r["score"])
+    # Demo 5: Knowledge Base Query
+    print("\n📋 Demo 5: Knowledge Base — Lead Scoring Criteria")
+    print("-" * 50)
+    results = system.knowledge.search("lead scoring qualification")
+    print(f"  Found {len(results)} matching entries:")
+    for r in results[:3]:
+        print(f"    - {r['title']}")
 
     # Summary
-    logger.info("\n" + "=" * 60)
-    logger.info("DEMO COMPLETE")
-    logger.info("Active workflows: %d", len(bootstrap.workflow_engine.list_workflows(WorkflowStatus.RUNNING)))
-    logger.info("Pending approvals: %d", len(bootstrap.system.hitl.get_pending()))
-    logger.info("Pending events: %d", len(bootstrap.system.event_bus.query(status="PENDING")))
-    logger.info("System health: %s", bootstrap.system.get_system_health())
-    logger.info("=" * 60)
+    print("\n" + "=" * 70)
+    print("  Demo Complete!")
+    print(f"  System health: {system.get_system_health()['pending_events']} pending events")
+    print(f"  Knowledge base: {len(system.knowledge._entries)} policies loaded")
+    print("=" * 70 + "\n")
 
 
 # ---------------------------------------------------------------------------
@@ -362,7 +375,7 @@ async def main():
     await bootstrap.boot()
 
     if args.demo:
-        await run_demo(bootstrap)
+        run_demo()
 
     if args.dashboard:
         bootstrap.start_dashboard()

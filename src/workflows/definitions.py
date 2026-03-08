@@ -1,15 +1,14 @@
 """
-Temporal Workflow and Activity definitions for all company business processes.
+Temporal Workflow and Activity definitions for LeadForge AI business processes.
 
 Each workflow represents a complete business process that may span multiple agents,
 departments, and time periods. Temporal provides durable execution — if any agent
 crashes mid-task, the workflow resumes exactly where it left off.
 
 Workflow types:
-1. Operational workflows (continuous: support tickets, invoice processing)
-2. Project workflows (bounded: feature development, marketing campaigns)
+1. Operational workflows (continuous: lead qualification, client onboarding)
+2. Project workflows (bounded: outbound campaigns, ABM campaigns)
 3. Administrative workflows (periodic: financial reporting, compliance audits)
-4. Incident workflows (event-driven: bug fixes, security incidents)
 """
 
 from __future__ import annotations
@@ -189,282 +188,54 @@ class TaskGraphBuilder:
 # Pre-built workflow templates
 # ---------------------------------------------------------------------------
 
-def create_bug_fix_workflow(
-    bug_title: str,
-    bug_description: str,
-    reporter: str = "customer",
-    severity: str = "high",
-) -> WorkflowDefinition:
-    """
-    Complete bug fix workflow from report to resolution.
-    ~40 minutes, zero human involvement for non-critical bugs.
-    """
-    builder = TaskGraphBuilder(f"Bug Fix: {bug_title}", "incident")
-
-    builder.task(
-        name="triage",
-        agent="cs-tier1" if reporter == "customer" else "eng-lead",
-        description=f"Triage bug report: {bug_description}\nSeverity: {severity}\nReporter: {reporter}",
-        priority=TaskPriority.HIGH,
-        budget_tokens=20_000,
-    ).task(
-        name="reproduce",
-        agent="eng-qa",
-        description=f"Reproduce the bug in staging environment.\nBug: {bug_title}\n{bug_description}",
-        priority=TaskPriority.HIGH,
-        budget_tokens=50_000,
-        blocked_by=["triage"],
-    ).task(
-        name="root_cause",
-        agent="eng-backend",
-        description=f"Identify root cause of: {bug_title}\nUse git log, grep, and code analysis.",
-        priority=TaskPriority.HIGH,
-        budget_tokens=80_000,
-        blocked_by=["reproduce"],
-    ).task(
-        name="implement_fix",
-        agent="eng-backend",
-        description=f"Implement fix for: {bug_title}\nFollow existing code patterns. Include inline comments only where non-obvious.",
-        priority=TaskPriority.HIGH,
-        budget_tokens=150_000,
-        blocked_by=["root_cause"],
-    ).task(
-        name="write_test",
-        agent="eng-qa",
-        description=f"Write regression test that would have caught: {bug_title}",
-        priority=TaskPriority.HIGH,
-        budget_tokens=80_000,
-        blocked_by=["root_cause"],
-    ).task(
-        name="code_review",
-        agent="eng-reviewer",
-        description="Review the bug fix PR for correctness, security, and performance.",
-        priority=TaskPriority.HIGH,
-        budget_tokens=50_000,
-        blocked_by=["implement_fix", "write_test"],
-    ).task(
-        name="deploy",
-        agent="eng-infra",
-        description="Deploy the bug fix to production. Monitor for errors post-deploy.",
-        priority=TaskPriority.HIGH,
-        budget_tokens=30_000,
-        blocked_by=["code_review"],
-    ).task(
-        name="customer_response",
-        agent="cs-tier1",
-        description=f"Draft and send resolution email to {reporter} about: {bug_title}",
-        priority=TaskPriority.MEDIUM,
-        budget_tokens=20_000,
-        blocked_by=["root_cause"],  # Can start once root cause is known
-    )
-
-    workflow = builder.build()
-    workflow.priority = TaskPriority(severity) if severity in [p.value for p in TaskPriority] else TaskPriority.HIGH
-    workflow.metadata = {
-        "bug_title": bug_title,
-        "reporter": reporter,
-        "severity": severity,
-    }
-    return workflow
-
-
-def create_feature_workflow(
-    feature_name: str,
-    feature_description: str,
-    requested_by: str = "prod-lead",
-) -> WorkflowDefinition:
-    """
-    Complete feature development workflow from spec to launch.
-    Spans days to weeks depending on complexity.
-    """
-    builder = TaskGraphBuilder(f"Feature: {feature_name}", "project")
-
-    builder.task(
-        name="requirements",
-        agent="prod-lead",
-        description=f"Create detailed requirements for: {feature_name}\n{feature_description}\nInclude acceptance criteria.",
-        budget_tokens=100_000,
-    ).task(
-        name="research",
-        agent="prod-researcher",
-        description=f"Research competitive implementations and best practices for: {feature_name}",
-        budget_tokens=80_000,
-    ).task(
-        name="design",
-        agent="prod-designer",
-        description=f"Create UI/UX specification for: {feature_name}",
-        budget_tokens=80_000,
-        blocked_by=["requirements", "research"],
-    ).task(
-        name="technical_design",
-        agent="eng-lead",
-        description=f"Create technical design document for: {feature_name}\nInclude API contracts, data models, architecture decisions.",
-        budget_tokens=120_000,
-        blocked_by=["requirements"],
-    ).task(
-        name="backend_impl",
-        agent="eng-backend",
-        description=f"Implement backend for: {feature_name}\nFollow technical design.",
-        budget_tokens=300_000,
-        blocked_by=["technical_design"],
-    ).task(
-        name="frontend_impl",
-        agent="eng-frontend",
-        description=f"Implement frontend for: {feature_name}\nFollow design spec.",
-        budget_tokens=250_000,
-        blocked_by=["design", "technical_design"],
-    ).task(
-        name="api_docs",
-        agent="eng-docs",
-        description=f"Write API documentation for: {feature_name}",
-        budget_tokens=50_000,
-        blocked_by=["backend_impl"],
-    ).task(
-        name="integration_test",
-        agent="eng-qa",
-        description=f"Write and run integration tests for: {feature_name}",
-        budget_tokens=100_000,
-        blocked_by=["backend_impl", "frontend_impl"],
-    ).task(
-        name="security_review",
-        agent="eng-security",
-        description=f"Security review for: {feature_name}",
-        budget_tokens=80_000,
-        blocked_by=["backend_impl", "frontend_impl"],
-    ).task(
-        name="code_review",
-        agent="eng-reviewer",
-        description=f"Full code review for: {feature_name}",
-        budget_tokens=80_000,
-        blocked_by=["integration_test", "security_review"],
-    ).task(
-        name="canary_deploy",
-        agent="eng-infra",
-        description=f"Deploy {feature_name} to 10% canary. Monitor for 24h.",
-        budget_tokens=50_000,
-        blocked_by=["code_review"],
-    ).task(
-        name="full_rollout",
-        agent="eng-infra",
-        description=f"Full rollout of {feature_name} to 100%.",
-        budget_tokens=30_000,
-        blocked_by=["canary_deploy"],
-    ).task(
-        name="launch_content",
-        agent="mkt-content",
-        description=f"Write blog post and launch announcement for: {feature_name}",
-        budget_tokens=80_000,
-        blocked_by=["requirements"],
-    ).task(
-        name="launch_email",
-        agent="mkt-email",
-        description=f"Send launch announcement email to customers about: {feature_name}",
-        budget_tokens=30_000,
-        blocked_by=["full_rollout", "launch_content"],
-    )
-
-    workflow = builder.build()
-    workflow.metadata = {
-        "feature_name": feature_name,
-        "requested_by": requested_by,
-    }
-    return workflow
-
-
-def create_customer_onboarding_workflow(
-    customer_name: str,
-    customer_email: str,
-    plan: str = "standard",
-) -> WorkflowDefinition:
-    """Customer onboarding from signup to active usage."""
-    builder = TaskGraphBuilder(f"Onboard: {customer_name}", "operational")
-
-    builder.task(
-        name="welcome_email",
-        agent="cs-success",
-        description=f"Send welcome email to {customer_name} ({customer_email}). Plan: {plan}.",
-        priority=TaskPriority.HIGH,
-        budget_tokens=15_000,
-    ).task(
-        name="account_setup",
-        agent="eng-backend",
-        description=f"Provision account for {customer_name}. Plan: {plan}. Set up default configurations.",
-        priority=TaskPriority.HIGH,
-        budget_tokens=30_000,
-    ).task(
-        name="billing_setup",
-        agent="fin-ar",
-        description=f"Set up billing for {customer_name}. Email: {customer_email}. Plan: {plan}.",
-        priority=TaskPriority.HIGH,
-        budget_tokens=20_000,
-        blocked_by=["account_setup"],
-    ).task(
-        name="onboarding_guide",
-        agent="cs-success",
-        description=f"Send onboarding guide and schedule kickoff call with {customer_name}.",
-        budget_tokens=20_000,
-        blocked_by=["welcome_email", "account_setup"],
-    ).task(
-        name="health_check",
-        agent="cs-success",
-        description=f"30-day health check for {customer_name}. Review usage, identify blockers.",
-        budget_tokens=25_000,
-        blocked_by=["onboarding_guide"],
-    )
-
-    workflow = builder.build()
-    workflow.metadata = {"customer_name": customer_name, "plan": plan}
-    return workflow
-
-
-def create_sales_pipeline_workflow(
+def create_leadforge_sales_workflow(
     lead_name: str,
     lead_email: str,
     lead_source: str = "inbound",
     company: str = "",
 ) -> WorkflowDefinition:
-    """Sales pipeline from lead to close."""
-    builder = TaskGraphBuilder(f"Sales: {lead_name}", "operational")
+    """LeadForge selling its own services — full sales pipeline from lead to close."""
+    builder = TaskGraphBuilder(f"LeadForge Sales: {lead_name}", "operational")
 
     builder.task(
         name="qualify",
         agent="sales-sdr",
-        description=f"Qualify lead: {lead_name} ({lead_email}) from {lead_source}. Company: {company}.",
+        description=f"Qualify inbound lead {lead_name} ({lead_email}) from {lead_source} for LeadForge services. Company: {company}.",
         priority=TaskPriority.HIGH,
         budget_tokens=20_000,
     ).task(
         name="research",
         agent="sales-sdr",
-        description=f"Research {company} and {lead_name}. Find pain points, budget signals, decision makers.",
+        description=f"Research {company} and {lead_name}. Identify current lead-gen stack, pain points, budget signals, and key decision makers.",
         budget_tokens=30_000,
     ).task(
         name="outreach",
         agent="sales-sdr",
-        description=f"Send personalized outreach to {lead_name} at {lead_email}.",
+        description=f"Send personalized outreach to {lead_name} at {lead_email} highlighting LeadForge capabilities relevant to {company}.",
         budget_tokens=15_000,
         blocked_by=["qualify", "research"],
     ).task(
         name="demo_prep",
         agent="sales-ae",
-        description=f"Prepare demo for {lead_name}/{company}. Customize to their use case.",
+        description=f"Prepare a tailored LeadForge platform demo for {lead_name} at {company}. Customize to their ICP, industry verticals, and outreach channels.",
         budget_tokens=40_000,
         blocked_by=["outreach"],
     ).task(
         name="proposal",
         agent="sales-ae",
-        description=f"Create proposal for {company}. Include pricing, timeline, and ROI projection.",
+        description=f"Create proposal for {company}. Include LeadForge pricing tiers, projected lead volume, timeline, and ROI projection.",
         budget_tokens=50_000,
         blocked_by=["demo_prep"],
     ).task(
-        name="contract",
-        agent="legal-contracts",
-        description=f"Draft contract for {company}. Standard terms. DRAFT — requires human review.",
+        name="contract_review",
+        agent="legal-lead",
+        description=f"Review and finalize service agreement for {company}. Ensure SLA terms, data-handling clauses, and payment schedule are correct. DRAFT — requires human review.",
         budget_tokens=40_000,
         blocked_by=["proposal"],
     ).task(
         name="crm_update",
         agent="sales-ops",
-        description=f"Update CRM with deal progress for {lead_name}/{company}.",
+        description=f"Update CRM with full deal lifecycle for {lead_name} at {company}. Log qualification details, outreach history, proposal, and contract status.",
         budget_tokens=10_000,
         blocked_by=["qualify"],
     )
@@ -476,185 +247,36 @@ def create_sales_pipeline_workflow(
 
 def create_financial_reporting_workflow(
     period: str = "monthly",
-    period_end: str = "",
 ) -> WorkflowDefinition:
-    """Periodic financial reporting workflow."""
-    builder = TaskGraphBuilder(f"Finance Report: {period} {period_end}", "administrative")
+    """Periodic financial reporting workflow for LeadForge AI."""
+    builder = TaskGraphBuilder(f"Finance Report: {period}", "administrative")
 
     builder.task(
         name="revenue_report",
         agent="fin-ar",
-        description=f"Generate {period} revenue report for period ending {period_end}.",
+        description=f"Generate {period} revenue report covering all LeadForge client retainers, usage-based billing, and one-time project fees.",
         budget_tokens=40_000,
     ).task(
-        name="expense_report",
-        agent="fin-ap",
-        description=f"Generate {period} expense report for period ending {period_end}.",
+        name="expense_summary",
+        agent="fin-lead",
+        description=f"Compile {period} expense summary including payroll, SaaS tooling, ad spend, and infrastructure costs.",
         budget_tokens=40_000,
     ).task(
-        name="pnl_statement",
-        agent="fin-reporting",
-        description=f"Create P&L statement for {period} ending {period_end}.",
+        name="consolidated_report",
+        agent="fin-lead",
+        description=f"Consolidate {period} revenue and expense data into a unified financial report with margin analysis and variance commentary.",
         budget_tokens=60_000,
-        blocked_by=["revenue_report", "expense_report"],
-    ).task(
-        name="balance_sheet",
-        agent="fin-reporting",
-        description=f"Create balance sheet as of {period_end}.",
-        budget_tokens=50_000,
-        blocked_by=["revenue_report", "expense_report"],
-    ).task(
-        name="cash_flow",
-        agent="fin-reporting",
-        description=f"Create cash flow statement for {period} ending {period_end}.",
-        budget_tokens=50_000,
-        blocked_by=["pnl_statement", "balance_sheet"],
+        blocked_by=["revenue_report", "expense_summary"],
     ).task(
         name="cfo_review",
         agent="exec-cfo",
-        description=f"Review and approve {period} financial statements for {period_end}.",
+        description=f"Review and approve the {period} consolidated financial report. Flag any anomalies or budget overruns for leadership discussion.",
         budget_tokens=30_000,
-        blocked_by=["cash_flow"],
+        blocked_by=["consolidated_report"],
     )
 
     workflow = builder.build()
-    workflow.metadata = {"period": period, "period_end": period_end}
-    return workflow
-
-
-def create_hiring_workflow(
-    role_title: str,
-    department: str,
-    skills: list[str],
-    budget_range: str = "",
-) -> WorkflowDefinition:
-    """Contractor hiring from need identification to onboarding."""
-    builder = TaskGraphBuilder(f"Hire: {role_title}", "project")
-
-    builder.task(
-        name="budget_approval",
-        agent="exec-cfo",
-        description=f"Approve budget for hiring {role_title} in {department}. Range: {budget_range}.",
-        priority=TaskPriority.HIGH,
-        budget_tokens=20_000,
-    ).task(
-        name="job_description",
-        agent="hr-recruiter",
-        description=f"Draft job description for {role_title}. Skills: {', '.join(skills)}. Dept: {department}.",
-        budget_tokens=25_000,
-        blocked_by=["budget_approval"],
-    ).task(
-        name="sourcing",
-        agent="hr-recruiter",
-        description=f"Source candidates for {role_title}. Post to relevant platforms.",
-        budget_tokens=30_000,
-        blocked_by=["job_description"],
-    ).task(
-        name="screening",
-        agent="hr-recruiter",
-        description=f"Screen applications for {role_title}. Evaluate against requirements.",
-        budget_tokens=50_000,
-        blocked_by=["sourcing"],
-    ).task(
-        name="technical_assessment",
-        agent="eng-lead" if department == "engineering" else "hr-recruiter",
-        description=f"Conduct technical assessment for shortlisted {role_title} candidates.",
-        budget_tokens=60_000,
-        blocked_by=["screening"],
-    ).task(
-        name="offer_draft",
-        agent="hr-recruiter",
-        description=f"Draft offer for selected {role_title} candidate. REQUIRES HUMAN APPROVAL.",
-        budget_tokens=20_000,
-        blocked_by=["technical_assessment"],
-    ).task(
-        name="contract_draft",
-        agent="legal-contracts",
-        description=f"Draft contractor agreement for {role_title}. REQUIRES HUMAN REVIEW.",
-        budget_tokens=40_000,
-        blocked_by=["offer_draft"],
-    ).task(
-        name="onboarding",
-        agent="hr-onboarding",
-        description=f"Onboard new {role_title}: accounts, access, training materials.",
-        budget_tokens=30_000,
-        blocked_by=["contract_draft"],
-    )
-
-    workflow = builder.build()
-    workflow.priority = TaskPriority.HIGH
-    workflow.metadata = {"role": role_title, "department": department, "skills": skills}
-    return workflow
-
-
-def create_incident_response_workflow(
-    incident_title: str,
-    incident_description: str,
-    severity: str = "high",
-) -> WorkflowDefinition:
-    """Security or production incident response."""
-    builder = TaskGraphBuilder(f"Incident: {incident_title}", "incident")
-
-    prio = TaskPriority.CRITICAL if severity == "critical" else TaskPriority.HIGH
-
-    builder.task(
-        name="assess",
-        agent="ops-monitoring",
-        description=f"Assess incident: {incident_title}\n{incident_description}\nDetermine scope and impact.",
-        priority=prio,
-        budget_tokens=30_000,
-    ).task(
-        name="notify_stakeholders",
-        agent="ops-lead",
-        description=f"Notify stakeholders about incident: {incident_title}. Severity: {severity}.",
-        priority=prio,
-        budget_tokens=15_000,
-        blocked_by=["assess"],
-    ).task(
-        name="contain",
-        agent="eng-infra",
-        description=f"Contain incident: {incident_title}. Minimize blast radius.",
-        priority=prio,
-        budget_tokens=80_000,
-        blocked_by=["assess"],
-    ).task(
-        name="investigate",
-        agent="eng-security" if "security" in incident_title.lower() else "eng-backend",
-        description=f"Investigate root cause of: {incident_title}",
-        priority=prio,
-        budget_tokens=100_000,
-        blocked_by=["contain"],
-    ).task(
-        name="remediate",
-        agent="eng-backend",
-        description=f"Implement remediation for: {incident_title}",
-        priority=prio,
-        budget_tokens=150_000,
-        blocked_by=["investigate"],
-    ).task(
-        name="verify",
-        agent="eng-qa",
-        description=f"Verify remediation is effective for: {incident_title}",
-        priority=prio,
-        budget_tokens=50_000,
-        blocked_by=["remediate"],
-    ).task(
-        name="postmortem",
-        agent="eng-lead",
-        description=f"Write postmortem for: {incident_title}. Include timeline, root cause, action items.",
-        budget_tokens=60_000,
-        blocked_by=["verify"],
-    ).task(
-        name="customer_comms",
-        agent="cs-lead",
-        description=f"Draft customer communication about: {incident_title}. REQUIRES REVIEW for critical incidents.",
-        budget_tokens=25_000,
-        blocked_by=["contain"],
-    )
-
-    workflow = builder.build()
-    workflow.priority = prio
-    workflow.metadata = {"incident": incident_title, "severity": severity}
+    workflow.metadata = {"period": period}
     return workflow
 
 
@@ -664,7 +286,7 @@ def create_marketing_campaign_workflow(
     budget_usd: float,
     channels: list[str],
 ) -> WorkflowDefinition:
-    """Marketing campaign from planning to execution and analysis."""
+    """Marketing campaign from planning to execution and analysis for LeadForge AI."""
     builder = TaskGraphBuilder(f"Campaign: {campaign_name}", "project")
 
     builder.task(
@@ -673,52 +295,53 @@ def create_marketing_campaign_workflow(
         description=f"Define strategy for campaign: {campaign_name}\nGoal: {campaign_goal}\nBudget: ${budget_usd}\nChannels: {', '.join(channels)}",
         budget_tokens=60_000,
     ).task(
-        name="budget_approval",
-        agent="exec-cfo",
-        description=f"Approve marketing budget ${budget_usd} for campaign: {campaign_name}",
-        budget_tokens=15_000,
+        name="demand_gen_plan",
+        agent="mkt-demandgen",
+        description=f"Create demand generation plan for campaign: {campaign_name}. Define target audience segments, funnel stages, and conversion targets aligned with goal: {campaign_goal}.",
+        budget_tokens=50_000,
+        blocked_by=["strategy"],
     ).task(
-        name="content_creation",
+        name="ad_setup",
+        agent="mkt-ppc",
+        description=f"Set up paid ad campaigns for: {campaign_name}. Configure targeting, bidding strategy, and creatives across channels: {', '.join(channels)}. Budget: ${budget_usd}.",
+        budget_tokens=50_000,
+        blocked_by=["demand_gen_plan"],
+    ).task(
+        name="content",
         agent="mkt-content",
-        description=f"Create content for campaign: {campaign_name}. Follow brand guidelines.",
+        description=f"Create content assets for campaign: {campaign_name}. Include landing pages, blog posts, and social copy. Follow LeadForge brand guidelines.",
         budget_tokens=100_000,
-        blocked_by=["strategy", "budget_approval"],
+        blocked_by=["strategy"],
     ).task(
-        name="seo_optimization",
+        name="seo",
         agent="mkt-seo",
-        description=f"SEO optimize campaign content for: {campaign_name}",
+        description=f"SEO optimize all campaign content for: {campaign_name}. Conduct keyword research, optimize meta tags, and ensure technical SEO readiness.",
         budget_tokens=40_000,
-        blocked_by=["content_creation"],
+        blocked_by=["content"],
     ).task(
-        name="email_campaign",
+        name="email_sequence",
         agent="mkt-email",
-        description=f"Set up email campaign for: {campaign_name}. Segment audience. A/B test subject lines.",
+        description=f"Build email nurture sequence for campaign: {campaign_name}. Segment audience, draft copy for each stage, and configure A/B tests on subject lines.",
         budget_tokens=40_000,
-        blocked_by=["content_creation"],
+        blocked_by=["content"],
     ).task(
         name="launch",
         agent="mkt-lead",
-        description=f"Launch campaign: {campaign_name} across all channels.",
+        description=f"Launch campaign: {campaign_name} across all channels. Coordinate go-live of ads, content, SEO pages, and email sequences.",
         budget_tokens=20_000,
-        blocked_by=["seo_optimization", "email_campaign"],
+        blocked_by=["ad_setup", "content", "seo", "email_sequence"],
     ).task(
-        name="week1_analysis",
+        name="analytics",
         agent="mkt-analytics",
-        description=f"Week 1 performance analysis for campaign: {campaign_name}",
+        description=f"Analyze performance data for campaign: {campaign_name}. Track impressions, CTR, CPL, and pipeline contribution against goal: {campaign_goal}.",
         budget_tokens=40_000,
         blocked_by=["launch"],
     ).task(
-        name="optimization",
+        name="optimize",
         agent="mkt-lead",
-        description=f"Optimize campaign: {campaign_name} based on week 1 data.",
+        description=f"Optimize campaign: {campaign_name} based on analytics data. Reallocate budget across channels, adjust messaging, and update targeting.",
         budget_tokens=30_000,
-        blocked_by=["week1_analysis"],
-    ).task(
-        name="final_report",
-        agent="mkt-analytics",
-        description=f"Final ROI report for campaign: {campaign_name}",
-        budget_tokens=50_000,
-        blocked_by=["optimization"],
+        blocked_by=["analytics"],
     )
 
     workflow = builder.build()
@@ -734,43 +357,344 @@ def create_compliance_audit_workflow(
     audit_type: str = "quarterly",
     focus_areas: list[str] | None = None,
 ) -> WorkflowDefinition:
-    """Compliance audit workflow."""
-    areas = focus_areas or ["data_privacy", "financial", "security", "employment"]
+    """Compliance audit workflow for LeadForge AI operations."""
+    areas = focus_areas or ["outreach_regulations", "data_handling", "financial"]
     builder = TaskGraphBuilder(f"Compliance Audit: {audit_type}", "administrative")
 
     builder.task(
-        name="scope_definition",
+        name="outreach_compliance",
         agent="legal-compliance",
-        description=f"{audit_type.title()} compliance audit. Focus: {', '.join(areas)}. Define scope and checklist.",
-        budget_tokens=40_000,
-    ).task(
-        name="data_privacy_review",
-        agent="legal-compliance",
-        description="Review data privacy compliance: GDPR, CCPA, data retention policies.",
+        description=f"{audit_type.title()} audit of outreach compliance. Review CAN-SPAM, TCPA, and GDPR adherence across all LeadForge client campaigns. Focus areas: {', '.join(areas)}.",
         budget_tokens=60_000,
-        blocked_by=["scope_definition"],
     ).task(
-        name="security_review",
-        agent="eng-security",
-        description="Security compliance review: access controls, encryption, vulnerability management.",
-        budget_tokens=80_000,
-        blocked_by=["scope_definition"],
+        name="data_handling",
+        agent="legal-compliance",
+        description=f"{audit_type.title()} audit of data handling practices. Review prospect data storage, consent management, data retention policies, and third-party data processor agreements.",
+        budget_tokens=60_000,
     ).task(
         name="financial_review",
-        agent="fin-tax",
-        description="Financial compliance review: tax obligations, reporting accuracy, audit trail integrity.",
+        agent="fin-lead",
+        description=f"{audit_type.title()} financial compliance review. Verify billing accuracy, tax obligations, revenue recognition, and audit trail integrity for all client accounts.",
         budget_tokens=60_000,
-        blocked_by=["scope_definition"],
     ).task(
-        name="compile_report",
+        name="report",
         agent="legal-lead",
-        description=f"Compile {audit_type} compliance report. DRAFT — requires human legal review.",
+        description=f"Compile {audit_type} compliance audit report consolidating outreach, data handling, and financial findings. DRAFT — requires human legal review.",
         budget_tokens=50_000,
-        blocked_by=["data_privacy_review", "security_review", "financial_review"],
+        blocked_by=["outreach_compliance", "data_handling", "financial_review"],
+    ).task(
+        name="executive_review",
+        agent="exec-coo",
+        description=f"Executive review of {audit_type} compliance audit report. Approve remediation plan and sign off on compliance posture.",
+        budget_tokens=30_000,
+        blocked_by=["report"],
     )
 
     workflow = builder.build()
     workflow.metadata = {"audit_type": audit_type, "focus_areas": areas}
+    return workflow
+
+
+def create_lead_qualification_workflow(
+    prospect_name: str,
+    prospect_email: str,
+    prospect_company: str,
+    client_name: str,
+    source: str = "inbound",
+) -> WorkflowDefinition:
+    """Lead qualification workflow — research, score, enrich, route, and initiate outreach for a prospect on behalf of a LeadForge client."""
+    builder = TaskGraphBuilder(f"Lead Qualification: {prospect_name} for {client_name}", "operational")
+
+    builder.task(
+        name="research",
+        agent="sales-researcher",
+        description=f"Research prospect {prospect_name} ({prospect_email}) at {prospect_company}. Gather firmographic data, technographic signals, recent news, and social presence. Source: {source}. Client: {client_name}.",
+        budget_tokens=40_000,
+    ).task(
+        name="score",
+        agent="sales-scorer",
+        description=f"Score prospect {prospect_name} at {prospect_company} based on research data. Apply {client_name}'s ICP criteria, engagement signals, and intent data to produce a lead score and tier.",
+        budget_tokens=30_000,
+        blocked_by=["research"],
+    ).task(
+        name="enrich_crm",
+        agent="sales-ops",
+        description=f"Enrich CRM record for {prospect_name} ({prospect_email}) at {prospect_company}. Append research findings, lead score, and source attribution ({source}) under client {client_name}.",
+        budget_tokens=15_000,
+        blocked_by=["score"],
+    ).task(
+        name="route_decision",
+        agent="sales-lead",
+        description=f"Determine routing for scored lead {prospect_name} at {prospect_company}. Decide whether to fast-track to SDR outreach, place into nurture sequence, or disqualify. Client: {client_name}.",
+        budget_tokens=20_000,
+        blocked_by=["score"],
+    ).task(
+        name="initial_outreach",
+        agent="sales-sdr",
+        description=f"Execute initial outreach to {prospect_name} ({prospect_email}) at {prospect_company} on behalf of {client_name}. Use personalized messaging based on research and routing decision.",
+        budget_tokens=20_000,
+        blocked_by=["route_decision"],
+    )
+
+    workflow = builder.build()
+    workflow.metadata = {
+        "prospect_name": prospect_name,
+        "prospect_email": prospect_email,
+        "prospect_company": prospect_company,
+        "client_name": client_name,
+        "source": source,
+    }
+    return workflow
+
+
+def create_lead_nurture_workflow(
+    lead_name: str,
+    lead_email: str,
+    lead_company: str,
+    client_name: str,
+    nurture_reason: str = "MQL",
+) -> WorkflowDefinition:
+    """Lead nurture workflow — design and execute a nurture sequence to warm a lead back toward sales readiness."""
+    builder = TaskGraphBuilder(f"Lead Nurture: {lead_name} for {client_name}", "operational")
+
+    builder.task(
+        name="design_sequence",
+        agent="sales-nurture",
+        description=f"Design nurture sequence for {lead_name} ({lead_email}) at {lead_company}. Reason for nurture: {nurture_reason}. Define touchpoints, cadence, and messaging themes tailored to {client_name}'s value proposition.",
+        budget_tokens=40_000,
+    ).task(
+        name="create_content",
+        agent="mkt-content",
+        description=f"Create nurture content for {lead_name} at {lead_company}. Produce email copy, relevant case studies, and educational assets aligned with {client_name}'s brand and the nurture reason: {nurture_reason}.",
+        budget_tokens=60_000,
+        blocked_by=["design_sequence"],
+    ).task(
+        name="execute_sequence",
+        agent="sales-nurture",
+        description=f"Execute nurture sequence for {lead_name} ({lead_email}) at {lead_company}. Deploy emails and touchpoints per the designed cadence on behalf of {client_name}.",
+        budget_tokens=30_000,
+        blocked_by=["create_content"],
+    ).task(
+        name="monitor_engagement",
+        agent="sales-scorer",
+        description=f"Monitor engagement signals from {lead_name} at {lead_company} during nurture sequence. Track opens, clicks, content downloads, and website visits. Re-score lead based on engagement for {client_name}.",
+        budget_tokens=25_000,
+        blocked_by=["execute_sequence"],
+    ).task(
+        name="re_qualify",
+        agent="sales-lead",
+        description=f"Re-qualify {lead_name} at {lead_company} after nurture sequence completes. Based on updated engagement score, decide whether to advance to sales outreach, continue nurture, or archive. Client: {client_name}.",
+        budget_tokens=20_000,
+        blocked_by=["monitor_engagement"],
+    )
+
+    workflow = builder.build()
+    workflow.metadata = {
+        "lead_name": lead_name,
+        "lead_email": lead_email,
+        "lead_company": lead_company,
+        "client_name": client_name,
+        "nurture_reason": nurture_reason,
+    }
+    return workflow
+
+
+def create_outbound_campaign_workflow(
+    client_name: str,
+    campaign_name: str,
+    target_icp: str,
+    channels: list[str],
+    daily_volume: int = 50,
+) -> WorkflowDefinition:
+    """Outbound campaign workflow — build and execute a targeted outbound campaign for a LeadForge client."""
+    builder = TaskGraphBuilder(f"Outbound Campaign: {campaign_name} for {client_name}", "project")
+
+    builder.task(
+        name="icp_definition",
+        agent="sales-lead",
+        description=f"Refine and finalize ICP definition for {client_name}'s outbound campaign: {campaign_name}. Target ICP: {target_icp}. Define firmographic filters, persona criteria, and exclusion rules.",
+        budget_tokens=40_000,
+    ).task(
+        name="prospect_list",
+        agent="sales-researcher",
+        description=f"Build prospect list for campaign: {campaign_name}. Source contacts matching ICP ({target_icp}) for {client_name}. Target daily outreach volume: {daily_volume}. Channels: {', '.join(channels)}.",
+        budget_tokens=60_000,
+        blocked_by=["icp_definition"],
+    ).task(
+        name="outreach_templates",
+        agent="mkt-content",
+        description=f"Create outreach templates for campaign: {campaign_name}. Write personalized email, LinkedIn, and multi-channel sequences for ICP: {target_icp}. Align with {client_name}'s brand voice. Channels: {', '.join(channels)}.",
+        budget_tokens=80_000,
+        blocked_by=["icp_definition"],
+    ).task(
+        name="score_list",
+        agent="sales-scorer",
+        description=f"Score and prioritize the prospect list for campaign: {campaign_name}. Rank prospects by fit score and intent signals for {client_name}'s ICP ({target_icp}).",
+        budget_tokens=30_000,
+        blocked_by=["prospect_list"],
+    ).task(
+        name="compliance_review",
+        agent="legal-compliance",
+        description=f"Review outreach templates for campaign: {campaign_name} for compliance with CAN-SPAM, GDPR, and {client_name}'s contractual obligations. Approve messaging before launch.",
+        budget_tokens=30_000,
+        blocked_by=["outreach_templates"],
+    ).task(
+        name="launch_outreach",
+        agent="sales-sdr",
+        description=f"Launch outbound outreach for campaign: {campaign_name} on behalf of {client_name}. Execute sequences at {daily_volume} contacts/day across channels: {', '.join(channels)}. Use scored prospect list and approved templates.",
+        budget_tokens=40_000,
+        blocked_by=["score_list", "compliance_review"],
+    ).task(
+        name="weekly_analysis",
+        agent="mkt-analytics",
+        description=f"Perform weekly analysis of campaign: {campaign_name} for {client_name}. Report on delivery rates, open rates, reply rates, positive response rates, and meetings booked by channel.",
+        budget_tokens=40_000,
+        blocked_by=["launch_outreach"],
+    ).task(
+        name="optimize",
+        agent="sales-lead",
+        description=f"Optimize campaign: {campaign_name} for {client_name} based on weekly analysis. Adjust targeting, messaging, channel mix, and daily volume (current: {daily_volume}) to improve conversion.",
+        budget_tokens=30_000,
+        blocked_by=["weekly_analysis"],
+    )
+
+    workflow = builder.build()
+    workflow.metadata = {
+        "client_name": client_name,
+        "campaign_name": campaign_name,
+        "target_icp": target_icp,
+        "channels": channels,
+        "daily_volume": daily_volume,
+    }
+    return workflow
+
+
+def create_abm_campaign_workflow(
+    client_name: str,
+    target_accounts: list[str],
+    campaign_budget_usd: float = 5000,
+) -> WorkflowDefinition:
+    """Account-based marketing campaign workflow — orchestrate a high-touch ABM campaign for a LeadForge client."""
+    builder = TaskGraphBuilder(f"ABM Campaign: {client_name} ({len(target_accounts)} accounts)", "project")
+
+    builder.task(
+        name="account_research",
+        agent="sales-researcher",
+        description=f"Deep-dive research on target accounts for {client_name}'s ABM campaign: {', '.join(target_accounts)}. Map org structures, identify key stakeholders, surface pain points, and gather technographic/intent data.",
+        budget_tokens=80_000,
+    ).task(
+        name="personalized_content",
+        agent="mkt-content",
+        description=f"Create account-personalized content for {client_name}'s ABM campaign. Produce custom landing pages, one-pagers, and email copy for each target account: {', '.join(target_accounts)}.",
+        budget_tokens=100_000,
+        blocked_by=["account_research"],
+    ).task(
+        name="multi_channel_plan",
+        agent="mkt-demandgen",
+        description=f"Design multi-channel engagement plan for {client_name}'s ABM campaign. Coordinate LinkedIn ads, direct mail, email, and retargeting across target accounts: {', '.join(target_accounts)}. Budget: ${campaign_budget_usd}.",
+        budget_tokens=50_000,
+        blocked_by=["account_research"],
+    ).task(
+        name="budget_approval",
+        agent="exec-cfo",
+        description=f"Approve campaign budget of ${campaign_budget_usd} for {client_name}'s ABM campaign targeting {len(target_accounts)} accounts.",
+        budget_tokens=15_000,
+    ).task(
+        name="execute_abm",
+        agent="sales-sdr",
+        description=f"Execute ABM outreach for {client_name}. Deploy personalized content and multi-channel engagement plan across target accounts: {', '.join(target_accounts)}.",
+        budget_tokens=60_000,
+        blocked_by=["personalized_content", "multi_channel_plan", "budget_approval"],
+    ).task(
+        name="track_engagement",
+        agent="mkt-analytics",
+        description=f"Track account-level engagement for {client_name}'s ABM campaign. Monitor content interactions, ad engagement, email responses, and meeting requests across target accounts.",
+        budget_tokens=40_000,
+        blocked_by=["execute_abm"],
+    ).task(
+        name="pipeline_report",
+        agent="sales-ops",
+        description=f"Generate pipeline report for {client_name}'s ABM campaign. Summarize account engagement scores, pipeline created, opportunities advanced, and ROI against ${campaign_budget_usd} budget.",
+        budget_tokens=30_000,
+        blocked_by=["track_engagement"],
+    )
+
+    workflow = builder.build()
+    workflow.metadata = {
+        "client_name": client_name,
+        "target_accounts": target_accounts,
+        "campaign_budget_usd": campaign_budget_usd,
+    }
+    return workflow
+
+
+def create_client_onboarding_workflow(
+    client_name: str,
+    client_contact_email: str,
+    retainer_amount_usd: float = 5000,
+    services: list[str] | None = None,
+) -> WorkflowDefinition:
+    """Client onboarding workflow — bring a new LeadForge client from signed contract to launch readiness."""
+    svc_list = services or ["outbound", "lead_qualification", "nurture"]
+    builder = TaskGraphBuilder(f"Client Onboarding: {client_name}", "operational")
+
+    builder.task(
+        name="contract_review",
+        agent="legal-lead",
+        description=f"Final review of signed service agreement for {client_name} ({client_contact_email}). Verify retainer of ${retainer_amount_usd}, SLA terms, data-handling clauses, and scope of services: {', '.join(svc_list)}.",
+        priority=TaskPriority.HIGH,
+        budget_tokens=40_000,
+    ).task(
+        name="billing_setup",
+        agent="fin-ar",
+        description=f"Set up billing for {client_name}. Configure recurring invoice for ${retainer_amount_usd}/month, payment terms, and usage-based overage tracking. Contact: {client_contact_email}.",
+        budget_tokens=20_000,
+        blocked_by=["contract_review"],
+    ).task(
+        name="kickoff_prep",
+        agent="client-success",
+        description=f"Prepare kickoff for {client_name}. Schedule onboarding call with {client_contact_email}, create shared workspace, and assemble welcome packet covering services: {', '.join(svc_list)}.",
+        budget_tokens=25_000,
+        blocked_by=["contract_review"],
+    ).task(
+        name="icp_workshop",
+        agent="sales-lead",
+        description=f"Conduct ICP workshop for {client_name}. Define ideal customer profile, target personas, verticals, firmographic criteria, and exclusion lists to guide lead generation.",
+        budget_tokens=50_000,
+        blocked_by=["kickoff_prep"],
+    ).task(
+        name="crm_setup",
+        agent="sales-ops",
+        description=f"Set up CRM workspace for {client_name}. Configure lead stages, scoring rules, integration with {client_name}'s systems, and reporting dashboards. Services: {', '.join(svc_list)}.",
+        budget_tokens=30_000,
+        blocked_by=["kickoff_prep"],
+    ).task(
+        name="template_creation",
+        agent="mkt-content",
+        description=f"Create outreach and content templates for {client_name}. Develop email sequences, LinkedIn messages, and collateral aligned with {client_name}'s brand voice and ICP.",
+        budget_tokens=60_000,
+        blocked_by=["icp_workshop"],
+    ).task(
+        name="compliance_setup",
+        agent="legal-compliance",
+        description=f"Set up compliance framework for {client_name}. Configure opt-out handling, suppression lists, consent tracking, and regulatory guardrails for outreach in {client_name}'s target markets.",
+        budget_tokens=30_000,
+        blocked_by=["icp_workshop"],
+    ).task(
+        name="launch_readiness",
+        agent="sales-lead",
+        description=f"Final launch readiness review for {client_name}. Verify templates, compliance setup, and CRM configuration are complete. Approve go-live for services: {', '.join(svc_list)} at ${retainer_amount_usd}/month retainer.",
+        budget_tokens=20_000,
+        blocked_by=["template_creation", "compliance_setup", "crm_setup"],
+    )
+
+    workflow = builder.build()
+    workflow.metadata = {
+        "client_name": client_name,
+        "client_contact_email": client_contact_email,
+        "retainer_amount_usd": retainer_amount_usd,
+        "services": svc_list,
+    }
     return workflow
 
 

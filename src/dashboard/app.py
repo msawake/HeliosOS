@@ -114,7 +114,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Company Command Center</title>
+    <title>LeadForge AI Command Center</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -285,7 +285,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 </head>
 <body>
     <div class="header">
-        <h1>AI Company Command Center</h1>
+        <h1>LeadForge AI Command Center</h1>
         <div class="status">
             <span><span class="dot green"></span> System Healthy</span>
             <span><span class="dot yellow"></span> {{pending_count}} Pending Approvals</span>
@@ -415,13 +415,13 @@ def render_dashboard(data: dict) -> str:
     # Activity rows (placeholder)
     activity_html = ""
     sample_activities = [
-        ("12:45", "eng-backend", "Engineering", "Completed task: Fix Amex payment", "completed"),
-        ("12:42", "eng-reviewer", "Engineering", "Approved PR #234", "completed"),
-        ("12:38", "cs-tier1", "Support", "Resolved ticket #4521", "completed"),
-        ("12:35", "sales-sdr", "Sales", "Sent outreach to lead", "completed"),
-        ("12:30", "fin-ar", "Finance", "Generated invoice INV-2026-0312", "completed"),
-        ("12:25", "mkt-content", "Marketing", "Published blog post", "pending"),
-        ("12:20", "exec-coo", "Executive", "Resolved cross-dept conflict", "completed"),
+        ("12:45", "sales-sdr", "Sales", "Sent outreach to 25 prospects for Acme SaaS", "completed"),
+        ("12:42", "sales-scorer", "Sales", "Scored 40 new leads — 8 SQLs identified", "completed"),
+        ("12:38", "mkt-ppc", "Marketing", "Optimized Google Ads bids — CPC down 12%", "completed"),
+        ("12:35", "sales-researcher", "Sales", "Completed research on 15 target accounts", "completed"),
+        ("12:30", "fin-ar", "Finance", "Generated retainer invoice for TechCorp ($5,000)", "completed"),
+        ("12:25", "client-success", "Operations", "Completed weekly QBR prep for DataFlow Inc", "completed"),
+        ("12:20", "exec-coo", "Executive", "Approved new outbound campaign launch", "completed"),
     ]
     for time, agent, dept, action, status in sample_activities:
         badge = f"badge-{status}"
