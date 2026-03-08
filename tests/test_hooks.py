@@ -18,7 +18,7 @@ from src.core.hooks import (
 def make_context(
     agent_id="test-agent",
     agent_type="doer",
-    department="engineering",
+    department="sales",
     tier=3,
     session_id="session-001",
     allowed_tools=None,

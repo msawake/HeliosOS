@@ -208,8 +208,9 @@ class HITLGateway:
         "financial": 24.0,
         "content": 4.0,
         "contract": 48.0,
-        "hiring": 48.0,
-        "security": 4.0,
+        "client_agreement": 48.0,
+        "outreach_compliance": 4.0,
+        "ad_spend": 12.0,
         "data_deletion": 24.0,
     }
 
@@ -524,88 +525,100 @@ class CompanySystem:
         self.metrics = MetricsStore()
 
     def seed_knowledge_base(self):
-        """Seed the knowledge base with initial company policies."""
-        policies = [
-            {
-                "title": "Financial Approval Thresholds",
-                "content": (
-                    "Expenditures up to $1,000: Department lead can approve.\n"
-                    "Expenditures $1,000-$5,000: CFO approval required.\n"
-                    "Expenditures $5,000-$10,000: CEO approval required.\n"
-                    "Expenditures over $10,000: Human board approval required."
-                ),
-                "tags": ["finance", "policy", "approval"],
-                "department": "finance",
-            },
-            {
-                "title": "Code Review Policy",
-                "content": (
-                    "All code changes require at least one reviewer approval.\n"
-                    "Security-sensitive changes require eng-security review.\n"
-                    "Infrastructure changes require eng-infra review.\n"
-                    "No self-approvals. Reviewer must be different from author."
-                ),
-                "tags": ["engineering", "policy", "code-review"],
-                "department": "engineering",
-            },
-            {
-                "title": "Customer Communication Policy",
-                "content": (
-                    "All external communications must pass compliance check.\n"
-                    "No guaranteed outcomes or misleading claims.\n"
-                    "Escalate immediately if customer mentions: legal, lawsuit, breach.\n"
-                    "Critical incident communications require human review."
-                ),
-                "tags": ["support", "policy", "communication"],
-                "department": "support",
-            },
-            {
-                "title": "Data Handling Policy",
-                "content": (
-                    "PII must never be logged or stored in plain text.\n"
-                    "Data deletion requests follow GDPR right-to-erasure workflow.\n"
-                    "Customer data access is logged in audit trail.\n"
-                    "No customer data in agent prompts or system messages."
-                ),
-                "tags": ["security", "policy", "data", "privacy"],
-                "department": "legal",
-            },
-            {
-                "title": "Escalation Protocol",
-                "content": (
-                    "Level 1: Same-department orchestrator arbitrates.\n"
-                    "Level 2: COO arbitrates cross-department disagreements.\n"
-                    "Level 3: Human board for strategic disagreements.\n"
-                    "Level 4: Immediate human escalation for ethics/legal/safety red lines.\n"
-                    "Any agent can invoke Level 4 regardless of hierarchy."
-                ),
-                "tags": ["policy", "escalation", "governance"],
-                "department": "operations",
-            },
-            {
-                "title": "Agent Autonomy Levels",
-                "content": (
-                    "Category A (Fully Autonomous): Ticket routing, code review, task assignment, data analysis.\n"
-                    "Category B (Autonomous + Audit): Support responses, sales outreach, bug prioritization.\n"
-                    "Category C (Pre-Approval): Financial >$1K, contracts, hiring, security exceptions.\n"
-                    "Category D (Human-Only): Legal agreements, regulatory filings, strategic pivots, crisis response."
-                ),
-                "tags": ["policy", "autonomy", "governance"],
-                "department": "operations",
-            },
-        ]
-
-        for policy in policies:
-            self.knowledge.add(
-                category="policy",
-                title=policy["title"],
-                content=policy["content"],
-                tags=policy["tags"],
-                created_by="system",
-                department=policy["department"],
-            )
-
-        logger.info("Seeded knowledge base with %d policies", len(policies))
+        """Seed the knowledge base with LeadForge AI policies and procedures."""
+        self.knowledge.add(
+            "procedure", "ICP Definition Framework",
+            "Framework for defining Ideal Customer Profiles per client. Includes: industry verticals, "
+            "company size (revenue and employee count), technology stack signals, buying triggers "
+            "(hiring, funding, expansion), organizational maturity indicators, geographic targeting, "
+            "decision-maker titles and roles. Every client engagement starts with ICP workshop.",
+            ["sales", "icp", "targeting"], "system"
+        )
+        self.knowledge.add(
+            "procedure", "Lead Scoring Criteria (BANT/MEDDIC)",
+            "Lead scoring rubric: Budget (0-25 points: Has budget allocated or process identified?), "
+            "Authority (0-25: Is contact a decision maker or has access?), Need (0-25: Expressed pain "
+            "point matching solution?), Timeline (0-25: Active buying timeline within 90 days?). "
+            "Score 70+: SQL (hand off to client). Score 40-69: MQL (enter nurture sequence). "
+            "Score below 40: Archive (revisit quarterly). MEDDIC overlay for enterprise deals >$50K.",
+            ["sales", "scoring", "qualification"], "system"
+        )
+        self.knowledge.add(
+            "policy", "Outreach Compliance (CAN-SPAM / GDPR)",
+            "CAN-SPAM: Must include physical address, unsubscribe link, honest subject lines, no "
+            "misleading headers. Honor opt-outs within 10 business days. GDPR: Legitimate interest "
+            "basis for B2B outreach, right to object must be honored within 72 hours, data processing "
+            "records required, no outreach to personal email addresses in EU without consent. "
+            "Maximum outreach frequency: 3 emails per prospect per week. Opt-out processed within 24h.",
+            ["legal", "compliance", "outreach", "email"], "system"
+        )
+        self.knowledge.add(
+            "procedure", "Email Outreach Cadence Rules",
+            "Standard outreach sequence: Day 1: Intro email (personalized to prospect pain points). "
+            "Day 3: LinkedIn connection request with custom note. Day 5: Follow-up email with value-add "
+            "content (case study or whitepaper). Day 8: LinkedIn message. Day 12: Breakup email. "
+            "Wait 30 days before re-engaging. Maximum 50 new prospects per SDR per day. All emails "
+            "sent between 8am-6pm recipient local time. All sequences use client-approved templates.",
+            ["sales", "outreach", "cadence"], "system"
+        )
+        self.knowledge.add(
+            "procedure", "Qualification Criteria",
+            "A lead qualifies as SQL when: (1) Confirmed budget or budget process identified, "
+            "(2) Spoke with economic buyer or champion with access to buyer, (3) Expressed specific "
+            "pain point our client's service addresses, (4) Timeline within 90 days, "
+            "(5) No competing engagement with direct competitor. Minimum 3 of 5 criteria met. "
+            "All SQLs must have a booked meeting or call scheduled with client sales team.",
+            ["sales", "qualification", "sql"], "system"
+        )
+        self.knowledge.add(
+            "policy", "Client SLA Framework",
+            "Standard client SLAs by retainer tier: Starter ($3K/month): 50 qualified leads/month, "
+            "5 SQLs, weekly email reporting. Growth ($5K/month): 100 qualified leads/month, "
+            "10 SQLs, bi-weekly strategy calls, dedicated Slack channel. Enterprise ($10K/month): "
+            "200 qualified leads/month, 20 SQLs, dedicated strategist, daily Slack channel, "
+            "monthly QBR. Performance bonus: $500 per SQL that converts to opportunity. "
+            "Meeting no-show rate must be below 15%.",
+            ["operations", "client", "sla"], "system"
+        )
+        self.knowledge.add(
+            "policy", "Financial Approval Thresholds",
+            "Up to $1,000: Department lead approval. $1,000-$5,000: CFO approval. "
+            "$5,000-$10,000: CEO approval. Over $10,000: Human board approval. "
+            "Client refunds >$1,000 require CEO approval. Google Ads spend increases >20% "
+            "require CFO approval. Performance bonus payouts auto-approved per SLA terms.",
+            ["finance", "approval"], "system"
+        )
+        self.knowledge.add(
+            "policy", "Escalation Protocol",
+            "Level 1: Same-department — department lead arbitrates. "
+            "Level 2: Cross-department — COO arbitrates (council pattern). "
+            "Level 3: Strategic — escalate to human board with structured decision document. "
+            "Level 4: Red line — ANY agent can bypass hierarchy for ethical/legal/safety concerns "
+            "via ESCALATION_CRITICAL event. Client escalations: churn risk goes directly to "
+            "sales-lead and exec-coo simultaneously.",
+            ["operations", "escalation"], "system"
+        )
+        self.knowledge.add(
+            "policy", "Data Handling Policy",
+            "No PII in agent prompts or logs. Prospect data handled per client data processing "
+            "agreements. No cross-client data sharing or list mixing under any circumstances. "
+            "Data deletion follows GDPR workflow. All data access logged in audit trail. "
+            "Prospect data retained for maximum 12 months after last engagement unless client "
+            "requests extension. Suppression lists maintained per client and per jurisdiction.",
+            ["legal", "data", "privacy"], "system"
+        )
+        self.knowledge.add(
+            "policy", "Agent Autonomy Levels",
+            "Category A (Fully Autonomous): Lead scoring, prospect research, CRM updates, "
+            "template-based outreach, pipeline reporting, data enrichment. "
+            "Category B (Autonomous + Audit): Outreach emails (10% weekly sample), nurture sequences, "
+            "campaign optimization, ad bid adjustments, content creation. "
+            "Category C (Pre-Approval Required): Client service agreements (48h SLA), ad spend "
+            "changes >$500 (12h), new outreach channels (24h), pricing changes (24h). "
+            "Category D (Human-Only): Legal agreements, regulatory filings, strategic pivots, "
+            "data breach response, client terminations.",
+            ["operations", "autonomy", "governance"], "system"
+        )
 
     def get_system_health(self) -> dict:
         """Get overall system health summary."""

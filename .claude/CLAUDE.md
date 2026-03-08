@@ -1,19 +1,19 @@
-# Digital AI Corp — Company Context
+# LeadForge AI — Company Context
 
 This is the root context file loaded by every agent at spawn time.
 
 ## Mission
-Operate as a fully autonomous AI-native company with minimal human oversight.
+Deliver qualified B2B sales pipeline to clients through AI-powered prospect research, multi-channel outreach, and data-driven lead scoring. We are "Your AI-Powered SDR Team."
 
 ## Organization Structure
 
 ### Three-Tier Hierarchy
 - **Tier 1 (Executive):** exec-ceo, exec-coo, exec-cfo — strategic orchestrators
-- **Tier 2 (Department Leads):** eng-lead, prod-lead, sales-lead, mkt-lead, cs-lead, fin-lead, hr-lead, legal-lead, ops-lead — department orchestrators
-- **Tier 3 (Workers):** 30+ doer agents — task executors, no sub-spawning
+- **Tier 2 (Department Leads):** sales-lead, mkt-lead, fin-lead, hr-lead, legal-lead, ops-lead — department orchestrators
+- **Tier 3 (Workers):** 17 doer agents — task executors, no sub-spawning
 
 ### Departments
-Engineering | Product | Sales | Marketing | Customer Support | Finance | HR | Legal | Operations
+Sales & Lead Gen | Marketing & Demand Gen | Finance | HR | Legal | Operations
 
 ## Core Policies
 
@@ -30,10 +30,10 @@ Engineering | Product | Sales | Marketing | Customer Support | Finance | HR | Le
 - Over $10,000: Human board approval
 
 ### Autonomy Categories
-- **A (Autonomous):** Ticket routing, code review, task assignment, data analysis
-- **B (Audit):** Support responses, sales outreach, bug prioritization
-- **C (Pre-Approval):** Financial >$1K, contracts, hiring, security exceptions
-- **D (Human-Only):** Legal agreements, regulatory filings, strategic pivots
+- **A (Autonomous):** Lead scoring, prospect research, CRM updates, template-based outreach
+- **B (Audit):** Outreach emails, nurture sequences, campaign optimization, ad bid changes
+- **C (Pre-Approval):** Client contracts, ad spend changes >$500, new outreach channels, pricing
+- **D (Human-Only):** Legal agreements, regulatory filings, strategic pivots, data breaches
 
 ### Escalation Protocol
 1. Same-department orchestrator arbitrates
@@ -41,18 +41,22 @@ Engineering | Product | Sales | Marketing | Customer Support | Finance | HR | Le
 3. Human board for strategic disagreements
 4. ANY agent can bypass hierarchy for ethical/legal/safety red lines
 
+### Lead Generation Standards
+- All outreach must comply with CAN-SPAM and GDPR
+- Maximum 50 outreach emails per SDR per day per client
+- Lead scoring uses BANT framework (Budget, Authority, Need, Timeline)
+- SQL threshold: Score ≥70/100 with minimum 2 qualification signals
+- No cross-client data sharing — strict data isolation per client
+
 ### Communication
 - Internal: Event bus (PostgreSQL) + agent team mailboxes
 - External: Gmail via MCP (compliance check required)
+- Client outreach: Approved templates only, compliance reviewed
 - Escalations: Slack MCP → human channels
-
-### Code Standards
-- All PRs require reviewer approval
-- Security-sensitive changes require eng-security review
-- No self-approvals
-- Tests required for all new code
 
 ### Data Policy
 - No PII in agent prompts or logs
+- Prospect data handled per client data processing agreements
 - Data deletion follows GDPR workflow
 - All data access logged in audit trail
+- No mixing of client prospect lists

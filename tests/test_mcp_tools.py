@@ -29,27 +29,27 @@ class TestEventBus:
 
     def test_claim_event(self):
         bus = EventBus()
-        eid = bus.publish("a", "sales", "eng", "REQUEST", "FEAT", {})
-        assert bus.claim(eid, "eng-lead")
+        eid = bus.publish("a", "marketing", "sales", "REQUEST", "FEAT", {})
+        assert bus.claim(eid, "sales-lead")
         # Cannot claim already claimed
-        assert not bus.claim(eid, "eng-lead-2")
+        assert not bus.claim(eid, "sales-lead-2")
 
     def test_resolve_event(self):
         bus = EventBus()
-        eid = bus.publish("a", "sales", "eng", "REQUEST", "FEAT", {})
-        bus.claim(eid, "eng-lead")
+        eid = bus.publish("a", "marketing", "sales", "REQUEST", "FEAT", {})
+        bus.claim(eid, "sales-lead")
         assert bus.resolve(eid, {"status": "approved"})
         results = bus.query(status="RESOLVED")
         assert len(results) == 1
 
     def test_query_filters(self):
         bus = EventBus()
-        bus.publish("a", "sales", "engineering", "REQUEST", "FEAT", {}, "P1_HIGH")
-        bus.publish("b", "support", "engineering", "NOTIFICATION", "BUG", {}, "P2_MEDIUM")
-        bus.publish("c", "sales", "finance", "REQUEST", "BUDGET", {}, "P1_HIGH")
+        bus.publish("a", "marketing", "sales", "REQUEST", "FEAT", {}, "P1_HIGH")
+        bus.publish("b", "support", "sales", "NOTIFICATION", "BUG", {}, "P2_MEDIUM")
+        bus.publish("c", "marketing", "finance", "REQUEST", "BUDGET", {}, "P1_HIGH")
 
-        eng_events = bus.query(target_department="engineering")
-        assert len(eng_events) == 2
+        sales_events = bus.query(target_department="sales")
+        assert len(sales_events) == 2
 
         high_priority = bus.query(priority="P1_HIGH")
         assert len(high_priority) == 2
@@ -164,7 +164,7 @@ class TestCompanySystem:
     def test_seed_knowledge_base(self):
         system = CompanySystem()
         system.seed_knowledge_base()
-        results = system.knowledge.search("escalation")
+        results = system.knowledge.search("lead scoring")
         assert len(results) >= 1
 
     def test_system_health(self):
