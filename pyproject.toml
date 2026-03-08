@@ -1,0 +1,42 @@
+[project]
+name = "ai-company"
+version = "1.0.0"
+description = "100% AI-operated digital company using Claude agent swarms"
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6.0",
+    "flask>=3.0",
+]
+
+[project.optional-dependencies]
+production = [
+    "claude-agent-sdk>=0.1",
+    "temporalio>=1.7",
+    "psycopg[binary]>=3.2",
+    "redis>=5.0",
+    "hvac>=2.3",          # HashiCorp Vault client
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "boto3>=1.35",
+    "pinecone>=5.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_return_any = true
+warn_unused_configs = true
