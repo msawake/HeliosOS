@@ -6,32 +6,79 @@ import { Badge } from '@/components/Badge';
 import { STACK_LABELS, EXEC_LABELS } from '@/lib/utils';
 import type { AgentSummary } from '@/lib/api';
 
+interface InvokeResult {
+  agent_id: string;
+  status: string;
+  output: string;
+  error: string | null;
+  tool_calls: unknown[];
+  tokens_used: number;
+  elapsed_ms: number;
+}
+
 export default function AgentDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  const params = useParams();
+  const agentId = typeof params.id === 'string' ? params.id : params.id?.[0] ?? '';
   const router = useRouter();
   const [agent, setAgent] = useState<AgentSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [invokePrompt, setInvokePrompt] = useState(
+    'Summarize the agent’s role in one paragraph and suggest one next action.'
+  );
+  const [invokeLoading, setInvokeLoading] = useState(false);
+  const [invokeError, setInvokeError] = useState('');
+  const [invokeResult, setInvokeResult] = useState<InvokeResult | null>(null);
 
   useEffect(() => {
-    fetch(`/api/platform/agents/${id}`)
+    if (!agentId) return;
+    fetch(`/api/platform/agents/${agentId}`)
       .then((r) => (r.ok ? r.json() : null))
       .then(setAgent)
       .catch(() => setAgent(null))
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [agentId]);
 
   async function handleStop() {
-    await fetch(`/api/platform/agents/${id}/stop`, { method: 'POST' });
-    const r = await fetch(`/api/platform/agents/${id}`);
+    await fetch(`/api/platform/agents/${agentId}/stop`, { method: 'POST' });
+    const r = await fetch(`/api/platform/agents/${agentId}`);
     if (r.ok) setAgent(await r.json());
   }
 
   async function handleDelete() {
     if (!confirm('Are you sure you want to undeploy this agent?')) return;
-    await fetch(`/api/platform/agents/${id}`, { method: 'DELETE' });
+    await fetch(`/api/platform/agents/${agentId}`, { method: 'DELETE' });
     router.push('/agents');
   }
 
+  async function handleInvoke(e: React.FormEvent) {
+    e.preventDefault();
+    const prompt = invokePrompt.trim();
+    if (!prompt || !agentId) return;
+    setInvokeLoading(true);
+    setInvokeError('');
+    setInvokeResult(null);
+    try {
+      const res = await fetch(`/api/platform/agents/${agentId}/invoke`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        setInvokeError(text || `${res.status} ${res.statusText}`);
+        return;
+      }
+      setInvokeResult(JSON.parse(text) as InvokeResult);
+      const r = await fetch(`/api/platform/agents/${agentId}`);
+      if (r.ok) setAgent(await r.json());
+    } catch (err: unknown) {
+      setInvokeError(err instanceof Error ? err.message : 'Invoke failed');
+    } finally {
+      setInvokeLoading(false);
+    }
+  }
+
+  if (!agentId) return <div className="text-gray-400">Invalid agent id</div>;
   if (loading) return <div className="text-gray-400">Loading...</div>;
   if (!agent) return <div className="text-gray-400">Agent not found</div>;
 
@@ -74,6 +121,57 @@ export default function AgentDetailPage() {
           <p className="text-xs text-gray-500 mb-1">Status</p>
           <Badge label={agent.status} variant={agent.status} />
         </div>
+      </div>
+
+      <div className="card mb-6">
+        <h2 className="font-semibold mb-3">Test invoke</h2>
+        <p className="text-sm text-gray-500 mb-3">
+          Sends a one-off prompt through the platform executor (<code className="text-xs bg-gray-100 px-1 rounded">POST /api/platform/agents/…/invoke</code>
+          ). Uses your configured LLM providers or simulated mode if no API keys are set.
+        </p>
+        <form onSubmit={handleInvoke} className="space-y-3">
+          <textarea
+            value={invokePrompt}
+            onChange={(e) => setInvokePrompt(e.target.value)}
+            rows={4}
+            className="w-full rounded-lg border border-gray-300 text-sm p-3 font-mono"
+            placeholder="Enter a prompt..."
+            disabled={invokeLoading}
+          />
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={invokeLoading || !invokePrompt.trim()}
+              className="px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50"
+            >
+              {invokeLoading ? 'Running…' : 'Run invoke'}
+            </button>
+            {invokeError && <span className="text-sm text-red-600">{invokeError}</span>}
+          </div>
+        </form>
+        {invokeResult && (
+          <div className="mt-4 space-y-2">
+            <div className="flex flex-wrap gap-2 text-xs">
+              <Badge label={invokeResult.status} variant={invokeResult.status} />
+              {invokeResult.tokens_used > 0 && (
+                <span className="text-gray-500">Tokens: {invokeResult.tokens_used}</span>
+              )}
+              {invokeResult.elapsed_ms > 0 && (
+                <span className="text-gray-500">{invokeResult.elapsed_ms.toFixed(0)} ms</span>
+              )}
+            </div>
+            {invokeResult.error && (
+              <pre className="bg-red-50 text-red-900 rounded-lg p-3 text-xs overflow-auto whitespace-pre-wrap">
+                {invokeResult.error}
+              </pre>
+            )}
+            {invokeResult.output && (
+              <pre className="bg-gray-50 rounded-lg p-3 text-xs overflow-auto whitespace-pre-wrap">
+                {invokeResult.output}
+              </pre>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="card">

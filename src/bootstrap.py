@@ -115,6 +115,8 @@ class PlatformBootstrap:
         if self.system:
             self.system.seed_knowledge_base(company_id=self.company_id)
 
+        self._seed_dev_hitl_if_enabled()
+
         logger.info("[Phase 6] Creating workflow engine...")
         self.workflow_engine = WorkflowEngine(invoker=self.legacy_invoker)
 
@@ -145,6 +147,40 @@ class PlatformBootstrap:
 
         self.llm_router = LLMRouter(api_keys=api_keys)
         logger.info("  LLM Router: providers=%s", self.llm_router.available_providers())
+
+    def _seed_dev_hitl_if_enabled(self) -> None:
+        """Seed sample pending approvals for local dashboard testing.
+
+        Disable with FORGEOS_SEED_HITL=0|false|no.
+        Skips if two or more items are already pending (idempotent in one process).
+        """
+        flag = os.environ.get("FORGEOS_SEED_HITL", "1").lower()
+        if flag in ("0", "false", "no"):
+            return
+        if not self.system:
+            return
+        hitl = self.system.hitl
+        if len(hitl.get_pending()) >= 2:
+            return
+        hitl.request_approval(
+            requesting_agent="sales-ae",
+            department="sales",
+            category="outreach_compliance",
+            title="Approve outbound sequence to TechCorp",
+            description="Three-step email plus LinkedIn touch; 40 contacts in target list.",
+            risk_assessment="medium",
+            context={"deal_id": "demo-001", "sequence": "techcorp-q1"},
+        )
+        hitl.request_approval(
+            requesting_agent="fin-ar",
+            department="finance",
+            category="financial",
+            title="Waive late fee for renewal partner",
+            description="Strategic account DataFlow Inc — one-time goodwill adjustment.",
+            risk_assessment="low",
+            context={"invoice_id": "demo-inv-99"},
+        )
+        logger.info("Seeded 2 demo HITL approvals (disable: FORGEOS_SEED_HITL=0)")
 
     async def _init_legacy_subsystems(self):
         """Initialize the existing ForgeOS company subsystems for backward compat."""
