@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { STACKS, EXEC_TYPES, STACK_LABELS, EXEC_LABELS } from '@/lib/utils';
 
 const PROVIDERS = ['anthropic', 'openai', 'google', 'ollama'] as const;
@@ -15,6 +16,7 @@ const DEFAULT_MODELS: Record<string, string> = {
 
 export default function CreateAgentPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({
     name: '',
@@ -34,6 +36,23 @@ export default function CreateAgentPage() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    const name = searchParams.get('name');
+    const stack = searchParams.get('stack');
+    const execution_type = searchParams.get('execution_type');
+    const ownership = searchParams.get('ownership');
+    if (!name && !stack && !execution_type && !ownership) return;
+    setForm((prev) => ({
+      ...prev,
+      ...(name ? { name } : {}),
+      ...(stack && STACKS.includes(stack as (typeof STACKS)[number]) ? { stack } : {}),
+      ...(execution_type && EXEC_TYPES.includes(execution_type as (typeof EXEC_TYPES)[number])
+        ? { execution_type }
+        : {}),
+      ...(ownership === 'personal' || ownership === 'shared' ? { ownership } : {}),
+    }));
+  }, [searchParams]);
 
   const steps = [
     { title: 'Stack', description: 'Choose the agent framework' },
@@ -90,7 +109,14 @@ export default function CreateAgentPage() {
   return (
     <div className="max-w-2xl">
       <h1 className="text-2xl font-bold mb-2">Create Agent</h1>
-      <p className="text-gray-500 mb-8">Deploy a new agent across any stack</p>
+      <p className="text-gray-500 mb-2">Deploy a new agent across any stack</p>
+      <p className="text-sm text-gray-500 mb-8">
+        Prefer a guided chat?{' '}
+        <Link href="/agents/create/ai" className="text-brand-600 font-medium hover:underline">
+          Use the AI wizard
+        </Link>
+        .
+      </p>
 
       {/* Step indicators */}
       <div className="flex gap-2 mb-8">

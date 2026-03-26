@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 const NAV_ITEMS = [
   { href: '/', label: 'Overview', icon: '◉' },
   { href: '/agents', label: 'Agents', icon: '⬡' },
+  { href: '/agents/create/ai', label: 'AI Wizard', icon: '✦' },
   { href: '/agents/create', label: 'Create Agent', icon: '+' },
   { href: '/workflows', label: 'Workflows', icon: '⇄' },
   { href: '/approvals', label: 'Approvals', icon: '✓' },

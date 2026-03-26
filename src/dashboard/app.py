@@ -463,6 +463,7 @@ def create_app(
     auth_enabled: bool = False,
     platform_executor=None,
     platform_registry=None,
+    llm_router=None,
 ):
     """Create the Flask web application."""
     try:
@@ -767,6 +768,10 @@ def create_app(
                 provider=llm_cfg_data.get("provider", "anthropic"),
             )
 
+            meta = body.get("metadata")
+            if not isinstance(meta, dict):
+                meta = {}
+
             agent_def = AgentDefinition(
                 name=body["name"],
                 stack=body["stack"],
@@ -780,6 +785,7 @@ def create_app(
                 tools=body.get("tools", []),
                 description=body.get("description", ""),
                 department=body.get("department", ""),
+                metadata=meta,
             )
 
             loop = asyncio.new_event_loop()
@@ -872,5 +878,36 @@ def create_app(
         if not platform_executor:
             return jsonify([])
         return jsonify(platform_executor.scheduler.list_jobs())
+
+    @app.route("/api/platform/wizard/chat", methods=["POST"])
+    def api_platform_wizard_chat():
+        """AI-assisted agent design: conversational turn with optional deploy proposal."""
+        body = flask_request.json or {}
+        messages = body.get("messages") or []
+        if not isinstance(messages, list) or not messages:
+            return jsonify({"error": "messages array required"}), 400
+
+        cleaned = []
+        for m in messages:
+            if not isinstance(m, dict):
+                continue
+            role = m.get("role")
+            content = (m.get("content") or "").strip()
+            if role in ("user", "assistant") and content:
+                cleaned.append({"role": role, "content": content})
+        if not cleaned or cleaned[-1]["role"] != "user":
+            return jsonify({"error": "last message must be a non-empty user message"}), 400
+
+        ctx = body.get("context") if isinstance(body.get("context"), dict) else {}
+        import asyncio
+        from src.platform.agent_wizard_planner import run_wizard_turn
+
+        loop = asyncio.new_event_loop()
+        try:
+            result = loop.run_until_complete(run_wizard_turn(llm_router, cleaned, ctx))
+        finally:
+            loop.close()
+
+        return jsonify(result)
 
     return app
