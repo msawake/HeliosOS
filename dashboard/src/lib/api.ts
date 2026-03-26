@@ -1,7 +1,19 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+/**
+ * Browser: empty base → same-origin `/api/*` (Next.js rewrites to Flask :5000).
+ * Server (SSR): set NEXT_PUBLIC_API_URL or falls back to direct Flask.
+ */
+function apiBase(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined') {
+    return '';
+  }
+  return 'http://127.0.0.1:5000';
+}
 
 async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${apiBase()}${path}`, {
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     ...options,
   });

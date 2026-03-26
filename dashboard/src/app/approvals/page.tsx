@@ -9,7 +9,9 @@ interface Approval {
   agent: string;
   category: string;
   status: string;
-  created_at: string;
+  /** HITL API returns `timestamp` */
+  timestamp?: string;
+  created_at?: string;
   sla_hours: number;
 }
 
@@ -46,7 +48,14 @@ export default function ApprovalsPage() {
                   <span className="font-semibold">{item.title}</span>
                   <Badge label={item.category} variant="event_driven" />
                 </div>
-                <p className="text-sm text-gray-500 mt-0.5">Agent: {item.agent} &middot; SLA: {item.sla_hours}h</p>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Agent: {item.agent} &middot; SLA: {item.sla_hours}h
+                  {(item.timestamp || item.created_at) && (
+                    <span className="block text-xs text-gray-400 mt-0.5">
+                      {item.timestamp || item.created_at}
+                    </span>
+                  )}
+                </p>
               </div>
               <div className="flex gap-2">
                 <button
