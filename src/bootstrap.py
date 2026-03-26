@@ -291,6 +291,7 @@ class PlatformBootstrap:
             company_name=company_name,
             platform_executor=self.executor,
             platform_registry=self.platform_registry,
+            llm_router=self.llm_router,
         )
         if app:
             logger.info("API server starting on http://%s:%d", host, port)

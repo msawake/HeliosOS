@@ -53,11 +53,26 @@ export interface CreateAgentPayload {
   schedule?: string;
   event_triggers?: string[];
   tools?: string[];
+  metadata?: Record<string, unknown>;
   llm_config?: {
     chat_model: string;
     reasoning_model?: string;
     provider: string;
   };
+}
+
+export interface WizardChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface WizardChatResponse {
+  assistant_message: string;
+  proposal: CreateAgentPayload | null;
+  clarifying_questions: string[];
+  ready_to_deploy: boolean;
+  warnings: string[];
+  mode: string;
 }
 
 export const api = {
@@ -68,9 +83,15 @@ export const api = {
   },
   getAgent: (id: string) => fetchJSON<AgentSummary>(`/api/platform/agents/${id}`),
   createAgent: (payload: CreateAgentPayload) =>
-    fetchJSON<{ agent_id: string }>('/api/platform/agents', {
+    fetchJSON<{ agent_id: string; name?: string; stack?: string }>('/api/platform/agents', {
       method: 'POST',
       body: JSON.stringify(payload),
+    }),
+
+  wizardChat: (messages: WizardChatMessage[], context?: Record<string, string>) =>
+    fetchJSON<WizardChatResponse>('/api/platform/wizard/chat', {
+      method: 'POST',
+      body: JSON.stringify({ messages, context }),
     }),
   stopAgent: (id: string) =>
     fetchJSON<{ ok: boolean }>(`/api/platform/agents/${id}/stop`, { method: 'POST' }),
