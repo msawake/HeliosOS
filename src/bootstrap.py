@@ -6,7 +6,7 @@ CrewAI, Google ADK, OpenClaw) with five execution types (always-on, scheduled,
 event-driven, reflex, autonomous) and personal/shared ownership.
 
 Usage:
-    python -m src.bootstrap [--company leadforge] [--config path/to/config.yaml] [--mode shadow|supervised|autonomous]
+    python -m src.bootstrap [--company leadforge] [--config path/to/config.yaml] [--mode shadow|supervised|autonomous] [--dashboard] [--loop]
 """
 
 from __future__ import annotations
@@ -313,6 +313,14 @@ async def main():
         try:
             await bootstrap.run_main_loop()
         except KeyboardInterrupt:
+            bootstrap.stop()
+    elif args.dashboard:
+        logger.info("API server running on http://0.0.0.0:5000 — Ctrl+C to stop.")
+        try:
+            await asyncio.Future()
+        except KeyboardInterrupt:
+            pass
+        finally:
             bootstrap.stop()
 
 
