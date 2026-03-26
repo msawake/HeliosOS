@@ -1,0 +1,77 @@
+company:
+  name: "HomeForge AI"
+  domain: "homeforge.ai"
+  mission: "Buy your home with AI. Save the 3% commission — $15-30K back in your pocket. Full-service AI buyer's agent at a flat fee."
+
+budgets:
+  daily_token_budget: 10_000_000
+  critical_reserve_pct: 10
+  per_session_cost_limit_usd: 50.00
+  monthly_infrastructure_budget_usd: 8000
+
+  department_daily_tokens:
+    search: 2_500_000
+    transaction: 3_000_000
+    finance: 1_000_000
+    support: 1_000_000
+    marketing: 1_500_000
+    legal: 700_000
+    executive: 300_000
+
+agent_defaults:
+  max_retries: 3
+  stale_task_threshold_minutes: 60
+  checkpoint_interval_minutes: 10
+  review_sample_rate: 0.20
+  canary_duration_hours: 24
+
+rate_limits:
+  max_tool_calls_per_session: 200
+  max_api_calls_per_minute: 50
+  max_concurrent_agents_per_type: 8
+
+hitl:
+  offer_submission_sla_hours: 2
+  contract_review_sla_hours: 24
+  earnest_money_sla_hours: 4
+  inspection_decision_sla_hours: 12
+  closing_auth_sla_hours: 24
+  price_reduction_sla_hours: 4
+  content_approval_sla_hours: 4
+
+  default_denials:
+    account_suspension: true
+    offer_above_budget: true
+
+models:
+  orchestrator_default: "claude-opus-4-6"
+  doer_default: "claude-sonnet-4-5-20250514"
+  offer_drafter: "claude-opus-4-6"
+  counter_negotiator: "claude-opus-4-6"
+  classifier_default: "claude-haiku-4-5-20251001"
+
+polling_intervals:
+  mls_refresh_cycle_minutes: 5
+  price_change_cycle_minutes: 10
+  alert_cycle_minutes: 1
+  executive_cycle_minutes: 30
+  monitoring_cycle_minutes: 2
+
+mcp_servers:
+  tier1:
+    - name: "google-workspace"
+      package: "google-workspace-mcp"
+      required: true
+    - name: "slack"
+      package: "@anthropic/mcp-server-slack"
+      required: true
+    - name: "postgres"
+      package: "@modelcontextprotocol/server-postgres"
+      required: true
+    - name: "stripe"
+      package: "@stripe/mcp"
+      required: true
+  tier2:
+    - name: "analytics"
+      package: "analytics-mcp"
+      required: false

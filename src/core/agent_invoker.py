@@ -160,7 +160,7 @@ class TaskMetadata:
 class AgentInvoker:
     """
     The universal agent invocation engine.
-    Wraps Claude Agent SDK calls with governance hooks and structured I/O.
+    Wraps Claude API calls with governance hooks and structured I/O.
     """
 
     def __init__(
@@ -168,10 +168,14 @@ class AgentInvoker:
         registry: AgentRegistry,
         hook_chain: HookChain | None = None,
         config: dict | None = None,
+        tool_executor=None,
+        claude_client=None,
     ):
         self.registry = registry
         self.hooks = hook_chain or create_hook_chain(config=config)
         self._config = config or {}
+        self._tool_executor = tool_executor
+        self._claude_client = claude_client
 
     def _build_context(self, agent_config: AgentConfig, session_id: str) -> AgentContext:
         return AgentContext(
@@ -287,76 +291,90 @@ class AgentInvoker:
         task_metadata: TaskMetadata | None,
     ) -> AgentResult:
         """
-        Execute the actual agent invocation via Claude Agent SDK.
+        Execute the agent via the Claude API agentic loop.
 
-        In production, this calls `claude_agent_sdk.query()`.
-        This implementation provides the full interface and simulation layer.
+        Uses ClaudeClient for real API calls when available,
+        falls back to simulation when the SDK is not installed.
         """
-        # Build the full prompt with task context
         full_prompt = self._build_prompt(config, prompt, task_metadata)
 
-        # Build subagent definitions for orchestrators
-        agents = {}
-        if config.tier.value <= 2 and config.subagents:
-            for sub_id, sub_def in config.subagents.items():
-                agents[sub_id] = SubagentDefinition(
-                    name=sub_def.get("name", sub_id),
-                    description=sub_def.get("description", ""),
-                    system_prompt=sub_def.get("prompt", ""),
-                    allowed_tools=sub_def.get("tools", []),
-                    model=sub_def.get("model", "claude-sonnet-4-5-20250514"),
-                    max_turns=sub_def.get("max_turns", 30),
-                )
+        # Build tool definitions from allowed_tools + custom tools
+        tools = self._build_tool_definitions(config)
 
-        # In production, this would be:
-        #
-        # from claude_agent_sdk import query, ClaudeAgentOptions, AgentDefinition
-        #
-        # async for message in query(
-        #     prompt=full_prompt,
-        #     options=ClaudeAgentOptions(
-        #         system_prompt=config.system_prompt,
-        #         allowed_tools=config.allowed_tools,
-        #         mcp_servers=config.mcp_servers,
-        #         model=config.model,
-        #         max_turns=config.max_turns,
-        #         agents={
-        #             name: AgentDefinition(
-        #                 description=sub.description,
-        #                 prompt=sub.system_prompt,
-        #                 tools=sub.allowed_tools,
-        #                 model=sub.model,
-        #             )
-        #             for name, sub in agents.items()
-        #         } if agents else None,
-        #         hooks={
-        #             "PreToolUse": [HookMatcher(hooks=[
-        #                 lambda data, tid, ctx: self.hooks.pre_tool_use(
-        #                     context, data.get("tool_name"), data.get("tool_input")
-        #                 )
-        #             ])],
-        #             "PostToolUse": [HookMatcher(hooks=[
-        #                 lambda data, tid, ctx: self.hooks.post_tool_use(
-        #                     context, data.get("tool_name"),
-        #                     data.get("tool_input"), data.get("tool_output"),
-        #                     data.get("input_tokens", 0), data.get("output_tokens", 0)
-        #                 )
-        #             ])],
-        #         },
-        #     ),
-        # ):
-        #     if hasattr(message, "result"):
-        #         return AgentResult(...)
+        agent_ctx = {
+            "agent_id": config.agent_id,
+            "department": config.department,
+            "tier": config.tier.value,
+        }
 
-        # Simulation: return a structured result
+        # Use ClaudeClient if available
+        if self._claude_client:
+            result = await self._claude_client.run(
+                system_prompt=config.system_prompt,
+                prompt=full_prompt,
+                model=config.model,
+                tools=tools,
+                max_turns=config.max_turns,
+                timeout_seconds=config.timeout_seconds,
+                agent_context=agent_ctx,
+                hook_context=context,
+            )
+            status = {
+                "completed": AgentStatus.COMPLETED,
+                "failed": AgentStatus.FAILED,
+                "timeout": AgentStatus.TIMEOUT,
+            }.get(result["status"], AgentStatus.FAILED)
+
+            return AgentResult(
+                agent_id=config.agent_id,
+                session_id=context.session_id,
+                status=status,
+                result=result.get("result"),
+                error=result.get("error"),
+                tokens_consumed=result.get("tokens", {"input": 0, "output": 0}),
+                cost_usd=result.get("cost_usd", 0.0),
+                tool_calls=result.get("tool_calls", 0),
+            )
+
+        # Simulation fallback (no ClaudeClient configured)
         return AgentResult(
             agent_id=config.agent_id,
             session_id=context.session_id,
             status=AgentStatus.COMPLETED,
-            result=f"[Agent {config.agent_id}] Executed task successfully. Prompt: {prompt[:100]}",
+            result=f"[Simulated] Agent {config.agent_id} executed task. Prompt: {prompt[:100]}",
             tokens_consumed={"input": 5000, "output": 2000},
             cost_usd=0.04,
         )
+
+    def _build_tool_definitions(self, config: AgentConfig) -> list[dict]:
+        """Build Claude API tool definitions from agent's allowed tools + custom tools."""
+        tools = []
+
+        # Add custom company tool definitions (event bus, HITL, knowledge, metrics)
+        if self._tool_executor:
+            for tool_def in self._tool_executor.get_custom_tool_definitions():
+                if tool_def["name"] in config.allowed_tools or self._tool_matches(
+                    tool_def["name"], config.allowed_tools
+                ):
+                    tools.append(tool_def)
+
+        # MCP tools discovered from connected servers
+        if self._tool_executor:
+            for tool_def in self._tool_executor.get_mcp_tool_definitions():
+                if self._tool_matches(tool_def["name"], config.allowed_tools):
+                    tools.append(tool_def)
+
+        return tools
+
+    @staticmethod
+    def _tool_matches(tool_name: str, allowed_tools: list[str]) -> bool:
+        """Check if a tool name matches any pattern in allowed_tools."""
+        for allowed in allowed_tools:
+            if allowed == tool_name:
+                return True
+            if allowed.endswith("*") and tool_name.startswith(allowed[:-1]):
+                return True
+        return False
 
     def _build_prompt(
         self,
@@ -457,9 +475,19 @@ async def delegate_parallel(
 # Factory
 # ---------------------------------------------------------------------------
 
-def create_invoker(config: dict | None = None) -> tuple[AgentInvoker, AgentRegistry]:
+def create_invoker(
+    config: dict | None = None,
+    tool_executor=None,
+    claude_client=None,
+) -> tuple[AgentInvoker, AgentRegistry]:
     """Create a fully configured invoker and registry."""
     registry = AgentRegistry()
     hook_chain = create_hook_chain(config=config)
-    invoker = AgentInvoker(registry=registry, hook_chain=hook_chain, config=config)
+    invoker = AgentInvoker(
+        registry=registry,
+        hook_chain=hook_chain,
+        config=config,
+        tool_executor=tool_executor,
+        claude_client=claude_client,
+    )
     return invoker, registry
