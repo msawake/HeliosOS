@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6;
+  }
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  .badge-forgeos { @apply bg-blue-100 text-blue-800; }
+  .badge-crewai { @apply bg-purple-100 text-purple-800; }
+  .badge-adk { @apply bg-green-100 text-green-800; }
+  .badge-openclaw { @apply bg-orange-100 text-orange-800; }
+  .badge-always_on { @apply bg-emerald-100 text-emerald-800; }
+  .badge-scheduled { @apply bg-amber-100 text-amber-800; }
+  .badge-event_driven { @apply bg-cyan-100 text-cyan-800; }
+  .badge-reflex { @apply bg-pink-100 text-pink-800; }
+  .badge-autonomous { @apply bg-indigo-100 text-indigo-800; }
+  .badge-personal { @apply bg-violet-100 text-violet-800; }
+  .badge-shared { @apply bg-teal-100 text-teal-800; }
+  .badge-running { @apply bg-green-100 text-green-800; }
+  .badge-idle { @apply bg-gray-100 text-gray-600; }
+  .badge-stopped { @apply bg-red-100 text-red-800; }
+  .badge-failed { @apply bg-red-100 text-red-800; }
+  .badge-completed { @apply bg-blue-100 text-blue-800; }
+}

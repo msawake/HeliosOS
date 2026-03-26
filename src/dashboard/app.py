@@ -27,9 +27,10 @@ class DashboardData:
     This is the data layer — the web framework renders it.
     """
 
-    def __init__(self, company_system=None, workflow_engine=None):
+    def __init__(self, company_system=None, workflow_engine=None, company_name: str = "LeadForge AI"):
         self._system = company_system
         self._engine = workflow_engine
+        self.company_name = company_name
 
     def get_overview(self) -> dict:
         """Main dashboard overview."""
@@ -114,7 +115,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LeadForge AI Command Center</title>
+    <title>{{company_name}} Command Center</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -285,7 +286,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 </head>
 <body>
     <div class="header">
-        <h1>LeadForge AI Command Center</h1>
+        <h1>{{company_name}} Command Center</h1>
         <div class="status">
             <span><span class="dot green"></span> System Healthy</span>
             <span><span class="dot yellow"></span> {{pending_count}} Pending Approvals</span>
@@ -350,7 +351,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 </html>"""
 
 
-def render_dashboard(data: dict) -> str:
+def render_dashboard(data: dict, company_name: str = "LeadForge AI") -> str:
     """Render the dashboard HTML with data."""
     # Approvals
     approval_html = ""
@@ -436,6 +437,7 @@ def render_dashboard(data: dict) -> str:
         </tr>"""
 
     html = DASHBOARD_HTML
+    html = html.replace("{{company_name}}", company_name)
     html = html.replace("{{pending_count}}", str(len(data.get("pending_approvals", []))))
     html = html.replace("{{active_workflows}}", str(len(data.get("active_workflows", []))))
     html = html.replace("{{escalation_count}}", str(len(data.get("escalations", []))))
@@ -453,21 +455,53 @@ def render_dashboard(data: dict) -> str:
 # Flask app (optional — can also serve static HTML)
 # ---------------------------------------------------------------------------
 
-def create_app(company_system=None, workflow_engine=None):
+def create_app(
+    company_system=None,
+    workflow_engine=None,
+    company_name: str = "LeadForge AI",
+    db_client=None,
+    auth_enabled: bool = False,
+    platform_executor=None,
+    platform_registry=None,
+):
     """Create the Flask web application."""
     try:
-        from flask import Flask, jsonify, request as flask_request
+        from flask import Flask, jsonify, request as flask_request, g
     except ImportError:
         logger.warning("Flask not installed. Dashboard API unavailable.")
         return None
 
     app = Flask(__name__)
-    dashboard = DashboardData(company_system, workflow_engine)
+    dashboard = DashboardData(company_system, workflow_engine, company_name=company_name)
+
+    # Auth setup (optional — enabled in production)
+    auth_manager = None
+    if auth_enabled:
+        from src.api.auth import AuthManager
+        auth_manager = AuthManager(db_client=db_client)
+
+    @app.before_request
+    def authenticate():
+        """Authenticate requests when auth is enabled."""
+        # Health check is always public
+        if flask_request.path == "/api/health":
+            return None
+        # Static dashboard is public (auth happens in frontend)
+        if flask_request.path == "/":
+            return None
+
+        if auth_manager:
+            user = auth_manager.authenticate(flask_request)
+            if not user and flask_request.path.startswith("/api/"):
+                return jsonify({"error": "Authentication required"}), 401
+            if user:
+                g.user = user
+                g.tenant_id = user.tenant_id
 
     @app.route("/")
     def index():
         data = dashboard.get_overview()
-        return render_dashboard(data)
+        return render_dashboard(data, company_name=dashboard.company_name)
 
     @app.route("/api/overview")
     def api_overview():
@@ -477,6 +511,15 @@ def create_app(company_system=None, workflow_engine=None):
     def api_approvals():
         category = flask_request.args.get("category")
         return jsonify(company_system.hitl.get_pending(category) if company_system else [])
+
+    @app.route("/api/approvals/<request_id>")
+    def api_approval_detail(request_id):
+        if not company_system:
+            return jsonify({"error": "System not initialized"}), 500
+        detail = company_system.hitl.check_status(request_id)
+        if detail is None:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(detail)
 
     @app.route("/api/approvals/<request_id>/approve", methods=["POST"])
     def api_approve(request_id):
@@ -538,5 +581,278 @@ def create_app(company_system=None, workflow_engine=None):
         if not company_system:
             return jsonify({"status": "unknown"})
         return jsonify(company_system.get_system_health())
+
+    # ── Authenticated User Endpoints ────────────────────────────────────
+
+    @app.route("/api/me")
+    def api_me():
+        user = getattr(g, "user", None)
+        if not user:
+            return jsonify({"error": "Not authenticated"}), 401
+        return jsonify(user.to_dict())
+
+    @app.route("/api/usage")
+    def api_usage():
+        """Get usage metrics for the current tenant."""
+        if not company_system:
+            return jsonify({})
+        return jsonify(company_system.metrics.get_dashboard())
+
+    @app.route("/api/audit")
+    def api_audit():
+        """Get audit log for the current tenant."""
+        limit = flask_request.args.get("limit", 100, type=int)
+        return jsonify(dashboard.get_audit_log(limit=limit))
+
+    # ── Tenant Management (admin only) ──────────────────────────────────
+
+    @app.route("/api/tenants", methods=["POST"])
+    def api_create_tenant():
+        user = getattr(g, "user", None)
+        if user and user.role != "admin":
+            return jsonify({"error": "Admin role required"}), 403
+
+        from src.api.tenants import TenantManager
+        manager = TenantManager(db_client=db_client)
+
+        body = flask_request.json or {}
+        tenant = manager.create_tenant(
+            name=body.get("name", "New Company"),
+            company_type=body.get("company_type", "leadforge"),
+            plan=body.get("plan", "starter"),
+            config=body.get("config"),
+        )
+        return jsonify(tenant), 201
+
+    @app.route("/api/tenants")
+    def api_list_tenants():
+        user = getattr(g, "user", None)
+        if user and user.role != "admin":
+            return jsonify({"error": "Admin role required"}), 403
+
+        from src.api.tenants import TenantManager
+        manager = TenantManager(db_client=db_client)
+        return jsonify(manager.list_tenants())
+
+    # ── Internal Endpoints (Cloud Tasks callbacks) ──────────────────────
+
+    @app.route("/api/internal/invoke-agent", methods=["POST"])
+    def api_invoke_agent():
+        """Called by Cloud Tasks to invoke an agent for a workflow task.
+
+        Internal endpoint — should be protected by IAM in production.
+        """
+        body = flask_request.json or {}
+        agent_id = body.get("agent_id")
+        description = body.get("description")
+        tenant_id = body.get("tenant_id", flask_request.headers.get("X-Tenant-Id"))
+
+        if not agent_id or not description:
+            return jsonify({"error": "agent_id and description required"}), 400
+
+        # In production, this would invoke the agent via the invoker
+        # For now, log and acknowledge
+        logger.info(
+            "Cloud Task invocation: agent=%s tenant=%s task=%s",
+            agent_id, tenant_id, body.get("task_name"),
+        )
+        return jsonify({
+            "status": "accepted",
+            "agent_id": agent_id,
+            "task_id": body.get("task_id"),
+        }), 202
+
+    # ── CORS for Next.js dashboard ────────────────────────────────────
+
+    @app.after_request
+    def add_cors(response):
+        origin = flask_request.headers.get("Origin", "")
+        if origin.startswith("http://localhost"):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        return response
+
+    # ── Platform API (multi-stack agent management) ─────────────────
+
+    @app.route("/api/platform/overview")
+    def api_platform_overview():
+        if platform_registry:
+            return jsonify(platform_registry.summary())
+        return jsonify({
+            "total": 0,
+            "by_stack": {"forgeos": 0, "crewai": 0, "adk": 0, "openclaw": 0},
+            "by_execution_type": {"always_on": 0, "scheduled": 0, "event_driven": 0, "reflex": 0, "autonomous": 0},
+            "by_ownership": {"personal": 0, "shared": 0},
+            "running": 0,
+        })
+
+    @app.route("/api/platform/agents")
+    def api_platform_agents():
+        if not platform_registry:
+            return jsonify([])
+        from stacks.base import ExecutionType, OwnershipType, AgentStatus as PAgentStatus
+
+        filters = {}
+        if flask_request.args.get("stack"):
+            filters["stack"] = flask_request.args["stack"]
+        if flask_request.args.get("execution_type"):
+            try:
+                filters["execution_type"] = ExecutionType(flask_request.args["execution_type"])
+            except ValueError:
+                pass
+        if flask_request.args.get("ownership"):
+            try:
+                filters["ownership"] = OwnershipType(flask_request.args["ownership"])
+            except ValueError:
+                pass
+        if flask_request.args.get("owner_id"):
+            filters["owner_id"] = flask_request.args["owner_id"]
+        if flask_request.args.get("department"):
+            filters["department"] = flask_request.args["department"]
+
+        agents = platform_registry.query(**filters) if filters else platform_registry.list_all()
+        return jsonify([
+            {**a.to_dict(), "status": platform_registry.get_status(a.agent_id).value}
+            for a in agents
+        ])
+
+    @app.route("/api/platform/agents/<agent_id>")
+    def api_platform_agent_detail(agent_id):
+        if not platform_registry:
+            return jsonify({"error": "Platform not initialized"}), 500
+        agent = platform_registry.get(agent_id)
+        if not agent:
+            return jsonify({"error": "Agent not found"}), 404
+        return jsonify({
+            **agent.to_dict(),
+            "status": platform_registry.get_status(agent_id).value,
+        })
+
+    @app.route("/api/platform/agents", methods=["POST"])
+    def api_platform_create_agent():
+        if not platform_executor:
+            return jsonify({"error": "Platform executor not initialized"}), 500
+
+        body = flask_request.json or {}
+        if not body.get("name") or not body.get("stack"):
+            return jsonify({"error": "name and stack are required"}), 400
+
+        from stacks.base import AgentDefinition, ExecutionType, OwnershipType, LLMConfig
+        import asyncio
+
+        try:
+            llm_cfg_data = body.get("llm_config", {})
+            llm_config = LLMConfig(
+                chat_model=llm_cfg_data.get("chat_model", "claude-4-sonnet"),
+                reasoning_model=llm_cfg_data.get("reasoning_model"),
+                provider=llm_cfg_data.get("provider", "anthropic"),
+            )
+
+            agent_def = AgentDefinition(
+                name=body["name"],
+                stack=body["stack"],
+                execution_type=ExecutionType(body.get("execution_type", "reflex")),
+                ownership=OwnershipType(body.get("ownership", "shared")),
+                owner_id=body.get("owner_id"),
+                llm_config=llm_config,
+                schedule=body.get("schedule"),
+                event_triggers=body.get("event_triggers", []),
+                goal=body.get("goal"),
+                tools=body.get("tools", []),
+                description=body.get("description", ""),
+                department=body.get("department", ""),
+            )
+
+            loop = asyncio.new_event_loop()
+            try:
+                agent_id = loop.run_until_complete(platform_executor.deploy(agent_def))
+            finally:
+                loop.close()
+
+            return jsonify({"agent_id": agent_id, "name": agent_def.name, "stack": agent_def.stack}), 201
+
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            logger.exception("Failed to create agent")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/platform/agents/<agent_id>/stop", methods=["POST"])
+    def api_platform_stop_agent(agent_id):
+        if not platform_executor:
+            return jsonify({"error": "Platform not initialized"}), 500
+
+        import asyncio
+        loop = asyncio.new_event_loop()
+        try:
+            ok = loop.run_until_complete(platform_executor.stop_agent(agent_id))
+        finally:
+            loop.close()
+        return jsonify({"ok": ok})
+
+    @app.route("/api/platform/agents/<agent_id>", methods=["DELETE"])
+    def api_platform_delete_agent(agent_id):
+        if not platform_executor:
+            return jsonify({"error": "Platform not initialized"}), 500
+
+        import asyncio
+        loop = asyncio.new_event_loop()
+        try:
+            ok = loop.run_until_complete(platform_executor.undeploy(agent_id))
+        finally:
+            loop.close()
+        return jsonify({"ok": ok})
+
+    @app.route("/api/platform/agents/<agent_id>/invoke", methods=["POST"])
+    def api_platform_invoke_agent(agent_id):
+        if not platform_executor:
+            return jsonify({"error": "Platform not initialized"}), 500
+
+        body = flask_request.json or {}
+        prompt = body.get("prompt", "")
+        if not prompt:
+            return jsonify({"error": "prompt is required"}), 400
+
+        import asyncio
+        loop = asyncio.new_event_loop()
+        try:
+            result = loop.run_until_complete(
+                platform_executor.invoke(agent_id, prompt, body.get("context"))
+            )
+        finally:
+            loop.close()
+        return jsonify(result.to_dict())
+
+    @app.route("/api/platform/events", methods=["POST"])
+    def api_platform_fire_event():
+        if not platform_executor:
+            return jsonify({"error": "Platform not initialized"}), 500
+
+        body = flask_request.json or {}
+        event_name = body.get("name")
+        if not event_name:
+            return jsonify({"error": "event name is required"}), 400
+
+        from src.platform.event_bus import Event
+        import asyncio
+
+        event = Event(
+            name=event_name,
+            payload=body.get("payload", {}),
+            source=body.get("source", "api"),
+        )
+        loop = asyncio.new_event_loop()
+        try:
+            notified = loop.run_until_complete(platform_executor.event_bus.fire(event))
+        finally:
+            loop.close()
+        return jsonify({"event": event_name, "notified": notified})
+
+    @app.route("/api/platform/scheduler")
+    def api_platform_scheduler():
+        if not platform_executor:
+            return jsonify([])
+        return jsonify(platform_executor.scheduler.list_jobs())
 
     return app

@@ -1,0 +1,50 @@
+'use client';
+
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { cn } from '@/lib/utils';
+
+const NAV_ITEMS = [
+  { href: '/', label: 'Overview', icon: '◉' },
+  { href: '/agents', label: 'Agents', icon: '⬡' },
+  { href: '/agents/create', label: 'Create Agent', icon: '+' },
+  { href: '/workflows', label: 'Workflows', icon: '⇄' },
+  { href: '/approvals', label: 'Approvals', icon: '✓' },
+  { href: '/settings', label: 'Settings', icon: '⚙' },
+];
+
+export function Sidebar() {
+  const pathname = usePathname();
+
+  return (
+    <aside className="w-60 bg-brand-900 text-white flex flex-col shrink-0">
+      <div className="px-5 py-6 border-b border-white/10">
+        <h1 className="text-lg font-bold tracking-tight">ForgeOS</h1>
+        <p className="text-xs text-white/50 mt-0.5">Multi-Stack Agent Platform</p>
+      </div>
+      <nav className="flex-1 py-4 space-y-1 px-3">
+        {NAV_ITEMS.map((item) => {
+          const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
+                active
+                  ? 'bg-white/15 text-white font-medium'
+                  : 'text-white/60 hover:bg-white/10 hover:text-white'
+              )}
+            >
+              <span className="text-base w-5 text-center">{item.icon}</span>
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+      <div className="px-5 py-4 border-t border-white/10 text-xs text-white/40">
+        v3.0 &middot; 4 stacks &middot; 5 exec types
+      </div>
+    </aside>
+  );
+}
