@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ForgeOS Multi-Stack Agent Platform — Architecture Reference</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --border: #2d3a4f;
+      --text: #e7edf4;
+      --muted: #8b9cb3;
+      --accent: #5b9cf5;
+      --accent2: #7dd3a8;
+      --code-bg: #121820;
+      --warn: #e6b35c;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 1.02rem;
+    }
+    .wrap { max-width: 920px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    h1 { font-size: 1.85rem; font-weight: 700; margin: 0 0 0.5rem; letter-spacing: -0.02em; }
+    .subtitle { color: var(--muted); font-size: 1rem; margin: 0; }
+    h2 {
+      font-size: 1.35rem;
+      margin: 2.5rem 0 1rem;
+      color: var(--accent);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.35rem;
+    }
+    h3 { font-size: 1.1rem; margin: 1.75rem 0 0.65rem; color: var(--text); }
+    h4 { font-size: 1rem; margin: 1.25rem 0 0.5rem; color: var(--muted); }
+    p { margin: 0.75rem 0; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .toc {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      margin: 1.5rem 0;
+    }
+    .toc ul { margin: 0.5rem 0 0; padding-left: 1.25rem; }
+    .toc li { margin: 0.35rem 0; }
+    code, pre {
+      font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+      font-size: 0.86em;
+    }
+    code {
+      background: var(--code-bg);
+      padding: 0.12em 0.4em;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.1rem;
+      overflow-x: auto;
+      line-height: 1.45;
+      margin: 1rem 0;
+    }
+    pre code { background: none; border: none; padding: 0; font-size: 0.88rem; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      font-size: 0.95rem;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.65rem 0.85rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: var(--surface); color: var(--accent2); font-weight: 600; }
+    tr:nth-child(even) td { background: rgba(26, 35, 50, 0.45); }
+    .note {
+      border-left: 4px solid var(--warn);
+      background: rgba(230, 179, 92, 0.08);
+      padding: 0.85rem 1rem;
+      margin: 1.25rem 0;
+      border-radius: 0 8px 8px 0;
+    }
+    .diagram {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+    .diagram pre { margin: 0; border: none; background: transparent; }
+    ul.compact li { margin: 0.35rem 0; }
+    .meta { color: var(--muted); font-size: 0.9rem; }
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>ForgeOS Multi-Stack Agent Platform</h1>
+      <p class="subtitle">Detailed architecture: components, execution model, stacks, APIs, and dashboards</p>
+      <p class="meta">Reference document for codebase version aligned with <code>forgeos</code> 3.x (multi-stack platform). Paths are relative to the repository root unless noted.</p>
+    </header>
+
+    <nav class="toc" aria-label="Table of contents">
+      <strong>Contents</strong>
+      <ul>
+        <li><a href="#overview">1. Executive overview</a></li>
+        <li><a href="#mental-model">2. Mental model</a></li>
+        <li><a href="#bootstrap">3. Bootstrap and startup phases</a></li>
+        <li><a href="#platform-layer">4. Platform layer (registry, executor, scheduler, events, LLM)</a></li>
+        <li><a href="#stacks">5. Agent stacks (adapters)</a></li>
+        <li><a href="#execution">6. Execution types (lifecycle)</a></li>
+        <li><a href="#ownership">7. Ownership and on-disk layout</a></li>
+        <li><a href="#deployment">8. Deploy / invoke / stop / undeploy</a></li>
+        <li><a href="#apis">9. Flask HTTP API</a></li>
+        <li><a href="#dashboard">10. Next.js dashboard</a></li>
+        <li><a href="#wizard">11. AI-assisted creation wizard</a></li>
+        <li><a href="#legacy">12. Legacy company subsystem</a></li>
+        <li><a href="#directories">13. Key directories</a></li>
+        <li><a href="#env">14. Environment and operations</a></li>
+      </ul>
+    </nav>
+
+    <section id="overview">
+      <h2>1. Executive overview</h2>
+      <p>
+        ForgeOS 3.x is a <strong>multi-stack agent platform</strong>. It presents one uniform way to define, deploy,
+        schedule, invoke, and tear down agents, while supporting <strong>four different frameworks</strong> under the hood:
+        native ForgeOS, CrewAI, Google ADK-style scaffolds, and OpenClaw-style file-first agents. The same core abstractions
+        (<code>AgentDefinition</code>, <code>AgentStackAdapter</code>, <code>PlatformExecutor</code>) apply to every stack.
+      </p>
+      <p>
+        Agents can run in <strong>five execution modes</strong> (always-on, scheduled, event-driven, reflex, autonomous)
+        and can be <strong>personal</strong> (per-user) or <strong>shared</strong> (team / enterprise-wide; in code this is
+        <code>OwnershipType.SHARED</code>).
+      </p>
+      <p>
+        The runtime combines a <strong>Python backend</strong> (bootstrap, Flask API, platform services, legacy company
+        agents) with a <strong>Next.js 15</strong> developer dashboard that proxies API calls to Flask in development.
+      </p>
+    </section>
+
+    <section id="mental-model">
+      <h2>2. Mental model</h2>
+      <div class="diagram">
+        <pre>
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Next.js dashboard (:3000)                     │
+│   Overview · Agents · Create / AI Wizard · Workflows · Approvals       │
+└───────────────────────────────┬─────────────────────────────────────┘
+                                │ HTTP /api/*  (rewrites → Flask :5000)
+                                ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Flask app (src/dashboard/app.py)                │
+│   Legacy: /api/approvals, /api/workflows, /api/overview…             │
+│   Platform: /api/platform/overview, /agents, /wizard/chat…          │
+└───────────────────────────────┬─────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                  PlatformBootstrap (src/bootstrap.py)                │
+│   · AgentRegistry   · SchedulerEngine   · EventBus (platform)      │
+│   · LLMRouter        · PlatformExecutor + 4 stack adapters         │
+│   · CompanySystem, AgentInvoker, WorkflowEngine (legacy)             │
+└───────────────────────────────┬─────────────────────────────────────┘
+                                │
+        ┌───────────────────────┼───────────────────────┐
+        ▼                       ▼                       ▼
+┌───────────────┐     ┌─────────────────┐     ┌──────────────────┐
+│ Stack adapter │     │ Schedules /     │     │ agents/ on disk  │
+│ forgeos,      │     │ event callbacks │     │ personal|shared  │
+│ crewai, adk,  │     │ (asyncio)       │     │ + scaffolds      │
+│ openclaw      │     └─────────────────┘     └──────────────────┘
+└───────────────┘
+        </pre>
+      </div>
+      <p>
+        A single <strong>AgentDefinition</strong> record (see <code>stacks/base.py</code>) is the contract between UI/API and
+        the executor. The executor picks the right adapter, writes scaffold files, registers the agent, and wires the
+        appropriate execution pattern.
+      </p>
+    </section>
+
+    <section id="bootstrap">
+      <h2>3. Bootstrap and startup phases</h2>
+      <p>
+        <code>PlatformBootstrap</code> in <code>src/bootstrap.py</code> orchestrates startup. The high-level sequence is:
+      </p>
+      <table>
+        <thead>
+          <tr><th>Phase</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>1 — Platform</strong></td>
+            <td>Build <code>LLMRouter</code> from environment API keys (<code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code>).
+            Without keys, chat calls are simulated for stacks and wizard heuristics can still run.</td>
+          </tr>
+          <tr>
+            <td><strong>2 — Legacy company</strong></td>
+            <td><code>CompanySystem</code>, database client (PostgreSQL or in-memory), MCP manager, <code>ToolExecutor</code>,
+            <code>ClaudeClient</code>, company module registry, <code>AgentInvoker</code> for classic departmental agents.</td>
+          </tr>
+          <tr>
+            <td><strong>3 — Adapters</strong></td>
+            <td>Instantiate <code>ForgeOSAdapter</code>, <code>CrewAIAdapter</code>, <code>ADKAdapter</code>, <code>OpenClawAdapter</code>,
+            each wired with <code>llm_router</code> (and ForgeOS with tool executor).</td>
+          </tr>
+          <tr>
+            <td><strong>4 — Executor</strong></td>
+            <td>Create <code>PlatformExecutor</code> sharing registry, scheduler, and platform <code>EventBus</code>; register all adapters.</td>
+          </tr>
+          <tr>
+            <td><strong>5 — Knowledge</strong></td>
+            <td>Seed company knowledge base when <code>CompanySystem</code> is present.</td>
+          </tr>
+          <tr>
+            <td><strong>HITL seed (dev)</strong></td>
+            <td>Optional demo approvals when <code>FORGEOS_SEED_HITL</code> is not disabled.</td>
+          </tr>
+          <tr>
+            <td><strong>6 — Workflow engine</strong></td>
+            <td><code>WorkflowEngine</code> tied to legacy invoker (Flask <code>/api/workflows</code>).</td>
+          </tr>
+          <tr>
+            <td><strong>7 — Scheduler start</strong></td>
+            <td><code>scheduler.start_all()</code> activates asyncio jobs already registered for platform agents.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        Starting the HTTP API: <code>python -m src.bootstrap --dashboard</code> (ideally with project venv and
+        <code>PYTHONPATH=.</code>). The process stays alive while Flask serves on port 5000 by default.
+      </p>
+    </section>
+
+    <section id="platform-layer">
+      <h2>4. Platform layer</h2>
+
+      <h3>4.1 AgentRegistry</h3>
+      <p>
+        File: <code>src/platform/registry.py</code>. In-memory store of <code>AgentDefinition</code> instances and
+        <code>AgentStatus</code>. Supports listing, filtering by stack, execution type, ownership, department, owner id, and
+        summary counts for the dashboard overview.
+      </p>
+
+      <h3>4.2 PlatformExecutor</h3>
+      <p>
+        File: <code>src/platform/executor.py</code>. Central operations:
+      </p>
+      <ul class="compact">
+        <li><strong>deploy</strong> — resolve directory, scaffold via adapter, register, <code>create_agent</code>, then <code>_wire_execution</code>.</li>
+        <li><strong>invoke</strong> — route prompt to the correct adapter.</li>
+        <li><strong>stop_agent</strong> — stop adapter loops, cancel autonomous tasks, remove scheduler job, unsubscribe platform events.</li>
+        <li><strong>undeploy</strong> — stop, delete agent directory, unregister.</li>
+      </ul>
+
+      <h3>4.3 SchedulerEngine</h3>
+      <p>
+        File: <code>src/platform/scheduler.py</code>. MVP interval parser: strings like <code>every 15m</code>, <code>every 1h</code>,
+        or minute-style <code>*/N * * * *</code> mapped to seconds. Each scheduled agent gets an asyncio loop that sleeps then
+        invokes a callback (typically <code>invoke</code> with a schedule string in the prompt).
+      </p>
+
+      <h3>4.4 EventBus (platform)</h3>
+      <p>
+        File: <code>src/platform/event_bus.py</code>. Separate from the company <code>EventBus</code> in MCP tools.
+        Agents with <code>EVENT_DRIVEN</code> execution subscribe to named events; <code>POST /api/platform/events</code> fires events
+        and notifies subscribers.
+      </p>
+
+      <h3>4.5 LLMRouter</h3>
+      <p>
+        File: <code>src/platform/llm_router.py</code>. Unified async <code>chat</code> / <code>reason</code> interface using
+        <code>LLMConfig</code> (provider, chat model, optional reasoning model). Used by stack adapters and the AI wizard.
+      </p>
+    </section>
+
+    <section id="stacks">
+      <h2>5. Agent stacks (adapters)</h2>
+      <p>Defined in <code>stacks/base.py</code>; each adapter implements <code>AgentStackAdapter</code>: <code>create_agent</code>, <code>invoke</code>, <code>start_loop</code>, <code>stop</code>, <code>get_status</code>, <code>scaffold_files</code>.</p>
+      <table>
+        <thead>
+          <tr><th>Stack ID</th><th>Module</th><th>Typical use</th><th>Scaffold shape</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>forgeos</code></td>
+            <td><code>stacks/forgeos/adapter.py</code></td>
+            <td>Default integration agent; uses platform LLM router and optional tool executor.</td>
+            <td><code>agent.py</code>, <code>tools.py</code>, <code>prompts/system.md</code>, <code>config.yaml</code></td>
+          </tr>
+          <tr>
+            <td><code>crewai</code></td>
+            <td><code>stacks/crewai/adapter.py</code></td>
+            <td>Role/task/crew patterns; real CrewAI when SDK is importable, else LLM-router or simulated invoke.</td>
+            <td><code>agents.py</code>, <code>tasks.py</code>, <code>crew.py</code>, <code>tools.py</code>, <code>config.yaml</code></td>
+          </tr>
+          <tr>
+            <td><code>adk</code></td>
+            <td><code>stacks/adk/adapter.py</code></td>
+            <td>Enterprise-style hierarchical workflows; scaffold comments for future Google ADK SDK.</td>
+            <td><code>agent.py</code>, <code>workflow.py</code>, <code>tools.py</code>, prompts, <code>config.yaml</code></td>
+          </tr>
+          <tr>
+            <td><code>openclaw</code></td>
+            <td><code>stacks/openclaw/adapter.py</code></td>
+            <td>File-first: SOUL, identity, heartbeat, skills, memory layout; good for long-running personal automations.</td>
+            <td><code>SOUL.md</code>, <code>IDENTITY.md</code>, <code>HEARTBEAT.md</code>, <code>SKILLS/</code>, <code>MEMORY/</code>, <code>gateway.sh</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="execution">
+      <h2>6. Execution types (lifecycle)</h2>
+      <p>Enumeration <code>ExecutionType</code> in <code>stacks/base.py</code>. Wiring in <code>PlatformExecutor._wire_execution</code>:</p>
+      <table>
+        <thead>
+          <tr><th>Value</th><th>Behaviour</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>always_on</code></td>
+            <td>Adapter <code>start_loop</code>: repeated invoke at configurable interval (<code>metadata.loop_interval_seconds</code> or stack defaults like OpenClaw heartbeat).</td>
+          </tr>
+          <tr>
+            <td><code>scheduled</code></td>
+            <td><code>SchedulerEngine.add_job(agent_id, schedule, callback)</code>; callback invokes the agent with a schedule-oriented prompt.</td>
+          </tr>
+          <tr>
+            <td><code>event_driven</code></td>
+            <td>For each trigger in <code>event_triggers</code>, subscribe on platform <code>EventBus</code>; on fire, invoke with event context.</td>
+          </tr>
+          <tr>
+            <td><code>reflex</code></td>
+            <td>No automatic loop; agent is idle until explicitly invoked via API or UI “Test invoke”.</td>
+          </tr>
+          <tr>
+            <td><code>autonomous</code></td>
+            <td>Asyncio task that repeatedly invokes until status COMPLETED/FAILED, iterations capped by <code>metadata.max_iterations</code>, delay <code>metadata.loop_interval_seconds</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="ownership">
+      <h2>7. Ownership and on-disk layout</h2>
+      <p>
+        <code>OwnershipType.PERSONAL</code>: files under <code>agents/personal/{owner_id}/{agent_name}/</code>.
+        <code>OwnershipType.SHARED</code> (enterprise / team): <code>agents/shared/{agent_name}/</code>.
+      </p>
+      <p>
+        Default <code>AGENTS_ROOT</code> is <code>Path("agents")</code> relative to the process working directory. The repository
+        <code>.gitignore</code> typically excludes <code>agents/personal/</code> and <code>agents/shared/</code> so generated scaffolds are not committed.
+      </p>
+    </section>
+
+    <section id="deployment">
+      <h2>8. Deploy / invoke / stop / undeploy</h2>
+      <ol class="compact">
+        <li><strong>Deploy</strong> — Build directory, write scaffolds, register, adapter create, wire execution.</li>
+        <li><strong>Invoke</strong> — Single turn through adapter (may call LLM router or external SDK).</li>
+        <li><strong>Stop</strong> — Cancel loops and jobs; status stopped; files remain.</li>
+        <li><strong>Undeploy (DELETE)</strong> — Stop, delete tree, unregister.</li>
+      </ol>
+    </section>
+
+    <section id="apis">
+      <h2>9. Flask: platform HTTP API</h2>
+      <p>Base path <code>/api/platform</code> in <code>src/dashboard/app.py</code>. Summary:</p>
+      <table>
+        <thead>
+          <tr><th>Method / path</th><th>Role</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>GET /api/platform/overview</code></td><td>Counts by stack, execution type, ownership; running total.</td></tr>
+          <tr><td><code>GET /api/platform/agents</code></td><td>List agents; query params: stack, execution_type, ownership, owner_id, department.</td></tr>
+          <tr><td><code>GET /api/platform/agents/&lt;id&gt;</code></td><td>Detail + status.</td></tr>
+          <tr><td><code>POST /api/platform/agents</code></td><td>Create + deploy JSON body (name, stack, execution_type, ownership, llm_config, schedule, event_triggers, goal, tools, description, department, metadata, owner_id).</td></tr>
+          <tr><td><code>POST /api/platform/agents/&lt;id&gt;/stop</code></td><td>Stop lifecycle.</td></tr>
+          <tr><td><code>DELETE /api/platform/agents/&lt;id&gt;</code></td><td>Undeploy.</td></tr>
+          <tr><td><code>POST /api/platform/agents/&lt;id&gt;/invoke</code></td><td>Body <code>{ "prompt", "context"?</code> }.</td></tr>
+          <tr><td><code>POST /api/platform/events</code></td><td>Fire platform event for event-driven agents.</td></tr>
+          <tr><td><code>GET /api/platform/scheduler</code></td><td>List scheduled jobs.</td></tr>
+          <tr><td><code>POST /api/platform/wizard/chat</code></td><td>AI-assisted design: <code>{ "messages", "context"?</code> }; returns proposal + assistant_message + warnings.</td></tr>
+        </tbody>
+      </table>
+      <p>Legacy routes (<code>/api/approvals</code>, <code>/api/workflows</code>, etc.) serve the original company dashboard data model.</p>
+    </section>
+
+    <section id="dashboard">
+      <h2>10. Next.js dashboard</h2>
+      <p>
+        Location: <code>dashboard/</code>. App Router pages include overview, agent list and filters, manual multi-step create,
+        AI wizard, agent detail (including Test invoke), workflows, approvals, settings.
+      </p>
+      <p>
+        <code>next.config.js</code> rewrites <code>/api/:path*</code> to <code>http://localhost:5000/api/:path*</code> so browser calls to
+        the Next origin reach Flask during development.
+      </p>
+    </section>
+
+    <section id="wizard">
+      <h2>11. AI-assisted creation wizard</h2>
+      <p>
+        Backend: <code>src/platform/agent_wizard_planner.py</code>. Uses a fixed system rubric so the model outputs JSON with
+        <code>assistant_message</code>, optional <code>proposal</code>, <code>clarifying_questions</code>, and
+        <code>ready_to_deploy</code>. Proposals pass through <code>normalize_proposal</code> (valid enums, enterprise → shared, defaults for schedule/triggers/goals).
+      </p>
+      <p>
+        If no LLM API client is configured on <code>LLMRouter</code>, a <strong>heuristic</strong> mode infers stack and execution type from keywords so the UI remains usable offline.
+      </p>
+    </section>
+
+    <section id="legacy">
+      <h2>12. Legacy company subsystem</h2>
+      <p>
+        Pre-platform ForgeOS behaviour: large agent registry per company module (<code>src/companies/*/agent_configs.py</code>),
+        <code>AgentInvoker</code>, hooks, HITL gateway, metrics, MCP tools. These coexist with the platform: legacy agents are not the
+        same list as <code>platform_registry</code>, but both run under one bootstrap and one Flask app.
+      </p>
+    </section>
+
+    <section id="directories">
+      <h2>13. Key directories</h2>
+      <table>
+        <thead>
+          <tr><th>Path</th><th>Contents</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>stacks/</code></td><td>Shared <code>base.py</code> and per-stack adapters.</td></tr>
+          <tr><td><code>src/platform/</code></td><td>Registry, executor, scheduler, platform event bus, LLM router, wizard planner.</td></tr>
+          <tr><td><code>src/bootstrap.py</code></td><td>Platform + legacy orchestration; API thread entry.</td></tr>
+          <tr><td><code>src/dashboard/app.py</code></td><td>Flask routes, CORS, HTML legacy dashboard at <code>/</code>.</td></tr>
+          <tr><td><code>dashboard/</code></td><td>Next.js 15 UI.</td></tr>
+          <tr><td><code>agents/</code></td><td>Deployed scaffolds (gitignored under personal/shared).</td></tr>
+          <tr><td><code>tests/test_platform_*.py</code></td><td>Platform unit tests.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="env">
+      <h2>14. Environment and operations</h2>
+      <ul class="compact">
+        <li><code>ANTHROPIC_API_KEY</code> / <code>OPENAI_API_KEY</code> — enable real LLM paths in <code>LLMRouter</code> and richer wizard.</li>
+        <li><code>DATABASE_URL</code> — PostgreSQL for production-oriented features; otherwise in-memory paths.</li>
+        <li><code>REDIS_URL</code> — optional, hooks / rate limiting integration.</li>
+        <li><code>FORGEOS_SEED_HITL</code> — set to <code>0</code>/<code>false</code>/<code>no</code> to skip demo approval seeding.</li>
+        <li>Run tests: <code>PYTHONPATH=. python -m pytest</code> from repo root with venv activated.</li>
+      </ul>
+      <div class="note">
+        <strong>Note.</strong> This HTML file is documentation only; behaviour is defined by the source code. After upgrades,
+        prefer verifying enums and route lists against <code>stacks/base.py</code> and <code>src/dashboard/app.py</code>.
+      </div>
+    </section>
+
+    <footer>
+      <p>Generated documentation — ForgeOS Multi-Stack Agent Platform. Open this file in any browser for offline reading.</p>
+    </footer>
+  </div>
+</body>
+</html>
