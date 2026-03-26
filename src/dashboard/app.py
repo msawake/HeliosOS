@@ -545,17 +545,35 @@ def create_app(
         )
         return jsonify({"success": success})
 
+    @app.route("/api/approvals/<request_id>/deny", methods=["POST"])
+    def api_deny(request_id):
+        """Alias for /reject — Next.js dashboard uses 'deny' in the UI."""
+        return api_reject(request_id)
+
     @app.route("/api/workflows")
     def api_workflows():
         if not workflow_engine:
             return jsonify([])
         from src.workflows.definitions import WorkflowStatus
         workflows = workflow_engine.list_workflows(WorkflowStatus.RUNNING)
+
+        def _progress_percent(wf) -> int:
+            counts = wf.get_progress()
+            total = counts.get("total") or 0
+            if total <= 0:
+                return 0
+            done = counts.get("completed", 0)
+            return int(min(100, round(100 * done / total)))
+
         return jsonify([
             {
                 "id": w.workflow_id,
                 "name": w.name,
-                "progress": w.get_progress(),
+                "type": w.workflow_type,
+                "progress": _progress_percent(w),
+                "progress_detail": w.get_progress(),
+                "priority": w.priority.value if getattr(w, "priority", None) else "medium",
+                "created_at": w.created_at.isoformat() if w.created_at else None,
             }
             for w in workflows
         ])
