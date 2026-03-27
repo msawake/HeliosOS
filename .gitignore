@@ -14,3 +14,8 @@ build/
 .ruff_cache/
 agents/personal/
 agents/shared/
+
+# Local secrets — never commit
+.env
+.env.local
+.env.*.local

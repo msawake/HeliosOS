@@ -49,6 +49,15 @@ logging.basicConfig(
 logger = logging.getLogger("bootstrap")
 
 
+def _load_dotenv_from_repo_root() -> None:
+    """Load `.env` from cwd / repo root when `python-dotenv` is installed (dev/local)."""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
+
 class OperatingMode:
     SHADOW = "shadow"
     SUPERVISED = "supervised"
@@ -87,6 +96,7 @@ class PlatformBootstrap:
         self._running = False
 
     async def boot(self):
+        _load_dotenv_from_repo_root()
         logger.info("=" * 60)
         logger.info("BOOTING FORGEOS MULTI-STACK PLATFORM")
         logger.info("Company: %s | Mode: %s", self.company_id, self.mode)
@@ -324,6 +334,7 @@ def run_demo(company_id: str = "leadforge"):
 
 
 async def main():
+    _load_dotenv_from_repo_root()
     parser = argparse.ArgumentParser(description="Boot ForgeOS Multi-Stack Platform")
     parser.add_argument("--company", type=str, default="leadforge", help="Company ID")
     parser.add_argument("--config", type=str, help="Path to company config YAML")
