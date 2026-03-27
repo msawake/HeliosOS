@@ -1,0 +1,35 @@
+# Portable Ingress: works with any CNCF-compatible ingress controller (nginx, traefik, HAProxy, etc.).
+# Set spec.rules[0].host to your DNS name; create TLS secret or use cert-manager.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: forgeos
+  labels:
+    app.kubernetes.io/name: forgeos
+  annotations:
+    # Example for ingress-nginx (remove or replace for your cluster):
+    # nginx.ingress.kubernetes.io/proxy-body-size: "16m"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: forgeos.example.local
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: forgeos-api
+                port:
+                  number: 5000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: forgeos-web
+                port:
+                  number: 3000
+  # tls:
+  #   - hosts:
+  #       - forgeos.example.local
+  #     secretName: forgeos-tls

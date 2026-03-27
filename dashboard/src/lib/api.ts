@@ -9,6 +9,11 @@ function apiBase(): string {
   if (typeof window !== 'undefined') {
     return '';
   }
+  // Server-side (SSR) in Docker/K8s: set INTERNAL_API_URL=http://forgeos-api:5000
+  const internal = process.env.INTERNAL_API_URL || '';
+  if (internal) {
+    return internal.replace(/\/$/, '');
+  }
   return 'http://127.0.0.1:5000';
 }
 

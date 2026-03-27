@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { STACKS, EXEC_TYPES, STACK_LABELS, EXEC_LABELS } from '@/lib/utils';
@@ -15,6 +15,14 @@ const DEFAULT_MODELS: Record<string, string> = {
 };
 
 export default function CreateAgentPage() {
+  return (
+    <Suspense fallback={<div className="max-w-2xl text-gray-400 py-12">Loading…</div>}>
+      <CreateAgentForm />
+    </Suspense>
+  );
+}
+
+function CreateAgentForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [step, setStep] = useState(0);
