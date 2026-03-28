@@ -1,0 +1,74 @@
+company:
+  name: "InsureForge AI"
+  domain: "insureforge.ai"
+  mission: "Compare 20+ carriers in minutes. No calls, no forms, no commission. AI-powered insurance comparison that puts you in control."
+
+budgets:
+  daily_token_budget: 8_000_000
+  critical_reserve_pct: 10
+  per_session_cost_limit_usd: 30.00
+  monthly_infrastructure_budget_usd: 5000
+
+  department_daily_tokens:
+    intake: 1_500_000
+    quotes: 2_500_000
+    analysis: 1_500_000
+    support: 1_000_000
+    marketing: 1_000_000
+    finance: 300_000
+    compliance: 700_000
+
+agent_defaults:
+  max_retries: 3
+  stale_task_threshold_minutes: 30
+  checkpoint_interval_minutes: 5
+  review_sample_rate: 0.15
+  canary_duration_hours: 24
+
+rate_limits:
+  max_tool_calls_per_session: 150
+  max_api_calls_per_minute: 40
+  max_concurrent_agents_per_type: 10
+
+hitl:
+  policy_binding_sla_hours: 4
+  claims_escalation_sla_hours: 24
+  regulatory_sla_hours: 48
+  refund_sla_hours: 24
+  carrier_dispute_sla_hours: 48
+  content_approval_sla_hours: 4
+
+  default_denials:
+    account_suspension: true
+    policy_cancellation_override: true
+
+models:
+  orchestrator_default: "claude-opus-4-6"
+  doer_default: "claude-sonnet-4-5-20250514"
+  classifier_default: "claude-haiku-4-5-20251001"
+
+polling_intervals:
+  quote_refresh_cycle_minutes: 15
+  rate_update_cycle_minutes: 60
+  alert_cycle_minutes: 2
+  executive_cycle_minutes: 30
+  monitoring_cycle_minutes: 2
+
+mcp_servers:
+  tier1:
+    - name: "google-workspace"
+      package: "google-workspace-mcp"
+      required: true
+    - name: "slack"
+      package: "@anthropic/mcp-server-slack"
+      required: true
+    - name: "postgres"
+      package: "@modelcontextprotocol/server-postgres"
+      required: true
+    - name: "stripe"
+      package: "@stripe/mcp"
+      required: true
+  tier2:
+    - name: "analytics"
+      package: "analytics-mcp"
+      required: false

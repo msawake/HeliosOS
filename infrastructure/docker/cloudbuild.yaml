@@ -1,0 +1,63 @@
+# Cloud Build CI/CD pipeline for ForgeOS
+# Triggers on push to main branch
+# 1. Run tests
+# 2. Build Docker image
+# 3. Push to Artifact Registry
+# 4. Deploy to Cloud Run
+
+steps:
+  # Step 1: Run tests
+  - name: 'python:3.12-slim'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install -e ".[dev]" --quiet
+        python -m pytest tests/ -v --tb=short
+    id: 'test'
+
+  # Step 2: Build Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/forgeos/api:${SHORT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/forgeos/api:latest'
+      - '-f'
+      - 'infrastructure/docker/Dockerfile'
+      - '.'
+    id: 'build'
+    waitFor: ['test']
+
+  # Step 3: Push to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '--all-tags'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/forgeos/api'
+    id: 'push'
+    waitFor: ['build']
+
+  # Step 4: Deploy to Cloud Run
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'forgeos-api-${_ENVIRONMENT}'
+      - '--image'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/forgeos/api:${SHORT_SHA}'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+    id: 'deploy'
+    waitFor: ['push']
+
+substitutions:
+  _REGION: 'us-central1'
+  _ENVIRONMENT: 'prod'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
