@@ -1,11 +1,59 @@
 -- ============================================================================
--- AI Company Database Schema
--- PostgreSQL schema for the fully autonomous digital company
+-- ForgeOS SaaS Database Schema (Multi-Tenant)
+-- PostgreSQL schema for the AI company platform
+--
+-- Multi-tenancy via Row-Level Security (RLS):
+-- Every table has a `tenant_id` column. RLS policies enforce isolation
+-- using the session variable `app.current_tenant`.
 -- ============================================================================
 
--- Enable UUID generation
+-- Enable extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "vector";  -- pgvector for semantic search
+
+-- ============================================================================
+-- 0. Tenants (platform-level, not tenant-scoped)
+-- ============================================================================
+
+CREATE TABLE tenants (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    plan            TEXT NOT NULL DEFAULT 'starter' CHECK (plan IN ('starter', 'growth', 'enterprise', 'trial')),
+    status          TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'cancelled')),
+    config          JSONB NOT NULL DEFAULT '{}',
+    company_type    TEXT NOT NULL DEFAULT 'leadforge',
+    api_key_hash    TEXT,
+    stripe_customer_id TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ
+);
+
+CREATE TABLE tenant_users (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id),
+    firebase_uid    TEXT NOT NULL UNIQUE,
+    email           TEXT NOT NULL,
+    role            TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('admin', 'operator', 'viewer')),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_tenant_users_tenant ON tenant_users(tenant_id);
+
+-- ============================================================================
+-- Usage tracking (for billing)
+-- ============================================================================
+
+CREATE TABLE usage_records (
+    id              BIGSERIAL PRIMARY KEY,
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id),
+    date            DATE NOT NULL DEFAULT CURRENT_DATE,
+    metric          TEXT NOT NULL,
+    amount          NUMERIC NOT NULL DEFAULT 0,
+    UNIQUE(tenant_id, date, metric)
+);
+
+CREATE INDEX idx_usage_tenant_date ON usage_records(tenant_id, date DESC);
 
 -- ============================================================================
 -- 1. Event Bus (cross-department communication)
@@ -13,6 +61,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 CREATE TABLE events (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id),
     timestamp       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     source_agent    TEXT NOT NULL,
     source_department TEXT NOT NULL,
@@ -30,10 +79,13 @@ CREATE TABLE events (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_events_target_status ON events(target_department, status);
-CREATE INDEX idx_events_category ON events(category);
+ALTER TABLE events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_events ON events USING (tenant_id = current_setting('app.current_tenant', true));
+
+CREATE INDEX idx_events_tenant_status ON events(tenant_id, target_department, status);
+CREATE INDEX idx_events_category ON events(tenant_id, category);
 CREATE INDEX idx_events_priority ON events(priority);
-CREATE INDEX idx_events_timestamp ON events(timestamp DESC);
+CREATE INDEX idx_events_timestamp ON events(tenant_id, timestamp DESC);
 CREATE INDEX idx_events_parent ON events(parent_event_id) WHERE parent_event_id IS NOT NULL;
 
 -- ============================================================================
@@ -42,6 +94,7 @@ CREATE INDEX idx_events_parent ON events(parent_event_id) WHERE parent_event_id 
 
 CREATE TABLE audit_log (
     id                  BIGSERIAL PRIMARY KEY,
+    tenant_id           TEXT NOT NULL REFERENCES tenants(id),
     timestamp           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     agent_id            TEXT NOT NULL,
     agent_type          TEXT NOT NULL,
@@ -61,10 +114,13 @@ CREATE TABLE audit_log (
     parent_action_id    BIGINT REFERENCES audit_log(id)
 );
 
-CREATE INDEX idx_audit_agent ON audit_log(agent_id);
+ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_audit ON audit_log USING (tenant_id = current_setting('app.current_tenant', true));
+
+CREATE INDEX idx_audit_tenant_agent ON audit_log(tenant_id, agent_id);
 CREATE INDEX idx_audit_session ON audit_log(session_id);
-CREATE INDEX idx_audit_timestamp ON audit_log(timestamp DESC);
-CREATE INDEX idx_audit_department ON audit_log(department);
+CREATE INDEX idx_audit_timestamp ON audit_log(tenant_id, timestamp DESC);
+CREATE INDEX idx_audit_department ON audit_log(tenant_id, department);
 CREATE INDEX idx_audit_decision ON audit_log(decision) WHERE decision IN ('blocked', 'failed');
 
 -- Prevent modifications to audit log
@@ -77,6 +133,7 @@ COMMENT ON TABLE audit_log IS 'Immutable audit trail. No UPDATE or DELETE operat
 
 CREATE TABLE agent_configs (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id),
     agent_name      VARCHAR(64) NOT NULL,
     version         INTEGER NOT NULL,
     system_prompt   TEXT NOT NULL,
@@ -92,11 +149,14 @@ CREATE TABLE agent_configs (
     is_active       BOOLEAN NOT NULL DEFAULT FALSE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_by      VARCHAR(64),
-    UNIQUE(agent_name, version)
+    UNIQUE(tenant_id, agent_name, version)
 );
 
-CREATE INDEX idx_agent_configs_active ON agent_configs(agent_name) WHERE is_active = TRUE;
-CREATE INDEX idx_agent_configs_department ON agent_configs(department);
+ALTER TABLE agent_configs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_agents ON agent_configs USING (tenant_id = current_setting('app.current_tenant', true));
+
+CREATE INDEX idx_agent_configs_active ON agent_configs(tenant_id, agent_name) WHERE is_active = TRUE;
+CREATE INDEX idx_agent_configs_department ON agent_configs(tenant_id, department);
 
 -- ============================================================================
 -- 4. HITL Approval Requests
@@ -104,6 +164,7 @@ CREATE INDEX idx_agent_configs_department ON agent_configs(department);
 
 CREATE TABLE approval_requests (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id           TEXT NOT NULL REFERENCES tenants(id),
     timestamp           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     requesting_agent    TEXT NOT NULL,
     department          TEXT NOT NULL,
@@ -122,9 +183,12 @@ CREATE TABLE approval_requests (
     urgent_sent         BOOLEAN NOT NULL DEFAULT FALSE
 );
 
-CREATE INDEX idx_approvals_status ON approval_requests(status) WHERE status = 'pending';
-CREATE INDEX idx_approvals_category ON approval_requests(category);
-CREATE INDEX idx_approvals_deadline ON approval_requests(deadline) WHERE status = 'pending';
+ALTER TABLE approval_requests ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_approvals ON approval_requests USING (tenant_id = current_setting('app.current_tenant', true));
+
+CREATE INDEX idx_approvals_tenant_status ON approval_requests(tenant_id, status) WHERE status = 'pending';
+CREATE INDEX idx_approvals_category ON approval_requests(tenant_id, category);
+CREATE INDEX idx_approvals_deadline ON approval_requests(tenant_id, deadline) WHERE status = 'pending';
 
 -- ============================================================================
 -- 5. Task Graph (workflow tasks)
@@ -132,6 +196,7 @@ CREATE INDEX idx_approvals_deadline ON approval_requests(deadline) WHERE status 
 
 CREATE TABLE workflow_tasks (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id),
     workflow_id     UUID NOT NULL,
     workflow_name   TEXT NOT NULL,
     task_name       TEXT NOT NULL,
@@ -154,9 +219,12 @@ CREATE TABLE workflow_tasks (
     completed_at    TIMESTAMPTZ
 );
 
-CREATE INDEX idx_tasks_workflow ON workflow_tasks(workflow_id);
-CREATE INDEX idx_tasks_status ON workflow_tasks(status);
-CREATE INDEX idx_tasks_agent ON workflow_tasks(assigned_agent);
+ALTER TABLE workflow_tasks ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_tasks ON workflow_tasks USING (tenant_id = current_setting('app.current_tenant', true));
+
+CREATE INDEX idx_tasks_tenant_workflow ON workflow_tasks(tenant_id, workflow_id);
+CREATE INDEX idx_tasks_status ON workflow_tasks(tenant_id, status);
+CREATE INDEX idx_tasks_agent ON workflow_tasks(tenant_id, assigned_agent);
 CREATE INDEX idx_tasks_priority ON workflow_tasks(priority) WHERE status = 'pending';
 
 -- ============================================================================
@@ -165,6 +233,7 @@ CREATE INDEX idx_tasks_priority ON workflow_tasks(priority) WHERE status = 'pend
 
 CREATE TABLE knowledge_entries (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id),
     category        TEXT NOT NULL CHECK (category IN ('policy', 'procedure', 'decision', 'faq', 'technical', 'runbook')),
     title           TEXT NOT NULL,
     content         TEXT NOT NULL,
@@ -177,9 +246,12 @@ CREATE TABLE knowledge_entries (
     embedding       VECTOR(1536)  -- For pgvector semantic search
 );
 
-CREATE INDEX idx_knowledge_category ON knowledge_entries(category);
+ALTER TABLE knowledge_entries ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_knowledge ON knowledge_entries USING (tenant_id = current_setting('app.current_tenant', true));
+
+CREATE INDEX idx_knowledge_tenant_category ON knowledge_entries(tenant_id, category);
 CREATE INDEX idx_knowledge_tags ON knowledge_entries USING GIN(tags);
-CREATE INDEX idx_knowledge_department ON knowledge_entries(department);
+CREATE INDEX idx_knowledge_department ON knowledge_entries(tenant_id, department);
 
 -- ============================================================================
 -- 7. Metrics
@@ -187,6 +259,7 @@ CREATE INDEX idx_knowledge_department ON knowledge_entries(department);
 
 CREATE TABLE metrics (
     id              BIGSERIAL PRIMARY KEY,
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id),
     timestamp       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     metric_name     TEXT NOT NULL,
     value           NUMERIC NOT NULL,
@@ -195,8 +268,11 @@ CREATE TABLE metrics (
     agent_id        TEXT
 );
 
-CREATE INDEX idx_metrics_name_time ON metrics(metric_name, timestamp DESC);
-CREATE INDEX idx_metrics_department ON metrics(department);
+ALTER TABLE metrics ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_metrics ON metrics USING (tenant_id = current_setting('app.current_tenant', true));
+
+CREATE INDEX idx_metrics_tenant_name ON metrics(tenant_id, metric_name, timestamp DESC);
+CREATE INDEX idx_metrics_department ON metrics(tenant_id, department);
 
 -- Hypertable for time-series (if using TimescaleDB)
 -- SELECT create_hypertable('metrics', 'timestamp');
@@ -207,6 +283,7 @@ CREATE INDEX idx_metrics_department ON metrics(department);
 
 CREATE TABLE agent_sessions (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id),
     agent_id        TEXT NOT NULL,
     session_id      TEXT NOT NULL UNIQUE,
     status          TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'completed', 'failed', 'timeout')),
@@ -222,7 +299,10 @@ CREATE TABLE agent_sessions (
     metadata        JSONB NOT NULL DEFAULT '{}'
 );
 
-CREATE INDEX idx_sessions_agent ON agent_sessions(agent_id);
+ALTER TABLE agent_sessions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_sessions ON agent_sessions USING (tenant_id = current_setting('app.current_tenant', true));
+
+CREATE INDEX idx_sessions_tenant_agent ON agent_sessions(tenant_id, agent_id);
 CREATE INDEX idx_sessions_status ON agent_sessions(status) WHERE status = 'running';
 CREATE INDEX idx_sessions_workflow ON agent_sessions(workflow_id) WHERE workflow_id IS NOT NULL;
 
@@ -232,6 +312,7 @@ CREATE INDEX idx_sessions_workflow ON agent_sessions(workflow_id) WHERE workflow
 
 CREATE TABLE decision_precedents (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id),
     timestamp       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     title           TEXT NOT NULL,
     category        TEXT NOT NULL,
@@ -246,21 +327,23 @@ CREATE TABLE decision_precedents (
     superseded_by   UUID REFERENCES decision_precedents(id)
 );
 
-CREATE INDEX idx_precedents_category ON decision_precedents(category);
-CREATE INDEX idx_precedents_department ON decision_precedents(department);
+ALTER TABLE decision_precedents ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_precedents ON decision_precedents USING (tenant_id = current_setting('app.current_tenant', true));
+
+CREATE INDEX idx_precedents_tenant_category ON decision_precedents(tenant_id, category);
+CREATE INDEX idx_precedents_department ON decision_precedents(tenant_id, department);
 CREATE INDEX idx_precedents_tags ON decision_precedents USING GIN(tags);
 
 -- ============================================================================
 -- Views
 -- ============================================================================
 
--- Active approval summary for dashboard
+-- Active approval summary for dashboard (tenant-scoped via RLS)
 CREATE VIEW v_pending_approvals AS
 SELECT
-    id, timestamp, requesting_agent, department, category,
-    title, risk_assessment, sla_hours,
-    timestamp + (sla_hours || ' hours')::INTERVAL AS deadline,
-    EXTRACT(EPOCH FROM (timestamp + (sla_hours || ' hours')::INTERVAL - NOW())) / 3600 AS hours_remaining
+    tenant_id, id, timestamp, requesting_agent, department, category,
+    title, risk_assessment, sla_hours, deadline,
+    EXTRACT(EPOCH FROM (deadline - NOW())) / 3600 AS hours_remaining
 FROM approval_requests
 WHERE status = 'pending'
 ORDER BY
@@ -272,10 +355,10 @@ ORDER BY
     END,
     timestamp;
 
--- Agent cost summary (daily)
+-- Agent cost summary (daily, tenant-scoped via RLS)
 CREATE VIEW v_daily_agent_costs AS
 SELECT
-    agent_id,
+    tenant_id, agent_id,
     DATE(started_at) AS date,
     COUNT(*) AS session_count,
     SUM(input_tokens) AS total_input_tokens,
@@ -285,14 +368,13 @@ SELECT
     AVG(EXTRACT(EPOCH FROM (completed_at - started_at))) AS avg_duration_seconds
 FROM agent_sessions
 WHERE completed_at IS NOT NULL
-GROUP BY agent_id, DATE(started_at)
+GROUP BY tenant_id, agent_id, DATE(started_at)
 ORDER BY date DESC, total_cost_usd DESC;
 
--- Workflow progress summary
+-- Workflow progress summary (tenant-scoped via RLS)
 CREATE VIEW v_workflow_progress AS
 SELECT
-    workflow_id,
-    workflow_name,
+    tenant_id, workflow_id, workflow_name,
     COUNT(*) AS total_tasks,
     COUNT(*) FILTER (WHERE status = 'completed') AS completed_tasks,
     COUNT(*) FILTER (WHERE status = 'in_progress') AS active_tasks,
@@ -300,4 +382,4 @@ SELECT
     COUNT(*) FILTER (WHERE status = 'pending' OR status = 'blocked') AS pending_tasks,
     ROUND(100.0 * COUNT(*) FILTER (WHERE status = 'completed') / NULLIF(COUNT(*), 0), 1) AS completion_pct
 FROM workflow_tasks
-GROUP BY workflow_id, workflow_name;
+GROUP BY tenant_id, workflow_id, workflow_name;

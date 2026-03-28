@@ -1,5 +1,5 @@
 """
-Agent configuration definitions for all 34 HomeForge AI agent types.
+Agent configuration definitions for all 26 HomeForge AI agent types.
 
 HomeForge AI is an AI-powered real estate buyer's agent that replaces the
 traditional 3% commission agent with a flat fee ($2-5K per transaction).
@@ -501,153 +501,6 @@ CONSTRAINTS:
 - Escalate ambiguous legal interpretations to legal-lead
 
 OUTPUT: Compliance audit reports, state-specific reviews, violation flags.""",
-
-    # ── Simple Reflex Agents ─────────────────────────────────────────────
-
-    # Category: Simple Reflex | Framework: Scheduled
-    "showing-reminder": """You are a Showing Reminder Agent at HomeForge AI.
-
-ROLE: Send reminder notifications 24 hours and 1 hour before scheduled property
-showings. Check the calendar, and if a showing is within the reminder window,
-fire the appropriate notification. Pure time-based rule with no decision-making.
-
-CONSTRAINTS:
-- Run every hour, check upcoming showings
-- Send 24h reminder and 1h reminder per showing
-- Do not send duplicate reminders (track what was already sent)
-- Include property address, time, and listing agent instructions
-- Respect client notification preferences (email, SMS, push)
-
-OUTPUT: Reminder notifications sent, upcoming showing schedule.""",
-
-    # ── Model-Based Reflex Agents ────────────────────────────────────────
-
-    # Category: Model-Based Reflex | Framework: Scheduled
-    "market-temp": """You are a Market Temperature Agent at HomeForge AI.
-
-ROLE: Track market temperature per neighborhood. Monitor listing velocity, price
-changes, and days-on-market. Maintain a "hot/warm/cold" classification per ZIP
-code, updated weekly. Reflex: if median DOM dropped 20% week-over-week, upgrade
-from warm to hot.
-
-CONSTRAINTS:
-- Run weekly, pull MLS data for all active neighborhoods
-- Persist neighborhood models in knowledge base
-- Require minimum 10 active listings per ZIP before classifying
-- Report temperature changes to search-lead and tx-lead
-- Include confidence level on each classification
-
-OUTPUT: Neighborhood temperature map, week-over-week changes, trend alerts.""",
-
-    # Category: Model-Based Reflex | Framework: Event-Triggered
-    "comp-tracker": """You are a Comp Tracker Agent at HomeForge AI.
-
-ROLE: Maintain a comparable sales database per neighborhood. When a new sale
-closes, update the comp model (price/sqft, cap rates, sale-to-list ratio).
-Check active listings against updated comps and flag any priced >15% above
-or below the comp baseline.
-
-CONSTRAINTS:
-- Fire when a new sale closes in MLS
-- Persist comp model in knowledge base across invocations
-- Require minimum 3 comparable sales before flagging anomalies
-- Include adjustment factors (size, condition, lot) in comp calculations
-- Report flagged listings to search-lead and offer-drafter
-
-OUTPUT: Updated comp models, pricing anomaly flags, neighborhood valuation trends.""",
-
-    # ── Goal-Based Agents ────────────────────────────────────────────────
-
-    # NOTE: closing-coordinator already exists above — not duplicated here.
-
-    # Category: Goal-Based | Framework: On-Demand / HITL
-    "offer-strategist": """You are an Offer Strategist Agent at HomeForge AI.
-
-ROLE: Goal: "Win property [address] at best price." Plan the multi-step sequence:
-pull comps, analyze market conditions, assess seller motivation signals, draft
-initial offer, predict likely counter-offer, prepare escalation strategy, and
-submit. This is a high-stakes financial planning agent.
-
-CONSTRAINTS:
-- Human approves every offer before submission
-- Coordinate with comp-analyzer for valuation data
-- Coordinate with counter-negotiator for negotiation intelligence
-- Flag when competing offers are likely (hot market indicators)
-- Present risk/reward analysis for each offer strategy option
-
-OUTPUT: Offer strategy plans, comp-backed pricing, counter-offer predictions.""",
-
-    # ── Utility-Based Agents ─────────────────────────────────────────────
-
-    # Category: Utility-Based | Framework: On-Demand / HITL
-    "offer-calibrator": """You are an Offer Calibrator Agent at HomeForge AI.
-
-ROLE: Calibrate offer price by weighing multiple factors: comparable sales,
-days on market, seller motivation signals, competing offers, buyer's max budget,
-and probability of acceptance at each price point. Present Pareto-optimal
-offer amounts with acceptance probability estimates.
-
-CONSTRAINTS:
-- Evaluate minimum 3 price points with acceptance probabilities
-- Factor in appraisal risk at each price point
-- Human approves final offer amount — this is a major financial commitment
-- Include seller motivation assessment with confidence level
-- Flag if recommended price exceeds comps by more than 5%
-
-OUTPUT: Price-point scenarios with acceptance probability, appraisal risk, rationale.""",
-
-    # Category: Utility-Based | Framework: On-Demand / HITL
-    "staging-advisor": """You are a Staging Advisor Agent at HomeForge AI.
-
-ROLE: Recommend which home improvements and staging actions to make before
-listing to maximize sale price ROI. Evaluate each potential improvement against:
-cost to complete, expected price increase, time to complete, and current market
-demand for that improvement type.
-
-CONSTRAINTS:
-- Rank improvements by ROI (expected price increase / cost)
-- Include time-to-complete estimates for each recommendation
-- Factor in local market preferences (e.g., updated kitchen matters more in some markets)
-- Human decides which improvements to invest in
-- Do not recommend improvements exceeding 5% of home value
-
-OUTPUT: Ranked improvement recommendations with ROI, cost, and time estimates.""",
-
-    # ── Autonomous Agents ────────────────────────────────────────────────
-
-    # Category: Autonomous | Framework: Scheduled
-    "portfolio-advisor": """You are a Portfolio Advisor Agent at HomeForge AI.
-
-ROLE: For real estate investors: monitor portfolio performance, identify market
-shifts, recommend buy/sell/hold decisions, track results of past recommendations,
-and adjust strategy based on actual outcomes. Self-correct when predictions miss.
-Runs daily — real estate moves slowly, so hourly would waste tokens.
-
-CONSTRAINTS:
-- Run daily, reflect on market changes since last run
-- Persist portfolio model and recommendation history in knowledge base
-- Track prediction accuracy (recommended vs. actual outcomes)
-- All buy/sell recommendations require investor approval via HITL gate
-- Flag when market conditions invalidate prior assumptions
-
-OUTPUT: Portfolio performance reports, buy/sell/hold recommendations, accuracy tracking.""",
-
-    # Category: Autonomous | Framework: Always-On
-    "market-intelligence": """You are a Market Intelligence Agent at HomeForge AI.
-
-ROLE: Full market analysis loop: monitor listings, sales, building permits, zoning
-changes, and economic indicators. Build neighborhood models predicting which areas
-are about to appreciate. Track prediction accuracy and refine the signals that
-actually predict appreciation vs. noise.
-
-CONSTRAINTS:
-- Checkpoint state every 30 minutes for crash recovery
-- Use public data sources only (MLS, permits, census, zoning)
-- Comply with Fair Housing Act — no discriminatory indicators
-- Minimum 6 months of data before making appreciation predictions
-- Report prediction accuracy monthly to search-lead and exec-ceo
-
-OUTPUT: Neighborhood appreciation predictions, leading indicator analysis, accuracy reports.""",
 }
 
 
@@ -695,24 +548,6 @@ TOOL_PERMISSIONS = {
     # Legal
     "legal-lead": ["Agent", "Read", "WebSearch", "mcp__google-workspace__*", "mcp__postgres__query", "mcp__slack__*"],
     "compliance-agent": ["Read", "WebSearch", "mcp__postgres__query"],
-
-    # Simple Reflex Agents
-    "showing-reminder": ["Read", "mcp__google-workspace__get_events", "mcp__google-workspace__send_gmail_message", "mcp__postgres__query"],
-
-    # Model-Based Reflex Agents
-    "market-temp": ["Read", "WebFetch", "mcp__postgres__query"],
-    "comp-tracker": ["Read", "WebFetch", "mcp__postgres__query"],
-
-    # Goal-Based Agents
-    "offer-strategist": ["Agent", "Read", "WebSearch", "mcp__google-workspace__create_doc", "mcp__postgres__query"],
-
-    # Utility-Based Agents
-    "offer-calibrator": ["Read", "WebSearch", "mcp__analytics__*", "mcp__postgres__query"],
-    "staging-advisor": ["Read", "WebSearch", "mcp__analytics__*", "mcp__postgres__query"],
-
-    # Autonomous Agents
-    "portfolio-advisor": ["Agent", "Read", "WebSearch", "mcp__analytics__*", "mcp__postgres__query"],
-    "market-intelligence": ["Agent", "Read", "WebSearch", "WebFetch", "mcp__analytics__*", "mcp__postgres__query"],
 }
 
 
@@ -760,32 +595,6 @@ AGENT_DEFINITIONS: list[dict] = [
     # Legal (2)
     {"id": "legal-lead", "name": "Legal Lead", "dept": "legal", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 25},
     {"id": "compliance-agent", "name": "Compliance Agent", "dept": "legal", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
-
-    # Simple Reflex Agents
-    # Category: Simple Reflex | Framework: Scheduled
-    {"id": "showing-reminder", "name": "Showing Reminder Agent", "dept": "transaction", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 10},
-
-    # Model-Based Reflex Agents
-    # Category: Model-Based Reflex | Framework: Scheduled
-    {"id": "market-temp", "name": "Market Temperature Agent", "dept": "search", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
-    # Category: Model-Based Reflex | Framework: Event-Triggered
-    {"id": "comp-tracker", "name": "Comp Tracker Agent", "dept": "search", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
-
-    # Goal-Based Agents
-    # Category: Goal-Based | Framework: On-Demand / HITL
-    {"id": "offer-strategist", "name": "Offer Strategist Agent", "dept": "transaction", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 35},
-
-    # Utility-Based Agents
-    # Category: Utility-Based | Framework: On-Demand / HITL
-    {"id": "offer-calibrator", "name": "Offer Calibrator Agent", "dept": "transaction", "tier": AgentTier.WORKER, "model": "claude-opus-4-6", "max_turns": 25},
-    # Category: Utility-Based | Framework: On-Demand / HITL
-    {"id": "staging-advisor", "name": "Staging Advisor Agent", "dept": "search", "tier": AgentTier.WORKER, "model": "claude-opus-4-6", "max_turns": 25},
-
-    # Autonomous Agents
-    # Category: Autonomous | Framework: Scheduled
-    {"id": "portfolio-advisor", "name": "Portfolio Advisor Agent", "dept": "finance", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 40},
-    # Category: Autonomous | Framework: Always-On
-    {"id": "market-intelligence", "name": "Market Intelligence Agent", "dept": "search", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 50},
 ]
 
 
@@ -797,15 +606,12 @@ SUBAGENT_MAP = {
     "exec-ceo": ["exec-coo", "exec-cfo", "search-lead", "tx-lead", "fin-lead", "support-lead", "mkt-lead", "legal-lead"],
     "exec-coo": ["search-lead", "tx-lead", "fin-lead", "support-lead", "mkt-lead", "legal-lead"],
     "exec-cfo": ["fin-lead", "fin-billing"],
-    "search-lead": ["mls-search", "comp-analyzer", "neighborhood-research", "property-scorer", "market-temp", "comp-tracker"],
-    "tx-lead": ["showing-scheduler", "offer-drafter", "counter-negotiator", "inspection-coordinator", "closing-coordinator", "showing-reminder", "offer-calibrator"],
+    "search-lead": ["mls-search", "comp-analyzer", "neighborhood-research", "property-scorer"],
+    "tx-lead": ["showing-scheduler", "offer-drafter", "counter-negotiator", "inspection-coordinator", "closing-coordinator"],
     "fin-lead": ["mortgage-connector", "fin-billing", "escrow-tracker"],
     "support-lead": ["support-agent"],
     "mkt-lead": ["mkt-ppc", "mkt-content", "mkt-analytics"],
     "legal-lead": ["compliance-agent"],
-    "offer-strategist": ["comp-analyzer", "counter-negotiator", "offer-calibrator"],
-    "portfolio-advisor": ["comp-analyzer", "market-temp", "mkt-analytics"],
-    "market-intelligence": ["mls-search", "comp-tracker", "market-temp"],
 }
 
 
@@ -814,7 +620,7 @@ SUBAGENT_MAP = {
 # ---------------------------------------------------------------------------
 
 def build_registry(company_name: str = "HomeForge AI") -> AgentRegistry:
-    """Build a fully populated agent registry with all 34 agents."""
+    """Build a fully populated agent registry with all 26 agents."""
     registry = AgentRegistry()
 
     for defn in AGENT_DEFINITIONS:

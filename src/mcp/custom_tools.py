@@ -15,13 +15,14 @@ Tool categories:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -197,10 +198,175 @@ class ApprovalRequest:
     context: dict = field(default_factory=dict)
 
 
+@runtime_checkable
+class ApprovalStore(Protocol):
+    """Protocol for pluggable HITL approval storage backends."""
+
+    def save(self, request: ApprovalRequest) -> None: ...
+
+    def get(self, request_id: str) -> ApprovalRequest | None: ...
+
+    def list_pending(self, category: str | None = None) -> list[ApprovalRequest]: ...
+
+    def update_status(
+        self,
+        request_id: str,
+        status: ApprovalStatus,
+        decision_by: str | None = None,
+        decision_reason: str | None = None,
+    ) -> bool: ...
+
+    def list_expired_pending(self) -> list[ApprovalRequest]: ...
+
+
+class InMemoryApprovalStore:
+    """Default in-memory store. Drop-in for all existing tests and demos."""
+
+    def __init__(self):
+        self._requests: dict[str, ApprovalRequest] = {}
+
+    def save(self, request: ApprovalRequest) -> None:
+        self._requests[request.id] = request
+
+    def get(self, request_id: str) -> ApprovalRequest | None:
+        return self._requests.get(request_id)
+
+    def list_pending(self, category: str | None = None) -> list[ApprovalRequest]:
+        results = []
+        for req in self._requests.values():
+            if req.status != ApprovalStatus.PENDING:
+                continue
+            if category and req.category != category:
+                continue
+            results.append(req)
+        return sorted(results, key=lambda r: r.timestamp)
+
+    def update_status(
+        self,
+        request_id: str,
+        status: ApprovalStatus,
+        decision_by: str | None = None,
+        decision_reason: str | None = None,
+    ) -> bool:
+        req = self._requests.get(request_id)
+        if not req or req.status != ApprovalStatus.PENDING:
+            return False
+        req.status = status
+        req.decision_by = decision_by
+        req.decision_at = datetime.now(timezone.utc).isoformat()
+        req.decision_reason = decision_reason
+        return True
+
+    def list_expired_pending(self) -> list[ApprovalRequest]:
+        now = datetime.now(timezone.utc)
+        results = []
+        for req in self._requests.values():
+            if req.status != ApprovalStatus.PENDING:
+                continue
+            if req.deadline and datetime.fromisoformat(req.deadline) <= now:
+                results.append(req)
+        return results
+
+
+class PostgresApprovalStore:
+    """PostgreSQL-backed store. Uses the MCP postgres server for queries."""
+
+    def __init__(self, db_client, company_id: str = "leadforge"):
+        self._db = db_client
+        self._company_id = company_id
+
+    def save(self, request: ApprovalRequest) -> None:
+        self._db.execute(
+            "INSERT INTO hitl_approvals "
+            "(id, company_id, created_at, requesting_agent, department, category, "
+            "title, description, risk_assessment, sla_hours, deadline, status, context) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                request.id, self._company_id, request.timestamp,
+                request.requesting_agent, request.department, request.category,
+                request.title, request.description, request.risk_assessment,
+                request.sla_hours, request.deadline, request.status.value,
+                json.dumps(request.context),
+            ),
+        )
+
+    def get(self, request_id: str) -> ApprovalRequest | None:
+        rows = self._db.execute(
+            "SELECT * FROM hitl_approvals WHERE id = %s AND company_id = %s",
+            (request_id, self._company_id),
+        )
+        if not rows:
+            return None
+        return self._row_to_request(rows[0])
+
+    def list_pending(self, category: str | None = None) -> list[ApprovalRequest]:
+        if category:
+            rows = self._db.execute(
+                "SELECT * FROM hitl_approvals WHERE company_id = %s AND status = 'pending' "
+                "AND category = %s ORDER BY created_at",
+                (self._company_id, category),
+            )
+        else:
+            rows = self._db.execute(
+                "SELECT * FROM hitl_approvals WHERE company_id = %s AND status = 'pending' "
+                "ORDER BY created_at",
+                (self._company_id,),
+            )
+        return [self._row_to_request(r) for r in rows]
+
+    def update_status(
+        self,
+        request_id: str,
+        status: ApprovalStatus,
+        decision_by: str | None = None,
+        decision_reason: str | None = None,
+    ) -> bool:
+        affected = self._db.execute(
+            "UPDATE hitl_approvals SET status = %s, decision_by = %s, "
+            "decision_at = %s, decision_reason = %s "
+            "WHERE id = %s AND company_id = %s AND status = 'pending'",
+            (
+                status.value, decision_by,
+                datetime.now(timezone.utc).isoformat(), decision_reason,
+                request_id, self._company_id,
+            ),
+        )
+        return bool(affected)
+
+    def list_expired_pending(self) -> list[ApprovalRequest]:
+        rows = self._db.execute(
+            "SELECT * FROM hitl_approvals WHERE company_id = %s "
+            "AND status = 'pending' AND deadline <= %s ORDER BY deadline",
+            (self._company_id, datetime.now(timezone.utc).isoformat()),
+        )
+        return [self._row_to_request(r) for r in rows]
+
+    @staticmethod
+    def _row_to_request(row: dict) -> ApprovalRequest:
+        return ApprovalRequest(
+            id=row["id"],
+            timestamp=str(row.get("created_at", "")),
+            requesting_agent=row.get("requesting_agent", ""),
+            department=row.get("department", ""),
+            category=row.get("category", ""),
+            title=row.get("title", ""),
+            description=row.get("description", ""),
+            risk_assessment=row.get("risk_assessment", "low"),
+            sla_hours=float(row.get("sla_hours", 24.0)),
+            deadline=str(row.get("deadline", "")),
+            status=ApprovalStatus(row.get("status", "pending")),
+            decision_by=row.get("decision_by"),
+            decision_at=str(row.get("decision_at", "")) if row.get("decision_at") else None,
+            decision_reason=row.get("decision_reason"),
+            context=row.get("context") or {},
+        )
+
+
 class HITLGateway:
     """
     Human-in-the-loop approval gateway.
     Manages approval requests and their lifecycle.
+    Supports pluggable storage backends (in-memory default, PostgreSQL for production).
     """
 
     # Default SLA by category
@@ -214,8 +380,18 @@ class HITLGateway:
         "data_deletion": 24.0,
     }
 
-    def __init__(self):
-        self._requests: dict[str, ApprovalRequest] = {}
+    def __init__(self, store=None, config: dict | None = None, company_id: str = "leadforge"):
+        self._store: InMemoryApprovalStore | PostgresApprovalStore = store or InMemoryApprovalStore()
+        self._waiters: dict[str, asyncio.Event] = {}
+        self._company_id = company_id
+        self._load_sla_overrides(config or {})
+
+    def _load_sla_overrides(self, config: dict) -> None:
+        """Merge company-specific SLA overrides from config."""
+        hitl_config = config.get("hitl", {})
+        sla_overrides = hitl_config.get("sla", {})
+        for category, hours in sla_overrides.items():
+            self.DEFAULT_SLA[category] = float(hours)
 
     def request_approval(
         self,
@@ -229,6 +405,8 @@ class HITLGateway:
     ) -> str:
         """Submit a new approval request."""
         sla = self.DEFAULT_SLA.get(category, 24.0)
+        now = datetime.now(timezone.utc)
+        deadline = now + timedelta(hours=sla)
 
         req = ApprovalRequest(
             requesting_agent=requesting_agent,
@@ -238,24 +416,22 @@ class HITLGateway:
             description=description,
             risk_assessment=risk_assessment,
             sla_hours=sla,
+            deadline=deadline.isoformat(),
             context=context or {},
         )
-        self._requests[req.id] = req
+        self._store.save(req)
+        self._waiters[req.id] = asyncio.Event()
         logger.info(
-            "HITL REQUEST | %s | %s | %s | SLA: %sh",
-            req.id[:8], category, title, sla,
+            "HITL REQUEST | %s | %s | %s | SLA: %sh | Deadline: %s",
+            req.id[:8], category, title, sla, deadline.isoformat(),
         )
         return req.id
 
     def get_pending(self, category: str | None = None) -> list[dict]:
         """Get all pending approval requests."""
-        results = []
-        for req in self._requests.values():
-            if req.status != ApprovalStatus.PENDING:
-                continue
-            if category and req.category != category:
-                continue
-            results.append({
+        pending = self._store.list_pending(category)
+        return [
+            {
                 "id": req.id,
                 "timestamp": req.timestamp,
                 "agent": req.requesting_agent,
@@ -265,34 +441,61 @@ class HITLGateway:
                 "description": req.description,
                 "risk": req.risk_assessment,
                 "sla_hours": req.sla_hours,
+                "deadline": req.deadline,
                 "status": req.status.value,
-            })
-        return sorted(results, key=lambda r: r["timestamp"])
+            }
+            for req in pending
+        ]
 
     def approve(self, request_id: str, approved_by: str, reason: str = "") -> bool:
-        req = self._requests.get(request_id)
-        if not req or req.status != ApprovalStatus.PENDING:
-            return False
-        req.status = ApprovalStatus.APPROVED
-        req.decision_by = approved_by
-        req.decision_at = datetime.now(timezone.utc).isoformat()
-        req.decision_reason = reason
-        logger.info("HITL APPROVED | %s | by %s", request_id[:8], approved_by)
-        return True
+        success = self._store.update_status(
+            request_id, ApprovalStatus.APPROVED,
+            decision_by=approved_by, decision_reason=reason,
+        )
+        if success:
+            logger.info("HITL APPROVED | %s | by %s", request_id[:8], approved_by)
+            self._signal_waiter(request_id)
+        return success
 
     def reject(self, request_id: str, rejected_by: str, reason: str = "") -> bool:
-        req = self._requests.get(request_id)
-        if not req or req.status != ApprovalStatus.PENDING:
-            return False
-        req.status = ApprovalStatus.REJECTED
-        req.decision_by = rejected_by
-        req.decision_at = datetime.now(timezone.utc).isoformat()
-        req.decision_reason = reason
-        logger.info("HITL REJECTED | %s | by %s | %s", request_id[:8], rejected_by, reason)
-        return True
+        success = self._store.update_status(
+            request_id, ApprovalStatus.REJECTED,
+            decision_by=rejected_by, decision_reason=reason,
+        )
+        if success:
+            logger.info("HITL REJECTED | %s | by %s | %s", request_id[:8], rejected_by, reason)
+            self._signal_waiter(request_id)
+        return success
+
+    def expire(self, request_id: str) -> bool:
+        """Mark a pending request as expired (SLA breached). Auto-deny."""
+        success = self._store.update_status(
+            request_id, ApprovalStatus.EXPIRED,
+            decision_by="system", decision_reason="SLA expired — auto-denied",
+        )
+        if success:
+            logger.warning("HITL EXPIRED | %s | SLA breached", request_id[:8])
+            self._signal_waiter(request_id)
+        return success
+
+    def get_expired_pending(self) -> list[dict]:
+        """Return pending requests that have passed their deadline."""
+        expired = self._store.list_expired_pending()
+        return [
+            {
+                "id": req.id,
+                "agent": req.requesting_agent,
+                "department": req.department,
+                "category": req.category,
+                "title": req.title,
+                "sla_hours": req.sla_hours,
+                "deadline": req.deadline,
+            }
+            for req in expired
+        ]
 
     def check_status(self, request_id: str) -> dict | None:
-        req = self._requests.get(request_id)
+        req = self._store.get(request_id)
         if not req:
             return None
         return {
@@ -300,10 +503,33 @@ class HITLGateway:
             "status": req.status.value,
             "title": req.title,
             "category": req.category,
+            "sla_hours": req.sla_hours,
+            "deadline": req.deadline,
+            "context": req.context,
             "decision_by": req.decision_by,
             "decision_at": req.decision_at,
             "decision_reason": req.decision_reason,
         }
+
+    async def wait_for_decision(self, request_id: str, timeout: float | None = None) -> dict | None:
+        """Block until the approval is decided or timeout elapses.
+
+        Returns the status dict on decision, or None on timeout.
+        """
+        event = self._waiters.get(request_id)
+        if not event:
+            # Already decided or unknown — return current status
+            return self.check_status(request_id)
+        try:
+            await asyncio.wait_for(event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            return None
+        return self.check_status(request_id)
+
+    def _signal_waiter(self, request_id: str) -> None:
+        event = self._waiters.pop(request_id, None)
+        if event:
+            event.set()
 
 
 # ---------------------------------------------------------------------------
@@ -516,109 +742,42 @@ class CompanySystem:
     Unified access to all company subsystems.
     This is the single object that the bootstrap process creates
     and passes to all agent invocations.
+
+    When db_client is provided and connected, uses PostgreSQL-backed subsystems.
+    Otherwise falls back to in-memory (for tests and development).
     """
 
-    def __init__(self):
-        self.event_bus = EventBus()
-        self.hitl = HITLGateway()
-        self.knowledge = KnowledgeBase()
-        self.metrics = MetricsStore()
+    def __init__(self, config: dict | None = None, company_id: str = "leadforge", db_client=None):
+        use_postgres = db_client is not None and getattr(db_client, "is_connected", False)
 
-    def seed_knowledge_base(self):
-        """Seed the knowledge base with LeadForge AI policies and procedures."""
-        self.knowledge.add(
-            "procedure", "ICP Definition Framework",
-            "Framework for defining Ideal Customer Profiles per client. Includes: industry verticals, "
-            "company size (revenue and employee count), technology stack signals, buying triggers "
-            "(hiring, funding, expansion), organizational maturity indicators, geographic targeting, "
-            "decision-maker titles and roles. Every client engagement starts with ICP workshop.",
-            ["sales", "icp", "targeting"], "system"
-        )
-        self.knowledge.add(
-            "procedure", "Lead Scoring Criteria (BANT/MEDDIC)",
-            "Lead scoring rubric: Budget (0-25 points: Has budget allocated or process identified?), "
-            "Authority (0-25: Is contact a decision maker or has access?), Need (0-25: Expressed pain "
-            "point matching solution?), Timeline (0-25: Active buying timeline within 90 days?). "
-            "Score 70+: SQL (hand off to client). Score 40-69: MQL (enter nurture sequence). "
-            "Score below 40: Archive (revisit quarterly). MEDDIC overlay for enterprise deals >$50K.",
-            ["sales", "scoring", "qualification"], "system"
-        )
-        self.knowledge.add(
-            "policy", "Outreach Compliance (CAN-SPAM / GDPR)",
-            "CAN-SPAM: Must include physical address, unsubscribe link, honest subject lines, no "
-            "misleading headers. Honor opt-outs within 10 business days. GDPR: Legitimate interest "
-            "basis for B2B outreach, right to object must be honored within 72 hours, data processing "
-            "records required, no outreach to personal email addresses in EU without consent. "
-            "Maximum outreach frequency: 3 emails per prospect per week. Opt-out processed within 24h.",
-            ["legal", "compliance", "outreach", "email"], "system"
-        )
-        self.knowledge.add(
-            "procedure", "Email Outreach Cadence Rules",
-            "Standard outreach sequence: Day 1: Intro email (personalized to prospect pain points). "
-            "Day 3: LinkedIn connection request with custom note. Day 5: Follow-up email with value-add "
-            "content (case study or whitepaper). Day 8: LinkedIn message. Day 12: Breakup email. "
-            "Wait 30 days before re-engaging. Maximum 50 new prospects per SDR per day. All emails "
-            "sent between 8am-6pm recipient local time. All sequences use client-approved templates.",
-            ["sales", "outreach", "cadence"], "system"
-        )
-        self.knowledge.add(
-            "procedure", "Qualification Criteria",
-            "A lead qualifies as SQL when: (1) Confirmed budget or budget process identified, "
-            "(2) Spoke with economic buyer or champion with access to buyer, (3) Expressed specific "
-            "pain point our client's service addresses, (4) Timeline within 90 days, "
-            "(5) No competing engagement with direct competitor. Minimum 3 of 5 criteria met. "
-            "All SQLs must have a booked meeting or call scheduled with client sales team.",
-            ["sales", "qualification", "sql"], "system"
-        )
-        self.knowledge.add(
-            "policy", "Client SLA Framework",
-            "Standard client SLAs by retainer tier: Starter ($3K/month): 50 qualified leads/month, "
-            "5 SQLs, weekly email reporting. Growth ($5K/month): 100 qualified leads/month, "
-            "10 SQLs, bi-weekly strategy calls, dedicated Slack channel. Enterprise ($10K/month): "
-            "200 qualified leads/month, 20 SQLs, dedicated strategist, daily Slack channel, "
-            "monthly QBR. Performance bonus: $500 per SQL that converts to opportunity. "
-            "Meeting no-show rate must be below 15%.",
-            ["operations", "client", "sla"], "system"
-        )
-        self.knowledge.add(
-            "policy", "Financial Approval Thresholds",
-            "Up to $1,000: Department lead approval. $1,000-$5,000: CFO approval. "
-            "$5,000-$10,000: CEO approval. Over $10,000: Human board approval. "
-            "Client refunds >$1,000 require CEO approval. Google Ads spend increases >20% "
-            "require CFO approval. Performance bonus payouts auto-approved per SLA terms.",
-            ["finance", "approval"], "system"
-        )
-        self.knowledge.add(
-            "policy", "Escalation Protocol",
-            "Level 1: Same-department — department lead arbitrates. "
-            "Level 2: Cross-department — COO arbitrates (council pattern). "
-            "Level 3: Strategic — escalate to human board with structured decision document. "
-            "Level 4: Red line — ANY agent can bypass hierarchy for ethical/legal/safety concerns "
-            "via ESCALATION_CRITICAL event. Client escalations: churn risk goes directly to "
-            "sales-lead and exec-coo simultaneously.",
-            ["operations", "escalation"], "system"
-        )
-        self.knowledge.add(
-            "policy", "Data Handling Policy",
-            "No PII in agent prompts or logs. Prospect data handled per client data processing "
-            "agreements. No cross-client data sharing or list mixing under any circumstances. "
-            "Data deletion follows GDPR workflow. All data access logged in audit trail. "
-            "Prospect data retained for maximum 12 months after last engagement unless client "
-            "requests extension. Suppression lists maintained per client and per jurisdiction.",
-            ["legal", "data", "privacy"], "system"
-        )
-        self.knowledge.add(
-            "policy", "Agent Autonomy Levels",
-            "Category A (Fully Autonomous): Lead scoring, prospect research, CRM updates, "
-            "template-based outreach, pipeline reporting, data enrichment. "
-            "Category B (Autonomous + Audit): Outreach emails (10% weekly sample), nurture sequences, "
-            "campaign optimization, ad bid adjustments, content creation. "
-            "Category C (Pre-Approval Required): Client service agreements (48h SLA), ad spend "
-            "changes >$500 (12h), new outreach channels (24h), pricing changes (24h). "
-            "Category D (Human-Only): Legal agreements, regulatory filings, strategic pivots, "
-            "data breach response, client terminations.",
-            ["operations", "autonomy", "governance"], "system"
-        )
+        if use_postgres:
+            from src.mcp.persistence import (
+                PostgresEventBus,
+                PostgresKnowledgeBase,
+                PostgresMetricsStore,
+            )
+            self.event_bus = PostgresEventBus(db_client, company_id)
+            self.knowledge = PostgresKnowledgeBase(db_client, company_id)
+            self.metrics = PostgresMetricsStore(db_client, company_id)
+            store = PostgresApprovalStore(db_client, company_id)
+            logger.info("CompanySystem: using PostgreSQL persistence")
+        else:
+            self.event_bus = EventBus()
+            self.knowledge = KnowledgeBase()
+            self.metrics = MetricsStore()
+            store = None
+
+        self.hitl = HITLGateway(store=store, config=config, company_id=company_id)
+
+    def seed_knowledge_base(self, company_id: str = "leadforge"):
+        """Seed the knowledge base with company-specific policies.
+
+        Delegates to the company's knowledge module. For backward compatibility,
+        defaults to LeadForge AI.
+        """
+        import importlib
+        knowledge_mod = importlib.import_module(f"src.companies.{company_id}.knowledge")
+        knowledge_mod.seed_knowledge_base(self.knowledge)
 
     def get_system_health(self) -> dict:
         """Get overall system health summary."""

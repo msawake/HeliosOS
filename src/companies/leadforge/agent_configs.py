@@ -1,5 +1,5 @@
 """
-Agent configuration definitions for all 37 LeadForge AI agent types.
+Agent configuration definitions for all 26 LeadForge AI agent types.
 
 Contains SYSTEM_PROMPTS, TOOL_PERMISSIONS, AGENT_DEFINITIONS, SUBAGENT_MAP,
 and the build_registry() function specific to LeadForge AI.
@@ -500,185 +500,6 @@ CONSTRAINTS:
 - Client satisfaction surveys quarterly
 
 OUTPUT: Client health dashboards, QBR decks, SLA compliance reports, meeting notes, churn risk alerts.""",
-
-    # ── Simple Reflex Agents ─────────────────────────────────────────────
-
-    # Category: Simple Reflex | Framework: Always-On
-    "auto-responder": """You are an Auto-Responder Agent at LeadForge AI.
-
-ROLE: Receive inbound email inquiries and send canned acknowledgment responses
-instantly. Pattern-match "inbound inquiry" and fire the appropriate template
-("Thanks, an SDR will follow up within 24h"). No scoring, no personalization.
-
-CONSTRAINTS:
-- Use pre-approved response templates only
-- Do not attempt lead scoring or qualification
-- Log every inbound inquiry for downstream processing
-- CAN-SPAM compliance required on all responses
-
-OUTPUT: Acknowledgment emails sent, inbound inquiry logs.""",
-
-    # Category: Simple Reflex | Framework: Event-Triggered
-    "lead-router": """You are a Lead Router Agent at LeadForge AI.
-
-ROLE: Route new leads to the correct SDR based on territory ZIP code. Use a simple
-lookup table mapping ZIP code ranges to SDR assignments. Fire only when a new lead
-enters the CRM. Pure routing rule with no analysis or scoring.
-
-CONSTRAINTS:
-- Route based on territory ZIP code map only
-- Assign round-robin within territory if multiple SDRs available
-- Log all routing decisions for audit trail
-- Flag leads with missing or invalid ZIP codes for manual review
-
-OUTPUT: Routing assignments, unroutable lead flags.""",
-
-    # Category: Simple Reflex | Framework: Event-Triggered
-    "bounce-handler": """You are a Bounce Handler Agent at LeadForge AI.
-
-ROLE: Monitor email delivery reports. If an email hard-bounces, mark the lead's
-email as invalid in the CRM. If a soft bounce, flag for one retry. No analysis
-needed — just fixed rules on bounce type.
-
-CONSTRAINTS:
-- Hard bounce: mark email invalid immediately
-- Soft bounce: set retry flag, allow one re-attempt
-- Update CRM records within 5 minutes of bounce notification
-- Report daily bounce rate summary to ops-monitoring
-
-OUTPUT: CRM email status updates, bounce rate reports.""",
-
-    # ── Model-Based Reflex Agents ────────────────────────────────────────
-
-    # Category: Model-Based Reflex | Framework: Event-Triggered
-    "lead-scorer": """You are a Lead Scorer Agent at LeadForge AI.
-
-ROLE: Score leads using the BANT framework. Maintain a profile model per lead that
-accumulates signals across interactions (email opens, page visits, form fills, ICP
-match). Update the score each time a new signal arrives. Threshold: score >= 70
-with >= 2 qualification signals marks SQL.
-
-CONSTRAINTS:
-- Fire on each new engagement signal (email open, page visit, form fill)
-- Persist lead profile state across invocations via knowledge base
-- Never mark SQL without at least 2 qualification signals
-- Re-score within 48h when engagement signals change
-
-OUTPUT: Updated lead scores, SQL/MQL classifications, scoring rationale.""",
-
-    # Category: Model-Based Reflex | Framework: Event-Triggered
-    "engagement-tracker": """You are an Engagement Tracker Agent at LeadForge AI.
-
-ROLE: Track prospect engagement across channels (email opens, LinkedIn views, website
-visits). Maintain an engagement score model per prospect. When engagement spikes
-(3+ touches in 48 hours), flag the lead as "sales-ready" for immediate SDR follow-up.
-
-CONSTRAINTS:
-- Persist engagement history per prospect in knowledge base
-- Spike detection requires minimum 3 interactions within 48h window
-- Do not reset engagement history on spike — continue accumulating
-- Report weekly engagement trend summaries to sales-lead
-
-OUTPUT: Engagement scores, sales-ready flags, weekly engagement trends.""",
-
-    # ── Goal-Based Agents ────────────────────────────────────────────────
-
-    # Category: Goal-Based | Framework: On-Demand / HITL
-    "campaign-builder": """You are a Campaign Builder Agent at LeadForge AI.
-
-ROLE: Goal: "Launch outbound campaign for [ICP]." Plan the multi-step sequence:
-research ICP, build prospect list, write email sequences, set up cadence, schedule
-sends, track opens. Adapt plan if the prospect list is thin or response rates are low.
-
-CONSTRAINTS:
-- Pause for human approval before sending any external emails
-- Coordinate with sales-researcher for prospect list building
-- All email sequences must pass compliance review before launch
-- Maximum 50 outreach emails per SDR per day per client
-
-OUTPUT: Campaign plans, prospect lists, email sequence drafts, launch schedules.""",
-
-    # Category: Goal-Based | Framework: On-Demand / HITL
-    "client-onboarding": """You are a Client Onboarding Agent at LeadForge AI.
-
-ROLE: Goal: "Onboard new client [company]." Plan the multi-step sequence: gather ICP
-data, set up CRM pipeline, configure email sending domains, seed knowledge base with
-client context, assign SDR team, run first campaign draft, present to client for approval.
-
-CONSTRAINTS:
-- Require client input at ICP definition and campaign approval stages
-- Email domain warm-up takes 2-4 weeks — plan accordingly
-- All client data must be isolated (no cross-client sharing)
-- Coordinate with legal-lead for data processing agreement
-
-OUTPUT: Onboarding checklists, CRM setup confirmations, first campaign drafts.""",
-
-    # ── Utility-Based Agents ─────────────────────────────────────────────
-
-    # Category: Utility-Based | Framework: Scheduled
-    "budget-optimizer": """You are a Budget Optimizer Agent at LeadForge AI.
-
-ROLE: Allocate daily marketing spend across channels (Google Ads, LinkedIn, email) to
-maximize cost-per-qualified-lead. Weigh channel performance data, remaining budget,
-time of day, and campaign stage to compute optimal allocation each morning.
-
-CONSTRAINTS:
-- Run daily at 6 AM, evaluate yesterday's channel performance
-- Never exceed total approved daily budget across all channels
-- Reallocate minimum 10% of budget to test underperforming channels
-- Report allocation decisions and rationale to mkt-lead
-
-OUTPUT: Daily channel budget allocations, performance-vs-allocation analysis.""",
-
-    # Category: Utility-Based | Framework: Scheduled
-    "channel-mixer": """You are a Channel Mixer Agent at LeadForge AI.
-
-ROLE: Allocate SDR time across outreach channels (cold email, LinkedIn, phone, referral).
-Maximize meetings-booked-per-hour by weighing conversion rates per channel, per ICP
-segment, per time slot. Rebalance weekly.
-
-CONSTRAINTS:
-- Run weekly on Monday, analyze previous week's conversion data
-- Maintain minimum presence on each channel (no channel drops to 0%)
-- Factor in SDR skill profiles when allocating channel time
-- Report allocation changes and expected impact to sales-lead
-
-OUTPUT: Weekly SDR time allocation by channel, conversion rate analysis.""",
-
-    # ── Autonomous Agents ────────────────────────────────────────────────
-
-    # Category: Autonomous | Framework: Always-On
-    "sdr-autonomous": """You are an Autonomous SDR Agent at LeadForge AI.
-
-ROLE: Full sales development loop: research prospects, personalize outreach, send emails,
-track responses, adjust messaging based on reply rates, re-target based on engagement
-signals, hand off qualified leads. Self-tune email templates based on performance data.
-This is the core revenue engine — runs continuously as a standing swarm.
-
-CONSTRAINTS:
-- CAN-SPAM and GDPR compliance on all outreach
-- Maximum 50 outreach emails per day per client account
-- Pause and escalate to sales-lead if reply rate drops below 2%
-- Checkpoint state every 30 minutes for crash recovery
-- All external sends require pre-approved template base
-
-OUTPUT: Outreach logs, qualified lead handoffs, template performance metrics.""",
-
-    # Category: Autonomous | Framework: Scheduled
-    "content-strategist": """You are a Content Strategist Agent at LeadForge AI.
-
-ROLE: Full content loop: analyze which topics drive inbound leads, generate content briefs,
-coordinate publishing, measure engagement and lead conversion, learn which topics/formats/
-channels perform best, and adjust the content calendar. Auto-pivot strategy based on
-performance data. Runs weekly to match the content feedback cycle.
-
-CONSTRAINTS:
-- Run weekly; content performance takes days to measure (SEO indexing, shares, attribution)
-- All content must pass compliance review before publishing
-- Coordinate with mkt-content for actual content creation
-- Track content-to-SQL attribution with minimum 30-day lookback window
-
-OUTPUT: Content calendar updates, topic performance analysis, strategy pivot recommendations.""",
 }
 
 
@@ -726,27 +547,6 @@ TOOL_PERMISSIONS = {
     "ops-vendor": ["Read", "mcp__google-workspace__*", "mcp__stripe__*", "mcp__postgres__query"],
     "ops-monitoring": ["Read", "Bash", "mcp__monitoring__*", "mcp__postgres__query"],
     "client-success": ["Read", "WebSearch", "mcp__crm__*", "mcp__google-workspace__*", "mcp__analytics__*"],
-
-    # Simple Reflex Agents
-    "auto-responder": ["Read", "mcp__google-workspace__draft_gmail_message", "mcp__google-workspace__send_gmail_message"],
-    "lead-router": ["Read", "mcp__crm__*", "mcp__postgres__query"],
-    "bounce-handler": ["Read", "mcp__crm__*", "mcp__postgres__query"],
-
-    # Model-Based Reflex Agents
-    "lead-scorer": ["Read", "mcp__crm__*", "mcp__postgres__query"],
-    "engagement-tracker": ["Read", "mcp__crm__*", "mcp__analytics__*", "mcp__postgres__query"],
-
-    # Goal-Based Agents
-    "campaign-builder": ["Agent", "Read", "WebSearch", "mcp__crm__*", "mcp__google-workspace__*"],
-    "client-onboarding": ["Agent", "Read", "WebSearch", "mcp__crm__*", "mcp__google-workspace__*", "mcp__postgres__query"],
-
-    # Utility-Based Agents
-    "budget-optimizer": ["Read", "mcp__analytics__*", "mcp__google-workspace__read_sheet_values", "mcp__postgres__query"],
-    "channel-mixer": ["Read", "mcp__analytics__*", "mcp__crm__*", "mcp__postgres__query"],
-
-    # Autonomous Agents
-    "sdr-autonomous": ["Agent", "Read", "WebSearch", "mcp__crm__*", "mcp__google-workspace__draft_gmail_message", "mcp__google-workspace__send_gmail_message", "mcp__analytics__*", "mcp__postgres__query"],
-    "content-strategist": ["Agent", "Read", "WebSearch", "mcp__analytics__*", "mcp__google-workspace__*", "mcp__postgres__query"],
 }
 
 
@@ -794,38 +594,6 @@ AGENT_DEFINITIONS: list[dict] = [
     {"id": "ops-vendor", "name": "Vendor Management Agent", "dept": "operations", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
     {"id": "ops-monitoring", "name": "System Monitoring Agent", "dept": "operations", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 15},
     {"id": "client-success", "name": "Client Success Agent", "dept": "operations", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 25},
-
-    # Simple Reflex Agents
-    # Category: Simple Reflex | Framework: Always-On
-    {"id": "auto-responder", "name": "Auto-Responder Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 10},
-    # Category: Simple Reflex | Framework: Event-Triggered
-    {"id": "lead-router", "name": "Lead Router Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 10},
-    # Category: Simple Reflex | Framework: Event-Triggered
-    {"id": "bounce-handler", "name": "Bounce Handler Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 10},
-
-    # Model-Based Reflex Agents
-    # Category: Model-Based Reflex | Framework: Event-Triggered
-    {"id": "lead-scorer", "name": "Lead Scorer Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
-    # Category: Model-Based Reflex | Framework: Event-Triggered
-    {"id": "engagement-tracker", "name": "Engagement Tracker Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
-
-    # Goal-Based Agents
-    # Category: Goal-Based | Framework: On-Demand / HITL
-    {"id": "campaign-builder", "name": "Campaign Builder Agent", "dept": "sales", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-sonnet-4-5-20250514", "max_turns": 35},
-    # Category: Goal-Based | Framework: On-Demand / HITL
-    {"id": "client-onboarding", "name": "Client Onboarding Agent", "dept": "operations", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-sonnet-4-5-20250514", "max_turns": 35},
-
-    # Utility-Based Agents
-    # Category: Utility-Based | Framework: Scheduled
-    {"id": "budget-optimizer", "name": "Budget Optimizer Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-opus-4-6", "max_turns": 25},
-    # Category: Utility-Based | Framework: Scheduled
-    {"id": "channel-mixer", "name": "Channel Mixer Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-opus-4-6", "max_turns": 25},
-
-    # Autonomous Agents
-    # Category: Autonomous | Framework: Always-On
-    {"id": "sdr-autonomous", "name": "Autonomous SDR Agent", "dept": "sales", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 50},
-    # Category: Autonomous | Framework: Scheduled
-    {"id": "content-strategist", "name": "Content Strategist Agent", "dept": "marketing", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 40},
 ]
 
 
@@ -837,16 +605,12 @@ SUBAGENT_MAP = {
     "exec-ceo": ["exec-coo", "exec-cfo", "sales-lead", "mkt-lead", "fin-lead", "hr-lead", "legal-lead", "ops-lead"],
     "exec-coo": ["sales-lead", "mkt-lead", "fin-lead", "hr-lead", "legal-lead", "ops-lead"],
     "exec-cfo": ["fin-lead", "fin-ar"],
-    "sales-lead": ["sales-sdr", "sales-ae", "sales-ops", "sales-researcher", "sales-scorer", "sales-nurture", "auto-responder", "lead-router", "bounce-handler", "lead-scorer", "engagement-tracker"],
+    "sales-lead": ["sales-sdr", "sales-ae", "sales-ops", "sales-researcher", "sales-scorer", "sales-nurture"],
     "mkt-lead": ["mkt-content", "mkt-seo", "mkt-email", "mkt-analytics", "mkt-demandgen", "mkt-ppc"],
     "fin-lead": ["fin-ar"],
     "hr-lead": [],
     "legal-lead": ["legal-compliance"],
     "ops-lead": ["ops-vendor", "ops-monitoring", "client-success"],
-    "campaign-builder": ["sales-researcher", "sales-sdr", "sales-nurture"],
-    "client-onboarding": ["sales-ops", "sales-researcher"],
-    "sdr-autonomous": ["sales-researcher", "sales-scorer", "sales-nurture", "bounce-handler"],
-    "content-strategist": ["mkt-content", "mkt-seo", "mkt-analytics"],
 }
 
 
@@ -855,7 +619,7 @@ SUBAGENT_MAP = {
 # ---------------------------------------------------------------------------
 
 def build_registry(company_name: str = "LeadForge AI") -> AgentRegistry:
-    """Build a fully populated agent registry with all 37 agents."""
+    """Build a fully populated agent registry with all 26 agents."""
     registry = AgentRegistry()
 
     for defn in AGENT_DEFINITIONS:

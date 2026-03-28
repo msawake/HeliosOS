@@ -16,10 +16,12 @@ steps:
         python -m pytest tests/ -v --tb=short
     id: 'test'
 
-  # Step 2: Build Docker image
+  # Step 2: Build Docker image (API-only target — portable; pair with dashboard image on Kubernetes/GKE)
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
+      - '--target'
+      - 'api'
       - '-t'
       - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/forgeos/api:${SHORT_SHA}'
       - '-t'

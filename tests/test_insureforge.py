@@ -25,7 +25,7 @@ from src.core.agent_invoker import AgentTier
 
 class TestInsureForgeAgentCatalog:
     def test_agent_count(self):
-        assert len(AGENT_DEFINITIONS) == 36
+        assert len(AGENT_DEFINITIONS) == 26
 
     def test_all_agents_have_system_prompts(self):
         for defn in AGENT_DEFINITIONS:
@@ -43,8 +43,8 @@ class TestInsureForgeAgentCatalog:
             tiers[tier] += 1
 
         assert tiers["EXECUTIVE"] == 3
-        assert tiers["DEPARTMENT_LEAD"] == 11
-        assert tiers["WORKER"] == 22
+        assert tiers["DEPARTMENT_LEAD"] == 7
+        assert tiers["WORKER"] == 16
 
     def test_department_coverage(self):
         departments = {d["dept"] for d in AGENT_DEFINITIONS}
@@ -57,13 +57,13 @@ class TestInsureForgeAgentCatalog:
         for q in quoters:
             assert "haiku" in q["model"], f"Quote agent {q['id']} should use Haiku"
 
-    def test_executives_use_opus(self):
-        executives = [
+    def test_orchestrators_use_opus(self):
+        orchestrators = [
             d for d in AGENT_DEFINITIONS
-            if d["tier"] == AgentTier.EXECUTIVE
+            if d["tier"] in (AgentTier.EXECUTIVE, AgentTier.DEPARTMENT_LEAD)
         ]
-        for o in executives:
-            assert "opus" in o["model"], f"Executive {o['id']} should use Opus"
+        for o in orchestrators:
+            assert "opus" in o["model"], f"Orchestrator {o['id']} should use Opus"
 
 
 # ── Subagent Map ──────────────────────────────────────────────────────────
@@ -80,7 +80,7 @@ class TestInsureForgeSubagentMap:
 
     def test_quotes_lead_has_all_quote_types(self):
         subs = SUBAGENT_MAP["quotes-lead"]
-        assert len(subs) == 5  # 4 quote agents + premium-flag
+        assert len(subs) == 4
         assert "quote-auto" in subs
         assert "quote-home" in subs
         assert "quote-life" in subs
@@ -88,7 +88,7 @@ class TestInsureForgeSubagentMap:
 
     def test_analysis_lead_has_team(self):
         subs = SUBAGENT_MAP["analysis-lead"]
-        assert len(subs) == 5  # compare, recommend, application + claims-pattern, coverage-optimizer
+        assert len(subs) == 3
         assert "compare-agent" in subs
         assert "recommend-agent" in subs
         assert "application-agent" in subs
@@ -137,7 +137,7 @@ class TestInsureForgeToolPermissions:
 class TestInsureForgeRegistry:
     def test_build_registry(self):
         registry = build_registry()
-        assert len(registry.all_agents()) == 36
+        assert len(registry.all_agents()) == 26
 
     def test_registry_lookup(self):
         registry = build_registry()
@@ -148,9 +148,9 @@ class TestInsureForgeRegistry:
     def test_registry_by_department(self):
         registry = build_registry()
         quotes = registry.list_by_department("quotes")
-        assert len(quotes) == 6  # lead + 4 quote agents + premium-flag
+        assert len(quotes) == 5  # lead + 4 quote agents
         analysis = registry.list_by_department("analysis")
-        assert len(analysis) == 9  # original 4 + claims-pattern, policy-bundler, coverage-optimizer, underwriting-engine, fraud-evolver
+        assert len(analysis) == 4
 
     def test_subagent_definitions_populated(self):
         registry = build_registry()

@@ -1,19 +1,12 @@
 """
-LeadForge AI Bootstrap Script.
+ForgeOS Platform Bootstrap.
 
-This is the "power switch" for LeadForge AI. It:
-1. Loads company configuration
-2. Builds the agent registry (all 26 agents)
-3. Initializes the company subsystems (event bus, HITL, knowledge base, metrics)
-4. Seeds the knowledge base with company policies
-5. Creates the workflow engine
-6. Boots the executive layer (CEO, COO, CFO)
-7. Starts standing swarms (support, monitoring)
-8. Launches the HITL dashboard
-9. Begins the main operational loop
+Multi-stack agent platform that supports four agent stacks (ForgeOS native,
+CrewAI, Google ADK, OpenClaw) with five execution types (always-on, scheduled,
+event-driven, reflex, autonomous) and personal/shared ownership.
 
 Usage:
-    python -m src.bootstrap [--config path/to/config.yaml] [--mode shadow|supervised|autonomous]
+    python -m src.bootstrap [--company leadforge] [--config path/to/config.yaml] [--mode shadow|supervised|autonomous] [--dashboard] [--loop] [--port N]
 """
 
 from __future__ import annotations
@@ -21,24 +14,32 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.config.agent_configs import build_registry, load_company_config
-from src.core.agent_invoker import AgentInvoker, AgentTier, TaskMetadata, create_invoker
+from stacks.base import AgentDefinition, ExecutionType, LLMConfig, OwnershipType
+from stacks.forgeos.adapter import ForgeOSAdapter
+from stacks.crewai.adapter import CrewAIAdapter
+from stacks.adk.adapter import ADKAdapter
+from stacks.openclaw.adapter import OpenClawAdapter
+
+from src.platform.registry import AgentRegistry
+from src.platform.executor import PlatformExecutor
+from src.platform.scheduler import SchedulerEngine
+from src.platform.event_bus import EventBus
+from src.platform.llm_router import LLMRouter
+
+from src.config.agent_configs import load_company_config, load_company_module, load_company_demo
+from src.core.claude_client import ClaudeClient
+from src.core.database import create_database_client
+from src.core.model_client import ModelProvider, create_llm_client, get_provider
 from src.core.hooks import create_hook_chain
 from src.mcp.custom_tools import CompanySystem
-from src.workflows.definitions import (
-    WorkflowEngine,
-    create_client_onboarding_workflow,
-    create_compliance_audit_workflow,
-    create_lead_qualification_workflow,
-    create_lead_nurture_workflow,
-    create_leadforge_sales_workflow,
-    create_marketing_campaign_workflow,
-    create_outbound_campaign_workflow,
-)
+from src.mcp.server_manager import MCPServerManager
+from src.mcp.tool_executor import ToolExecutor
+from src.workflows.definitions import WorkflowEngine, WorkflowStatus
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,201 +49,329 @@ logging.basicConfig(
 logger = logging.getLogger("bootstrap")
 
 
+def _repo_root() -> Path:
+    """Directory containing `pyproject.toml` (parent of `src/`)."""
+    return Path(__file__).resolve().parent.parent
+
+
+def _load_dotenv_from_repo_root() -> None:
+    """Load `.env` from repo root first, then default search (cwd / parents).
+
+    Requires `python-dotenv` (core dependency). If import fails, log a warning
+    so missing wheels are not silent.
+    """
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        logger.warning(
+            "python-dotenv not installed — .env files will not load. "
+            "Fix: pip install python-dotenv  (or reinstall this package)"
+        )
+        return
+    env_file = _repo_root() / ".env"
+    if env_file.is_file():
+        load_dotenv(env_file)
+    load_dotenv()
+
+
 class OperatingMode:
-    SHADOW = "shadow"          # Agents run but outputs go to review queue
-    SUPERVISED = "supervised"  # Agents primary, human reviews before external actions
-    AUTONOMOUS = "autonomous"  # Agents independent, humans review daily summaries
+    SHADOW = "shadow"
+    SUPERVISED = "supervised"
+    AUTONOMOUS = "autonomous"
 
 
-class CompanyBootstrap:
+class PlatformBootstrap:
     """
-    Bootstraps the entire AI company from zero.
-    Call boot() to start everything.
+    Boots the ForgeOS multi-stack platform. Initializes all four stack adapters,
+    the platform executor, scheduler, event bus, and legacy company subsystems.
     """
 
-    def __init__(self, config_path: str | None = None, mode: str = OperatingMode.SUPERVISED):
-        self.config = load_company_config(config_path)
+    def __init__(
+        self,
+        config_path: str | None = None,
+        mode: str = OperatingMode.SUPERVISED,
+        company_id: str = "leadforge",
+        tenant_id: str | None = None,
+    ):
+        self.company_id = company_id
+        self.tenant_id = tenant_id or company_id
+        self.config = load_company_config(config_path, company_id=company_id)
         self.mode = mode
-        self.registry = None
-        self.invoker = None
+
+        self.platform_registry = None  # initialized during boot
+        self.scheduler = None
+        self.event_bus = None
+        self.llm_router: LLMRouter | None = None
+        self.executor: PlatformExecutor | None = None
+
+        self.legacy_registry = None
+        self.legacy_invoker = None
         self.system = None
         self.workflow_engine = None
+        self._db = None
         self._running = False
 
-    async def boot(self):
-        """Main boot sequence. Starts the entire company."""
+    async def boot(self, api_listen_port: int = 5000):
+        _load_dotenv_from_repo_root()
         logger.info("=" * 60)
-        logger.info("BOOTING AI COMPANY")
-        logger.info("Mode: %s", self.mode)
+        logger.info("BOOTING FORGEOS MULTI-STACK PLATFORM")
+        logger.info("Company: %s | Mode: %s", self.company_id, self.mode)
         logger.info("Time: %s", datetime.now(timezone.utc).isoformat())
         logger.info("=" * 60)
 
-        # Phase 1: Initialize subsystems
-        logger.info("[Phase 1] Initializing subsystems...")
-        await self._init_subsystems()
+        logger.info("[Phase 1] Initializing platform subsystems...")
+        await self._init_platform()
 
-        # Phase 2: Build agent registry
-        logger.info("[Phase 2] Building agent registry (26 agents)...")
-        await self._build_registry()
+        logger.info("[Phase 2] Initializing legacy company subsystems...")
+        await self._init_legacy_subsystems()
 
-        # Phase 3: Seed knowledge base
-        logger.info("[Phase 3] Seeding knowledge base...")
-        self.system.seed_knowledge_base()
+        # Platform persistence stores (backed by DB when available)
+        agent_store = sub_store = job_store = msg_store = None
+        if self._db and self._db.is_connected:
+            try:
+                from src.platform.persistence import (
+                    PostgresAgentRegistry,
+                    PostgresEventSubscriptionStore,
+                    PostgresScheduledJobStore,
+                    PostgresAgentMessageStore,
+                )
+                agent_store = PostgresAgentRegistry(self._db, self.tenant_id)
+                sub_store = PostgresEventSubscriptionStore(self._db, self.tenant_id)
+                job_store = PostgresScheduledJobStore(self._db, self.tenant_id)
+                msg_store = PostgresAgentMessageStore(self._db, self.tenant_id)
+                logger.info("  Platform persistence: PostgreSQL")
+            except Exception as exc:
+                logger.warning("  Platform persistence unavailable (%s) -- using in-memory", exc)
 
-        # Phase 4: Create workflow engine
-        logger.info("[Phase 4] Creating workflow engine...")
-        self.workflow_engine = WorkflowEngine(invoker=self.invoker)
+        self.platform_registry = AgentRegistry(store=agent_store)
+        self.scheduler = SchedulerEngine(job_store=job_store)
+        self.event_bus = EventBus(subscription_store=sub_store, message_store=msg_store)
 
-        # Phase 5: Boot executive layer
-        logger.info("[Phase 5] Booting executive layer...")
-        await self._boot_executives()
+        logger.info("[Phase 3] Registering stack adapters...")
+        self._register_adapters()
 
-        # Phase 6: Start standing swarms
-        logger.info("[Phase 6] Starting standing swarms...")
-        await self._start_standing_swarms()
+        logger.info("[Phase 4] Building platform executor...")
+        self.executor = PlatformExecutor(
+            registry=self.platform_registry,
+            scheduler=self.scheduler,
+            event_bus=self.event_bus,
+        )
+        for name, adapter in self._adapters.items():
+            self.executor.register_adapter(adapter)
 
-        # Phase 7: Record initial metrics
-        logger.info("[Phase 7] Recording initial metrics...")
-        self._record_boot_metrics()
+        # Recover agents from persistent storage
+        recovered = self.platform_registry.load_from_store()
+        if recovered:
+            await self.executor.recover()
 
-        # Phase 8: System ready
+        logger.info("[Phase 5] Seeding knowledge base...")
+        if self.system:
+            self.system.seed_knowledge_base(company_id=self.company_id)
+
+        self._seed_dev_hitl_if_enabled()
+
+        logger.info("[Phase 6] Creating workflow engine...")
+        self.workflow_engine = WorkflowEngine(invoker=self.legacy_invoker)
+
+        logger.info("[Phase 7] Starting scheduler...")
+        self.scheduler.start_all()
+
         logger.info("=" * 60)
-        logger.info("AI COMPANY ONLINE")
-        logger.info("Agents registered: %d", len(self.registry.all_agents()))
-        logger.info("Knowledge base entries: %d", len(self.system.knowledge._entries))
+        logger.info("FORGEOS PLATFORM ONLINE")
+        logger.info("Stacks: %s", list(self._adapters.keys()))
+        logger.info("Platform agents: %d", len(self.platform_registry.list_all()))
+        if self.legacy_registry:
+            logger.info("Legacy agents: %d", len(self.legacy_registry.all_agents()))
         logger.info("Mode: %s", self.mode)
-        logger.info("Dashboard: http://localhost:5000")
+        logger.info("Dashboard: http://localhost:3000 (Next.js)")
+        logger.info("API: http://localhost:%d (Flask)", api_listen_port)
         logger.info("=" * 60)
 
         self._running = True
 
-    async def _init_subsystems(self):
-        """Initialize all company subsystems."""
-        self.system = CompanySystem()
-        hook_chain = create_hook_chain(config=self.config)
-        self.registry = build_registry(
+    async def _init_platform(self):
+        api_keys = {}
+        anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if anthropic_key:
+            api_keys["anthropic"] = anthropic_key
+        openai_key = os.environ.get("OPENAI_API_KEY", "")
+        if openai_key:
+            api_keys["openai"] = openai_key
+
+        self.llm_router = LLMRouter(api_keys=api_keys)
+        logger.info("  LLM Router: providers=%s", self.llm_router.available_providers())
+
+    def _seed_dev_hitl_if_enabled(self) -> None:
+        """Seed sample pending approvals for local dashboard testing.
+
+        Disable with FORGEOS_SEED_HITL=0|false|no.
+        Skips if two or more items are already pending (idempotent in one process).
+        """
+        flag = os.environ.get("FORGEOS_SEED_HITL", "1").lower()
+        if flag in ("0", "false", "no"):
+            return
+        if not self.system:
+            return
+        hitl = self.system.hitl
+        if len(hitl.get_pending()) >= 2:
+            return
+        hitl.request_approval(
+            requesting_agent="sales-ae",
+            department="sales",
+            category="outreach_compliance",
+            title="Approve outbound sequence to TechCorp",
+            description="Three-step email plus LinkedIn touch; 40 contacts in target list.",
+            risk_assessment="medium",
+            context={"deal_id": "demo-001", "sequence": "techcorp-q1"},
+        )
+        hitl.request_approval(
+            requesting_agent="fin-ar",
+            department="finance",
+            category="financial",
+            title="Waive late fee for renewal partner",
+            description="Strategic account DataFlow Inc — one-time goodwill adjustment.",
+            risk_assessment="low",
+            context={"invoice_id": "demo-inv-99"},
+        )
+        logger.info("Seeded 2 demo HITL approvals (disable: FORGEOS_SEED_HITL=0)")
+
+    async def _init_legacy_subsystems(self):
+        """Initialize the existing ForgeOS company subsystems for backward compat."""
+        self._db = create_database_client()
+        if self._db.is_connected:
+            logger.info("  Database: CONNECTED (PostgreSQL)")
+        else:
+            logger.info("  Database: IN-MEMORY (set DATABASE_URL for persistence)")
+
+        self.system = CompanySystem(
+            config=self.config, company_id=self.company_id, db_client=self._db,
+        )
+        redis_url = os.environ.get("REDIS_URL", "")
+        hook_chain = create_hook_chain(
+            config=self.config, hitl_gateway=self.system.hitl, redis_url=redis_url,
+        )
+
+        self._mcp_manager = MCPServerManager(self.config)
+        mcp_clients = await self._mcp_manager.connect_all()
+
+        tool_executor = ToolExecutor(company_system=self.system, mcp_clients=mcp_clients)
+        for server_name, schemas in self._mcp_manager.get_all_tool_schemas().items():
+            tool_executor.register_mcp_tools(server_name, schemas)
+
+        # Register platform-level tool stubs (CRM, HTTP, ads, MLS, etc.)
+        try:
+            from src.mcp.platform_tools import register_platform_tools
+            register_platform_tools(tool_executor)
+            logger.info("  Platform tools: registered")
+        except ImportError:
+            logger.debug("  Platform tools: not available (src.mcp.platform_tools missing)")
+
+        default_model = self.config.get("models", {}).get("orchestrator_default", "claude-opus-4-6")
+        try:
+            orchestrator_provider = get_provider(default_model)
+        except ValueError:
+            orchestrator_provider = ModelProvider.ANTHROPIC
+        if orchestrator_provider == ModelProvider.OPENAI:
+            orchestrator_key = os.environ.get("OPENAI_API_KEY") or None
+        else:
+            orchestrator_key = os.environ.get("ANTHROPIC_API_KEY") or None
+        llm_client = create_llm_client(default_model, api_key=orchestrator_key)
+
+        claude_client = ClaudeClient(
+            tool_executor=tool_executor, hook_chain=hook_chain, llm_client=llm_client,
+        )
+
+        company_mod = load_company_module(self.company_id)
+        self.legacy_registry = company_mod.build_registry(
             company_name=self.config.get("company", {}).get("name", "Digital AI Corp")
         )
-        self.invoker = AgentInvoker(
-            registry=self.registry,
+        from src.core.agent_invoker import AgentInvoker
+        self.legacy_invoker = AgentInvoker(
+            registry=self.legacy_registry,
             hook_chain=hook_chain,
             config=self.config,
+            tool_executor=tool_executor,
+            claude_client=claude_client,
         )
 
-    async def _build_registry(self):
-        """Registry is already built by build_registry(). Log summary."""
-        agents = self.registry.all_agents()
-        by_tier = {}
-        by_dept = {}
-        for a in agents:
-            tier_name = a.tier.name
-            by_tier.setdefault(tier_name, 0)
-            by_tier[tier_name] += 1
-            by_dept.setdefault(a.department, 0)
-            by_dept[a.department] += 1
+        self._tool_executor = tool_executor
 
-        logger.info("  Agents by tier: %s", dict(by_tier))
-        logger.info("  Agents by dept: %s", dict(by_dept))
+    def _register_adapters(self):
+        te = self._tool_executor
+        self._adapters = {
+            "forgeos": ForgeOSAdapter(llm_router=self.llm_router, tool_executor=te),
+            "crewai": CrewAIAdapter(llm_router=self.llm_router, tool_executor=te),
+            "adk": ADKAdapter(llm_router=self.llm_router, tool_executor=te),
+            "openclaw": OpenClawAdapter(llm_router=self.llm_router, tool_executor=te),
+        }
+        for name, adapter in self._adapters.items():
+            logger.info("  Stack registered: %s", name)
 
-    async def _boot_executives(self):
-        """Boot the three executive orchestrators."""
-        executives = ["exec-ceo", "exec-coo", "exec-cfo"]
-
-        for agent_id in executives:
-            config = self.registry.get(agent_id)
-            if config:
-                logger.info("  Booted: %s (%s) [%s]", config.name, agent_id, config.model)
-
-                # In production: create persistent ClaudeSDKClient session
-                # client = ClaudeSDKClient(
-                #     model=config.model,
-                #     system_prompt=config.system_prompt,
-                #     mcp_servers=config.mcp_servers,
-                # )
-                # Save session_id for resumption
-
-    async def _start_standing_swarms(self):
-        """Start always-on agent swarms."""
-        standing_agents = [
-            ("sales-sdr", "Sales SDR", 3),                  # 3 instances
-            ("ops-monitoring", "System Monitoring", 1),     # 1 instance
-        ]
-
-        for agent_id, name, instances in standing_agents:
-            config = self.registry.get(agent_id)
-            if config:
-                logger.info(
-                    "  Standing swarm: %s x%d [%s]",
-                    name, instances, config.model,
-                )
-                # In production: spawn N instances of each standing agent
-                # Each instance runs as a Kubernetes deployment with autoscaling
-
-    def _record_boot_metrics(self):
-        """Record initial boot metrics."""
-        self.system.metrics.record("system.boot_count", 1, "operations")
-        self.system.metrics.record("agents.total", len(self.registry.all_agents()), "operations")
-        self.system.metrics.record("system.mode", 1 if self.mode == "autonomous" else 0, "operations")
+    async def deploy_agent(self, agent_def: AgentDefinition) -> str:
+        """Deploy an agent through the platform executor."""
+        if not self.executor:
+            raise RuntimeError("Platform not booted yet")
+        return await self.executor.deploy(agent_def)
 
     async def run_main_loop(self, tick_interval: float = 30.0):
-        """
-        Main operational loop. Runs continuously.
-        Each tick:
-        1. Workflow engine processes ready tasks
-        2. Department orchestrators poll for events
-        3. HITL gateway checks for expired approvals
-        4. Metrics are updated
-        """
         logger.info("Starting main loop (tick every %.0fs)...", tick_interval)
-
         tick_count = 0
         while self._running:
             tick_count += 1
-
             try:
-                # 1. Workflow engine tick
                 dispatches = await self.workflow_engine.tick()
                 if dispatches:
                     logger.info("Tick %d: Dispatched %d tasks", tick_count, len(dispatches))
 
-                # 2. Record heartbeat
-                self.system.metrics.record("system.tick_count", tick_count, "operations")
-                self.system.metrics.record(
-                    "system.active_workflows",
-                    len(self.workflow_engine.list_workflows(WorkflowStatus.RUNNING)),
-                    "operations",
-                )
-
-                # 3. Check for stale approvals
-                pending = self.system.hitl.get_pending()
-                if pending:
+                if self.system:
+                    self.system.metrics.record("system.tick_count", tick_count, "operations")
                     self.system.metrics.record(
-                        "hitl.pending_approvals",
-                        len(pending),
+                        "system.active_workflows",
+                        len(self.workflow_engine.list_workflows(WorkflowStatus.RUNNING)),
                         "operations",
                     )
 
+                    expired = self.system.hitl.get_expired_pending()
+                    for item in expired:
+                        self.system.hitl.expire(item["id"])
+                    if expired:
+                        self.system.metrics.increment(
+                            "hitl.expired_approvals", amount=len(expired), department="operations",
+                        )
+
             except Exception as e:
                 logger.error("Main loop error at tick %d: %s", tick_count, e)
-                self.system.metrics.increment("system.errors", department="operations")
 
             await asyncio.sleep(tick_interval)
 
     def stop(self):
-        """Gracefully stop the company."""
-        logger.info("Shutting down AI Company...")
+        logger.info("Shutting down ForgeOS Platform...")
         self._running = False
+        self.scheduler.stop_all()
+        if self._db:
+            self._db.close()
 
-    def start_dashboard(self, host: str = "0.0.0.0", port: int = 5000):
-        """Start the HITL dashboard web server."""
+    def create_api_app(self, auth_enabled: bool = True):
+        """Create the Quart/Flask API app (does not start it)."""
         from src.dashboard.app import create_app
-        app = create_app(
+        company_name = self.config.get("company", {}).get("name", "AI Company")
+        return create_app(
             company_system=self.system,
             workflow_engine=self.workflow_engine,
+            company_name=company_name,
+            db_client=self._db,
+            auth_enabled=auth_enabled,
+            platform_executor=self.executor,
+            platform_registry=self.platform_registry,
+            llm_router=self.llm_router,
+            _boot_complete=self._running,
         )
+
+    def start_api_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):
+        """Start the API server in a daemon thread (legacy sync mode)."""
+        app = self.create_api_app(auth_enabled=auth_enabled)
         if app:
-            logger.info("Dashboard starting on http://%s:%d", host, port)
-            # Run in a separate thread so it does not block the main loop
+            logger.info("API server starting on http://%s:%d", host, port)
             import threading
             thread = threading.Thread(
                 target=lambda: app.run(host=host, port=port, debug=False),
@@ -250,140 +379,72 @@ class CompanyBootstrap:
             )
             thread.start()
         else:
-            logger.warning("Dashboard not available (Flask not installed)")
+            logger.warning("API server not available (Quart/Flask not installed)")
+
+    def get_platform_summary(self) -> dict:
+        return {
+            "company_id": self.company_id,
+            "mode": self.mode,
+            "stacks": list(self._adapters.keys()) if hasattr(self, "_adapters") else [],
+            "platform_registry": self.platform_registry.summary(),
+            "scheduler_jobs": self.scheduler.list_jobs(),
+            "event_subscriptions": self.event_bus.get_subscriptions(),
+        }
 
 
-# ---------------------------------------------------------------------------
-# Demo: run a sample workflow
-# ---------------------------------------------------------------------------
-
-def run_demo():
-    """Run a demo showcasing LeadForge AI capabilities."""
-    from src.config.agent_configs import build_registry
-    from src.mcp.custom_tools import CompanySystem
-
-    print("\n" + "=" * 70)
-    print("  LeadForge AI — Demo Mode")
-    print("  AI-Powered B2B Lead Generation Agency")
-    print("=" * 70)
-
-    system = CompanySystem()
-    system.seed_knowledge_base()
-
-    # Demo 1: Lead Qualification Workflow
-    print("\n📋 Demo 1: Lead Qualification Workflow")
-    print("-" * 50)
-    wf = create_lead_qualification_workflow(
-        prospect_name="Sarah Chen",
-        prospect_email="sarah.chen@techcorp.com",
-        prospect_company="TechCorp",
-        client_name="Acme SaaS",
-        source="inbound",
-    )
-    print(f"  Created workflow: {wf.name}")
-    print(f"  Tasks: {len(wf.tasks)}")
-    ready = wf.get_ready_tasks()
-    print(f"  Ready to execute: {[t.name for t in ready]}")
-
-    # Demo 2: Client Onboarding Workflow
-    print("\n📋 Demo 2: Client Onboarding Workflow")
-    print("-" * 50)
-    wf2 = create_client_onboarding_workflow(
-        client_name="Acme SaaS",
-        client_contact_email="cto@acmesaas.com",
-        retainer_amount_usd=5000,
-        services=["outbound email", "LinkedIn outreach", "lead scoring"],
-    )
-    print(f"  Created workflow: {wf2.name}")
-    print(f"  Tasks: {len(wf2.tasks)}")
-    ready2 = wf2.get_ready_tasks()
-    print(f"  Ready to execute: {[t.name for t in ready2]}")
-
-    # Demo 3: HITL Approval Request
-    print("\n📋 Demo 3: HITL Approval — Google Ads Budget Increase")
-    print("-" * 50)
-    req_id = system.hitl.request_approval(
-        requesting_agent="mkt-ppc",
-        department="marketing",
-        category="ad_spend",
-        title="Increase Google Ads daily budget from $200 to $350",
-        description="Campaign 'B2B Lead Gen — Non-Brand' showing strong ROAS of 4.2x. "
-                    "Recommend increasing daily budget by 75% to capture more impression share. "
-                    "Expected additional spend: $4,500/month.",
-    )
-    pending = system.hitl.get_pending()
-    print(f"  Approval request created: {req_id[:8]}...")
-    print(f"  Pending approvals: {len(pending)}")
-    print(f"  Category: {pending[0]['category']}")
-
-    # Demo 4: Cross-Department Event
-    print("\n📋 Demo 4: Cross-Department Event — Sales → Marketing")
-    print("-" * 50)
-    event_id = system.event_bus.publish(
-        source_agent="sales-lead",
-        source_department="sales",
-        target_department="marketing",
-        event_type="REQUEST",
-        category="CONTENT_REQUEST",
-        payload={
-            "client": "Acme SaaS",
-            "request": "Need case study for enterprise SaaS prospects",
-            "target_persona": "VP of Sales at B2B SaaS companies",
-            "deadline": "2026-03-15",
-        },
-        priority="P2_MEDIUM",
-    )
-    events = system.event_bus.query(target_department="marketing")
-    print(f"  Event published: {event_id[:8]}...")
-    print(f"  Pending marketing events: {len(events)}")
-
-    # Demo 5: Knowledge Base Query
-    print("\n📋 Demo 5: Knowledge Base — Lead Scoring Criteria")
-    print("-" * 50)
-    results = system.knowledge.search("lead scoring qualification")
-    print(f"  Found {len(results)} matching entries:")
-    for r in results[:3]:
-        print(f"    - {r['title']}")
-
-    # Summary
-    print("\n" + "=" * 70)
-    print("  Demo Complete!")
-    print(f"  System health: {system.get_system_health()['pending_events']} pending events")
-    print(f"  Knowledge base: {len(system.knowledge._entries)} policies loaded")
-    print("=" * 70 + "\n")
+CompanyBootstrap = PlatformBootstrap
 
 
-# ---------------------------------------------------------------------------
-# Main entry point
-# ---------------------------------------------------------------------------
+def run_demo(company_id: str = "leadforge"):
+    demo_mod = load_company_demo(company_id)
+    demo_mod.run_demo()
+
 
 async def main():
-    parser = argparse.ArgumentParser(description="Boot the AI Company")
+    _load_dotenv_from_repo_root()
+    parser = argparse.ArgumentParser(description="Boot ForgeOS Multi-Stack Platform")
+    parser.add_argument("--company", type=str, default="leadforge", help="Company ID")
     parser.add_argument("--config", type=str, help="Path to company config YAML")
     parser.add_argument(
         "--mode",
         choices=["shadow", "supervised", "autonomous"],
         default="supervised",
-        help="Operating mode",
     )
     parser.add_argument("--demo", action="store_true", help="Run demo scenario")
-    parser.add_argument("--dashboard", action="store_true", help="Start dashboard")
+    parser.add_argument("--dashboard", action="store_true", help="Start API server")
     parser.add_argument("--loop", action="store_true", help="Run main operational loop")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="API listen port (default: env PORT or 5000). Use when 5000 is already in use.",
+    )
+    parser.add_argument("--no-auth", action="store_true", help="Disable API authentication (dev only)")
     args = parser.parse_args()
 
-    bootstrap = CompanyBootstrap(config_path=args.config, mode=args.mode)
-    await bootstrap.boot()
+    api_port = args.port if args.port is not None else int(os.environ.get("PORT", "5000"))
+
+    bootstrap = PlatformBootstrap(config_path=args.config, mode=args.mode, company_id=args.company)
+    await bootstrap.boot(api_listen_port=api_port)
 
     if args.demo:
-        run_demo()
+        run_demo(company_id=args.company)
 
     if args.dashboard:
-        bootstrap.start_dashboard()
+        bootstrap.start_api_server(port=api_port, auth_enabled=not args.no_auth)
 
     if args.loop:
         try:
             await bootstrap.run_main_loop()
         except KeyboardInterrupt:
+            bootstrap.stop()
+    elif args.dashboard:
+        logger.info("API server running on http://0.0.0.0:%d — Ctrl+C to stop.", api_port)
+        try:
+            await asyncio.Future()
+        except KeyboardInterrupt:
+            pass
+        finally:
             bootstrap.stop()
 
 

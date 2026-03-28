@@ -24,7 +24,7 @@ from src.core.agent_invoker import AgentTier
 
 class TestDealForgeAgentCatalog:
     def test_agent_count(self):
-        assert len(AGENT_DEFINITIONS) == 30
+        assert len(AGENT_DEFINITIONS) == 22
 
     def test_all_agents_have_system_prompts(self):
         for defn in AGENT_DEFINITIONS:
@@ -42,8 +42,8 @@ class TestDealForgeAgentCatalog:
             tiers[tier] += 1
 
         assert tiers["EXECUTIVE"] == 3
-        assert tiers["DEPARTMENT_LEAD"] == 7
-        assert tiers["WORKER"] == 20
+        assert tiers["DEPARTMENT_LEAD"] == 5
+        assert tiers["WORKER"] == 14
 
     def test_department_coverage(self):
         departments = {d["dept"] for d in AGENT_DEFINITIONS}
@@ -56,13 +56,13 @@ class TestDealForgeAgentCatalog:
         for c in crawlers:
             assert "haiku" in c["model"], f"Crawler {c['id']} should use Haiku"
 
-    def test_executives_use_opus(self):
-        executives = [
+    def test_orchestrators_use_opus(self):
+        orchestrators = [
             d for d in AGENT_DEFINITIONS
-            if d["tier"] == AgentTier.EXECUTIVE
+            if d["tier"] in (AgentTier.EXECUTIVE, AgentTier.DEPARTMENT_LEAD)
         ]
-        for o in executives:
-            assert "opus" in o["model"], f"Executive {o['id']} should use Opus"
+        for o in orchestrators:
+            assert "opus" in o["model"], f"Orchestrator {o['id']} should use Opus"
 
 
 # ── Subagent Map ──────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ class TestDealForgeSubagentMap:
 
     def test_deals_lead_has_full_team(self):
         subs = SUBAGENT_MAP["deals-lead"]
-        assert len(subs) == 8
+        assert len(subs) == 5
         assert "matcher-agent" in subs
         assert "fraud-detector" in subs
 
@@ -150,7 +150,7 @@ class TestDealForgeToolPermissions:
 class TestDealForgeRegistry:
     def test_build_registry(self):
         registry = build_registry()
-        assert len(registry.all_agents()) == 30
+        assert len(registry.all_agents()) == 22
 
     def test_registry_lookup(self):
         registry = build_registry()
@@ -162,9 +162,9 @@ class TestDealForgeRegistry:
     def test_registry_by_department(self):
         registry = build_registry()
         search = registry.list_by_department("search")
-        assert len(search) == 6  # lead + 4 crawlers + rate-guard
+        assert len(search) == 5  # lead + 4 crawlers
         deals = registry.list_by_department("deals")
-        assert len(deals) == 13  # original 6 + 7 new agents
+        assert len(deals) == 6
 
     def test_registry_by_tier(self):
         registry = build_registry()
@@ -176,7 +176,7 @@ class TestDealForgeRegistry:
         ceo = registry.get("exec-ceo")
         assert len(ceo.subagents) == 7
         deals_lead = registry.get("deals-lead")
-        assert len(deals_lead.subagents) == 8
+        assert len(deals_lead.subagents) == 5
 
 
 # ── Workflows ─────────────────────────────────────────────────────────────

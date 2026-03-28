@@ -27,7 +27,7 @@ from src.core.agent_invoker import AgentTier
 
 class TestHomeForgeAgentCatalog:
     def test_agent_count(self):
-        assert len(AGENT_DEFINITIONS) == 34
+        assert len(AGENT_DEFINITIONS) == 26
 
     def test_all_agents_have_system_prompts(self):
         for defn in AGENT_DEFINITIONS:
@@ -45,8 +45,8 @@ class TestHomeForgeAgentCatalog:
             tiers[tier] += 1
 
         assert tiers["EXECUTIVE"] == 3
-        assert tiers["DEPARTMENT_LEAD"] == 9
-        assert tiers["WORKER"] == 22
+        assert tiers["DEPARTMENT_LEAD"] == 6
+        assert tiers["WORKER"] == 17
 
     def test_department_coverage(self):
         departments = {d["dept"] for d in AGENT_DEFINITIONS}
@@ -61,13 +61,13 @@ class TestHomeForgeAgentCatalog:
         cn = next(d for d in AGENT_DEFINITIONS if d["id"] == "counter-negotiator")
         assert "opus" in cn["model"]
 
-    def test_executives_use_opus(self):
-        executives = [
+    def test_orchestrators_use_opus(self):
+        orchestrators = [
             d for d in AGENT_DEFINITIONS
-            if d["tier"] == AgentTier.EXECUTIVE
+            if d["tier"] in (AgentTier.EXECUTIVE, AgentTier.DEPARTMENT_LEAD)
         ]
-        for o in executives:
-            assert "opus" in o["model"], f"Executive {o['id']} should use Opus"
+        for o in orchestrators:
+            assert "opus" in o["model"], f"Orchestrator {o['id']} should use Opus"
 
 
 # ── Subagent Map ──────────────────────────────────────────────────────────
@@ -83,13 +83,13 @@ class TestHomeForgeSubagentMap:
 
     def test_search_lead_has_team(self):
         subs = SUBAGENT_MAP["search-lead"]
-        assert len(subs) == 6  # original 4 + market-temp, comp-tracker
+        assert len(subs) == 4
         assert "mls-search" in subs
         assert "comp-analyzer" in subs
 
     def test_tx_lead_has_full_team(self):
         subs = SUBAGENT_MAP["tx-lead"]
-        assert len(subs) == 7  # original 5 + showing-reminder, offer-calibrator
+        assert len(subs) == 5
         assert "offer-drafter" in subs
         assert "counter-negotiator" in subs
         assert "closing-coordinator" in subs
@@ -144,7 +144,7 @@ class TestHomeForgeToolPermissions:
 class TestHomeForgeRegistry:
     def test_build_registry(self):
         registry = build_registry()
-        assert len(registry.all_agents()) == 34
+        assert len(registry.all_agents()) == 26
 
     def test_registry_lookup(self):
         registry = build_registry()
@@ -155,16 +155,16 @@ class TestHomeForgeRegistry:
     def test_registry_by_department(self):
         registry = build_registry()
         tx = registry.list_by_department("transaction")
-        assert len(tx) == 9  # original 6 + showing-reminder, offer-strategist, offer-calibrator
+        assert len(tx) == 6  # lead + 5 workers
         search = registry.list_by_department("search")
-        assert len(search) == 9  # original 5 + market-temp, comp-tracker, staging-advisor, market-intelligence
+        assert len(search) == 5
 
     def test_subagent_definitions_populated(self):
         registry = build_registry()
         ceo = registry.get("exec-ceo")
         assert len(ceo.subagents) == 8
         tx_lead = registry.get("tx-lead")
-        assert len(tx_lead.subagents) == 7
+        assert len(tx_lead.subagents) == 5
 
 
 # ── Workflows ─────────────────────────────────────────────────────────────
