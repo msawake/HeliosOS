@@ -25,7 +25,7 @@ from src.core.agent_invoker import AgentTier
 
 class TestTravelForgeAgentCatalog:
     def test_agent_count(self):
-        assert len(AGENT_DEFINITIONS) == 34
+        assert len(AGENT_DEFINITIONS) == 24
 
     def test_all_agents_have_system_prompts(self):
         for defn in AGENT_DEFINITIONS:
@@ -43,8 +43,8 @@ class TestTravelForgeAgentCatalog:
             tiers[tier] += 1
 
         assert tiers["EXECUTIVE"] == 3
-        assert tiers["DEPARTMENT_LEAD"] == 8
-        assert tiers["WORKER"] == 23
+        assert tiers["DEPARTMENT_LEAD"] == 6
+        assert tiers["WORKER"] == 15
 
     def test_department_coverage(self):
         departments = {d["dept"] for d in AGENT_DEFINITIONS}
@@ -57,13 +57,13 @@ class TestTravelForgeAgentCatalog:
         for s in searchers:
             assert "haiku" in s["model"], f"Search agent {s['id']} should use Haiku"
 
-    def test_executives_use_opus(self):
-        executives = [
+    def test_orchestrators_use_opus(self):
+        orchestrators = [
             d for d in AGENT_DEFINITIONS
-            if d["tier"] == AgentTier.EXECUTIVE
+            if d["tier"] in (AgentTier.EXECUTIVE, AgentTier.DEPARTMENT_LEAD)
         ]
-        for o in executives:
-            assert "opus" in o["model"], f"Executive {o['id']} should use Opus"
+        for o in orchestrators:
+            assert "opus" in o["model"], f"Orchestrator {o['id']} should use Opus"
 
 
 # ── Subagent Map ──────────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ class TestTravelForgeSubagentMap:
 
     def test_booking_lead_has_booking_agents(self):
         subs = SUBAGENT_MAP["booking-lead"]
-        assert len(subs) == 7
+        assert len(subs) == 4
         assert "book-agent" in subs
         assert "itinerary-planner" in subs
 
@@ -135,7 +135,7 @@ class TestTravelForgeToolPermissions:
 class TestTravelForgeRegistry:
     def test_build_registry(self):
         registry = build_registry()
-        assert len(registry.all_agents()) == 34
+        assert len(registry.all_agents()) == 24
 
     def test_registry_lookup(self):
         registry = build_registry()
@@ -148,7 +148,7 @@ class TestTravelForgeRegistry:
         search = registry.list_by_department("search")
         assert len(search) == 5
         booking = registry.list_by_department("booking")
-        assert len(booking) == 10  # original 5 + capacity-planner, trip-planner, seat-selector, route-optimizer, demand-forecaster
+        assert len(booking) == 5
 
     def test_subagent_definitions_populated(self):
         registry = build_registry()

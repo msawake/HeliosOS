@@ -134,9 +134,15 @@ class RateLimiter:
         self.max_per_minute = max_calls_per_minute
         self._session_counts: dict[str, int] = {}
         self._minute_windows: dict[str, list[float]] = {}
+        self._check_count = 0
 
     def check(self, context: AgentContext) -> HookResult:
         sid = context.session_id
+
+        # Periodic cleanup of stale sessions (every 100 checks)
+        self._check_count += 1
+        if self._check_count % 100 == 0:
+            self._cleanup_stale_sessions()
 
         # Session-level check
         self._session_counts.setdefault(sid, 0)
@@ -167,6 +173,19 @@ class RateLimiter:
     def reset_session(self, session_id: str):
         self._session_counts.pop(session_id, None)
         self._minute_windows.pop(session_id, None)
+
+    def _cleanup_stale_sessions(self):
+        """Remove sessions with no activity in the last hour to prevent memory leaks."""
+        now = time.time()
+        stale = [
+            sid for sid, timestamps in self._minute_windows.items()
+            if not timestamps or now - timestamps[-1] > 3600
+        ]
+        for sid in stale:
+            self._session_counts.pop(sid, None)
+            self._minute_windows.pop(sid, None)
+        if stale:
+            logger.debug("RateLimiter: cleaned up %d stale sessions", len(stale))
 
 
 # ---------------------------------------------------------------------------
@@ -280,12 +299,8 @@ class CostTracker:
     Enforces budget limits.
     """
 
-    # Pricing per million tokens (March 2026)
-    PRICING = {
-        "claude-opus-4-6": {"input": 5.0, "output": 25.0},
-        "claude-sonnet-4-5-20250514": {"input": 3.0, "output": 15.0},
-        "claude-haiku-4-5-20251001": {"input": 1.0, "output": 5.0},
-    }
+    # Import shared pricing registry (supports Claude + OpenAI + custom models)
+    from src.core.model_client import MODEL_PRICING as PRICING
 
     def __init__(self, per_session_limit_usd: float = 50.0):
         self.per_session_limit = per_session_limit_usd
@@ -293,6 +308,35 @@ class CostTracker:
         self._session_tokens: dict[str, dict[str, int]] = {}
         self._global_daily_tokens: int = 0
         self._daily_reset_date: str = ""
+
+    def pre_check(self, context: AgentContext, estimated_tokens: int = 10000) -> HookResult:
+        """Check if estimated cost would exceed session budget BEFORE the API call.
+
+        Called in pre_tool_use to prevent overspend. Uses conservative estimate
+        of tokens that will be consumed by the next API call.
+        """
+        from src.core.model_client import estimate_cost as _estimate_cost
+
+        sid = context.session_id
+        current_cost = self._session_costs.get(sid, 0.0)
+        # Estimate: input tokens + half as many output tokens
+        estimated_cost = _estimate_cost(context.model, estimated_tokens, estimated_tokens // 2)
+
+        if current_cost + estimated_cost > self.per_session_limit:
+            return HookResult(
+                decision=HookDecision.BLOCK,
+                reason=(
+                    f"Session cost ${current_cost:.2f} + estimated ${estimated_cost:.2f} "
+                    f"would exceed limit ${self.per_session_limit:.2f}"
+                ),
+                metadata={
+                    "current_cost": current_cost,
+                    "estimated_cost": estimated_cost,
+                    "limit": self.per_session_limit,
+                },
+            )
+
+        return HookResult(decision=HookDecision.ALLOW)
 
     def track(
         self,
@@ -303,9 +347,9 @@ class CostTracker:
         sid = context.session_id
         model = context.model
 
-        # Calculate cost
-        pricing = self.PRICING.get(model, self.PRICING["claude-sonnet-4-5-20250514"])
-        cost = (input_tokens * pricing["input"] + output_tokens * pricing["output"]) / 1_000_000
+        # Calculate cost (uses shared pricing registry for all providers)
+        from src.core.model_client import estimate_cost as _estimate_cost
+        cost = _estimate_cost(model, input_tokens, output_tokens)
 
         # Track session cost
         self._session_costs.setdefault(sid, 0.0)
@@ -505,6 +549,8 @@ class HookChain:
         cost_tracker: CostTracker | None = None,
         compliance_checker: ComplianceChecker | None = None,
         slack_notifier: SlackNotifier | None = None,
+        hitl_gateway=None,
+        dashboard_url: str = "http://localhost:5000",
     ):
         self.audit = audit_logger or AuditLogger()
         self.rate_limiter = rate_limiter or RateLimiter()
@@ -512,6 +558,53 @@ class HookChain:
         self.cost = cost_tracker or CostTracker()
         self.compliance = compliance_checker or ComplianceChecker()
         self.slack = slack_notifier or SlackNotifier()
+        self._hitl = hitl_gateway
+        self._dashboard_url = dashboard_url
+
+    def _create_approval_from_hook(
+        self,
+        context: AgentContext,
+        tool_name: str,
+        reason: str,
+    ) -> HookResult:
+        """Bridge ASK_HUMAN decisions to the HITL gateway.
+
+        Creates an approval request, sends a Slack notification with a
+        dashboard link, and returns a HookResult with the request ID.
+        Falls back to BLOCK if no HITL gateway is configured.
+        """
+        if not self._hitl:
+            logger.warning("ASK_HUMAN with no HITL gateway — falling back to BLOCK")
+            return HookResult(
+                decision=HookDecision.BLOCK,
+                reason=f"{reason} (no HITL gateway configured — blocked)",
+            )
+
+        req_id = self._hitl.request_approval(
+            requesting_agent=context.agent_id,
+            department=context.department,
+            category="tool_authorization",
+            title=f"Tool approval: {tool_name}",
+            description=reason,
+            risk_assessment="high",
+            context={"tool_name": tool_name, "agent_tier": context.tier},
+        )
+
+        dashboard_link = f"{self._dashboard_url}/api/approvals/{req_id}"
+        self.slack.notify(
+            "approval",
+            f"Approval needed: {tool_name}",
+            f"{reason}\nAgent: {context.agent_id} ({context.department})\n"
+            f"Review: {dashboard_link}",
+            context,
+            priority="high",
+        )
+
+        return HookResult(
+            decision=HookDecision.ASK_HUMAN,
+            reason=reason,
+            metadata={"approval_request_id": req_id},
+        )
 
     def pre_tool_use(
         self,
@@ -523,6 +616,15 @@ class HookChain:
         Run all pre-tool-use checks. Returns BLOCK on first failure.
         Order matters: cheapest checks first.
         """
+        # 0. Budget pre-check (prevent overspend before API call)
+        budget_result = self.cost.pre_check(context)
+        if budget_result.decision != HookDecision.ALLOW:
+            self.audit.log(context, "pre_tool_use", tool_name, tool_input,
+                          decision="blocked", reasoning=budget_result.reason)
+            self.slack.notify("escalation", "Agent budget nearly exhausted",
+                           budget_result.reason, context, "high")
+            return budget_result
+
         # 1. Rate limit (cheapest check)
         result = self.rate_limiter.check(context)
         if result.decision != HookDecision.ALLOW:
@@ -540,6 +642,8 @@ class HookChain:
             if result.decision == HookDecision.BLOCK:
                 self.slack.notify("security", "Unauthorized tool access attempt",
                                result.reason, context, "high")
+            elif result.decision == HookDecision.ASK_HUMAN:
+                return self._create_approval_from_hook(context, tool_name, result.reason)
             return result
 
         # 3. Compliance check for external-facing tools
@@ -555,6 +659,8 @@ class HookChain:
             if result.decision != HookDecision.ALLOW:
                 self.audit.log(context, "pre_tool_use", tool_name, tool_input,
                               decision=result.decision.value, reasoning=result.reason)
+                if result.decision == HookDecision.ASK_HUMAN:
+                    return self._create_approval_from_hook(context, tool_name, result.reason)
                 return result
 
         # All checks passed
@@ -600,6 +706,8 @@ def create_hook_chain(
     db_writer=None,
     slack_client=None,
     config: dict | None = None,
+    hitl_gateway=None,
+    redis_url: str = "",
 ) -> HookChain:
     """Create a fully configured HookChain from company config."""
     cfg = config or {}
@@ -607,16 +715,31 @@ def create_hook_chain(
     rate_limits = cfg.get("rate_limits", {})
     budgets = cfg.get("budgets", {})
 
+    max_session = rate_limits.get("max_tool_calls_per_session", 100)
+    max_minute = rate_limits.get("max_api_calls_per_minute", 30)
+
+    # Use Redis rate limiter if URL provided, otherwise in-memory
+    if redis_url:
+        from src.core.redis_rate_limiter import RedisRateLimiter
+        rate_limiter = RedisRateLimiter(
+            redis_url=redis_url,
+            max_calls_per_session=max_session,
+            max_calls_per_minute=max_minute,
+        )
+        # Fall back to in-memory if Redis connection failed
+        if not rate_limiter.is_distributed:
+            rate_limiter = RateLimiter(max_session, max_minute)
+    else:
+        rate_limiter = RateLimiter(max_session, max_minute)
+
     return HookChain(
         audit_logger=AuditLogger(db_writer=db_writer),
-        rate_limiter=RateLimiter(
-            max_calls_per_session=rate_limits.get("max_tool_calls_per_session", 100),
-            max_calls_per_minute=rate_limits.get("max_api_calls_per_minute", 30),
-        ),
+        rate_limiter=rate_limiter,
         auth_checker=AuthChecker(),
         cost_tracker=CostTracker(
             per_session_limit_usd=budgets.get("per_session_cost_limit_usd", 50.0),
         ),
         compliance_checker=ComplianceChecker(),
         slack_notifier=SlackNotifier(slack_client=slack_client),
+        hitl_gateway=hitl_gateway,
     )

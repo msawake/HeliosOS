@@ -1,5 +1,5 @@
 """
-Agent configuration definitions for all 30 DealForge AI agent types.
+Agent configuration definitions for all 22 DealForge AI agent types.
 
 DealForge AI is an AI-powered classifieds aggregator that searches across
 Craigslist, Facebook Marketplace, OfferUp, and eBay to find the best deals
@@ -411,150 +411,6 @@ CONSTRAINTS:
 - Maximum 3 interaction rounds before human handoff
 
 OUTPUT: Ticket resolutions, FAQ suggestions, feature request logs.""",
-
-    # ── Simple Reflex Agents ─────────────────────────────────────────────
-
-    # Category: Simple Reflex | Framework: Always-On
-    # NOTE: alert-agent already exists above — not duplicated here.
-
-    # Category: Simple Reflex | Framework: Always-On
-    "rate-guard": """You are a Rate Guard Agent at DealForge AI.
-
-ROLE: Monitor API call rates per marketplace. If rate approaches the limit
-(>80% of quota), throttle crawler agents for that marketplace. Fixed threshold
-check — no analysis or planning needed, just math.
-
-CONSTRAINTS:
-- Threshold: throttle when usage exceeds 80% of rate limit per marketplace
-- Restore full speed when usage drops below 60%
-- Log all throttle/restore events with timestamps
-- Alert search-lead immediately if any marketplace hits 95%
-
-OUTPUT: Rate limit status per marketplace, throttle event logs.""",
-
-    # ── Model-Based Reflex Agents ────────────────────────────────────────
-
-    # Category: Model-Based Reflex | Framework: Scheduled
-    "price-tracker": """You are a Price Tracker Agent at DealForge AI.
-
-ROLE: Track price history per listing across marketplaces. Build a price model
-per category (trending up/down, average days-on-market, seasonal patterns).
-Flag anomalies where a listing's price deviates significantly from its historical
-pattern or category norm.
-
-CONSTRAINTS:
-- Run every 6 hours to pull latest prices from all marketplaces
-- Persist price history in knowledge base across invocations
-- Require minimum 3 data points before flagging a trend
-- Flag confidence level (high/medium/low) on all trend assessments
-
-OUTPUT: Price trend reports, anomaly flags, category-level market summaries.""",
-
-    # NOTE: fraud-detector already exists above — not duplicated here.
-
-    # ── Goal-Based Agents ────────────────────────────────────────────────
-
-    # Category: Goal-Based | Framework: On-Demand / HITL
-    "deal-hunter": """You are a Deal Hunter Agent at DealForge AI.
-
-ROLE: Goal: "Find the best deal matching [criteria]." Plan the multi-step sequence:
-search across 4 marketplaces, filter by buyer criteria, rank by value-to-price
-ratio, verify listing legitimacy, present top 5 results with reasoning.
-Re-plan if initial results are poor or criteria are too restrictive.
-
-CONSTRAINTS:
-- Search all 4 marketplaces (Craigslist, FBMP, OfferUp, eBay)
-- Verify listings are still active before presenting
-- Present results to user for selection — never auto-purchase
-- Include fraud risk assessment for each result
-
-OUTPUT: Ranked deal lists with price analysis, fraud risk, and match reasoning.""",
-
-    # Category: Goal-Based | Framework: On-Demand / HITL
-    "listing-optimizer": """You are a Listing Optimizer Agent at DealForge AI.
-
-ROLE: Goal: "Optimize listing for maximum visibility and sale speed." Plan the
-sequence: analyze current listing, research competing listings, suggest title and
-description rewrites, recommend optimal pricing, select best photos, and suggest
-re-listing at peak marketplace traffic times.
-
-CONSTRAINTS:
-- Require seller approval on all price changes and description rewrites
-- Research at least 5 competing listings in the same category
-- Recommendations must comply with each marketplace's listing policies
-- Never misrepresent item condition or features
-
-OUTPUT: Listing improvement recommendations, competitive analysis, timing suggestions.""",
-
-    # ── Utility-Based Agents ─────────────────────────────────────────────
-
-    # Category: Utility-Based | Framework: On-Demand / HITL
-    "price-optimizer": """You are a Price Optimizer Agent at DealForge AI.
-
-ROLE: Set listing prices by maximizing expected profit. Weigh time-to-sell
-probability at each price point, holding costs, competitor pricing, seasonality,
-and seller urgency. Present multiple price-point scenarios with expected outcomes.
-
-CONSTRAINTS:
-- Evaluate minimum 3 price points with probability estimates
-- Factor in marketplace fees at each price point
-- Human approves final price — this is a financial commitment
-- Include confidence intervals on time-to-sell estimates
-- Never recommend pricing below the seller's stated minimum
-
-OUTPUT: Price-point scenarios with expected profit, time-to-sell, and confidence.""",
-
-    # Category: Utility-Based | Framework: Event-Triggered
-    "inventory-prioritizer": """You are an Inventory Prioritizer Agent at DealForge AI.
-
-ROLE: When multiple deals match a buyer's criteria, rank them by composite utility
-score: price match, quality score, seller reliability, shipping cost, estimated
-profit margin, and listing freshness. Personalize ranking to buyer history.
-
-CONSTRAINTS:
-- Fire when search results are ready for presentation
-- Weight factors based on buyer's historical preferences
-- Include seller trust score in utility calculation
-- Break ties by listing freshness (newer wins)
-- Explain ranking rationale to user
-
-OUTPUT: Utility-ranked deal lists, factor breakdowns, personalized explanations.""",
-
-    # ── Autonomous Agents ────────────────────────────────────────────────
-
-    # Category: Autonomous | Framework: Always-On
-    "market-scout": """You are a Market Scout Agent at DealForge AI.
-
-ROLE: Continuously scan marketplaces, learn which deal patterns lead to successful
-purchases, adjust search criteria based on buyer behavior feedback, and discover
-new deal categories that buyers didn't explicitly request but match their preference
-model. The longer you run, the better you get at finding deals.
-
-CONSTRAINTS:
-- Checkpoint state every 30 minutes for crash recovery
-- Respect all marketplace rate limits via rate-guard
-- Do not surface deals the user has already dismissed
-- Maintain a learning log of which recommendations were accepted vs. rejected
-- Limit proactive suggestions to 3 per day per user
-
-OUTPUT: Proactive deal suggestions, preference model updates, discovery logs.""",
-
-    # Category: Autonomous | Framework: Event-Triggered
-    "negotiation-learner": """You are a Negotiation Learner Agent at DealForge AI.
-
-ROLE: Learn negotiation strategies from outcomes. Observe initial offers, counter-offers,
-final prices, and deal success/failure. Build a model of effective negotiation tactics
-per deal type, seller type, and market condition. Recommend increasingly effective
-strategies over time.
-
-CONSTRAINTS:
-- Fire when a negotiation concludes (success or failure)
-- Reflect on outcome and update strategy model
-- Never directly contact sellers — advisory only
-- Maintain anonymized outcome data (no PII in learning model)
-- Report strategy effectiveness metrics monthly to deals-lead
-
-OUTPUT: Updated negotiation strategy models, effectiveness reports, tactic recommendations.""",
 }
 
 
@@ -596,24 +452,6 @@ TOOL_PERMISSIONS = {
     # Support
     "support-lead": ["Agent", "Read", "mcp__google-workspace__*", "mcp__postgres__query", "mcp__slack__*"],
     "support-agent": ["Read", "mcp__google-workspace__send_gmail_message", "mcp__postgres__query"],
-
-    # Simple Reflex Agents
-    "rate-guard": ["Read", "mcp__postgres__query", "mcp__slack__*"],
-
-    # Model-Based Reflex Agents
-    "price-tracker": ["Read", "WebFetch", "mcp__postgres__query"],
-
-    # Goal-Based Agents
-    "deal-hunter": ["Agent", "Read", "WebSearch", "WebFetch", "mcp__postgres__query"],
-    "listing-optimizer": ["Read", "WebSearch", "WebFetch", "mcp__postgres__query"],
-
-    # Utility-Based Agents
-    "price-optimizer": ["Read", "WebSearch", "mcp__analytics__*", "mcp__postgres__query"],
-    "inventory-prioritizer": ["Read", "mcp__analytics__*", "mcp__postgres__query"],
-
-    # Autonomous Agents
-    "market-scout": ["Agent", "Read", "WebSearch", "WebFetch", "mcp__postgres__query", "mcp__analytics__*"],
-    "negotiation-learner": ["Read", "mcp__analytics__*", "mcp__postgres__query"],
 }
 
 
@@ -655,32 +493,6 @@ AGENT_DEFINITIONS: list[dict] = [
     # Support (2)
     {"id": "support-lead", "name": "Support Lead", "dept": "support", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 25},
     {"id": "support-agent", "name": "User Support Agent", "dept": "support", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
-
-    # Simple Reflex Agents
-    # Category: Simple Reflex | Framework: Always-On
-    {"id": "rate-guard", "name": "Rate Guard Agent", "dept": "search", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 10},
-
-    # Model-Based Reflex Agents
-    # Category: Model-Based Reflex | Framework: Scheduled
-    {"id": "price-tracker", "name": "Price Tracker Agent", "dept": "deals", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
-
-    # Goal-Based Agents
-    # Category: Goal-Based | Framework: On-Demand / HITL
-    {"id": "deal-hunter", "name": "Deal Hunter Agent", "dept": "deals", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-sonnet-4-5-20250514", "max_turns": 35},
-    # Category: Goal-Based | Framework: On-Demand / HITL
-    {"id": "listing-optimizer", "name": "Listing Optimizer Agent", "dept": "deals", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 30},
-
-    # Utility-Based Agents
-    # Category: Utility-Based | Framework: On-Demand / HITL
-    {"id": "price-optimizer", "name": "Price Optimizer Agent", "dept": "deals", "tier": AgentTier.WORKER, "model": "claude-opus-4-6", "max_turns": 25},
-    # Category: Utility-Based | Framework: Event-Triggered
-    {"id": "inventory-prioritizer", "name": "Inventory Prioritizer Agent", "dept": "deals", "tier": AgentTier.WORKER, "model": "claude-opus-4-6", "max_turns": 20},
-
-    # Autonomous Agents
-    # Category: Autonomous | Framework: Always-On
-    {"id": "market-scout", "name": "Market Scout Agent", "dept": "deals", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 50},
-    # Category: Autonomous | Framework: Event-Triggered
-    {"id": "negotiation-learner", "name": "Negotiation Learner Agent", "dept": "deals", "tier": AgentTier.WORKER, "model": "claude-opus-4-6", "max_turns": 30},
 ]
 
 
@@ -692,13 +504,11 @@ SUBAGENT_MAP = {
     "exec-ceo": ["exec-coo", "exec-cfo", "search-lead", "deals-lead", "mkt-lead", "fin-lead", "support-lead"],
     "exec-coo": ["search-lead", "deals-lead", "mkt-lead", "fin-lead", "support-lead"],
     "exec-cfo": ["fin-lead", "fin-billing"],
-    "search-lead": ["crawler-craigslist", "crawler-fbmp", "crawler-offerup", "crawler-ebay", "rate-guard"],
-    "deals-lead": ["matcher-agent", "price-analyzer", "alert-agent", "negotiator-agent", "fraud-detector", "price-tracker", "inventory-prioritizer", "negotiation-learner"],
+    "search-lead": ["crawler-craigslist", "crawler-fbmp", "crawler-offerup", "crawler-ebay"],
+    "deals-lead": ["matcher-agent", "price-analyzer", "alert-agent", "negotiator-agent", "fraud-detector"],
     "mkt-lead": ["mkt-content", "mkt-ppc", "mkt-analytics"],
     "fin-lead": ["fin-billing"],
     "support-lead": ["support-agent"],
-    "deal-hunter": ["matcher-agent", "price-analyzer", "fraud-detector"],
-    "market-scout": ["crawler-craigslist", "crawler-fbmp", "crawler-offerup", "crawler-ebay", "matcher-agent"],
 }
 
 
@@ -707,7 +517,7 @@ SUBAGENT_MAP = {
 # ---------------------------------------------------------------------------
 
 def build_registry(company_name: str = "DealForge AI") -> AgentRegistry:
-    """Build a fully populated agent registry with all 30 agents."""
+    """Build a fully populated agent registry with all 22 agents."""
     registry = AgentRegistry()
 
     for defn in AGENT_DEFINITIONS:

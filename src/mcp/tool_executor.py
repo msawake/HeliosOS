@@ -233,6 +233,16 @@ class ToolExecutor:
             all_defs.extend(server_defs)
         return all_defs
 
+    def register_platform_tools(self, handlers: dict, definitions: list[dict]) -> None:
+        """Register platform-level tools (CRM, HTTP, ads, etc.)."""
+        self._custom_handlers.update(handlers)
+        self._platform_tool_definitions = definitions
+        logger.info("Registered %d platform tools", len(handlers))
+
+    def get_platform_tool_definitions(self) -> list[dict]:
+        """Return platform tool schemas."""
+        return getattr(self, "_platform_tool_definitions", [])
+
     async def execute(
         self,
         tool_name: str,
@@ -240,7 +250,7 @@ class ToolExecutor:
         agent_context: dict | None = None,
     ) -> dict:
         """Execute a tool call and return the result."""
-        # Custom company tools
+        # Custom company tools + platform tools (both in _custom_handlers)
         if tool_name in self._custom_handlers:
             try:
                 result = self._custom_handlers[tool_name](tool_input, agent_context)

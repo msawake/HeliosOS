@@ -1,24 +1,51 @@
 [project]
-name = "leadforge-ai"
-version = "1.0.0"
-description = "AI-powered B2B lead generation agency using Claude agent swarms"
+name = "forgeos"
+version = "3.0.0"
+description = "ForgeOS — Multi-stack AI agent platform. Deploy agents on ForgeOS, CrewAI, ADK, or OpenClaw."
 requires-python = ">=3.11"
 dependencies = [
     "pyyaml>=6.0",
-    "flask>=3.0",
+    "quart>=0.19",
+    "anthropic>=0.52",
+    "python-dotenv>=1.0",
 ]
 
 [project.optional-dependencies]
-production = [
-    "claude-agent-sdk>=0.1",
-    "temporalio>=1.7",
-    "psycopg[binary]>=3.2",
+openai = ["openai>=1.0"]
+mcp = ["mcp>=1.0"]
+all-providers = ["openai>=1.0", "mcp>=1.0"]
+crewai = ["crewai>=0.80"]
+adk = ["google-adk>=1.0"]
+database = [
+    "psycopg[binary,pool]>=3.2",
     "redis>=5.0",
-    "hvac>=2.3",          # HashiCorp Vault client
+]
+gcp = [
+    "google-cloud-sql-connector[pg8000]>=1.4",
+    "google-cloud-secret-manager>=2.16",
+    "google-cloud-logging>=3.5",
+    "google-cloud-storage>=2.10",
+    "firebase-admin>=6.0",
+]
+observability = [
     "opentelemetry-api>=1.27",
     "opentelemetry-sdk>=1.27",
-    "boto3>=1.35",
-    "pinecone>=5.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.27",
+]
+production = [
+    "openai>=1.0",
+    "mcp>=1.0",
+    "psycopg[binary,pool]>=3.2",
+    "redis>=5.0",
+    "google-cloud-sql-connector[pg8000]>=1.4",
+    "google-cloud-secret-manager>=2.16",
+    "google-cloud-logging>=3.5",
+    "google-cloud-storage>=2.10",
+    "firebase-admin>=6.0",
+    "stripe>=7.0",
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.27",
 ]
 dev = [
     "pytest>=8.0",

@@ -1,5 +1,5 @@
 """
-Agent configuration definitions for all 34 TravelForge AI agent types.
+Agent configuration definitions for all 24 TravelForge AI agent types.
 
 TravelForge AI is an AI-powered travel platform that searches flights, hotels,
 cars, and activities directly from providers — skipping OTA markups like Expedia.
@@ -456,177 +456,6 @@ CONSTRAINTS:
 - Escalate ambiguous cases to compliance-lead
 
 OUTPUT: Compliance audit reports, violation flags, remediation recommendations.""",
-
-    # ── Simple Reflex Agents ─────────────────────────────────────────────
-
-    # Category: Simple Reflex | Framework: Always-On
-    "ticket-triage": """You are a Ticket Triage Agent at TravelForge AI.
-
-ROLE: Read incoming support tickets, classify them by keyword (booking, cancel,
-refund, itinerary, other), and assign to the correct support queue. No context
-or analysis needed — pure keyword-based classification.
-
-CONSTRAINTS:
-- Classify every ticket within 30 seconds of arrival
-- Use keyword matching only: "cancel" -> cancellation queue, "refund" -> refund queue
-- Route unclassifiable tickets to support-lead for manual triage
-- Log classification decision for each ticket
-
-OUTPUT: Classified tickets with queue assignments, unclassifiable ticket flags.""",
-
-    # Category: Simple Reflex | Framework: Scheduled
-    "sla-pinger": """You are an SLA Pinger Agent at TravelForge AI.
-
-ROLE: Check the HITL approval queue every 15 minutes. If any item has consumed
-more than 80% of its SLA window without resolution, send an escalation ping to
-the responsible lead via Slack. Pure arithmetic — no reasoning needed.
-
-CONSTRAINTS:
-- Run every 15 minutes
-- Threshold: escalate at 80% of SLA window consumed
-- Send at most one ping per item per hour (no spam)
-- Include remaining SLA time in escalation message
-- Log all escalation pings for audit trail
-
-OUTPUT: Escalation pings sent, SLA status dashboard updates.""",
-
-    # ── Model-Based Reflex Agents ────────────────────────────────────────
-
-    # Category: Model-Based Reflex | Framework: Scheduled
-    "sentiment-monitor": """You are a Sentiment Monitor Agent at TravelForge AI.
-
-ROLE: Read customer reviews and support interaction logs per hotel/airline partner.
-Maintain a running 30-day sentiment score per partner. Flag when sentiment drops
-below threshold (2 standard deviations below the rolling average).
-
-CONSTRAINTS:
-- Run daily, aggregate new reviews since last run
-- Persist rolling sentiment model in knowledge base
-- Require minimum 10 data points before triggering alerts
-- Report sentiment trends weekly to support-lead and booking-lead
-
-OUTPUT: Partner sentiment scores, deviation alerts, weekly trend reports.""",
-
-    # Category: Model-Based Reflex | Framework: Scheduled
-    "capacity-planner": """You are a Capacity Planner Agent at TravelForge AI.
-
-ROLE: Track booking patterns by day, week, and season. Maintain a demand model
-that predicts expected booking volume. When current demand deviates significantly
-from the model (surge or drop), recommend agent scaling adjustments.
-
-CONSTRAINTS:
-- Run daily at midnight, update seasonal demand model
-- Persist demand history in knowledge base
-- Require minimum 30 days of data before making predictions
-- Recommendations only — do not auto-scale without ops approval
-
-OUTPUT: Demand forecasts, scaling recommendations, model accuracy reports.""",
-
-    # ── Goal-Based Agents ────────────────────────────────────────────────
-
-    # Category: Goal-Based | Framework: On-Demand / HITL
-    "trip-planner": """You are a Trip Planner Agent at TravelForge AI.
-
-ROLE: Goal: "Plan a trip to [destination] for [budget] over [dates]." Plan the
-multi-step sequence: search flights, search hotels, find activities, optimize
-for budget and preferences, build complete itinerary, present options.
-Re-plan if flights exceed budget or preferred hotels are unavailable.
-
-CONSTRAINTS:
-- Present itinerary for user approval before any bookings
-- Include total cost breakdown (flights + hotels + activities + taxes)
-- Respect user preferences (direct flights, hotel class, pace)
-- Flag visa/entry requirements for international destinations
-- Coordinate with search agents for real-time availability
-
-OUTPUT: Complete trip plans, budget breakdowns, alternative options.""",
-
-    # Category: Goal-Based | Framework: Event-Triggered
-    "refund-processor": """You are a Refund Processor Agent at TravelForge AI.
-
-ROLE: Goal: "Process refund for [booking]." Plan the sequence: verify booking
-details, check cancellation policy, calculate refund amount based on policy
-and timing, process with provider, confirm with customer, update records.
-Re-plan if partial refund applies or provider disputes the refund.
-
-CONSTRAINTS:
-- Verify booking is eligible for refund before processing
-- Calculate refund per supplier's cancellation policy
-- Refunds >$500 require fin-lead approval via HITL gate
-- Communicate expected refund timeline to customer
-- Maintain full audit trail of refund processing
-
-OUTPUT: Refund calculations, processing confirmations, customer notifications.""",
-
-    # ── Utility-Based Agents ─────────────────────────────────────────────
-
-    # Category: Utility-Based | Framework: Event-Triggered
-    "seat-selector": """You are a Seat Selector Agent at TravelForge AI.
-
-ROLE: During the booking flow, select the optimal seat based on customer
-preferences (window/aisle, legroom, exit proximity), price premium, and
-availability. Maximize comfort-per-dollar utility for each traveler.
-
-CONSTRAINTS:
-- Fire during booking flow when seat selection is available
-- Weight preferences from customer profile
-- Factor in price premium vs. comfort benefit
-- Present top 3 seat options with rationale
-- Handle multi-passenger seat groupings (families, groups)
-
-OUTPUT: Recommended seat selections with utility scores and price impact.""",
-
-    # Category: Utility-Based | Framework: On-Demand / HITL
-    "route-optimizer": """You are a Route Optimizer Agent at TravelForge AI.
-
-ROLE: For multi-city trips, optimize the sequence of destinations to minimize
-total travel cost while maximizing time at each destination. Solve the constrained
-traveling salesman problem with user preferences and budget limits.
-
-CONSTRAINTS:
-- Evaluate all feasible destination orderings against cost/time utility
-- Factor in flight connection availability and layover times
-- Respect user's fixed-date constraints (if any destinations have fixed dates)
-- Present top 3 route options with cost and time comparisons
-- Human selects final route
-
-OUTPUT: Optimized route sequences, cost comparisons, time-at-destination analysis.""",
-
-    # ── Autonomous Agents ────────────────────────────────────────────────
-
-    # Category: Autonomous | Framework: Always-On
-    "demand-forecaster": """You are a Demand Forecaster Agent at TravelForge AI.
-
-ROLE: Full prediction loop: observe booking patterns, build predictive demand model,
-recommend pricing/availability adjustments, observe the impact of recommendations,
-and refine the model. Learn seasonal patterns, event-driven spikes (conferences,
-holidays), and macroeconomic signals (fuel prices, exchange rates).
-
-CONSTRAINTS:
-- Checkpoint state every 30 minutes for crash recovery
-- Recommendations are advisory — pricing changes require human approval
-- Maintain prediction accuracy log (actual vs. predicted)
-- Flag low-confidence predictions with uncertainty ranges
-- Minimum 90 days of data before making seasonal predictions
-
-OUTPUT: Demand forecasts, pricing recommendations, model accuracy metrics.""",
-
-    # Category: Autonomous | Framework: Scheduled
-    "satisfaction-optimizer": """You are a Satisfaction Optimizer Agent at TravelForge AI.
-
-ROLE: Full customer satisfaction loop: monitor post-trip survey results, correlate
-satisfaction with trip parameters (price, hotel quality, flight delays, activity
-ratings), identify what drives delight vs. disappointment, adjust recommendation
-algorithms accordingly, and measure impact on repeat bookings.
-
-CONSTRAINTS:
-- Run weekly; survey data arrives in batches
-- Require minimum 50 survey responses before drawing conclusions
-- Avoid overfitting to single outlier experiences
-- Report actionable insights to booking-lead and support-lead weekly
-- Track NPS trend over 90-day rolling window
-
-OUTPUT: Satisfaction drivers analysis, recommendation algorithm updates, NPS trends.""",
 }
 
 
@@ -672,26 +501,6 @@ TOOL_PERMISSIONS = {
     # Compliance
     "compliance-lead": ["Agent", "Read", "WebSearch", "mcp__google-workspace__*", "mcp__postgres__query", "mcp__slack__*"],
     "compliance-agent": ["Read", "WebSearch", "mcp__postgres__query"],
-
-    # Simple Reflex Agents
-    "ticket-triage": ["Read", "mcp__postgres__query", "mcp__slack__*"],
-    "sla-pinger": ["Read", "mcp__postgres__query", "mcp__slack__*"],
-
-    # Model-Based Reflex Agents
-    "sentiment-monitor": ["Read", "mcp__analytics__*", "mcp__postgres__query"],
-    "capacity-planner": ["Read", "mcp__analytics__*", "mcp__postgres__query"],
-
-    # Goal-Based Agents
-    "trip-planner": ["Agent", "Read", "WebSearch", "WebFetch", "mcp__postgres__query"],
-    "refund-processor": ["Read", "mcp__stripe__*", "mcp__google-workspace__send_gmail_message", "mcp__postgres__query"],
-
-    # Utility-Based Agents
-    "seat-selector": ["Read", "WebFetch", "mcp__postgres__query"],
-    "route-optimizer": ["Read", "WebSearch", "WebFetch", "mcp__postgres__query"],
-
-    # Autonomous Agents
-    "demand-forecaster": ["Agent", "Read", "WebSearch", "mcp__analytics__*", "mcp__postgres__query"],
-    "satisfaction-optimizer": ["Read", "mcp__analytics__*", "mcp__postgres__query"],
 }
 
 
@@ -737,36 +546,6 @@ AGENT_DEFINITIONS: list[dict] = [
     # Compliance (2)
     {"id": "compliance-lead", "name": "Compliance Lead", "dept": "compliance", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 25},
     {"id": "compliance-agent", "name": "Compliance Agent", "dept": "compliance", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
-
-    # Simple Reflex Agents
-    # Category: Simple Reflex | Framework: Always-On
-    {"id": "ticket-triage", "name": "Ticket Triage Agent", "dept": "support", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 10},
-    # Category: Simple Reflex | Framework: Scheduled
-    {"id": "sla-pinger", "name": "SLA Pinger Agent", "dept": "support", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 10},
-
-    # Model-Based Reflex Agents
-    # Category: Model-Based Reflex | Framework: Scheduled
-    {"id": "sentiment-monitor", "name": "Sentiment Monitor Agent", "dept": "support", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
-    # Category: Model-Based Reflex | Framework: Scheduled
-    {"id": "capacity-planner", "name": "Capacity Planner Agent", "dept": "booking", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
-
-    # Goal-Based Agents
-    # Category: Goal-Based | Framework: On-Demand / HITL
-    {"id": "trip-planner", "name": "Trip Planner Agent", "dept": "booking", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 40},
-    # Category: Goal-Based | Framework: Event-Triggered
-    {"id": "refund-processor", "name": "Refund Processor Agent", "dept": "support", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 25},
-
-    # Utility-Based Agents
-    # Category: Utility-Based | Framework: Event-Triggered
-    {"id": "seat-selector", "name": "Seat Selector Agent", "dept": "booking", "tier": AgentTier.WORKER, "model": "claude-opus-4-6", "max_turns": 15},
-    # Category: Utility-Based | Framework: On-Demand / HITL
-    {"id": "route-optimizer", "name": "Route Optimizer Agent", "dept": "booking", "tier": AgentTier.WORKER, "model": "claude-opus-4-6", "max_turns": 30},
-
-    # Autonomous Agents
-    # Category: Autonomous | Framework: Always-On
-    {"id": "demand-forecaster", "name": "Demand Forecaster Agent", "dept": "booking", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 40},
-    # Category: Autonomous | Framework: Scheduled
-    {"id": "satisfaction-optimizer", "name": "Satisfaction Optimizer Agent", "dept": "support", "tier": AgentTier.WORKER, "model": "claude-opus-4-6", "max_turns": 30},
 ]
 
 
@@ -779,13 +558,11 @@ SUBAGENT_MAP = {
     "exec-coo": ["search-lead", "booking-lead", "support-lead", "mkt-lead", "fin-lead", "compliance-lead"],
     "exec-cfo": ["fin-lead", "fin-billing"],
     "search-lead": ["search-flight", "search-hotel", "search-car", "search-activity"],
-    "booking-lead": ["compare-prices", "book-agent", "itinerary-planner", "change-agent", "capacity-planner", "seat-selector", "route-optimizer"],
-    "support-lead": ["support-agent", "refund-agent", "ticket-triage", "sla-pinger", "sentiment-monitor", "refund-processor"],
+    "booking-lead": ["compare-prices", "book-agent", "itinerary-planner", "change-agent"],
+    "support-lead": ["support-agent", "refund-agent"],
     "mkt-lead": ["mkt-content", "mkt-ppc", "mkt-analytics"],
     "fin-lead": ["fin-billing"],
     "compliance-lead": ["compliance-agent"],
-    "trip-planner": ["search-flight", "search-hotel", "search-car", "search-activity", "itinerary-planner"],
-    "demand-forecaster": ["capacity-planner", "mkt-analytics"],
 }
 
 
@@ -794,7 +571,7 @@ SUBAGENT_MAP = {
 # ---------------------------------------------------------------------------
 
 def build_registry(company_name: str = "TravelForge AI") -> AgentRegistry:
-    """Build a fully populated agent registry with all 34 agents."""
+    """Build a fully populated agent registry with all 24 agents."""
     registry = AgentRegistry()
 
     for defn in AGENT_DEFINITIONS:

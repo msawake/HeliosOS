@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+*.previous
+node_modules/
+.next/
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+agents/personal/
+agents/shared/
+
+# Local secrets — never commit
+.env
+.env.local
+.env.*.local
