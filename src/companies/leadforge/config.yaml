@@ -1,0 +1,75 @@
+company:
+  name: "LeadForge AI"
+  domain: "leadforge.ai"
+  mission: "AI-powered B2B lead generation agency. Your AI SDR team — qualified pipeline on autopilot."
+
+budgets:
+  daily_token_budget: 8_000_000
+  critical_reserve_pct: 10
+  per_session_cost_limit_usd: 50.00
+  monthly_infrastructure_budget_usd: 5000
+
+  department_daily_tokens:
+    sales: 3_000_000
+    marketing: 2_000_000
+    finance: 500_000
+    hr: 200_000
+    legal: 500_000
+    operations: 800_000
+    executive: 1_000_000
+
+agent_defaults:
+  max_retries: 3
+  stale_task_threshold_minutes: 60
+  checkpoint_interval_minutes: 10
+  review_sample_rate: 0.15
+  canary_duration_hours: 24
+
+rate_limits:
+  max_tool_calls_per_session: 100
+  max_api_calls_per_minute: 30
+  max_concurrent_agents_per_type: 5
+
+hitl:
+  sla:
+    financial: 24.0
+    content: 4.0
+    contract: 48.0
+    client_agreement: 48.0
+    outreach_compliance: 4.0
+    ad_spend: 12.0
+    data_deletion: 24.0
+
+models:
+  orchestrator_default: "claude-opus-4-6"
+  doer_default: "claude-sonnet-4-5-20250514"
+  classifier_default: "claude-haiku-4-5-20251001"
+
+polling_intervals:
+  sdr_outreach_cycle_minutes: 15
+  lead_scoring_cycle_minutes: 30
+  pipeline_sync_cycle_minutes: 60
+  executive_cycle_minutes: 30
+  monitoring_cycle_minutes: 2
+
+mcp_servers:
+  tier1:
+    - name: "google-workspace"
+      package: "google-workspace-mcp"
+      required: true
+    - name: "slack"
+      package: "@anthropic/mcp-server-slack"
+      required: true
+    - name: "postgres"
+      package: "@modelcontextprotocol/server-postgres"
+      required: true
+    - name: "stripe"
+      package: "@stripe/mcp"
+      required: true
+  tier2:
+    - name: "analytics"
+      package: "analytics-mcp"
+      required: false
+    - name: "crm"
+      package: "crm-mcp"
+      required: false
