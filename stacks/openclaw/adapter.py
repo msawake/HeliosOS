@@ -1,10 +1,13 @@
 """
 OpenClaw Stack Adapter.
 
-Scaffolds agents in the OpenClaw file-first pattern: SOUL.md (brain),
-IDENTITY.md (persona), HEARTBEAT.md (scheduler/triggers), SKILLS/
-(tool YAMLs), MEMORY/ (persistent state). Agents are defined entirely
-by editing text files. Real OpenClaw gateway runtime plugged in later.
+**STATUS: STUB** -- Scaffolds agents in the OpenClaw file-first pattern
+(SOUL.md, IDENTITY.md, HEARTBEAT.md, SKILLS/, MEMORY/) but invocations
+are currently routed through the platform LLMRouter. Real OpenClaw
+gateway runtime is deferred.
+
+TODO: Wire real OpenClaw gateway (gateway.sh launcher, SOUL.md parsing,
+      HEARTBEAT.md scheduling, MEMORY/ persistence).
 """
 
 from __future__ import annotations
@@ -26,8 +29,9 @@ logger = logging.getLogger(__name__)
 class OpenClawAdapter(AgentStackAdapter):
     stack_name = "openclaw"
 
-    def __init__(self, llm_router=None):
+    def __init__(self, llm_router=None, tool_executor=None):
         self._llm_router = llm_router
+        self._tool_executor = tool_executor
         self._agents: dict[str, AgentDefinition] = {}
         self._loops: dict[str, asyncio.Task] = {}
 
@@ -42,17 +46,25 @@ class OpenClawAdapter(AgentStackAdapter):
             return AgentResult(agent_id=agent_id, status=AgentStatus.FAILED, error="Agent not found")
 
         if self._llm_router:
-            messages = [
-                {"role": "system", "content": f"[SOUL] You are {agent_def.name}.\n{agent_def.description}\n\nUse ReAct loop. Pause and ping on any external action."},
-                {"role": "user", "content": prompt},
-            ]
-            response = await self._llm_router.chat(agent_def.llm_config, messages)
-            return AgentResult(
-                agent_id=agent_id,
-                status=AgentStatus.COMPLETED,
-                output=response.text,
-                tokens_used=response.tokens_used,
+            from src.platform.agentic_loop import run_agentic_loop, build_tool_definitions
+            tools = build_tool_definitions(self._tool_executor, agent_def.tools or None)
+            system = (
+                f"[SOUL] You are {agent_def.name}.\n{agent_def.description}\n\n"
+                f"Use ReAct loop: Think → Act → Observe → Repeat.\n"
+                f"Pause and ping on any external action. Log decisions to memory."
             )
+            result = await run_agentic_loop(
+                llm_router=self._llm_router,
+                llm_config=agent_def.llm_config,
+                system_prompt=system,
+                user_prompt=prompt,
+                tool_definitions=tools or None,
+                tool_executor=self._tool_executor,
+                agent_context={"agent_id": agent_id, "department": agent_def.department},
+                context=context,
+            )
+            result.agent_id = agent_id
+            return result
 
         return AgentResult(
             agent_id=agent_id,

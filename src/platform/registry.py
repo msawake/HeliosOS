@@ -25,17 +25,21 @@ logger = logging.getLogger(__name__)
 
 class AgentRegistry:
     """
-    In-memory agent registry. In production, back this with PostgreSQL
-    (table: agent_registry).
+    Universal agent registry. Optionally backed by PostgreSQL via a
+    ``PostgresAgentRegistry`` store (pass as *store* parameter).
+    When no store is provided, operates purely in-memory.
     """
 
-    def __init__(self):
+    def __init__(self, store=None):
+        self._store = store  # Optional PostgresAgentRegistry
         self._agents: dict[str, AgentDefinition] = {}
         self._statuses: dict[str, AgentStatus] = {}
 
     def register(self, agent_def: AgentDefinition) -> str:
         if agent_def.agent_id in self._agents:
             raise ValueError(f"Agent {agent_def.agent_id} already registered")
+        if self._store:
+            self._store.register(agent_def)
         self._agents[agent_def.agent_id] = agent_def
         self._statuses[agent_def.agent_id] = AgentStatus.IDLE
         logger.info(
@@ -50,6 +54,8 @@ class AgentRegistry:
 
     def unregister(self, agent_id: str) -> bool:
         if agent_id in self._agents:
+            if self._store:
+                self._store.unregister(agent_id)
             del self._agents[agent_id]
             self._statuses.pop(agent_id, None)
             logger.info("Unregistered agent %s", agent_id)
@@ -57,17 +63,36 @@ class AgentRegistry:
         return False
 
     def get(self, agent_id: str) -> AgentDefinition | None:
-        return self._agents.get(agent_id)
+        cached = self._agents.get(agent_id)
+        if cached:
+            return cached
+        if self._store:
+            return self._store.get(agent_id)
+        return None
 
     def set_status(self, agent_id: str, status: AgentStatus) -> None:
         if agent_id in self._agents:
             self._statuses[agent_id] = status
+        if self._store:
+            self._store.set_status(agent_id, status)
 
     def get_status(self, agent_id: str) -> AgentStatus:
         return self._statuses.get(agent_id, AgentStatus.STOPPED)
 
     def list_all(self) -> list[AgentDefinition]:
         return list(self._agents.values())
+
+    def load_from_store(self) -> int:
+        """Load all agents from the backing store into memory. Returns count."""
+        if not self._store:
+            return 0
+        agents = self._store.list_all()
+        for a in agents:
+            self._agents[a.agent_id] = a
+            status = self._store.get_status(a.agent_id)
+            self._statuses[a.agent_id] = status
+        logger.info("Loaded %d agents from persistent store", len(agents))
+        return len(agents)
 
     def query(
         self,

@@ -17,11 +17,27 @@ function apiBase(): string {
   return 'http://127.0.0.1:5000';
 }
 
+function getAuthHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  const token = sessionStorage.getItem('forgeos_token');
+  if (token) return { Authorization: `Bearer ${token}` };
+  const key = sessionStorage.getItem('forgeos_api_key');
+  if (key) return { 'X-API-Key': key };
+  return {};
+}
+
 async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${apiBase()}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders(), ...options?.headers },
     ...options,
   });
+  if (res.status === 401 && typeof window !== 'undefined') {
+    // Clear stale auth and redirect to login
+    sessionStorage.removeItem('forgeos_token');
+    sessionStorage.removeItem('forgeos_api_key');
+    window.location.href = '/login';
+    throw new Error('Authentication required');
+  }
   if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
   return res.json();
 }

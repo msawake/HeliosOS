@@ -18,13 +18,26 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class ToolCall:
+    """A tool call requested by the LLM."""
+    id: str
+    name: str
+    input: dict
+
+
+@dataclass
 class LLMResponse:
     text: str
     model: str
     provider: str
     tokens_used: int = 0
     finish_reason: str = "stop"
+    tool_calls: list[ToolCall] | None = None
     raw: dict[str, Any] | None = None
+
+    @property
+    def has_tool_calls(self) -> bool:
+        return bool(self.tool_calls)
 
 
 class LLMRouter:
@@ -120,16 +133,24 @@ class LLMRouter:
                 kwargs["tools"] = tools
             response = client.messages.create(**kwargs)
             text = ""
+            tool_calls = []
             for block in response.content:
                 if hasattr(block, "text"):
                     text += block.text
+                elif block.type == "tool_use":
+                    tool_calls.append(ToolCall(
+                        id=block.id,
+                        name=block.name,
+                        input=block.input,
+                    ))
             return LLMResponse(
                 text=text,
                 model=model,
                 provider="anthropic",
                 tokens_used=response.usage.input_tokens + response.usage.output_tokens,
                 finish_reason=response.stop_reason or "stop",
-                raw={"id": response.id},
+                tool_calls=tool_calls or None,
+                raw={"id": response.id, "content": [{"type": b.type} for b in response.content]},
             )
         except Exception as e:
             logger.error("Anthropic API error: %s", e)
@@ -144,12 +165,24 @@ class LLMRouter:
                 kwargs["tools"] = tools
             response = client.chat.completions.create(**kwargs)
             choice = response.choices[0]
+            tool_calls = None
+            if choice.message.tool_calls:
+                import json as _json
+                tool_calls = [
+                    ToolCall(
+                        id=tc.id,
+                        name=tc.function.name,
+                        input=_json.loads(tc.function.arguments) if tc.function.arguments else {},
+                    )
+                    for tc in choice.message.tool_calls
+                ]
             return LLMResponse(
                 text=choice.message.content or "",
                 model=model,
                 provider="openai",
                 tokens_used=response.usage.total_tokens if response.usage else 0,
                 finish_reason=choice.finish_reason or "stop",
+                tool_calls=tool_calls,
             )
         except Exception as e:
             logger.error("OpenAI API error: %s", e)
