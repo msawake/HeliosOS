@@ -4,13 +4,17 @@ HITL Command Center Dashboard.
 Web application that serves as the human interface to the AI-operated company.
 Surfaces pending approvals, escalations, audit items, and KPI dashboards.
 
-Built with Flask for simplicity. In production, use a full frontend framework.
+Built with Quart (async Flask-compatible) so platform routes run natively in
+the same asyncio event loop as the scheduler, event bus, and agent adapters.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import time
+import uuid
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -452,7 +456,7 @@ def render_dashboard(data: dict, company_name: str = "LeadForge AI") -> str:
 
 
 # ---------------------------------------------------------------------------
-# Flask app (optional — can also serve static HTML)
+# Quart app (async Flask-compatible)
 # ---------------------------------------------------------------------------
 
 def create_app(
@@ -460,61 +464,127 @@ def create_app(
     workflow_engine=None,
     company_name: str = "LeadForge AI",
     db_client=None,
-    auth_enabled: bool = False,
+    auth_enabled: bool = True,
     platform_executor=None,
     platform_registry=None,
     llm_router=None,
+    _boot_complete: bool = False,
 ):
-    """Create the Flask web application."""
-    try:
-        from flask import Flask, jsonify, request as flask_request, g
-    except ImportError:
-        logger.warning("Flask not installed. Dashboard API unavailable.")
-        return None
+    """Create the Quart (async Flask-compatible) web application.
 
-    app = Flask(__name__)
+    Auth is enabled by default. Pass ``auth_enabled=False`` (or ``--no-auth``
+    on the CLI) only for local development without a database.
+    """
+    try:
+        from quart import Quart, jsonify, request as qrequest, g
+    except ImportError:
+        try:
+            from flask import Flask as Quart, jsonify, request as qrequest, g
+            logger.warning("Quart not installed -- falling back to Flask (sync).")
+        except ImportError:
+            logger.warning("Neither Quart nor Flask installed. Dashboard API unavailable.")
+            return None
+
+    app = Quart(__name__)
     dashboard = DashboardData(company_system, workflow_engine, company_name=company_name)
 
-    # Auth setup (optional — enabled in production)
+    # -- auth manager ---------------------------------------------------
     auth_manager = None
     if auth_enabled:
-        from src.api.auth import AuthManager
-        auth_manager = AuthManager(db_client=db_client)
+        try:
+            from src.api.auth import AuthManager
+            auth_manager = AuthManager(db_client=db_client)
+        except Exception as exc:
+            logger.warning("Auth init failed (auth disabled): %s", exc)
+
+    # -- HTTP rate limiting (in-memory, per IP) -------------------------
+    _rate_read: dict[str, list[float]] = defaultdict(list)
+    _rate_write: dict[str, list[float]] = defaultdict(list)
+    READ_LIMIT, WRITE_LIMIT, WINDOW = 120, 20, 60.0
+
+    def _over_limit(store, key, limit):
+        now = time.time()
+        store[key] = [t for t in store[key] if now - t < WINDOW]
+        if len(store[key]) >= limit:
+            return True
+        store[key].append(now)
+        return False
 
     @app.before_request
-    def authenticate():
-        """Authenticate requests when auth is enabled."""
-        # Health check is always public
-        if flask_request.path == "/api/health":
+    async def rate_limit_and_auth():
+        path = qrequest.path
+        if path in ("/api/health", "/api/readiness"):
             return None
-        # Static dashboard is public (auth happens in frontend)
-        if flask_request.path == "/":
+        if path == "/":
             return None
 
-        if auth_manager:
-            user = auth_manager.authenticate(flask_request)
-            if not user and flask_request.path.startswith("/api/"):
+        ip = qrequest.remote_addr or "unknown"
+        if qrequest.method in ("POST", "PUT", "DELETE"):
+            if _over_limit(_rate_write, ip, WRITE_LIMIT):
+                return jsonify({"error": "Rate limit exceeded"}), 429
+        elif _over_limit(_rate_read, ip, READ_LIMIT):
+            return jsonify({"error": "Rate limit exceeded"}), 429
+
+        g.request_id = qrequest.headers.get("X-Request-ID", str(uuid.uuid4())[:8])
+
+        if auth_manager and path.startswith("/api/"):
+            user = auth_manager.authenticate(qrequest)
+            if not user:
                 return jsonify({"error": "Authentication required"}), 401
-            if user:
-                g.user = user
-                g.tenant_id = user.tenant_id
+            g.user = user
+            g.tenant_id = user.tenant_id
+
+    # -- role decorator -------------------------------------------------
+    def _require_role(*roles):
+        from functools import wraps
+        def decorator(f):
+            @wraps(f)
+            async def wrapper(*args, **kwargs):
+                user = getattr(g, "user", None)
+                if not user:
+                    return jsonify({"error": "Authentication required"}), 401
+                if user.role not in roles:
+                    return jsonify({"error": f"Role {user.role} not authorized"}), 403
+                return await f(*args, **kwargs)
+            return wrapper
+        return decorator
+
+    # -- CORS + security headers ----------------------------------------
+    @app.after_request
+    async def after(response):
+        origin = qrequest.headers.get("Origin", "")
+        if origin.startswith("http://localhost"):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-API-Key"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        return response
+
+    # ===================================================================
+    # Legacy HTML dashboard
+    # ===================================================================
 
     @app.route("/")
-    def index():
+    async def index():
         data = dashboard.get_overview()
         return render_dashboard(data, company_name=dashboard.company_name)
 
     @app.route("/api/overview")
-    def api_overview():
+    async def api_overview():
         return jsonify(dashboard.get_overview())
 
+    # ===================================================================
+    # Approvals (auth + role required for writes)
+    # ===================================================================
+
     @app.route("/api/approvals")
-    def api_approvals():
-        category = flask_request.args.get("category")
+    async def api_approvals():
+        category = qrequest.args.get("category")
         return jsonify(company_system.hitl.get_pending(category) if company_system else [])
 
     @app.route("/api/approvals/<request_id>")
-    def api_approval_detail(request_id):
+    async def api_approval_detail(request_id):
         if not company_system:
             return jsonify({"error": "System not initialized"}), 500
         detail = company_system.hitl.check_status(request_id)
@@ -523,118 +593,136 @@ def create_app(
         return jsonify(detail)
 
     @app.route("/api/approvals/<request_id>/approve", methods=["POST"])
-    def api_approve(request_id):
+    @_require_role("admin", "operator")
+    async def api_approve(request_id):
         if not company_system:
             return jsonify({"error": "System not initialized"}), 500
-        body = flask_request.json or {}
+        body = await qrequest.get_json() if hasattr(qrequest, "get_json") else (qrequest.json or {})
+        if not isinstance(body, dict):
+            body = {}
+        user = getattr(g, "user", None)
         success = company_system.hitl.approve(
             request_id,
-            approved_by=body.get("approved_by", "human"),
+            approved_by=user.email if user else body.get("approved_by", "human"),
             reason=body.get("reason", ""),
         )
         return jsonify({"success": success})
 
     @app.route("/api/approvals/<request_id>/reject", methods=["POST"])
-    def api_reject(request_id):
+    @_require_role("admin", "operator")
+    async def api_reject(request_id):
         if not company_system:
             return jsonify({"error": "System not initialized"}), 500
-        body = flask_request.json or {}
+        body = await qrequest.get_json() if hasattr(qrequest, "get_json") else (qrequest.json or {})
+        if not isinstance(body, dict):
+            body = {}
+        user = getattr(g, "user", None)
         success = company_system.hitl.reject(
             request_id,
-            rejected_by=body.get("rejected_by", "human"),
+            rejected_by=user.email if user else body.get("rejected_by", "human"),
             reason=body.get("reason", ""),
         )
         return jsonify({"success": success})
 
     @app.route("/api/approvals/<request_id>/deny", methods=["POST"])
-    def api_deny(request_id):
-        """Alias for /reject — Next.js dashboard uses 'deny' in the UI."""
-        return api_reject(request_id)
+    @_require_role("admin", "operator")
+    async def api_deny(request_id):
+        return await api_reject(request_id)
+
+    # ===================================================================
+    # Workflows
+    # ===================================================================
 
     @app.route("/api/workflows")
-    def api_workflows():
+    async def api_workflows():
         if not workflow_engine:
             return jsonify([])
         from src.workflows.definitions import WorkflowStatus
         workflows = workflow_engine.list_workflows(WorkflowStatus.RUNNING)
-
-        def _progress_percent(wf) -> int:
-            counts = wf.get_progress()
-            total = counts.get("total") or 0
-            if total <= 0:
-                return 0
-            done = counts.get("completed", 0)
-            return int(min(100, round(100 * done / total)))
-
+        def _pct(wf):
+            c = wf.get_progress()
+            t = c.get("total") or 0
+            return int(min(100, round(100 * c.get("completed", 0) / t))) if t > 0 else 0
         return jsonify([
-            {
-                "id": w.workflow_id,
-                "name": w.name,
-                "type": w.workflow_type,
-                "progress": _progress_percent(w),
-                "progress_detail": w.get_progress(),
-                "priority": w.priority.value if getattr(w, "priority", None) else "medium",
-                "created_at": w.created_at.isoformat() if w.created_at else None,
-            }
+            {"id": w.workflow_id, "name": w.name, "type": w.workflow_type,
+             "progress": _pct(w), "progress_detail": w.get_progress(),
+             "priority": w.priority.value if getattr(w, "priority", None) else "medium",
+             "created_at": w.created_at.isoformat() if w.created_at else None}
             for w in workflows
         ])
 
     @app.route("/api/workflows/<workflow_id>")
-    def api_workflow_detail(workflow_id):
+    async def api_workflow_detail(workflow_id):
         if not workflow_engine:
             return jsonify({"error": "Engine not initialized"}), 500
         return jsonify(workflow_engine.get_progress_report(workflow_id))
 
     @app.route("/api/events")
-    def api_events():
+    async def api_events():
         if not company_system:
             return jsonify([])
-        dept = flask_request.args.get("department")
-        status = flask_request.args.get("status")
-        return jsonify(company_system.event_bus.query(
-            target_department=dept, status=status,
-        ))
+        dept = qrequest.args.get("department")
+        status = qrequest.args.get("status")
+        return jsonify(company_system.event_bus.query(target_department=dept, status=status))
+
+    # ===================================================================
+    # Health / readiness (always public)
+    # ===================================================================
 
     @app.route("/api/health")
-    def api_health():
-        if not company_system:
-            return jsonify({"status": "unknown"})
-        return jsonify(company_system.get_system_health())
+    async def api_health():
+        components: dict[str, Any] = {}
+        if company_system:
+            components.update(company_system.get_system_health())
+        components["database"] = db_client.is_connected if db_client else False
+        if llm_router:
+            components["llm_providers"] = llm_router.available_providers()
+        if platform_executor:
+            components["adapters"] = list(platform_executor._adapters.keys())
+        if platform_registry:
+            components["agents_registered"] = platform_registry.summary().get("total", 0)
+        return jsonify({"status": "ok", "components": components})
 
-    # ── Authenticated User Endpoints ────────────────────────────────────
+    @app.route("/api/readiness")
+    async def api_readiness():
+        if not _boot_complete:
+            return jsonify({"ready": False}), 503
+        return jsonify({"ready": True})
+
+    # ===================================================================
+    # Authenticated user endpoints
+    # ===================================================================
 
     @app.route("/api/me")
-    def api_me():
+    async def api_me():
         user = getattr(g, "user", None)
         if not user:
             return jsonify({"error": "Not authenticated"}), 401
         return jsonify(user.to_dict())
 
     @app.route("/api/usage")
-    def api_usage():
-        """Get usage metrics for the current tenant."""
+    async def api_usage():
         if not company_system:
             return jsonify({})
         return jsonify(company_system.metrics.get_dashboard())
 
     @app.route("/api/audit")
-    def api_audit():
-        """Get audit log for the current tenant."""
-        limit = flask_request.args.get("limit", 100, type=int)
+    async def api_audit():
+        limit = qrequest.args.get("limit", 100, type=int)
         return jsonify(dashboard.get_audit_log(limit=limit))
 
-    # ── Tenant Management (admin only) ──────────────────────────────────
+    # ===================================================================
+    # Tenant management (admin only)
+    # ===================================================================
 
     @app.route("/api/tenants", methods=["POST"])
-    def api_create_tenant():
-        user = getattr(g, "user", None)
-        if user and user.role != "admin":
-            return jsonify({"error": "Admin role required"}), 403
-
+    @_require_role("admin")
+    async def api_create_tenant():
         from src.api.tenants import TenantManager
+        body = await qrequest.get_json() if hasattr(qrequest, "get_json") else (qrequest.json or {})
+        if not isinstance(body, dict):
+            body = {}
         manager = TenantManager(db_client=db_client)
-
-        body = flask_request.json or {}
         tenant = manager.create_tenant(
             name=body.get("name", "New Company"),
             company_type=body.get("company_type", "leadforge"),
@@ -644,158 +732,104 @@ def create_app(
         return jsonify(tenant), 201
 
     @app.route("/api/tenants")
-    def api_list_tenants():
-        user = getattr(g, "user", None)
-        if user and user.role != "admin":
-            return jsonify({"error": "Admin role required"}), 403
-
+    @_require_role("admin")
+    async def api_list_tenants():
         from src.api.tenants import TenantManager
         manager = TenantManager(db_client=db_client)
         return jsonify(manager.list_tenants())
 
-    # ── Internal Endpoints (Cloud Tasks callbacks) ──────────────────────
+    # ===================================================================
+    # Internal (Cloud Tasks)
+    # ===================================================================
 
     @app.route("/api/internal/invoke-agent", methods=["POST"])
-    def api_invoke_agent():
-        """Called by Cloud Tasks to invoke an agent for a workflow task.
-
-        Internal endpoint — should be protected by IAM in production.
-        """
-        body = flask_request.json or {}
+    async def api_invoke_agent():
+        body = await qrequest.get_json() if hasattr(qrequest, "get_json") else (qrequest.json or {})
+        if not isinstance(body, dict):
+            body = {}
         agent_id = body.get("agent_id")
         description = body.get("description")
-        tenant_id = body.get("tenant_id", flask_request.headers.get("X-Tenant-Id"))
-
         if not agent_id or not description:
             return jsonify({"error": "agent_id and description required"}), 400
+        logger.info("Cloud Task invocation: agent=%s", agent_id)
+        return jsonify({"status": "accepted", "agent_id": agent_id}), 202
 
-        # In production, this would invoke the agent via the invoker
-        # For now, log and acknowledge
-        logger.info(
-            "Cloud Task invocation: agent=%s tenant=%s task=%s",
-            agent_id, tenant_id, body.get("task_name"),
-        )
-        return jsonify({
-            "status": "accepted",
-            "agent_id": agent_id,
-            "task_id": body.get("task_id"),
-        }), 202
-
-    # ── CORS for Next.js dashboard ────────────────────────────────────
-
-    @app.after_request
-    def add_cors(response):
-        origin = flask_request.headers.get("Origin", "")
-        if origin.startswith("http://localhost"):
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-        return response
-
-    # ── Platform API (multi-stack agent management) ─────────────────
+    # ===================================================================
+    # Platform API (multi-stack agent management)
+    # ===================================================================
 
     @app.route("/api/platform/overview")
-    def api_platform_overview():
+    async def api_platform_overview():
         if platform_registry:
             return jsonify(platform_registry.summary())
-        return jsonify({
-            "total": 0,
-            "by_stack": {"forgeos": 0, "crewai": 0, "adk": 0, "openclaw": 0},
-            "by_execution_type": {"always_on": 0, "scheduled": 0, "event_driven": 0, "reflex": 0, "autonomous": 0},
-            "by_ownership": {"personal": 0, "shared": 0},
-            "running": 0,
-        })
+        return jsonify({"total": 0, "by_stack": {}, "by_execution_type": {}, "by_ownership": {}, "running": 0})
 
     @app.route("/api/platform/agents")
-    def api_platform_agents():
+    async def api_platform_agents():
         if not platform_registry:
             return jsonify([])
-        from stacks.base import ExecutionType, OwnershipType, AgentStatus as PAgentStatus
-
-        filters = {}
-        if flask_request.args.get("stack"):
-            filters["stack"] = flask_request.args["stack"]
-        if flask_request.args.get("execution_type"):
+        from stacks.base import ExecutionType, OwnershipType
+        filters: dict[str, Any] = {}
+        if qrequest.args.get("stack"):
+            filters["stack"] = qrequest.args["stack"]
+        if qrequest.args.get("execution_type"):
             try:
-                filters["execution_type"] = ExecutionType(flask_request.args["execution_type"])
+                filters["execution_type"] = ExecutionType(qrequest.args["execution_type"])
             except ValueError:
                 pass
-        if flask_request.args.get("ownership"):
+        if qrequest.args.get("ownership"):
             try:
-                filters["ownership"] = OwnershipType(flask_request.args["ownership"])
+                filters["ownership"] = OwnershipType(qrequest.args["ownership"])
             except ValueError:
                 pass
-        if flask_request.args.get("owner_id"):
-            filters["owner_id"] = flask_request.args["owner_id"]
-        if flask_request.args.get("department"):
-            filters["department"] = flask_request.args["department"]
-
+        if qrequest.args.get("owner_id"):
+            filters["owner_id"] = qrequest.args["owner_id"]
+        if qrequest.args.get("department"):
+            filters["department"] = qrequest.args["department"]
         agents = platform_registry.query(**filters) if filters else platform_registry.list_all()
-        return jsonify([
-            {**a.to_dict(), "status": platform_registry.get_status(a.agent_id).value}
-            for a in agents
-        ])
+        return jsonify([{**a.to_dict(), "status": platform_registry.get_status(a.agent_id).value} for a in agents])
 
     @app.route("/api/platform/agents/<agent_id>")
-    def api_platform_agent_detail(agent_id):
+    async def api_platform_agent_detail(agent_id):
         if not platform_registry:
             return jsonify({"error": "Platform not initialized"}), 500
         agent = platform_registry.get(agent_id)
         if not agent:
             return jsonify({"error": "Agent not found"}), 404
-        return jsonify({
-            **agent.to_dict(),
-            "status": platform_registry.get_status(agent_id).value,
-        })
+        return jsonify({**agent.to_dict(), "status": platform_registry.get_status(agent_id).value})
 
     @app.route("/api/platform/agents", methods=["POST"])
-    def api_platform_create_agent():
+    @_require_role("admin", "operator")
+    async def api_platform_create_agent():
         if not platform_executor:
             return jsonify({"error": "Platform executor not initialized"}), 500
-
-        body = flask_request.json or {}
+        body = await qrequest.get_json() if hasattr(qrequest, "get_json") else (qrequest.json or {})
+        if not isinstance(body, dict):
+            body = {}
         if not body.get("name") or not body.get("stack"):
             return jsonify({"error": "name and stack are required"}), 400
-
         from stacks.base import AgentDefinition, ExecutionType, OwnershipType, LLMConfig
-        import asyncio
-
         try:
-            llm_cfg_data = body.get("llm_config", {})
-            llm_config = LLMConfig(
-                chat_model=llm_cfg_data.get("chat_model", "claude-4-sonnet"),
-                reasoning_model=llm_cfg_data.get("reasoning_model"),
-                provider=llm_cfg_data.get("provider", "anthropic"),
-            )
-
-            meta = body.get("metadata")
-            if not isinstance(meta, dict):
-                meta = {}
-
+            lcd = body.get("llm_config", {})
             agent_def = AgentDefinition(
-                name=body["name"],
-                stack=body["stack"],
+                name=body["name"], stack=body["stack"],
                 execution_type=ExecutionType(body.get("execution_type", "reflex")),
                 ownership=OwnershipType(body.get("ownership", "shared")),
                 owner_id=body.get("owner_id"),
-                llm_config=llm_config,
+                llm_config=LLMConfig(
+                    chat_model=lcd.get("chat_model", "claude-4-sonnet"),
+                    reasoning_model=lcd.get("reasoning_model"),
+                    provider=lcd.get("provider", "anthropic"),
+                ),
                 schedule=body.get("schedule"),
                 event_triggers=body.get("event_triggers", []),
-                goal=body.get("goal"),
-                tools=body.get("tools", []),
+                goal=body.get("goal"), tools=body.get("tools", []),
                 description=body.get("description", ""),
                 department=body.get("department", ""),
-                metadata=meta,
+                metadata=body.get("metadata") if isinstance(body.get("metadata"), dict) else {},
             )
-
-            loop = asyncio.new_event_loop()
-            try:
-                agent_id = loop.run_until_complete(platform_executor.deploy(agent_def))
-            finally:
-                loop.close()
-
+            agent_id = await platform_executor.deploy(agent_def)
             return jsonify({"agent_id": agent_id, "name": agent_def.name, "stack": agent_def.stack}), 201
-
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         except Exception as e:
@@ -803,111 +837,104 @@ def create_app(
             return jsonify({"error": str(e)}), 500
 
     @app.route("/api/platform/agents/<agent_id>/stop", methods=["POST"])
-    def api_platform_stop_agent(agent_id):
+    @_require_role("admin", "operator")
+    async def api_platform_stop_agent(agent_id):
         if not platform_executor:
             return jsonify({"error": "Platform not initialized"}), 500
-
-        import asyncio
-        loop = asyncio.new_event_loop()
-        try:
-            ok = loop.run_until_complete(platform_executor.stop_agent(agent_id))
-        finally:
-            loop.close()
+        ok = await platform_executor.stop_agent(agent_id)
         return jsonify({"ok": ok})
 
     @app.route("/api/platform/agents/<agent_id>", methods=["DELETE"])
-    def api_platform_delete_agent(agent_id):
+    @_require_role("admin")
+    async def api_platform_delete_agent(agent_id):
         if not platform_executor:
             return jsonify({"error": "Platform not initialized"}), 500
-
-        import asyncio
-        loop = asyncio.new_event_loop()
-        try:
-            ok = loop.run_until_complete(platform_executor.undeploy(agent_id))
-        finally:
-            loop.close()
+        ok = await platform_executor.undeploy(agent_id)
         return jsonify({"ok": ok})
 
     @app.route("/api/platform/agents/<agent_id>/invoke", methods=["POST"])
-    def api_platform_invoke_agent(agent_id):
+    @_require_role("admin", "operator")
+    async def api_platform_invoke_agent(agent_id):
         if not platform_executor:
             return jsonify({"error": "Platform not initialized"}), 500
-
-        body = flask_request.json or {}
+        body = await qrequest.get_json() if hasattr(qrequest, "get_json") else (qrequest.json or {})
+        if not isinstance(body, dict):
+            body = {}
         prompt = body.get("prompt", "")
         if not prompt:
             return jsonify({"error": "prompt is required"}), 400
-
-        import asyncio
-        loop = asyncio.new_event_loop()
-        try:
-            result = loop.run_until_complete(
-                platform_executor.invoke(agent_id, prompt, body.get("context"))
-            )
-        finally:
-            loop.close()
+        result = await platform_executor.invoke(agent_id, prompt, body.get("context"))
         return jsonify(result.to_dict())
 
     @app.route("/api/platform/events", methods=["POST"])
-    def api_platform_fire_event():
+    @_require_role("admin", "operator")
+    async def api_platform_fire_event():
         if not platform_executor:
             return jsonify({"error": "Platform not initialized"}), 500
-
-        body = flask_request.json or {}
+        body = await qrequest.get_json() if hasattr(qrequest, "get_json") else (qrequest.json or {})
+        if not isinstance(body, dict):
+            body = {}
         event_name = body.get("name")
         if not event_name:
             return jsonify({"error": "event name is required"}), 400
-
         from src.platform.event_bus import Event
-        import asyncio
-
-        event = Event(
-            name=event_name,
-            payload=body.get("payload", {}),
-            source=body.get("source", "api"),
-        )
-        loop = asyncio.new_event_loop()
-        try:
-            notified = loop.run_until_complete(platform_executor.event_bus.fire(event))
-        finally:
-            loop.close()
+        event = Event(name=event_name, payload=body.get("payload", {}), source=body.get("source", "api"))
+        notified = await platform_executor.event_bus.fire(event)
         return jsonify({"event": event_name, "notified": notified})
 
     @app.route("/api/platform/scheduler")
-    def api_platform_scheduler():
+    async def api_platform_scheduler():
         if not platform_executor:
             return jsonify([])
         return jsonify(platform_executor.scheduler.list_jobs())
 
     @app.route("/api/platform/wizard/chat", methods=["POST"])
-    def api_platform_wizard_chat():
-        """AI-assisted agent design: conversational turn with optional deploy proposal."""
-        body = flask_request.json or {}
+    @_require_role("admin", "operator")
+    async def api_platform_wizard_chat():
+        body = await qrequest.get_json() if hasattr(qrequest, "get_json") else (qrequest.json or {})
+        if not isinstance(body, dict):
+            body = {}
         messages = body.get("messages") or []
         if not isinstance(messages, list) or not messages:
             return jsonify({"error": "messages array required"}), 400
-
-        cleaned = []
-        for m in messages:
-            if not isinstance(m, dict):
-                continue
-            role = m.get("role")
-            content = (m.get("content") or "").strip()
-            if role in ("user", "assistant") and content:
-                cleaned.append({"role": role, "content": content})
+        cleaned = [
+            {"role": m["role"], "content": m["content"].strip()}
+            for m in messages
+            if isinstance(m, dict) and m.get("role") in ("user", "assistant") and (m.get("content") or "").strip()
+        ]
         if not cleaned or cleaned[-1]["role"] != "user":
             return jsonify({"error": "last message must be a non-empty user message"}), 400
-
         ctx = body.get("context") if isinstance(body.get("context"), dict) else {}
-        import asyncio
         from src.platform.agent_wizard_planner import run_wizard_turn
-
-        loop = asyncio.new_event_loop()
-        try:
-            result = loop.run_until_complete(run_wizard_turn(llm_router, cleaned, ctx))
-        finally:
-            loop.close()
-
+        result = await run_wizard_turn(llm_router, cleaned, ctx)
         return jsonify(result)
 
+    # ===================================================================
+    # Inter-agent messaging
+    # ===================================================================
+
+    @app.route("/api/platform/messages/<agent_id>")
+    async def api_platform_agent_messages(agent_id):
+        if not platform_executor:
+            return jsonify([])
+        unread = qrequest.args.get("unread", "true").lower() == "true"
+        return jsonify(platform_executor.event_bus.get_messages(agent_id, unread_only=unread))
+
+    @app.route("/api/platform/messages", methods=["POST"])
+    @_require_role("admin", "operator")
+    async def api_platform_send_message():
+        if not platform_executor:
+            return jsonify({"error": "Platform not initialized"}), 500
+        body = await qrequest.get_json() if hasattr(qrequest, "get_json") else (qrequest.json or {})
+        if not isinstance(body, dict):
+            body = {}
+        from_id = body.get("from_agent_id", "")
+        to_id = body.get("to_agent_id", "")
+        content = body.get("content", {})
+        if not from_id or not to_id:
+            return jsonify({"error": "from_agent_id and to_agent_id required"}), 400
+        msg_id = await platform_executor.event_bus.send_message(from_id, to_id, content)
+        return jsonify({"message_id": msg_id}), 201
+
     return app
+

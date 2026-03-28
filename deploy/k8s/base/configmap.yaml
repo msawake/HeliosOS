@@ -7,7 +7,10 @@ metadata:
     app.kubernetes.io/component: config
 data:
   COMPANY_ID: "leadforge"
-  # Disable demo HITL seed in cluster by default
   FORGEOS_SEED_HITL: "0"
   PORT: "5000"
   PYTHONUNBUFFERED: "1"
+  # Auth is enabled by default; set to "1" only for debugging
+  # FORGEOS_NO_AUTH: "0"
+  # OpenTelemetry: set endpoint to enable OTLP export
+  # OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"

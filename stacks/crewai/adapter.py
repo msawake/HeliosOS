@@ -35,8 +35,9 @@ except ImportError:
 class CrewAIAdapter(AgentStackAdapter):
     stack_name = "crewai"
 
-    def __init__(self, llm_router=None):
+    def __init__(self, llm_router=None, tool_executor=None):
         self._llm_router = llm_router
+        self._tool_executor = tool_executor
         self._agents: dict[str, AgentDefinition] = {}
         self._crew_agents: dict[str, Any] = {}
         self._loops: dict[str, asyncio.Task] = {}
@@ -68,24 +69,25 @@ class CrewAIAdapter(AgentStackAdapter):
             return await self._invoke_real(agent_id, agent_def, prompt)
 
         if self._llm_router:
-            messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        f"Role: {agent_def.name}\n"
-                        f"Goal: {agent_def.goal or agent_def.description}\n"
-                        f"Backstory: You are an expert crew member."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ]
-            response = await self._llm_router.chat(agent_def.llm_config, messages)
-            return AgentResult(
-                agent_id=agent_id,
-                status=AgentStatus.COMPLETED,
-                output=response.text,
-                tokens_used=response.tokens_used,
+            from src.platform.agentic_loop import run_agentic_loop, build_tool_definitions
+            tools = build_tool_definitions(self._tool_executor, agent_def.tools or None)
+            system = (
+                f"Role: {agent_def.name}\n"
+                f"Goal: {agent_def.goal or agent_def.description}\n"
+                f"Backstory: You are an expert crew member.\n"
+                f"Use available tools to accomplish your goal."
             )
+            result = await run_agentic_loop(
+                llm_router=self._llm_router,
+                llm_config=agent_def.llm_config,
+                system_prompt=system,
+                user_prompt=prompt,
+                tool_definitions=tools or None,
+                tool_executor=self._tool_executor,
+                agent_context={"agent_id": agent_id, "department": agent_def.department},
+            )
+            result.agent_id = agent_id
+            return result
 
         return AgentResult(
             agent_id=agent_id,

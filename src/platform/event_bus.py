@@ -37,19 +37,49 @@ class Event:
 EventCallback = Callable[[Event], Awaitable[None]]
 
 
+@dataclass
+class AgentMessage:
+    """Direct agent-to-agent message."""
+    message_id: str
+    from_agent_id: str
+    to_agent_id: str
+    content: dict = field(default_factory=dict)
+    read: bool = False
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> dict:
+        return {
+            "message_id": self.message_id,
+            "from": self.from_agent_id,
+            "to": self.to_agent_id,
+            "content": self.content,
+            "read": self.read,
+            "created_at": self.created_at.isoformat(),
+        }
+
+
 class EventBus:
     """
-    Lightweight async event bus. Agents register callbacks for event names.
-    Firing an event dispatches to all subscribers concurrently.
+    Lightweight async event bus with inter-agent mailbox.
+
+    Agents register callbacks for event names. Firing an event dispatches
+    to all subscribers concurrently. Optionally backed by a
+    ``PostgresEventSubscriptionStore`` for persistence and a
+    ``PostgresAgentMessageStore`` for durable messaging.
     """
 
-    def __init__(self):
+    def __init__(self, subscription_store=None, message_store=None):
+        self._subscription_store = subscription_store
+        self._message_store = message_store
         self._subscribers: dict[str, list[tuple[str, EventCallback]]] = defaultdict(list)
         self._history: list[Event] = []
         self._max_history = 1000
+        self._mailboxes: dict[str, list[AgentMessage]] = defaultdict(list)
 
     def subscribe(self, event_name: str, agent_id: str, callback: EventCallback) -> None:
         self._subscribers[event_name].append((agent_id, callback))
+        if self._subscription_store:
+            self._subscription_store.add(event_name, agent_id)
         logger.info("Agent %s subscribed to event '%s'", agent_id, event_name)
 
     def unsubscribe(self, agent_id: str, event_name: str | None = None) -> int:
@@ -61,9 +91,50 @@ class EventBus:
                 (aid, cb) for aid, cb in self._subscribers[name] if aid != agent_id
             ]
             removed += before - len(self._subscribers[name])
+        if self._subscription_store:
+            self._subscription_store.remove(agent_id, event_name)
         if removed:
             logger.info("Unsubscribed agent %s from %d event binding(s)", agent_id, removed)
         return removed
+
+    # -- inter-agent messaging -------------------------------------------
+
+    async def send_message(
+        self, from_agent_id: str, to_agent_id: str, content: dict,
+    ) -> str:
+        """Queue a message for a specific agent. Returns message_id."""
+        import uuid
+        msg_id = str(uuid.uuid4())
+        if self._message_store:
+            msg_id = self._message_store.send(from_agent_id, to_agent_id, content) or msg_id
+        msg = AgentMessage(
+            message_id=msg_id, from_agent_id=from_agent_id,
+            to_agent_id=to_agent_id, content=content,
+        )
+        self._mailboxes[to_agent_id].append(msg)
+        logger.debug("Message %s -> %s (id=%s)", from_agent_id, to_agent_id, msg_id)
+        return msg_id
+
+    def get_messages(
+        self, agent_id: str, unread_only: bool = True,
+    ) -> list[dict]:
+        """Retrieve messages for an agent."""
+        if self._message_store:
+            return self._message_store.get_messages(agent_id, unread_only=unread_only)
+        msgs = self._mailboxes.get(agent_id, [])
+        if unread_only:
+            msgs = [m for m in msgs if not m.read]
+        return [m.to_dict() for m in msgs]
+
+    def mark_read(self, message_id: str) -> None:
+        """Mark a message as read."""
+        if self._message_store:
+            self._message_store.mark_read(message_id)
+        for msgs in self._mailboxes.values():
+            for m in msgs:
+                if m.message_id == message_id:
+                    m.read = True
+                    return
 
     async def fire(self, event: Event) -> list[str]:
         """Fire an event. Returns list of agent_ids that were notified."""

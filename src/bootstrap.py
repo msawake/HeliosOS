@@ -6,7 +6,7 @@ CrewAI, Google ADK, OpenClaw) with five execution types (always-on, scheduled,
 event-driven, reflex, autonomous) and personal/shared ownership.
 
 Usage:
-    python -m src.bootstrap [--company leadforge] [--config path/to/config.yaml] [--mode shadow|supervised|autonomous] [--dashboard] [--loop]
+    python -m src.bootstrap [--company leadforge] [--config path/to/config.yaml] [--mode shadow|supervised|autonomous] [--dashboard] [--loop] [--port N]
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from src.platform.llm_router import LLMRouter
 from src.config.agent_configs import load_company_config, load_company_module, load_company_demo
 from src.core.claude_client import ClaudeClient
 from src.core.database import create_database_client
-from src.core.model_client import create_llm_client, get_provider
+from src.core.model_client import ModelProvider, create_llm_client, get_provider
 from src.core.hooks import create_hook_chain
 from src.mcp.custom_tools import CompanySystem
 from src.mcp.server_manager import MCPServerManager
@@ -49,13 +49,29 @@ logging.basicConfig(
 logger = logging.getLogger("bootstrap")
 
 
+def _repo_root() -> Path:
+    """Directory containing `pyproject.toml` (parent of `src/`)."""
+    return Path(__file__).resolve().parent.parent
+
+
 def _load_dotenv_from_repo_root() -> None:
-    """Load `.env` from cwd / repo root when `python-dotenv` is installed (dev/local)."""
+    """Load `.env` from repo root first, then default search (cwd / parents).
+
+    Requires `python-dotenv` (core dependency). If import fails, log a warning
+    so missing wheels are not silent.
+    """
     try:
         from dotenv import load_dotenv
-        load_dotenv()
     except ImportError:
-        pass
+        logger.warning(
+            "python-dotenv not installed — .env files will not load. "
+            "Fix: pip install python-dotenv  (or reinstall this package)"
+        )
+        return
+    env_file = _repo_root() / ".env"
+    if env_file.is_file():
+        load_dotenv(env_file)
+    load_dotenv()
 
 
 class OperatingMode:
@@ -82,9 +98,9 @@ class PlatformBootstrap:
         self.config = load_company_config(config_path, company_id=company_id)
         self.mode = mode
 
-        self.platform_registry = AgentRegistry()
-        self.scheduler = SchedulerEngine()
-        self.event_bus = EventBus()
+        self.platform_registry = None  # initialized during boot
+        self.scheduler = None
+        self.event_bus = None
         self.llm_router: LLMRouter | None = None
         self.executor: PlatformExecutor | None = None
 
@@ -95,7 +111,7 @@ class PlatformBootstrap:
         self._db = None
         self._running = False
 
-    async def boot(self):
+    async def boot(self, api_listen_port: int = 5000):
         _load_dotenv_from_repo_root()
         logger.info("=" * 60)
         logger.info("BOOTING FORGEOS MULTI-STACK PLATFORM")
@@ -109,6 +125,28 @@ class PlatformBootstrap:
         logger.info("[Phase 2] Initializing legacy company subsystems...")
         await self._init_legacy_subsystems()
 
+        # Platform persistence stores (backed by DB when available)
+        agent_store = sub_store = job_store = msg_store = None
+        if self._db and self._db.is_connected:
+            try:
+                from src.platform.persistence import (
+                    PostgresAgentRegistry,
+                    PostgresEventSubscriptionStore,
+                    PostgresScheduledJobStore,
+                    PostgresAgentMessageStore,
+                )
+                agent_store = PostgresAgentRegistry(self._db, self.tenant_id)
+                sub_store = PostgresEventSubscriptionStore(self._db, self.tenant_id)
+                job_store = PostgresScheduledJobStore(self._db, self.tenant_id)
+                msg_store = PostgresAgentMessageStore(self._db, self.tenant_id)
+                logger.info("  Platform persistence: PostgreSQL")
+            except Exception as exc:
+                logger.warning("  Platform persistence unavailable (%s) -- using in-memory", exc)
+
+        self.platform_registry = AgentRegistry(store=agent_store)
+        self.scheduler = SchedulerEngine(job_store=job_store)
+        self.event_bus = EventBus(subscription_store=sub_store, message_store=msg_store)
+
         logger.info("[Phase 3] Registering stack adapters...")
         self._register_adapters()
 
@@ -120,6 +158,11 @@ class PlatformBootstrap:
         )
         for name, adapter in self._adapters.items():
             self.executor.register_adapter(adapter)
+
+        # Recover agents from persistent storage
+        recovered = self.platform_registry.load_from_store()
+        if recovered:
+            await self.executor.recover()
 
         logger.info("[Phase 5] Seeding knowledge base...")
         if self.system:
@@ -141,7 +184,7 @@ class PlatformBootstrap:
             logger.info("Legacy agents: %d", len(self.legacy_registry.all_agents()))
         logger.info("Mode: %s", self.mode)
         logger.info("Dashboard: http://localhost:3000 (Next.js)")
-        logger.info("API: http://localhost:5000 (Flask)")
+        logger.info("API: http://localhost:%d (Flask)", api_listen_port)
         logger.info("=" * 60)
 
         self._running = True
@@ -215,8 +258,24 @@ class PlatformBootstrap:
         for server_name, schemas in self._mcp_manager.get_all_tool_schemas().items():
             tool_executor.register_mcp_tools(server_name, schemas)
 
+        # Register platform-level tool stubs (CRM, HTTP, ads, MLS, etc.)
+        try:
+            from src.mcp.platform_tools import register_platform_tools
+            register_platform_tools(tool_executor)
+            logger.info("  Platform tools: registered")
+        except ImportError:
+            logger.debug("  Platform tools: not available (src.mcp.platform_tools missing)")
+
         default_model = self.config.get("models", {}).get("orchestrator_default", "claude-opus-4-6")
-        llm_client = create_llm_client(default_model)
+        try:
+            orchestrator_provider = get_provider(default_model)
+        except ValueError:
+            orchestrator_provider = ModelProvider.ANTHROPIC
+        if orchestrator_provider == ModelProvider.OPENAI:
+            orchestrator_key = os.environ.get("OPENAI_API_KEY") or None
+        else:
+            orchestrator_key = os.environ.get("ANTHROPIC_API_KEY") or None
+        llm_client = create_llm_client(default_model, api_key=orchestrator_key)
 
         claude_client = ClaudeClient(
             tool_executor=tool_executor, hook_chain=hook_chain, llm_client=llm_client,
@@ -238,11 +297,12 @@ class PlatformBootstrap:
         self._tool_executor = tool_executor
 
     def _register_adapters(self):
+        te = self._tool_executor
         self._adapters = {
-            "forgeos": ForgeOSAdapter(llm_router=self.llm_router, tool_executor=self._tool_executor),
-            "crewai": CrewAIAdapter(llm_router=self.llm_router),
-            "adk": ADKAdapter(llm_router=self.llm_router),
-            "openclaw": OpenClawAdapter(llm_router=self.llm_router),
+            "forgeos": ForgeOSAdapter(llm_router=self.llm_router, tool_executor=te),
+            "crewai": CrewAIAdapter(llm_router=self.llm_router, tool_executor=te),
+            "adk": ADKAdapter(llm_router=self.llm_router, tool_executor=te),
+            "openclaw": OpenClawAdapter(llm_router=self.llm_router, tool_executor=te),
         }
         for name, adapter in self._adapters.items():
             logger.info("  Stack registered: %s", name)
@@ -291,18 +351,25 @@ class PlatformBootstrap:
         if self._db:
             self._db.close()
 
-    def start_api_server(self, host: str = "0.0.0.0", port: int = 5000):
-        """Start the Flask API server (JSON only, no frontend)."""
+    def create_api_app(self, auth_enabled: bool = True):
+        """Create the Quart/Flask API app (does not start it)."""
         from src.dashboard.app import create_app
         company_name = self.config.get("company", {}).get("name", "AI Company")
-        app = create_app(
+        return create_app(
             company_system=self.system,
             workflow_engine=self.workflow_engine,
             company_name=company_name,
+            db_client=self._db,
+            auth_enabled=auth_enabled,
             platform_executor=self.executor,
             platform_registry=self.platform_registry,
             llm_router=self.llm_router,
+            _boot_complete=self._running,
         )
+
+    def start_api_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):
+        """Start the API server in a daemon thread (legacy sync mode)."""
+        app = self.create_api_app(auth_enabled=auth_enabled)
         if app:
             logger.info("API server starting on http://%s:%d", host, port)
             import threading
@@ -312,7 +379,7 @@ class PlatformBootstrap:
             )
             thread.start()
         else:
-            logger.warning("API server not available (Flask not installed)")
+            logger.warning("API server not available (Quart/Flask not installed)")
 
     def get_platform_summary(self) -> dict:
         return {
@@ -346,16 +413,25 @@ async def main():
     parser.add_argument("--demo", action="store_true", help="Run demo scenario")
     parser.add_argument("--dashboard", action="store_true", help="Start API server")
     parser.add_argument("--loop", action="store_true", help="Run main operational loop")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="API listen port (default: env PORT or 5000). Use when 5000 is already in use.",
+    )
+    parser.add_argument("--no-auth", action="store_true", help="Disable API authentication (dev only)")
     args = parser.parse_args()
 
+    api_port = args.port if args.port is not None else int(os.environ.get("PORT", "5000"))
+
     bootstrap = PlatformBootstrap(config_path=args.config, mode=args.mode, company_id=args.company)
-    await bootstrap.boot()
+    await bootstrap.boot(api_listen_port=api_port)
 
     if args.demo:
         run_demo(company_id=args.company)
 
     if args.dashboard:
-        bootstrap.start_api_server()
+        bootstrap.start_api_server(port=api_port, auth_enabled=not args.no_auth)
 
     if args.loop:
         try:
@@ -363,7 +439,7 @@ async def main():
         except KeyboardInterrupt:
             bootstrap.stop()
     elif args.dashboard:
-        logger.info("API server running on http://0.0.0.0:5000 — Ctrl+C to stop.")
+        logger.info("API server running on http://0.0.0.0:%d — Ctrl+C to stop.", api_port)
         try:
             await asyncio.Future()
         except KeyboardInterrupt:

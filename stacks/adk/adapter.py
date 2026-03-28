@@ -1,10 +1,13 @@
 """
 Google ADK Stack Adapter.
 
-Scaffolds agents in the ADK pattern: Python classes inheriting from
-LLMAgent/WorkflowAgent, wired into a hierarchy, executed by a Runner
-with state machines. Adapter simulates execution; real `google-adk`
-SDK plugged in later.
+**STATUS: STUB** -- Scaffolds agents in the ADK pattern (LLMAgent /
+WorkflowAgent) but invocations are currently routed through the platform
+LLMRouter. Real ``google-adk`` SDK integration is deferred until the
+SDK stabilises.
+
+TODO: Wire real google-adk SDK when available (LLMAgent invocation,
+      WorkflowAgent state machines, Runner integration).
 """
 
 from __future__ import annotations
@@ -26,8 +29,9 @@ logger = logging.getLogger(__name__)
 class ADKAdapter(AgentStackAdapter):
     stack_name = "adk"
 
-    def __init__(self, llm_router=None):
+    def __init__(self, llm_router=None, tool_executor=None):
         self._llm_router = llm_router
+        self._tool_executor = tool_executor
         self._agents: dict[str, AgentDefinition] = {}
         self._loops: dict[str, asyncio.Task] = {}
 
@@ -42,17 +46,26 @@ class ADKAdapter(AgentStackAdapter):
             return AgentResult(agent_id=agent_id, status=AgentStatus.FAILED, error="Agent not found")
 
         if self._llm_router:
-            messages = [
-                {"role": "system", "content": f"You are {agent_def.name}, a Google ADK enterprise agent.\n{agent_def.description}"},
-                {"role": "user", "content": prompt},
-            ]
-            response = await self._llm_router.chat(agent_def.llm_config, messages)
-            return AgentResult(
-                agent_id=agent_id,
-                status=AgentStatus.COMPLETED,
-                output=response.text,
-                tokens_used=response.tokens_used,
+            from src.platform.agentic_loop import run_agentic_loop, build_tool_definitions
+            tools = build_tool_definitions(self._tool_executor, agent_def.tools or None)
+            system = (
+                f"You are {agent_def.name}, a Google ADK enterprise agent.\n"
+                f"{agent_def.description}\n\n"
+                f"Follow enterprise workflow patterns. Maintain audit trail of all decisions. "
+                f"Escalate to human reviewers for high-risk actions."
             )
+            result = await run_agentic_loop(
+                llm_router=self._llm_router,
+                llm_config=agent_def.llm_config,
+                system_prompt=system,
+                user_prompt=prompt,
+                tool_definitions=tools or None,
+                tool_executor=self._tool_executor,
+                agent_context={"agent_id": agent_id, "department": agent_def.department},
+                context=context,
+            )
+            result.agent_id = agent_id
+            return result
 
         return AgentResult(
             agent_id=agent_id,

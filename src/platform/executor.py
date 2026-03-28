@@ -235,6 +235,28 @@ class PlatformExecutor:
 
         self.registry.set_status(agent_id, AgentStatus.COMPLETED)
 
+    async def recover(self) -> int:
+        """Re-wire execution for all agents loaded from persistent storage.
+
+        Call this after boot when registry has been loaded from the database.
+        Returns the number of agents that were re-wired.
+        """
+        agents = self.registry.list_all()
+        recovered = 0
+        for agent_def in agents:
+            adapter = self._adapters.get(agent_def.stack)
+            if not adapter:
+                continue
+            try:
+                await adapter.create_agent(agent_def)
+                await self._wire_execution(agent_def)
+                recovered += 1
+            except Exception:
+                logger.exception("Failed to recover agent %s", agent_def.agent_id)
+        if recovered:
+            logger.info("Recovered %d agents from persistent store", recovered)
+        return recovered
+
     def _resolve_agent_dir(self, agent_def: AgentDefinition) -> Path:
         if agent_def.ownership == OwnershipType.PERSONAL:
             owner = agent_def.owner_id or "default"
