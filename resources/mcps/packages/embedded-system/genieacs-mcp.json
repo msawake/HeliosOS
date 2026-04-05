@@ -1,0 +1,23 @@
+{
+  "type": "mcp-server",
+  "name": "GenieACS MCP",
+  "packageName": "genieacs-mcp",
+  "description": "A tiny bridge that exposes any GenieACS instance as an MCP server, enabling LLMs to query and manage TR-069 CPE devices (routers, ONTs) through the GenieACS NBI.",
+  "url": "https://github.com/GeiserX/genieacs-mcp",
+  "runtime": "node",
+  "license": "gpl-3.0",
+  "env": {
+    "ACS_URL": {
+      "description": "GenieACS NBI endpoint (e.g. http://localhost:7557)",
+      "required": true
+    },
+    "ACS_USER": {
+      "description": "GenieACS username for basic auth",
+      "required": false
+    },
+    "ACS_PASS": {
+      "description": "GenieACS password for basic auth",
+      "required": false
+    }
+  }
+}

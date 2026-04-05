@@ -1,0 +1,19 @@
+{
+  "type": "mcp-server",
+  "name": "Paypal MCP Server",
+  "packageName": "@paypal/mcp",
+  "description": "A command line tool for setting up PayPal MCP server",
+  "url": "https://github.com/paypal/paypal-mcp-server",
+  "runtime": "node",
+  "license": "unknown",
+  "env": {
+    "PAYPAL_ACCESS_TOKEN": {
+      "description": "YOUR_PAYPAL_ACCESS_TOKEN ref: https://docs.paypal.ai/developer/how-to/api/get-started ",
+      "required": true
+    },
+    "PAYPAL_ENVIRONMENT": {
+      "description": "'SANDBOX' or 'LIVE'",
+      "required": true
+    }
+  }
+}

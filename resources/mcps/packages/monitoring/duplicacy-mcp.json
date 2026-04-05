@@ -1,0 +1,15 @@
+{
+  "type": "mcp-server",
+  "name": "Duplicacy MCP",
+  "packageName": "duplicacy-mcp",
+  "description": "MCP server for Duplicacy, enabling LLMs to monitor backup status and query Prometheus metrics from a Duplicacy exporter.",
+  "url": "https://github.com/GeiserX/duplicacy-mcp",
+  "runtime": "node",
+  "license": "gpl-3.0",
+  "env": {
+    "DUPLICACY_EXPORTER_URL": {
+      "description": "Duplicacy Prometheus exporter URL (e.g. http://localhost:9750)",
+      "required": true
+    }
+  }
+}

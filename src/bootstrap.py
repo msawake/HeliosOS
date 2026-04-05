@@ -184,7 +184,7 @@ class PlatformBootstrap:
             logger.info("Legacy agents: %d", len(self.legacy_registry.all_agents()))
         logger.info("Mode: %s", self.mode)
         logger.info("Dashboard: http://localhost:3000 (Next.js)")
-        logger.info("API: http://localhost:%d (Flask)", api_listen_port)
+        logger.info("API: http://localhost:%d (FastAPI)", api_listen_port)
         logger.info("=" * 60)
 
         self._running = True
@@ -254,7 +254,16 @@ class PlatformBootstrap:
         self._mcp_manager = MCPServerManager(self.config)
         mcp_clients = await self._mcp_manager.connect_all()
 
-        tool_executor = ToolExecutor(company_system=self.system, mcp_clients=mcp_clients)
+        from src.mcp.client_mcp_manager import ClientMCPManager
+        self._client_mcp_manager = ClientMCPManager(
+            db_client=self._db,
+            tenant_id=self.tenant_id,
+        )
+        tool_executor = ToolExecutor(
+            company_system=self.system,
+            mcp_clients=mcp_clients,
+            client_mcp_manager=self._client_mcp_manager,
+        )
         for server_name, schemas in self._mcp_manager.get_all_tool_schemas().items():
             tool_executor.register_mcp_tools(server_name, schemas)
 
@@ -352,10 +361,10 @@ class PlatformBootstrap:
             self._db.close()
 
     def create_api_app(self, auth_enabled: bool = True):
-        """Create the Quart/Flask API app (does not start it)."""
-        from src.dashboard.app import create_app
+        """Create the FastAPI app."""
+        from src.dashboard.fastapi_app import create_fastapi_app
         company_name = self.config.get("company", {}).get("name", "AI Company")
-        return create_app(
+        return create_fastapi_app(
             company_system=self.system,
             workflow_engine=self.workflow_engine,
             company_name=company_name,
@@ -368,18 +377,19 @@ class PlatformBootstrap:
         )
 
     def start_api_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):
-        """Start the API server in a daemon thread (legacy sync mode)."""
+        """Start the FastAPI server with uvicorn in a daemon thread."""
         app = self.create_api_app(auth_enabled=auth_enabled)
         if app:
-            logger.info("API server starting on http://%s:%d", host, port)
+            logger.info("API server starting on http://%s:%d (FastAPI)", host, port)
             import threading
+            import uvicorn
             thread = threading.Thread(
-                target=lambda: app.run(host=host, port=port, debug=False),
+                target=lambda: uvicorn.run(app, host=host, port=port, log_level="warning"),
                 daemon=True,
             )
             thread.start()
         else:
-            logger.warning("API server not available (Quart/Flask not installed)")
+            logger.warning("API server not available (FastAPI/uvicorn not installed)")
 
     def get_platform_summary(self) -> dict:
         return {

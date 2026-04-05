@@ -26,6 +26,7 @@ class ExecutionType(Enum):
 class OwnershipType(Enum):
     PERSONAL = "personal"
     SHARED = "shared"
+    CLIENT = "client"
 
 
 class AgentStatus(Enum):
@@ -72,6 +73,7 @@ class AgentDefinition:
     department: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: dict[str, Any] = field(default_factory=dict)
+    system_prompt: str = ""
 
     def __post_init__(self):
         if self.stack not in STACK_NAMES:
@@ -95,6 +97,7 @@ class AgentDefinition:
             "department": self.department,
             "created_at": self.created_at.isoformat(),
             "metadata": self.metadata,
+            "system_prompt": self.system_prompt,
         }
 
 

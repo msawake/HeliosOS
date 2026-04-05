@@ -1,0 +1,10 @@
+{
+  "type": "mcp-server",
+  "name": "cocoindex-code",
+  "packageName": "cocoindex-code",
+  "description": "A super lightweight, effective embedded MCP that understands and searches your codebase that just works! Works for Claude, Codex, Cursor - any coding agent. Instant token saving by 70%.",
+  "url": "https://github.com/cocoindex-io/cocoindex-code",
+  "runtime": "python",
+  "license": "Apache-2.0",
+  "env": {}
+}

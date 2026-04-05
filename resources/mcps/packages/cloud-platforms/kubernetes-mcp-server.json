@@ -1,0 +1,10 @@
+{
+  "type": "mcp-server",
+  "packageName": "kubernetes-mcp-server",
+  "description": "Model Context Protocol (MCP) server for Kubernetes and OpenShift",
+  "url": "https://github.com/containers/kubernetes-mcp-server",
+  "runtime": "node",
+  "license": "Apache-2.0",
+  "env": {},
+  "name": "Kubernetes MCP Server"
+}

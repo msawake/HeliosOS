@@ -258,6 +258,9 @@ class PlatformExecutor:
         return recovered
 
     def _resolve_agent_dir(self, agent_def: AgentDefinition) -> Path:
+        if agent_def.ownership == OwnershipType.CLIENT:
+            client = agent_def.owner_id or "default-client"
+            return self.agents_root / "clients" / client / agent_def.name
         if agent_def.ownership == OwnershipType.PERSONAL:
             owner = agent_def.owner_id or "default"
             return self.agents_root / "personal" / owner / agent_def.name
