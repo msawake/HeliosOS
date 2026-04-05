@@ -16,6 +16,7 @@ import hashlib
 import json
 import logging
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -121,8 +122,11 @@ class AuditLogger:
 
 class RateLimiter:
     """
-    Enforces per-session and per-minute rate limits on tool calls.
+    Enforces per-agent and per-minute rate limits on tool calls.
     Prevents runaway agent loops.
+
+    Uses agent_id (not session_id) for tracking, because session_id is
+    a fresh UUID per invocation — limits would never trigger otherwise.
     """
 
     def __init__(
@@ -132,60 +136,71 @@ class RateLimiter:
     ):
         self.max_per_session = max_calls_per_session
         self.max_per_minute = max_calls_per_minute
-        self._session_counts: dict[str, int] = {}
+        self._agent_counts: dict[str, int] = {}
         self._minute_windows: dict[str, list[float]] = {}
         self._check_count = 0
 
+    # Keep old attribute names accessible for backward compatibility with tests
+    @property
+    def _session_counts(self) -> dict[str, int]:
+        return self._agent_counts
+
     def check(self, context: AgentContext) -> HookResult:
-        sid = context.session_id
+        key = context.agent_id  # Use agent_id, NOT session_id
 
-        # Periodic cleanup of stale sessions (every 100 checks)
+        # Cleanup when dict grows too large (prevents unbounded memory growth)
         self._check_count += 1
-        if self._check_count % 100 == 0:
-            self._cleanup_stale_sessions()
+        if len(self._agent_counts) > 10000 or self._check_count % 100 == 0:
+            self._cleanup_stale_agents()
 
-        # Session-level check
-        self._session_counts.setdefault(sid, 0)
-        self._session_counts[sid] += 1
-        if self._session_counts[sid] > self.max_per_session:
+        # Per-agent total count
+        self._agent_counts.setdefault(key, 0)
+        self._agent_counts[key] += 1
+        if self._agent_counts[key] > self.max_per_session:
             return HookResult(
                 decision=HookDecision.BLOCK,
-                reason=f"Session {sid} exceeded {self.max_per_session} tool calls",
-                metadata={"count": self._session_counts[sid]},
+                reason=f"Agent {key} exceeded {self.max_per_session} tool calls",
+                metadata={"count": self._agent_counts[key]},
             )
 
-        # Per-minute check
+        # Per-minute sliding window (also by agent_id)
         now = time.time()
-        self._minute_windows.setdefault(sid, [])
-        window = self._minute_windows[sid]
+        self._minute_windows.setdefault(key, [])
+        window = self._minute_windows[key]
         window.append(now)
         # Trim to last 60 seconds
-        self._minute_windows[sid] = [t for t in window if now - t < 60]
-        if len(self._minute_windows[sid]) > self.max_per_minute:
+        self._minute_windows[key] = [t for t in window if now - t < 60]
+        if len(self._minute_windows[key]) > self.max_per_minute:
             return HookResult(
                 decision=HookDecision.BLOCK,
-                reason=f"Session {sid} exceeded {self.max_per_minute} calls/minute",
-                metadata={"calls_in_window": len(self._minute_windows[sid])},
+                reason=f"Agent {key} exceeded {self.max_per_minute} calls/minute",
+                metadata={"calls_in_window": len(self._minute_windows[key])},
             )
 
         return HookResult(decision=HookDecision.ALLOW)
 
     def reset_session(self, session_id: str):
-        self._session_counts.pop(session_id, None)
+        """Reset rate limits. Accepts session_id for backward compat but also works as agent_id."""
+        self._agent_counts.pop(session_id, None)
         self._minute_windows.pop(session_id, None)
 
-    def _cleanup_stale_sessions(self):
-        """Remove sessions with no activity in the last hour to prevent memory leaks."""
+    def reset_agent(self, agent_id: str):
+        """Reset rate limits for a specific agent."""
+        self._agent_counts.pop(agent_id, None)
+        self._minute_windows.pop(agent_id, None)
+
+    def _cleanup_stale_agents(self):
+        """Remove agents with no activity in the last hour to prevent memory leaks."""
         now = time.time()
         stale = [
-            sid for sid, timestamps in self._minute_windows.items()
+            key for key, timestamps in self._minute_windows.items()
             if not timestamps or now - timestamps[-1] > 3600
         ]
-        for sid in stale:
-            self._session_counts.pop(sid, None)
-            self._minute_windows.pop(sid, None)
+        for key in stale:
+            self._agent_counts.pop(key, None)
+            self._minute_windows.pop(key, None)
         if stale:
-            logger.debug("RateLimiter: cleaned up %d stale sessions", len(stale))
+            logger.debug("RateLimiter: cleaned up %d stale agent entries", len(stale))
 
 
 # ---------------------------------------------------------------------------
@@ -297,6 +312,10 @@ class CostTracker:
     """
     Tracks token consumption and USD cost per session and globally.
     Enforces budget limits.
+
+    Thread-safe: uses a lock to prevent race conditions between
+    pre_check() (which reserves estimated cost) and track() (which
+    adjusts reservation to actual cost).
     """
 
     # Import shared pricing registry (supports Claude + OpenAI + custom models)
@@ -308,72 +327,90 @@ class CostTracker:
         self._session_tokens: dict[str, dict[str, int]] = {}
         self._global_daily_tokens: int = 0
         self._daily_reset_date: str = ""
+        self._lock = threading.Lock()
 
     def pre_check(self, context: AgentContext, estimated_tokens: int = 10000) -> HookResult:
         """Check if estimated cost would exceed session budget BEFORE the API call.
 
         Called in pre_tool_use to prevent overspend. Uses conservative estimate
         of tokens that will be consumed by the next API call.
+
+        RESERVES the estimated cost immediately under a lock so that concurrent
+        calls cannot slip through the budget check.
         """
         from src.core.model_client import estimate_cost as _estimate_cost
 
         sid = context.session_id
-        current_cost = self._session_costs.get(sid, 0.0)
-        # Estimate: input tokens + half as many output tokens
-        estimated_cost = _estimate_cost(context.model, estimated_tokens, estimated_tokens // 2)
+        # Conservative estimate: assume output tokens = input tokens (not input/2)
+        estimated_cost = _estimate_cost(context.model, estimated_tokens, estimated_tokens)
 
-        if current_cost + estimated_cost > self.per_session_limit:
-            return HookResult(
-                decision=HookDecision.BLOCK,
-                reason=(
-                    f"Session cost ${current_cost:.2f} + estimated ${estimated_cost:.2f} "
-                    f"would exceed limit ${self.per_session_limit:.2f}"
-                ),
-                metadata={
-                    "current_cost": current_cost,
-                    "estimated_cost": estimated_cost,
-                    "limit": self.per_session_limit,
-                },
-            )
+        with self._lock:
+            current_cost = self._session_costs.get(sid, 0.0)
 
-        return HookResult(decision=HookDecision.ALLOW)
+            if current_cost + estimated_cost > self.per_session_limit:
+                return HookResult(
+                    decision=HookDecision.BLOCK,
+                    reason=(
+                        f"Session cost ${current_cost:.2f} + estimated ${estimated_cost:.2f} "
+                        f"would exceed limit ${self.per_session_limit:.2f}"
+                    ),
+                    metadata={
+                        "current_cost": current_cost,
+                        "estimated_cost": estimated_cost,
+                        "limit": self.per_session_limit,
+                    },
+                )
+
+            # RESERVE the estimated cost immediately to prevent concurrent overspend
+            self._session_costs[sid] = current_cost + estimated_cost
+
+        return HookResult(
+            decision=HookDecision.ALLOW,
+            metadata={"reserved": estimated_cost},
+        )
 
     def track(
         self,
         context: AgentContext,
         input_tokens: int = 0,
         output_tokens: int = 0,
+        reserved: float = 0.0,
     ) -> HookResult:
         sid = context.session_id
         model = context.model
 
-        # Calculate cost (uses shared pricing registry for all providers)
+        # Calculate actual cost (uses shared pricing registry for all providers)
         from src.core.model_client import estimate_cost as _estimate_cost
-        cost = _estimate_cost(model, input_tokens, output_tokens)
+        actual_cost = _estimate_cost(model, input_tokens, output_tokens)
 
-        # Track session cost
-        self._session_costs.setdefault(sid, 0.0)
-        self._session_costs[sid] += cost
+        with self._lock:
+            # Adjust: remove reservation, add actual cost
+            current = self._session_costs.get(sid, 0.0)
+            self._session_costs[sid] = current - reserved + actual_cost
 
-        # Track session tokens
-        self._session_tokens.setdefault(sid, {"input": 0, "output": 0})
-        self._session_tokens[sid]["input"] += input_tokens
-        self._session_tokens[sid]["output"] += output_tokens
+            # Track session tokens
+            self._session_tokens.setdefault(sid, {"input": 0, "output": 0})
+            self._session_tokens[sid]["input"] += input_tokens
+            self._session_tokens[sid]["output"] += output_tokens
 
-        # Track global daily tokens
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        if today != self._daily_reset_date:
-            self._global_daily_tokens = 0
-            self._daily_reset_date = today
-        self._global_daily_tokens += input_tokens + output_tokens
+            # Track global daily tokens
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            if today != self._daily_reset_date:
+                self._global_daily_tokens = 0
+                self._daily_reset_date = today
+            self._global_daily_tokens += input_tokens + output_tokens
+
+            session_cost = self._session_costs[sid]
+            session_tokens = dict(self._session_tokens[sid])
+            daily_tokens = self._global_daily_tokens
 
         # Check session limit
-        if self._session_costs[sid] > self.per_session_limit:
+        if session_cost > self.per_session_limit:
             return HookResult(
                 decision=HookDecision.BLOCK,
-                reason=f"Session cost ${self._session_costs[sid]:.2f} exceeds limit ${self.per_session_limit:.2f}",
+                reason=f"Session cost ${session_cost:.2f} exceeds limit ${self.per_session_limit:.2f}",
                 metadata={
-                    "session_cost": self._session_costs[sid],
+                    "session_cost": session_cost,
                     "limit": self.per_session_limit,
                 },
             )
@@ -381,9 +418,9 @@ class CostTracker:
         return HookResult(
             decision=HookDecision.ALLOW,
             metadata={
-                "session_cost": self._session_costs[sid],
-                "session_tokens": self._session_tokens[sid],
-                "global_daily_tokens": self._global_daily_tokens,
+                "session_cost": session_cost,
+                "session_tokens": session_tokens,
+                "global_daily_tokens": daily_tokens,
             },
         )
 

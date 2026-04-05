@@ -29,6 +29,7 @@ class AgentSession:
     """Persistent state for an agent invocation."""
     session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     agent_id: str = ""
+    tenant_id: str = ""  # Multi-tenant isolation
     status: str = "running"  # running | completed | failed | timeout
     messages: list[dict] = field(default_factory=list)
     system_prompt: str = ""
@@ -88,6 +89,13 @@ class InMemorySessionStore:
             s for s in self._sessions.values()
             if s.workflow_id == workflow_id
         ]
+
+    def get_resumable(self, agent_id: str) -> AgentSession | None:
+        """Get the most recent incomplete session for an agent (for crash recovery)."""
+        for s in self._sessions.values():
+            if s.agent_id == agent_id and s.status == "running":
+                return s
+        return None
 
 
 class PostgresSessionStore:
@@ -170,6 +178,18 @@ class PostgresSessionStore:
             )
             return [self._row_to_session(r) for r in rows] if rows else []
 
+    def get_resumable(self, agent_id: str) -> AgentSession | None:
+        """Get the most recent incomplete session for an agent (for crash recovery)."""
+        with self._db.tenant(self._tenant_id) as conn:
+            row = conn.execute_one(
+                "SELECT * FROM agent_sessions WHERE agent_id = %s AND status = 'running' "
+                "ORDER BY started_at DESC LIMIT 1",
+                (agent_id,),
+            )
+            if not row:
+                return None
+            return self._row_to_session(row)
+
     @staticmethod
     def _row_to_session(row: dict) -> AgentSession:
         metadata = row.get("metadata", {})
@@ -178,6 +198,7 @@ class PostgresSessionStore:
         return AgentSession(
             session_id=row.get("session_id", ""),
             agent_id=row.get("agent_id", ""),
+            tenant_id=row.get("tenant_id", ""),
             status=row.get("status", "running"),
             messages=metadata.get("messages", []),
             system_prompt=metadata.get("system_prompt", ""),

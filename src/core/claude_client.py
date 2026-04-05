@@ -36,6 +36,27 @@ MAX_RETRIES = 3
 RETRY_BASE_DELAY = 1.0  # seconds
 RETRY_MAX_DELAY = 30.0  # seconds
 
+# Tool execution timeout (configurable via module attribute)
+TOOL_EXECUTION_TIMEOUT = 300  # 5 minutes — tools like web scraping can be slow
+
+# Transient errors that are safe to retry (connection issues, timeouts, rate limits)
+_RETRYABLE_ERRORS: tuple[type[Exception], ...] = (
+    ConnectionError, TimeoutError, OSError,
+)
+
+# Try to include SDK-specific rate limit errors
+try:
+    import anthropic
+    _RETRYABLE_ERRORS = _RETRYABLE_ERRORS + (anthropic.RateLimitError, anthropic.APIConnectionError)
+except (ImportError, AttributeError):
+    pass
+
+try:
+    import openai
+    _RETRYABLE_ERRORS = _RETRYABLE_ERRORS + (openai.RateLimitError, openai.APIConnectionError)
+except (ImportError, AttributeError):
+    pass
+
 
 def _run_async_from_thread(coro):
     """Safely run an async coroutine from a sync thread context.
@@ -43,12 +64,20 @@ def _run_async_from_thread(coro):
     Handles both cases:
     - Called from a thread with no event loop → asyncio.run()
     - Called from within an async context → run_coroutine_threadsafe()
+
+    Timeout is configurable via TOOL_EXECUTION_TIMEOUT (default 300s).
     """
     try:
         loop = asyncio.get_running_loop()
         # We're in an async context — schedule on the existing loop
         future = asyncio.run_coroutine_threadsafe(coro, loop)
-        return future.result(timeout=60)
+        return future.result(timeout=TOOL_EXECUTION_TIMEOUT)
+    except TimeoutError:
+        logger.error(
+            "Tool execution timed out after %ds. Increase TOOL_EXECUTION_TIMEOUT if needed.",
+            TOOL_EXECUTION_TIMEOUT,
+        )
+        return {"success": False, "error": f"Tool execution timed out after {TOOL_EXECUTION_TIMEOUT}s"}
     except RuntimeError:
         # No running loop in this thread — safe to create one
         return asyncio.run(coro)
@@ -133,7 +162,12 @@ class ClaudeClient:
         messages: list[dict],
         tools: list[dict],
     ) -> LLMResponse:
-        """Call the LLM with exponential backoff retry on transient errors."""
+        """Call the LLM with exponential backoff retry on transient errors.
+
+        Only retries on transient errors (connection issues, timeouts,
+        rate limits). Fatal errors (bad API key, invalid model, etc.)
+        raise immediately without wasting time on retries.
+        """
         last_error = None
 
         for attempt in range(self._max_retries):
@@ -145,20 +179,25 @@ class ClaudeClient:
                     tools=tools,
                     max_tokens=8192,
                 )
-            except Exception as e:
+            except _RETRYABLE_ERRORS as e:
+                # Transient error — retry with backoff
                 last_error = e
                 if attempt < self._max_retries - 1:
                     delay = min(RETRY_BASE_DELAY * (2 ** attempt), RETRY_MAX_DELAY)
                     logger.warning(
-                        "LLM API error (attempt %d/%d, retrying in %.1fs): %s",
+                        "LLM API transient error (attempt %d/%d, retrying in %.1fs): %s",
                         attempt + 1, self._max_retries, delay, e,
                     )
                     time.sleep(delay)
                 else:
                     logger.error(
-                        "LLM API error (attempt %d/%d, giving up): %s",
+                        "LLM API transient error (attempt %d/%d, giving up): %s",
                         attempt + 1, self._max_retries, e,
                     )
+            except Exception as e:
+                # Non-transient (bad key, invalid model, etc.) — fail immediately
+                logger.error("LLM API fatal error (not retrying): %s", e)
+                raise
 
         raise last_error
 
@@ -302,8 +341,13 @@ class ClaudeClient:
             # Add tool results to conversation
             messages.append({"role": "user", "content": tool_results})
 
-            # Checkpoint after each turn
+            # Checkpoint after each turn (with recovery data)
             if session and self._session_store:
+                session.checkpoint_data = {
+                    "last_turn": turn,
+                    "last_tool_calls": [tc.name for tc in llm_response.tool_calls] if llm_response.tool_calls else [],
+                    "partial_result": final_text[:500] if final_text else "",
+                }
                 session.messages = list(messages)
                 session.turns_completed = turn + 1
                 session.tool_calls_completed = tool_call_count

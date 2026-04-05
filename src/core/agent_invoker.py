@@ -170,12 +170,14 @@ class AgentInvoker:
         config: dict | None = None,
         tool_executor=None,
         claude_client=None,
+        usage_enforcer=None,
     ):
         self.registry = registry
         self.hooks = hook_chain or create_hook_chain(config=config)
         self._config = config or {}
         self._tool_executor = tool_executor
         self._claude_client = claude_client
+        self._usage_enforcer = usage_enforcer
 
     def _build_context(self, agent_config: AgentConfig, session_id: str) -> AgentContext:
         return AgentContext(
@@ -210,6 +212,21 @@ class AgentInvoker:
                 status=AgentStatus.FAILED,
                 error=f"Agent {agent_id} not found in registry",
             )
+
+        # Pre-flight usage check (if usage enforcer is configured)
+        if self._usage_enforcer:
+            tenant_id = self._config.get("tenant_id", "default")
+            plan = self._config.get("plan", "starter")
+            check = self._usage_enforcer.check_tokens(
+                tenant_id=tenant_id, plan=plan, additional_tokens=10000,
+            )
+            if not check.get("allowed", True):
+                return AgentResult(
+                    agent_id=agent_id,
+                    session_id="none",
+                    status=AgentStatus.FAILED,
+                    error=f"Usage limit exceeded: {check.get('remaining', 0)} tokens remaining of {check.get('limit', 0)} daily limit",
+                )
 
         session_id = str(uuid.uuid4())
         context = self._build_context(agent_config, session_id)
@@ -419,6 +436,30 @@ async def delegate_to_subagent(
     Helper for orchestrators to delegate work to a doer agent.
     Handles retry logic and result aggregation.
     """
+    # --- Tier validation: prevent upward delegation ---
+    parent_tier = parent_context.tier if parent_context else 0
+    target_config = invoker.registry.get(target_agent_id)
+    if target_config and target_config.tier.value < parent_tier:
+        return AgentResult(
+            agent_id=target_agent_id,
+            session_id="none",
+            status=AgentStatus.FAILED,
+            error=f"Tier {parent_tier} agent cannot delegate to tier {target_config.tier.value} agent",
+        )
+
+    # --- Subagent map validation: only allow delegation to listed subagents ---
+    if parent_context and target_config:
+        parent_config = invoker.registry.get(parent_context.agent_id)
+        if parent_config and parent_config.subagents:
+            allowed_subagents = set(parent_config.subagents.keys())
+            if target_agent_id not in allowed_subagents:
+                return AgentResult(
+                    agent_id=target_agent_id,
+                    session_id="none",
+                    status=AgentStatus.FAILED,
+                    error=f"Agent '{parent_context.agent_id}' is not allowed to delegate to '{target_agent_id}'",
+                )
+
     meta = task_metadata or TaskMetadata()
 
     for attempt in range(meta.max_attempts):

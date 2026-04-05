@@ -9,11 +9,15 @@ Routes tool calls to the appropriate backend:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Timeout for tool execution (configurable via module attribute)
+TOOL_TIMEOUT = 120  # 2 minutes default
 
 
 class ToolExecutor:
@@ -259,9 +263,16 @@ class ToolExecutor:
                 logger.error("Custom tool %s failed: %s", tool_name, e)
                 return {"success": False, "error": str(e)}
 
-        # MCP tools: mcp__<server>__<tool>
+        # MCP tools: mcp__<server>__<tool> — with timeout
         if tool_name.startswith("mcp__"):
-            return await self._execute_mcp_tool(tool_name, tool_input)
+            try:
+                return await asyncio.wait_for(
+                    self._execute_mcp_tool(tool_name, tool_input),
+                    timeout=TOOL_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                logger.error("MCP tool %s timed out after %ds", tool_name, TOOL_TIMEOUT)
+                return {"success": False, "error": f"Tool {tool_name} timed out after {TOOL_TIMEOUT}s"}
 
         # Unknown tool
         return {"success": False, "error": f"Unknown tool: {tool_name}"}

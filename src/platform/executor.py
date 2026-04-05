@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -61,30 +62,64 @@ class PlatformExecutor:
 
     async def deploy(self, agent_def: AgentDefinition) -> str:
         """
-        Full deployment pipeline:
-        1. Scaffold files into agents/{personal|shared}/{name}/
-        2. Register in universal registry
-        3. Create agent in the stack adapter
-        4. Wire execution type lifecycle
+        Full deployment pipeline (crash-safe ordering):
+        1. Validate agent name
+        2. Register in DB first (reversible via unregister)
+        3. Scaffold files into agents/{personal|shared}/{name}/
+        4. Create agent in the stack adapter
+        5. Wire execution type lifecycle
+
+        If any step after registration fails, the registration is rolled back
+        and scaffolded files are cleaned up.
         """
+        # Validate agent name - alphanumeric, hyphens, underscores only
+        if not re.match(r'^[a-zA-Z][a-zA-Z0-9_-]{1,63}$', agent_def.name):
+            raise ValueError(
+                f"Invalid agent name '{agent_def.name}'. "
+                "Must start with a letter, contain only alphanumeric characters, "
+                "hyphens, or underscores, and be 2-64 characters long."
+            )
+
+        # Check for path traversal
+        if '..' in agent_def.name or '/' in agent_def.name or '\\' in agent_def.name:
+            raise ValueError(f"Agent name contains invalid characters: '{agent_def.name}'")
+
+        # Check uniqueness
+        existing = self.registry.get(agent_def.name)
+        if existing:
+            raise ValueError(f"Agent '{agent_def.name}' already exists. Use a different name.")
+
         adapter = self._adapters.get(agent_def.stack)
         if not adapter:
             raise ValueError(f"No adapter registered for stack '{agent_def.stack}'")
 
+        # Step 1: Register in DB first (can be rolled back)
         agent_dir = self._resolve_agent_dir(agent_def)
-        agent_dir.mkdir(parents=True, exist_ok=True)
-
-        files = adapter.scaffold_files(agent_def)
-        for rel_path, content in files.items():
-            file_path = agent_dir / rel_path
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            file_path.write_text(content)
-
         agent_def.config_path = str(agent_dir)
-        self.registry.register(agent_def)
-        await adapter.create_agent(agent_def)
+        agent_id = self.registry.register(agent_def)
 
-        await self._wire_execution(agent_def)
+        try:
+            # Step 2: Scaffold files
+            agent_dir.mkdir(parents=True, exist_ok=True)
+            files = adapter.scaffold_files(agent_def)
+            for rel_path, content in files.items():
+                file_path = agent_dir / rel_path
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                file_path.write_text(content)
+
+            # Step 3: Initialize in adapter
+            await adapter.create_agent(agent_def)
+
+            # Step 4: Wire execution lifecycle
+            await self._wire_execution(agent_def)
+
+        except Exception:
+            # Rollback: unregister from DB
+            self.registry.unregister(agent_id)
+            # Cleanup files if written
+            if agent_dir.exists():
+                shutil.rmtree(agent_dir, ignore_errors=True)
+            raise
 
         logger.info(
             "Deployed agent '%s' [stack=%s, type=%s, ownership=%s] -> %s",
@@ -94,7 +129,7 @@ class PlatformExecutor:
             agent_def.ownership.value,
             agent_dir,
         )
-        return agent_def.agent_id
+        return agent_id
 
     async def invoke(self, agent_id: str, prompt: str, context: dict | None = None) -> AgentResult:
         """Invoke an agent by ID, routing to the correct stack adapter."""

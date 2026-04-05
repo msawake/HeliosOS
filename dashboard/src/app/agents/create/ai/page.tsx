@@ -34,7 +34,19 @@ export default function AiWizardPage() {
     setInput('');
     setLoading(true);
     try {
-      const res = await api.wizardChat(nextHistory, { default_owner_id: 'demo-user' });
+      // Call FastAPI directly to avoid Next.js 30s proxy timeout (Opus tool loops take 30-90s)
+      const trimmedHistory = nextHistory.map((m) => ({
+        ...m,
+        content: m.content.length > 10000 ? m.content.slice(0, 10000) + '\n...[trimmed]' : m.content,
+      }));
+      const recentHistory = trimmedHistory.length > 50 ? trimmedHistory.slice(-50) : trimmedHistory;
+      const wizardRes = await fetch('http://localhost:5000/api/platform/wizard/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: recentHistory, context: { default_owner_id: 'demo-user' } }),
+      });
+      if (!wizardRes.ok) throw new Error(`API error: ${wizardRes.status} ${wizardRes.statusText}`);
+      const res = await wizardRes.json();
       setMessages((prev) => [...prev, { role: 'assistant', content: res.assistant_message }]);
       setLastProposal(res.proposal as CreateAgentPayload | null);
       setReadyToDeploy(res.ready_to_deploy);
