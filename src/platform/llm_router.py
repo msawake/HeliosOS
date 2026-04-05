@@ -124,11 +124,22 @@ class LLMRouter:
         self, client: Any, model: str, messages: list[dict], tools: list[dict] | None
     ) -> LLMResponse:
         try:
+            # Extract system messages — Anthropic requires them as a top-level parameter
+            system_parts = []
+            non_system = []
+            for m in messages:
+                if m.get("role") == "system":
+                    system_parts.append(m.get("content", ""))
+                else:
+                    non_system.append(m)
+
             kwargs: dict[str, Any] = {
                 "model": model,
-                "max_tokens": 4096,
-                "messages": messages,
+                "max_tokens": 16384,
+                "messages": non_system,
             }
+            if system_parts:
+                kwargs["system"] = "\n\n".join(system_parts)
             if tools:
                 kwargs["tools"] = tools
             response = client.messages.create(**kwargs)

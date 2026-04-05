@@ -293,19 +293,19 @@ class TestRateLimiterCleanup:
 
     def test_stale_sessions_cleaned(self):
         rl = RateLimiter()
-        # Add a session with old timestamps
-        rl._session_counts["old-session"] = 5
+        # Add an agent entry with old timestamps
+        rl._agent_counts["old-session"] = 5
         rl._minute_windows["old-session"] = [time.time() - 7200]  # 2 hours ago
 
-        # Add a session with recent timestamps
-        rl._session_counts["recent-session"] = 3
+        # Add an agent entry with recent timestamps
+        rl._agent_counts["recent-session"] = 3
         rl._minute_windows["recent-session"] = [time.time()]
 
-        rl._cleanup_stale_sessions()
+        rl._cleanup_stale_agents()
 
-        assert "old-session" not in rl._session_counts
+        assert "old-session" not in rl._agent_counts
         assert "old-session" not in rl._minute_windows
-        assert "recent-session" in rl._session_counts
+        assert "recent-session" in rl._agent_counts
 
     def test_cleanup_triggers_periodically(self):
         rl = RateLimiter()
@@ -316,13 +316,13 @@ class TestRateLimiterCleanup:
             rl.check(ctx)
         assert rl._check_count == 99
 
-        # Add stale session
-        rl._session_counts["stale"] = 1
+        # Add stale agent entry
+        rl._agent_counts["stale"] = 1
         rl._minute_windows["stale"] = [time.time() - 7200]
 
         # 100th check triggers cleanup
         rl.check(ctx)
-        assert "stale" not in rl._session_counts
+        assert "stale" not in rl._agent_counts
 
 
 # ── Async Tool Execution ────────────────────────────────────────────────
@@ -347,30 +347,17 @@ class TestAsyncToolExecution:
 
 
 class TestClaudeClientRetry:
-    def test_retry_on_failure(self):
-        """Verify retry logic calls LLM multiple times on failure."""
+    def test_retry_on_transient_failure(self):
+        """Verify retry logic retries on transient errors (ConnectionError)."""
         mock_client = MagicMock()
-        mock_client.create_message.side_effect = [
-            Exception("API error"),
-            Exception("API error"),
-            MagicMock(
-                text="success",
-                tool_calls=[],
-                stop_reason="end_turn",
-                input_tokens=100,
-                output_tokens=50,
-                raw_response=None,
-            ),
-        ]
 
         from src.core.model_client import LLMResponse
-        # Patch the LLMResponse to be returned properly
         mock_response = LLMResponse(
             text="success", tool_calls=[], stop_reason="end_turn",
             input_tokens=100, output_tokens=50,
         )
         mock_client.create_message.side_effect = [
-            Exception("transient error"),
+            ConnectionError("transient error"),
             mock_response,
         ]
 
@@ -381,13 +368,25 @@ class TestClaudeClientRetry:
         assert mock_client.create_message.call_count == 2
 
     def test_retry_exhausted_raises(self):
+        """Verify transient errors exhaust retries and then raise."""
         mock_client = MagicMock()
-        mock_client.create_message.side_effect = Exception("permanent error")
+        mock_client.create_message.side_effect = ConnectionError("transient error")
 
         client = ClaudeClient(llm_client=mock_client, max_retries=2)
-        with pytest.raises(Exception, match="permanent error"):
+        with pytest.raises(ConnectionError, match="transient error"):
             client._call_llm_with_retry("model", "system", [], [])
         assert mock_client.create_message.call_count == 2
+
+    def test_fatal_error_no_retry(self):
+        """Verify non-transient errors (e.g., bad API key) fail immediately without retrying."""
+        mock_client = MagicMock()
+        mock_client.create_message.side_effect = ValueError("Invalid API key")
+
+        client = ClaudeClient(llm_client=mock_client, max_retries=3)
+        with pytest.raises(ValueError, match="Invalid API key"):
+            client._call_llm_with_retry("model", "system", [], [])
+        # Should only be called once — no retries for fatal errors
+        assert mock_client.create_message.call_count == 1
 
 
 # ── CompanySystem Persistence Mode ───────────────────────────────────────

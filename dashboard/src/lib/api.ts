@@ -31,12 +31,8 @@ async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders(), ...options?.headers },
     ...options,
   });
-  if (res.status === 401 && typeof window !== 'undefined') {
-    // Clear stale auth and redirect to login
-    sessionStorage.removeItem('forgeos_token');
-    sessionStorage.removeItem('forgeos_api_key');
-    window.location.href = '/login';
-    throw new Error('Authentication required');
+  if (res.status === 401) {
+    throw new Error('API returned 401 — check that backend is running with --no-auth');
   }
   if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
   return res.json();
@@ -126,4 +122,22 @@ export const api = {
     fetchJSON<any>(`/api/approvals/${id}/deny`, { method: 'POST' }),
 
   getWorkflows: () => fetchJSON<any[]>('/api/workflows'),
+
+  // Skills
+  getSkillDomains: () => fetchJSON<{ total: number; domains: { domain: string; count: number }[] }>('/api/skills/domains'),
+  searchSkills: (query: string, domain?: string) => {
+    const p = new URLSearchParams({ query });
+    if (domain) p.set('domain', domain);
+    return fetchJSON<{ count: number; skills: any[] }>(`/api/skills/search?${p}`);
+  },
+  getSkill: (name: string) => fetchJSON<any>(`/api/skills/${encodeURIComponent(name)}`),
+
+  // MCPs
+  getMCPCategories: () => fetchJSON<{ total: number; categories: { category: string; count: number }[] }>('/api/mcps/categories'),
+  searchMCPs: (query: string, category?: string) => {
+    const p = new URLSearchParams({ query });
+    if (category) p.set('category', category);
+    return fetchJSON<{ count: number; packages: any[] }>(`/api/mcps/search?${p}`);
+  },
+  getMCPPackage: (name: string) => fetchJSON<any>(`/api/mcps/${encodeURIComponent(name)}`),
 };

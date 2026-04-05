@@ -1,0 +1,120 @@
+# DealForge AI — M&A Deals Ontology Schema
+# Object types and relationships for mergers, acquisitions, and deal flow.
+
+types:
+  - name: Listing
+    description: A business or asset listed for sale
+    icon: storefront
+    properties:
+      title: {type: string, required: true}
+      asking_price: {type: number, required: true}
+      industry: {type: string}
+      revenue: {type: number}
+      ebitda: {type: number}
+      location: {type: string}
+      status: {type: enum, values: [draft, active, under_offer, sold, withdrawn]}
+      listed_date: {type: date}
+
+  - name: Buyer
+    description: A prospective acquirer or investor
+    icon: user-tie
+    properties:
+      name: {type: string, required: true}
+      email: {type: string, required: true}
+      buyer_type: {type: enum, values: [strategic, financial, individual, pe_fund]}
+      budget_min: {type: number}
+      budget_max: {type: number}
+      preferred_industries: {type: string}
+      verified: {type: boolean}
+
+  - name: Seller
+    description: The owner or representative selling a business
+    icon: building
+    properties:
+      name: {type: string, required: true}
+      email: {type: string, required: true}
+      company_name: {type: string}
+      reason_for_sale: {type: enum, values: [retirement, growth_capital, strategic, distressed]}
+      timeline: {type: enum, values: [immediate, three_months, six_months, flexible]}
+
+  - name: Transaction
+    description: A completed or in-progress deal transaction
+    icon: file-contract
+    properties:
+      deal_name: {type: string, required: true}
+      purchase_price: {type: number}
+      deal_type: {type: enum, values: [asset_sale, stock_sale, merger, management_buyout]}
+      stage: {type: enum, values: [loi, due_diligence, negotiation, closing, closed, terminated]}
+      close_date: {type: date}
+      financing_type: {type: string}
+
+  - name: Marketplace
+    description: A deal marketplace or platform where listings are published
+    icon: globe
+    properties:
+      name: {type: string, required: true}
+      url: {type: string}
+      listing_fee: {type: number}
+      category: {type: enum, values: [general, industry_specific, premium, auction]}
+      active_listings: {type: number}
+
+  - name: Advisor
+    description: A professional advisor (broker, attorney, accountant)
+    icon: briefcase
+    properties:
+      name: {type: string, required: true}
+      firm: {type: string}
+      specialty: {type: enum, values: [broker, attorney, accountant, tax, valuation]}
+      email: {type: string}
+      success_fee_pct: {type: number}
+
+  - name: Valuation
+    description: A business valuation report
+    icon: chart-line
+    properties:
+      method: {type: enum, values: [dcf, comparable, asset_based, earnings_multiple]}
+      estimated_value: {type: number, required: true}
+      confidence: {type: enum, values: [low, medium, high]}
+      valuation_date: {type: date}
+      prepared_by: {type: string}
+
+links:
+  - name: listed_by
+    from: Listing
+    to: Seller
+    cardinality: many_to_one
+
+  - name: interested_in
+    from: Buyer
+    to: Listing
+    cardinality: many_to_many
+
+  - name: buyer_in_transaction
+    from: Buyer
+    to: Transaction
+    cardinality: one_to_many
+
+  - name: seller_in_transaction
+    from: Seller
+    to: Transaction
+    cardinality: one_to_many
+
+  - name: listing_transaction
+    from: Listing
+    to: Transaction
+    cardinality: one_to_one
+
+  - name: published_on
+    from: Listing
+    to: Marketplace
+    cardinality: many_to_many
+
+  - name: advised_by
+    from: Transaction
+    to: Advisor
+    cardinality: many_to_many
+
+  - name: has_valuation
+    from: Listing
+    to: Valuation
+    cardinality: one_to_many

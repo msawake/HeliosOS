@@ -13,10 +13,50 @@ import hashlib
 import hmac
 import logging
 import os
+import time
+from collections import defaultdict
 from functools import wraps
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Auth rate limiting -- blocks IPs after too many failed attempts
+# ---------------------------------------------------------------------------
+
+_AUTH_FAIL_WINDOW = 60      # seconds
+_AUTH_FAIL_MAX = 10         # max failures per window
+_AUTH_BLOCK_DURATION = 300  # block for 5 minutes
+
+_auth_failures: dict[str, list[float]] = defaultdict(list)
+_auth_blocks: dict[str, float] = {}
+
+
+def _check_auth_rate_limit(ip: str) -> bool:
+    """Return True if the IP is allowed to attempt auth, False if blocked."""
+    now = time.time()
+    # Check if currently blocked
+    if ip in _auth_blocks:
+        if now < _auth_blocks[ip]:
+            return False
+        else:
+            del _auth_blocks[ip]
+
+    return True
+
+
+def _record_auth_failure(ip: str) -> None:
+    """Record a failed auth attempt from an IP, potentially blocking it."""
+    now = time.time()
+    # Clean old entries
+    _auth_failures[ip] = [t for t in _auth_failures[ip] if now - t < _AUTH_FAIL_WINDOW]
+    _auth_failures[ip].append(now)
+
+    if len(_auth_failures[ip]) >= _AUTH_FAIL_MAX:
+        _auth_blocks[ip] = now + _AUTH_BLOCK_DURATION
+        _auth_failures[ip] = []
+        logger.warning("Blocked IP %s for %ds after %d failed auth attempts",
+                        ip, _AUTH_BLOCK_DURATION, _AUTH_FAIL_MAX)
 
 # Try Firebase Admin SDK
 try:
@@ -129,7 +169,13 @@ class AuthManager:
             return None
 
     def verify_api_key(self, api_key: str) -> AuthUser | None:
-        """Verify an API key and return a system user for the tenant."""
+        """Verify an API key and return a system user for the tenant.
+
+        Uses constant-time comparison (hmac.compare_digest) to prevent
+        timing attacks.  The underlying hash is still SHA-256 for backwards
+        compatibility with existing stored hashes.  A future migration should
+        move to bcrypt/argon2 with per-key salts.
+        """
         if not self._db or not self._db.is_connected:
             return None
 
@@ -137,10 +183,10 @@ class AuthManager:
 
         with self._db.admin() as conn:
             row = conn.execute_one(
-                "SELECT id, name FROM tenants WHERE api_key_hash = %s AND status = 'active'",
-                (key_hash,),
+                "SELECT id, name, api_key_hash FROM tenants WHERE status = 'active' AND api_key_hash IS NOT NULL",
+                (),
             )
-            if row:
+            if row and hmac.compare_digest(key_hash, row["api_key_hash"]):
                 return AuthUser(
                     user_id=f"api-{row['id']}",
                     email=f"api@{row['id']}",
@@ -152,18 +198,35 @@ class AuthManager:
         return None
 
     def authenticate(self, request) -> AuthUser | None:
-        """Authenticate a Flask request via JWT or API key."""
+        """Authenticate a Flask request via JWT or API key.
+
+        Enforces per-IP rate limiting: after 10 failed attempts in 60s
+        the IP is blocked for 5 minutes.
+        """
+        ip = getattr(request, "remote_addr", None) or "unknown"
+
+        # Check rate limit before attempting auth
+        if not _check_auth_rate_limit(ip):
+            logger.warning("Auth blocked for IP %s (rate limited)", ip)
+            return None
+
         auth_header = request.headers.get("Authorization", "")
 
         # Bearer token (JWT)
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
-            return self.verify_jwt(token)
+            user = self.verify_jwt(token)
+            if not user:
+                _record_auth_failure(ip)
+            return user
 
         # API key
         api_key = request.headers.get("X-API-Key", "")
         if api_key:
-            return self.verify_api_key(api_key)
+            user = self.verify_api_key(api_key)
+            if not user:
+                _record_auth_failure(ip)
+            return user
 
         return None
 

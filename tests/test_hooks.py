@@ -57,7 +57,7 @@ class TestRateLimiter:
         ctx = make_context()
         limiter.check(ctx)
         limiter.check(ctx)
-        limiter.reset_session(ctx.session_id)
+        limiter.reset_agent(ctx.agent_id)
         result = limiter.check(ctx)
         assert result.decision == HookDecision.ALLOW
 

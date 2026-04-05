@@ -57,21 +57,50 @@ def _repo_root() -> Path:
 def _load_dotenv_from_repo_root() -> None:
     """Load `.env` from repo root first, then default search (cwd / parents).
 
-    Requires `python-dotenv` (core dependency). If import fails, log a warning
-    so missing wheels are not silent.
+    Requires `python-dotenv` (core dependency). If import fails, falls back
+    to a safe manual parser that validates key names and skips empty values.
     """
     try:
         from dotenv import load_dotenv
     except ImportError:
         logger.warning(
-            "python-dotenv not installed — .env files will not load. "
+            "python-dotenv not installed — falling back to safe manual .env parsing. "
             "Fix: pip install python-dotenv  (or reinstall this package)"
         )
+        _load_dotenv_manual()
         return
     env_file = _repo_root() / ".env"
     if env_file.is_file():
         load_dotenv(env_file)
     load_dotenv()
+
+
+def _load_dotenv_manual() -> None:
+    """Safe fallback .env parser when python-dotenv is not available.
+
+    Validates key names, skips empty values, and does not override
+    existing environment variables.
+    """
+    env_path = _repo_root() / ".env"
+    if not env_path.exists():
+        return
+    with open(env_path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip("'\"")
+            # Validate key name: must be a valid env var name
+            if not key or not key.replace("_", "").replace("-", "").isalnum():
+                continue
+            # Skip empty values
+            if not val:
+                continue
+            # Don't override existing env vars
+            if key not in os.environ:
+                os.environ[key] = val
 
 
 class OperatingMode:
@@ -119,62 +148,68 @@ class PlatformBootstrap:
         logger.info("Time: %s", datetime.now(timezone.utc).isoformat())
         logger.info("=" * 60)
 
-        logger.info("[Phase 1] Initializing platform subsystems...")
-        await self._init_platform()
+        try:
+            logger.info("[Phase 1] Initializing platform subsystems...")
+            await self._init_platform()
 
-        logger.info("[Phase 2] Initializing legacy company subsystems...")
-        await self._init_legacy_subsystems()
+            logger.info("[Phase 2] Initializing legacy company subsystems...")
+            await self._init_legacy_subsystems()
 
-        # Platform persistence stores (backed by DB when available)
-        agent_store = sub_store = job_store = msg_store = None
-        if self._db and self._db.is_connected:
-            try:
-                from src.platform.persistence import (
-                    PostgresAgentRegistry,
-                    PostgresEventSubscriptionStore,
-                    PostgresScheduledJobStore,
-                    PostgresAgentMessageStore,
-                )
-                agent_store = PostgresAgentRegistry(self._db, self.tenant_id)
-                sub_store = PostgresEventSubscriptionStore(self._db, self.tenant_id)
-                job_store = PostgresScheduledJobStore(self._db, self.tenant_id)
-                msg_store = PostgresAgentMessageStore(self._db, self.tenant_id)
-                logger.info("  Platform persistence: PostgreSQL")
-            except Exception as exc:
-                logger.warning("  Platform persistence unavailable (%s) -- using in-memory", exc)
+            # Platform persistence stores (backed by DB when available)
+            agent_store = sub_store = job_store = msg_store = None
+            if self._db and self._db.is_connected:
+                try:
+                    from src.platform.persistence import (
+                        PostgresAgentRegistry,
+                        PostgresEventSubscriptionStore,
+                        PostgresScheduledJobStore,
+                        PostgresAgentMessageStore,
+                    )
+                    agent_store = PostgresAgentRegistry(self._db, self.tenant_id)
+                    sub_store = PostgresEventSubscriptionStore(self._db, self.tenant_id)
+                    job_store = PostgresScheduledJobStore(self._db, self.tenant_id)
+                    msg_store = PostgresAgentMessageStore(self._db, self.tenant_id)
+                    logger.info("  Platform persistence: PostgreSQL")
+                except Exception as exc:
+                    logger.warning("  Platform persistence unavailable (%s) -- using in-memory", exc)
 
-        self.platform_registry = AgentRegistry(store=agent_store)
-        self.scheduler = SchedulerEngine(job_store=job_store)
-        self.event_bus = EventBus(subscription_store=sub_store, message_store=msg_store)
+            self.platform_registry = AgentRegistry(store=agent_store)
+            self.scheduler = SchedulerEngine(job_store=job_store)
+            self.event_bus = EventBus(subscription_store=sub_store, message_store=msg_store)
 
-        logger.info("[Phase 3] Registering stack adapters...")
-        self._register_adapters()
+            logger.info("[Phase 3] Registering stack adapters...")
+            self._register_adapters()
 
-        logger.info("[Phase 4] Building platform executor...")
-        self.executor = PlatformExecutor(
-            registry=self.platform_registry,
-            scheduler=self.scheduler,
-            event_bus=self.event_bus,
-        )
-        for name, adapter in self._adapters.items():
-            self.executor.register_adapter(adapter)
+            logger.info("[Phase 4] Building platform executor...")
+            self.executor = PlatformExecutor(
+                registry=self.platform_registry,
+                scheduler=self.scheduler,
+                event_bus=self.event_bus,
+            )
+            for name, adapter in self._adapters.items():
+                self.executor.register_adapter(adapter)
 
-        # Recover agents from persistent storage
-        recovered = self.platform_registry.load_from_store()
-        if recovered:
-            await self.executor.recover()
+            # Recover agents from persistent storage
+            recovered = self.platform_registry.load_from_store()
+            if recovered:
+                await self.executor.recover()
 
-        logger.info("[Phase 5] Seeding knowledge base...")
-        if self.system:
-            self.system.seed_knowledge_base(company_id=self.company_id)
+            logger.info("[Phase 5] Seeding knowledge base...")
+            if self.system:
+                self.system.seed_knowledge_base(company_id=self.company_id)
 
-        self._seed_dev_hitl_if_enabled()
+            self._seed_dev_hitl_if_enabled()
 
-        logger.info("[Phase 6] Creating workflow engine...")
-        self.workflow_engine = WorkflowEngine(invoker=self.legacy_invoker)
+            logger.info("[Phase 6] Creating workflow engine...")
+            self.workflow_engine = WorkflowEngine(invoker=self.legacy_invoker)
 
-        logger.info("[Phase 7] Starting scheduler...")
-        self.scheduler.start_all()
+            logger.info("[Phase 7] Starting scheduler...")
+            self.scheduler.start_all()
+
+        except Exception as e:
+            logger.error("Boot failed at: %s", e)
+            await self._cleanup()
+            raise
 
         logger.info("=" * 60)
         logger.info("FORGEOS PLATFORM ONLINE")
@@ -188,6 +223,25 @@ class PlatformBootstrap:
         logger.info("=" * 60)
 
         self._running = True
+
+    async def _cleanup(self):
+        """Clean up resources on boot failure."""
+        if hasattr(self, '_mcp_manager') and self._mcp_manager:
+            try:
+                await self._mcp_manager.disconnect_all()
+            except Exception:
+                pass
+        if hasattr(self, '_db') and self._db:
+            try:
+                self._db.close()
+            except Exception:
+                pass
+        if hasattr(self, 'scheduler') and self.scheduler:
+            try:
+                self.scheduler.stop_all()
+            except Exception:
+                pass
+        logger.info("Cleanup complete after boot failure")
 
     async def _init_platform(self):
         api_keys = {}
@@ -352,10 +406,10 @@ class PlatformBootstrap:
             self._db.close()
 
     def create_api_app(self, auth_enabled: bool = True):
-        """Create the Quart/Flask API app (does not start it)."""
-        from src.dashboard.app import create_app
+        """Create the FastAPI app."""
+        from src.dashboard.fastapi_app import create_fastapi_app
         company_name = self.config.get("company", {}).get("name", "AI Company")
-        return create_app(
+        return create_fastapi_app(
             company_system=self.system,
             workflow_engine=self.workflow_engine,
             company_name=company_name,
@@ -365,21 +419,24 @@ class PlatformBootstrap:
             platform_registry=self.platform_registry,
             llm_router=self.llm_router,
             _boot_complete=self._running,
+            admin_tools=getattr(self, 'admin_tools', None),
+            admin_invoker=self.legacy_invoker,
+            admin_registry=self.legacy_registry,
+            ontology=getattr(self, 'ontology', None),
         )
 
     def start_api_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):
-        """Start the API server in a daemon thread (legacy sync mode)."""
+        """Start the FastAPI server via uvicorn in a background thread."""
         app = self.create_api_app(auth_enabled=auth_enabled)
-        if app:
-            logger.info("API server starting on http://%s:%d", host, port)
-            import threading
-            thread = threading.Thread(
-                target=lambda: app.run(host=host, port=port, debug=False),
-                daemon=True,
-            )
-            thread.start()
-        else:
-            logger.warning("API server not available (Quart/Flask not installed)")
+        if not app:
+            logger.warning("API server not available")
+            return
+        logger.info("API server starting on http://%s:%d (FastAPI + Uvicorn)", host, port)
+        import threading, uvicorn
+        config = uvicorn.Config(app, host=host, port=port, log_level="warning")
+        server = uvicorn.Server(config)
+        thread = threading.Thread(target=server.run, daemon=True)
+        thread.start()
 
     def get_platform_summary(self) -> dict:
         return {

@@ -1,0 +1,19 @@
+{
+  "type": "mcp-server",
+  "name": "LynxPrompt MCP",
+  "packageName": "lynxprompt-mcp",
+  "description": "MCP server for LynxPrompt, enabling LLMs to browse, search, and manage AI configuration blueprints and prompt hierarchies.",
+  "url": "https://github.com/GeiserX/lynxprompt-mcp",
+  "runtime": "node",
+  "license": "gpl-3.0",
+  "env": {
+    "LYNXPROMPT_URL": {
+      "description": "LynxPrompt instance URL (e.g. https://lynxprompt.com)",
+      "required": true
+    },
+    "LYNXPROMPT_TOKEN": {
+      "description": "LynxPrompt API token (lp_xxx format)",
+      "required": true
+    }
+  }
+}

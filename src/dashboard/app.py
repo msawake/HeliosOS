@@ -16,6 +16,7 @@ import time
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
+from html import escape
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -364,17 +365,17 @@ def render_dashboard(data: dict, company_name: str = "LeadForge AI") -> str:
             "high" if item.get("risk") == "high" else ""
         )
         approval_html += f"""
-        <div class="approval-item {risk_class}">
-            <div class="title">{item.get('title', 'Unknown')}</div>
+        <div class="approval-item {escape(risk_class)}">
+            <div class="title">{escape(str(item.get('title', 'Unknown')))}</div>
             <div class="meta">
-                <span>Category: {item.get('category', 'unknown')}</span>
-                <span>Agent: {item.get('agent', 'unknown')}</span>
-                <span>SLA: {item.get('sla_hours', 24)}h</span>
-                <span>Risk: {item.get('risk', 'low')}</span>
+                <span>Category: {escape(str(item.get('category', 'unknown')))}</span>
+                <span>Agent: {escape(str(item.get('agent', 'unknown')))}</span>
+                <span>SLA: {escape(str(item.get('sla_hours', 24)))}h</span>
+                <span>Risk: {escape(str(item.get('risk', 'low')))}</span>
             </div>
             <div class="btn-group">
-                <button class="btn btn-approve" onclick="approve('{item.get('id', '')}')">Approve</button>
-                <button class="btn btn-reject" onclick="reject('{item.get('id', '')}')">Reject</button>
+                <button class="btn btn-approve" onclick="approve('{escape(str(item.get('id', '')))}')">Approve</button>
+                <button class="btn btn-reject" onclick="reject('{escape(str(item.get('id', '')))}')">Reject</button>
                 <button class="btn btn-discuss">Discuss</button>
             </div>
         </div>"""
@@ -388,9 +389,9 @@ def render_dashboard(data: dict, company_name: str = "LeadForge AI") -> str:
         pct = int((completed / total) * 100) if total > 0 else 0
         workflow_html += f"""
         <div class="workflow-item">
-            <div class="name">{w.get('name', 'Unknown')}</div>
+            <div class="name">{escape(str(w.get('name', 'Unknown')))}</div>
             <div class="meta" style="font-size:12px;color:#8899a6;">
-                {completed}/{total} tasks | Priority: {w.get('priority', 'medium')}
+                {completed}/{total} tasks | Priority: {escape(str(w.get('priority', 'medium')))}
             </div>
             <div class="progress-bar"><div class="fill" style="width:{pct}%"></div></div>
         </div>"""
@@ -400,9 +401,9 @@ def render_dashboard(data: dict, company_name: str = "LeadForge AI") -> str:
     for e in data.get("escalations", []):
         escalation_html += f"""
         <div class="escalation-item">
-            <div class="title">{e.get('category', 'Unknown')}</div>
+            <div class="title">{escape(str(e.get('category', 'Unknown')))}</div>
             <div class="meta" style="font-size:12px;color:#8899a6;">
-                From: {e.get('source_agent', 'unknown')} | Priority: {e.get('priority', 'P2')}
+                From: {escape(str(e.get('source_agent', 'unknown')))} | Priority: {escape(str(e.get('priority', 'P2')))}
             </div>
         </div>"""
 
@@ -413,8 +414,8 @@ def render_dashboard(data: dict, company_name: str = "LeadForge AI") -> str:
         display_name = name.replace("_", " ").title()
         kpi_html += f"""
         <div class="kpi-item">
-            <div class="value">{value:.0f}</div>
-            <div class="label">{display_name}</div>
+            <div class="value">{escape(f'{value:.0f}')}</div>
+            <div class="label">{escape(display_name)}</div>
         </div>"""
 
     # Activity rows (placeholder)
@@ -428,20 +429,20 @@ def render_dashboard(data: dict, company_name: str = "LeadForge AI") -> str:
         ("12:25", "client-success", "Operations", "Completed weekly QBR prep for DataFlow Inc", "completed"),
         ("12:20", "exec-coo", "Executive", "Approved new outbound campaign launch", "completed"),
     ]
-    for time, agent, dept, action, status in sample_activities:
-        badge = f"badge-{status}"
+    for time_val, agent, dept, action, status in sample_activities:
+        badge = f"badge-{escape(status)}"
         activity_html += f"""
         <tr>
-            <td>{time}</td>
-            <td>{agent}</td>
-            <td>{dept}</td>
-            <td>{action}</td>
-            <td><span class="badge {badge}">{status}</span></td>
+            <td>{escape(time_val)}</td>
+            <td>{escape(agent)}</td>
+            <td>{escape(dept)}</td>
+            <td>{escape(action)}</td>
+            <td><span class="badge {badge}">{escape(status)}</span></td>
             <td>-</td>
         </tr>"""
 
     html = DASHBOARD_HTML
-    html = html.replace("{{company_name}}", company_name)
+    html = html.replace("{{company_name}}", escape(company_name))
     html = html.replace("{{pending_count}}", str(len(data.get("pending_approvals", []))))
     html = html.replace("{{active_workflows}}", str(len(data.get("active_workflows", []))))
     html = html.replace("{{escalation_count}}", str(len(data.get("escalations", []))))

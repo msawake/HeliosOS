@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol, runtime_checkable
@@ -77,6 +78,8 @@ class LLMClient(Protocol):
 class ModelProvider(Enum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
+    OLLAMA = "ollama"
+    VLLM = "vllm"
 
 
 def get_provider(model_name: str) -> ModelProvider:
@@ -92,9 +95,13 @@ def get_provider(model_name: str) -> ModelProvider:
         or name.startswith("openai/")
     ):
         return ModelProvider.OPENAI
+    if name.startswith("ollama-") or name.startswith("ollama/"):
+        return ModelProvider.OLLAMA
+    if name.startswith("vllm-") or name.startswith("vllm/"):
+        return ModelProvider.VLLM
     raise ValueError(
         f"Unknown model provider for '{model_name}'. "
-        f"Expected prefix: claude-*, gpt-*, o1-*, o3-*, o4-*"
+        f"Expected prefix: claude-*, gpt-*, o1-*, o3-*, o4-*, ollama-*, vllm-*"
     )
 
 
@@ -267,10 +274,18 @@ class OpenAIClient:
 
         if choice.message.tool_calls:
             for tc in choice.message.tool_calls:
+                try:
+                    input_data = json.loads(tc.function.arguments) if tc.function.arguments else {}
+                except json.JSONDecodeError:
+                    input_data = {}  # Skip malformed tool call
+                    logger.warning(
+                        "Malformed tool call arguments from LLM: %s",
+                        (tc.function.arguments or "")[:200],
+                    )
                 tool_calls.append(ToolCall(
                     id=tc.id,
                     name=tc.function.name,
-                    input=json.loads(tc.function.arguments) if tc.function.arguments else {},
+                    input=input_data,
                 ))
 
         # Normalize stop reason
@@ -357,6 +372,113 @@ class OpenAIClient:
 
 
 # ---------------------------------------------------------------------------
+# Ollama Client (OpenAI-compatible, with tool-calling detection)
+# ---------------------------------------------------------------------------
+
+# Models known to support tool calling via OpenAI-compatible API
+_TOOL_CAPABLE_MODELS = {
+    "qwen2.5", "qwen3", "llama3.1", "llama3.2", "mistral",
+    "command-r", "firefunction",
+}
+
+
+class OllamaClient(OpenAIClient):
+    """LLMClient for Ollama (OpenAI-compatible API with tool-calling detection).
+
+    Most open-source models served by Ollama silently ignore the ``tools``
+    parameter.  When the requested model is *not* in ``_TOOL_CAPABLE_MODELS``
+    we strip ``tools`` from the API call and embed their descriptions in the
+    system prompt instead, so the model can still describe intended tool usage.
+    """
+
+    def __init__(self, base_url: str = "http://localhost:11434/v1", api_key: str | None = None):
+        if not HAS_OPENAI:
+            raise ImportError("openai package is required for Ollama: pip install openai")
+        import openai as _openai_sdk
+        self._client = _openai_sdk.OpenAI(
+            base_url=base_url,
+            api_key=api_key or "ollama",  # Ollama doesn't require a real key
+        )
+
+    def _model_supports_tools(self, model: str) -> bool:
+        """Check if the Ollama model supports OpenAI-style tool calling."""
+        model_lower = model.lower().replace("ollama-", "").replace("ollama/", "")
+        return any(cap in model_lower for cap in _TOOL_CAPABLE_MODELS)
+
+    def create_message(
+        self,
+        model: str,
+        system: str,
+        messages: list[dict],
+        tools: list[dict],
+        max_tokens: int = 8192,
+    ) -> LLMResponse:
+        # Strip ollama- or ollama/ prefix for Ollama API
+        model_name = model.replace("ollama-", "").replace("ollama/", "")
+        if tools and not self._model_supports_tools(model):
+            # Embed tool descriptions in system prompt instead
+            tool_desc = "\n".join(
+                f"- {t['name']}: {t.get('description', '')}" for t in tools
+            )
+            system += (
+                f"\n\nYou have access to these tools but cannot call them directly. "
+                f"Instead, describe what tool you want to use and its parameters "
+                f"in your response:\n{tool_desc}"
+            )
+            tools = []  # Don't pass to API
+        return super().create_message(model_name, system, messages, tools, max_tokens)
+
+
+# ---------------------------------------------------------------------------
+# vLLM Client (OpenAI-compatible, with tool-calling detection)
+# ---------------------------------------------------------------------------
+
+class VLLMClient(OpenAIClient):
+    """LLMClient for vLLM (OpenAI-compatible API with tool-calling detection).
+
+    Same approach as ``OllamaClient``: strip tools for models that don't
+    support them and embed descriptions in the system prompt.
+    """
+
+    def __init__(self, base_url: str = "http://localhost:8000/v1", api_key: str | None = None):
+        if not HAS_OPENAI:
+            raise ImportError("openai package is required for vLLM: pip install openai")
+        import openai as _openai_sdk
+        self._client = _openai_sdk.OpenAI(
+            base_url=base_url,
+            api_key=api_key or "vllm",  # vLLM doesn't require a real key
+        )
+
+    def _model_supports_tools(self, model: str) -> bool:
+        """Check if the vLLM-served model supports OpenAI-style tool calling."""
+        model_lower = model.lower().replace("vllm-", "").replace("vllm/", "")
+        return any(cap in model_lower for cap in _TOOL_CAPABLE_MODELS)
+
+    def create_message(
+        self,
+        model: str,
+        system: str,
+        messages: list[dict],
+        tools: list[dict],
+        max_tokens: int = 8192,
+    ) -> LLMResponse:
+        # Strip vllm- or vllm/ prefix for the API
+        model_name = model.replace("vllm-", "").replace("vllm/", "")
+        if tools and not self._model_supports_tools(model):
+            # Embed tool descriptions in system prompt instead
+            tool_desc = "\n".join(
+                f"- {t['name']}: {t.get('description', '')}" for t in tools
+            )
+            system += (
+                f"\n\nYou have access to these tools but cannot call them directly. "
+                f"Instead, describe what tool you want to use and its parameters "
+                f"in your response:\n{tool_desc}"
+            )
+            tools = []  # Don't pass to API
+        return super().create_message(model_name, system, messages, tools, max_tokens)
+
+
+# ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
@@ -392,6 +514,28 @@ def create_llm_client(
             return OpenAIClient(api_key=api_key)
         except Exception as e:
             logger.warning("Failed to create OpenAIClient: %s", e)
+            return None
+
+    if provider == ModelProvider.OLLAMA:
+        if not HAS_OPENAI:
+            logger.info("openai SDK not installed — cannot create OllamaClient")
+            return None
+        try:
+            base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+            return OllamaClient(base_url=base_url, api_key=api_key)
+        except Exception as e:
+            logger.warning("Failed to create OllamaClient: %s", e)
+            return None
+
+    if provider == ModelProvider.VLLM:
+        if not HAS_OPENAI:
+            logger.info("openai SDK not installed — cannot create VLLMClient")
+            return None
+        try:
+            base_url = os.environ.get("VLLM_BASE_URL", "http://localhost:8000/v1")
+            return VLLMClient(base_url=base_url, api_key=api_key)
+        except Exception as e:
+            logger.warning("Failed to create VLLMClient: %s", e)
             return None
 
     return None
