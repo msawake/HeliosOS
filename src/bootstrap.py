@@ -219,7 +219,7 @@ class PlatformBootstrap:
             logger.info("Legacy agents: %d", len(self.legacy_registry.all_agents()))
         logger.info("Mode: %s", self.mode)
         logger.info("Dashboard: http://localhost:3000 (Next.js)")
-        logger.info("API: http://localhost:%d (Flask)", api_listen_port)
+        logger.info("API: http://localhost:%d (FastAPI)", api_listen_port)
         logger.info("=" * 60)
 
         self._running = True
@@ -308,7 +308,16 @@ class PlatformBootstrap:
         self._mcp_manager = MCPServerManager(self.config)
         mcp_clients = await self._mcp_manager.connect_all()
 
-        tool_executor = ToolExecutor(company_system=self.system, mcp_clients=mcp_clients)
+        from src.mcp.client_mcp_manager import ClientMCPManager
+        self._client_mcp_manager = ClientMCPManager(
+            db_client=self._db,
+            tenant_id=self.tenant_id,
+        )
+        tool_executor = ToolExecutor(
+            company_system=self.system,
+            mcp_clients=mcp_clients,
+            client_mcp_manager=self._client_mcp_manager,
+        )
         for server_name, schemas in self._mcp_manager.get_all_tool_schemas().items():
             tool_executor.register_mcp_tools(server_name, schemas)
 

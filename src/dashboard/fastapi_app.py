@@ -62,6 +62,19 @@ class AgentCreateRequest(BaseModel):
     metadata: dict = {}
     chat_model: str = "gpt-4o"
     provider: str = "openai"
+    client_id: str | None = None
+    system_prompt: str = ""
+
+class ClientCreateRequest(BaseModel):
+    id: str
+    name: str
+    config: dict = {}
+
+class ClientMCPConfigRequest(BaseModel):
+    server_name: str
+    package: str
+    env_vars: dict = {}
+    args: list[str] = []
 
 class ApprovalAction(BaseModel):
     reason: str = ""
@@ -288,10 +301,10 @@ def create_fastapi_app(
     async def list_agents(
         stack: str = None, execution_type: str = None,
         ownership: str = None, owner_id: str = None, department: str = None,
+        client_id: str = None,
     ):
         """List all agents with optional filters."""
         if not platform_registry:
-            # Fall back to legacy registry
             if admin_tools:
                 return admin_tools.list_agents(department=department)
             return []
@@ -300,6 +313,9 @@ def create_fastapi_app(
         if execution_type: filters["execution_type"] = execution_type
         if ownership: filters["ownership"] = ownership
         if owner_id: filters["owner_id"] = owner_id
+        if client_id:
+            filters["ownership"] = "client"
+            filters["owner_id"] = client_id
         if department: filters["department"] = department
         agents = platform_registry.query(**filters) if filters else platform_registry.list_all()
         return [a.to_dict() if hasattr(a, "to_dict") else {"agent_id": str(a)} for a in agents]
@@ -320,11 +336,17 @@ def create_fastapi_app(
             raise HTTPException(500, "Platform executor not available")
         try:
             from stacks.base import AgentDefinition, LLMConfig, ExecutionType, OwnershipType
+            # If client_id is set, force ownership to CLIENT
+            ownership = OwnershipType(req.ownership)
+            owner_id = req.owner_id or None
+            if req.client_id:
+                ownership = OwnershipType.CLIENT
+                owner_id = req.client_id
             defn = AgentDefinition(
                 name=req.name, stack=req.stack,
                 execution_type=ExecutionType(req.execution_type),
-                ownership=OwnershipType(req.ownership),
-                owner_id=req.owner_id or None,
+                ownership=ownership,
+                owner_id=owner_id,
                 department=req.department or None,
                 description=req.description,
                 goal=req.goal,
@@ -333,6 +355,7 @@ def create_fastapi_app(
                 tools=req.tools,
                 metadata=req.metadata,
                 llm_config=LLMConfig(chat_model=req.chat_model, provider=req.provider),
+                system_prompt=req.system_prompt,
             )
             agent_id = await platform_executor.deploy(defn)
             return {"agent_id": agent_id, "name": req.name, "stack": req.stack}
@@ -938,6 +961,138 @@ def create_fastapi_app(
             return f"Ontology has {len(onto.get_types())} types and {len(onto.get_link_types())} relationships. Ask about specific types or upload data."
         except Exception as e:
             return f"Error: {e}"
+
+    # ===================================================================
+    # Client management (per-client agent infrastructure)
+    # ===================================================================
+
+    # In-memory client store for dev mode (no DB)
+    _clients: dict[str, dict] = {}
+    _client_mcp_configs: dict[str, list[dict]] = {}  # client_id -> list of configs
+
+    @app.post("/api/clients", tags=["clients"], status_code=201)
+    async def create_client(req: ClientCreateRequest, _auth=Depends(check_auth)):
+        """Create a new client for scoped agent deployments."""
+        if req.id in _clients:
+            raise HTTPException(409, f"Client '{req.id}' already exists")
+        client = {
+            "id": req.id,
+            "name": req.name,
+            "status": "active",
+            "config": req.config,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "agent_count": 0,
+            "mcp_server_count": 0,
+        }
+        _clients[req.id] = client
+        return client
+
+    @app.get("/api/clients", tags=["clients"])
+    async def list_clients():
+        """List all clients."""
+        result = []
+        for cid, client in _clients.items():
+            # Count agents for this client
+            agent_count = 0
+            if platform_registry:
+                agents = platform_registry.query(ownership="client", owner_id=cid)
+                agent_count = len(agents)
+            client["agent_count"] = agent_count
+            client["mcp_server_count"] = len(_client_mcp_configs.get(cid, []))
+            result.append(client)
+        return result
+
+    @app.get("/api/clients/{client_id}", tags=["clients"])
+    async def get_client(client_id: str):
+        """Get client details."""
+        client = _clients.get(client_id)
+        if not client:
+            raise HTTPException(404, f"Client '{client_id}' not found")
+        agent_count = 0
+        if platform_registry:
+            agents = platform_registry.query(ownership="client", owner_id=client_id)
+            agent_count = len(agents)
+        client["agent_count"] = agent_count
+        client["mcp_server_count"] = len(_client_mcp_configs.get(client_id, []))
+        client["mcp_servers"] = _client_mcp_configs.get(client_id, [])
+        return client
+
+    @app.delete("/api/clients/{client_id}", tags=["clients"])
+    async def archive_client(client_id: str, _auth=Depends(check_auth)):
+        """Archive a client."""
+        client = _clients.get(client_id)
+        if not client:
+            raise HTTPException(404, f"Client '{client_id}' not found")
+        client["status"] = "archived"
+        return {"ok": True, "status": "archived"}
+
+    @app.post("/api/clients/{client_id}/mcp-servers", tags=["clients"], status_code=201)
+    async def add_client_mcp(client_id: str, req: ClientMCPConfigRequest, _auth=Depends(check_auth)):
+        """Add an MCP server config for a client."""
+        if client_id not in _clients:
+            raise HTTPException(404, f"Client '{client_id}' not found")
+        configs = _client_mcp_configs.setdefault(client_id, [])
+        # Check for duplicates
+        for cfg in configs:
+            if cfg["server_name"] == req.server_name:
+                raise HTTPException(409, f"Server '{req.server_name}' already configured for client '{client_id}'")
+        config = {
+            "server_name": req.server_name,
+            "package": req.package,
+            "env_vars": req.env_vars,
+            "args": req.args,
+            "enabled": True,
+        }
+        configs.append(config)
+        return config
+
+    @app.get("/api/clients/{client_id}/mcp-servers", tags=["clients"])
+    async def list_client_mcps(client_id: str):
+        """List MCP server configs for a client."""
+        if client_id not in _clients:
+            raise HTTPException(404, f"Client '{client_id}' not found")
+        configs = _client_mcp_configs.get(client_id, [])
+        # Redact env_vars (secrets)
+        return [
+            {**cfg, "env_vars": {k: "***" for k in cfg.get("env_vars", {})}}
+            for cfg in configs
+        ]
+
+    @app.put("/api/clients/{client_id}/mcp-servers/{server_name}", tags=["clients"])
+    async def update_client_mcp(client_id: str, server_name: str, req: ClientMCPConfigRequest, _auth=Depends(check_auth)):
+        """Update an MCP server config for a client."""
+        configs = _client_mcp_configs.get(client_id, [])
+        for i, cfg in enumerate(configs):
+            if cfg["server_name"] == server_name:
+                configs[i] = {
+                    "server_name": req.server_name,
+                    "package": req.package,
+                    "env_vars": req.env_vars,
+                    "args": req.args,
+                    "enabled": True,
+                }
+                return configs[i]
+        raise HTTPException(404, f"Server '{server_name}' not found for client '{client_id}'")
+
+    @app.delete("/api/clients/{client_id}/mcp-servers/{server_name}", tags=["clients"])
+    async def delete_client_mcp(client_id: str, server_name: str, _auth=Depends(check_auth)):
+        """Remove an MCP server config from a client."""
+        configs = _client_mcp_configs.get(client_id, [])
+        for i, cfg in enumerate(configs):
+            if cfg["server_name"] == server_name:
+                configs.pop(i)
+                return {"ok": True}
+        raise HTTPException(404, f"Server '{server_name}' not found for client '{client_id}'")
+
+    @app.get("/api/clients/{client_id}/agents", tags=["clients"])
+    async def list_client_agents(client_id: str):
+        """List all agents scoped to a client."""
+        if client_id not in _clients:
+            raise HTTPException(404, f"Client '{client_id}' not found")
+        if not platform_registry:
+            return []
+        agents = platform_registry.query(ownership="client", owner_id=client_id)
+        return [a.to_dict() if hasattr(a, "to_dict") else {"agent_id": str(a)} for a in agents]
 
     return app
 

@@ -1,6 +1,12 @@
 /** @type {import('next').NextConfig} */
 const skipRewrite = process.env.SKIP_API_REWRITE === '1';
 
+// Match bootstrap: PORT / --port (default 5000). Example: FORGEOS_API_URL=http://localhost:5001
+const forgeosApiBase = (process.env.FORGEOS_API_URL || 'http://localhost:5000').replace(
+  /\/$/,
+  '',
+);
+
 const nextConfig = {
   output: 'standalone',
 
@@ -17,7 +23,7 @@ const nextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://localhost:5000/api/:path*',
+        destination: `${forgeosApiBase}/api/:path*`,
       },
     ];
   },

@@ -5,66 +5,51 @@ import { api, type SystemHealth } from '@/lib/api';
 
 export default function AdminHealthPage() {
   const [health, setHealth] = useState<SystemHealth | null>(null);
-  const [metrics, setMetrics] = useState<Record<string, number>>({});
-  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.getSystemHealth().then(setHealth).catch((e) => setError(e.message));
-    api.getMetrics().then((r) => setMetrics(r.dashboard || {})).catch(() => {});
+    api.getSystemHealth()
+      .then(setHealth)
+      .catch(() => setHealth(null))
+      .finally(() => setLoading(false));
   }, []);
 
-  if (error) return <p className="text-red-400">{error}</p>;
-  if (!health) return <p className="text-gray-400">Loading...</p>;
-
-  const stats = [
-    { label: 'Total Agents', value: health.agents?.total ?? 0, color: 'text-sky-400' },
-    { label: 'Running', value: health.agents?.running ?? 0, color: 'text-green-400' },
-    { label: 'Pending Approvals', value: health.approvals?.pending ?? 0, color: 'text-amber-400' },
-    { label: 'Active Workflows', value: health.workflows?.active ?? 0, color: 'text-purple-400' },
-  ];
+  if (loading) return <p className="text-gray-400">Loading system health...</p>;
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-white mb-6">System Health</h1>
+      <h1 className="text-2xl font-bold text-white mb-2">System Health</h1>
+      <p className="text-sm text-gray-400 mb-6">Platform component status and diagnostics.</p>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {stats.map((s) => (
-          <div key={s.label} className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <p className={`text-3xl font-bold ${s.color}`}>{s.value}</p>
-            <p className="text-sm text-gray-400 mt-1">{s.label}</p>
+      {health ? (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 mb-6">
+            <span className={`w-3 h-3 rounded-full ${health.status === 'ok' ? 'bg-green-500' : 'bg-red-500'}`} />
+            <span className="text-white font-medium text-lg capitalize">{health.status}</span>
           </div>
-        ))}
-      </div>
 
-      {health.agents?.by_stack && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
-          <h2 className="text-sm font-semibold text-gray-300 mb-3">Agents by Stack</h2>
-          <div className="flex gap-6">
-            {Object.entries(health.agents.by_stack).map(([stack, count]) => (
-              <div key={stack} className="text-center">
-                <p className="text-xl font-bold text-white">{count}</p>
-                <p className="text-xs text-gray-500 capitalize">{stack}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Object.entries(health.components).map(([key, value]) => (
+              <div key={key} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                <p className="text-gray-400 text-xs uppercase tracking-wide mb-2">{key.replace(/_/g, ' ')}</p>
+                <p className="text-white font-medium text-sm">
+                  {typeof value === 'boolean' ? (
+                    <span className={value ? 'text-green-400' : 'text-red-400'}>{value ? 'Connected' : 'Disconnected'}</span>
+                  ) : typeof value === 'number' ? (
+                    value.toLocaleString()
+                  ) : Array.isArray(value) ? (
+                    value.join(', ') || 'None'
+                  ) : (
+                    String(value)
+                  )}
+                </p>
               </div>
             ))}
           </div>
         </div>
+      ) : (
+        <p className="text-gray-500">Unable to fetch system health. Is the backend running?</p>
       )}
-
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-gray-300 mb-3">Metrics Dashboard</h2>
-        {Object.keys(metrics).length === 0 ? (
-          <p className="text-gray-500 text-sm">No metrics recorded yet. Start the main loop to generate metrics.</p>
-        ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {Object.entries(metrics).map(([name, value]) => (
-              <div key={name} className="bg-gray-800 rounded-lg p-3">
-                <p className="text-lg font-semibold text-white">{typeof value === 'number' ? value.toFixed(1) : value}</p>
-                <p className="text-xs text-gray-500">{name.replace(/_/g, ' ')}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

@@ -28,9 +28,10 @@ class ToolExecutor:
     Custom company tools are routed to the CompanySystem subsystems.
     """
 
-    def __init__(self, company_system=None, mcp_clients: dict | None = None):
+    def __init__(self, company_system=None, mcp_clients: dict | None = None, client_mcp_manager=None):
         self._system = company_system
         self._mcp_clients = mcp_clients or {}
+        self._client_mcp_manager = client_mcp_manager
         self._custom_handlers = self._register_custom_tools()
         self._mcp_tool_definitions: dict[str, list[dict]] = {}
 
@@ -254,6 +255,11 @@ class ToolExecutor:
         agent_context: dict | None = None,
     ) -> dict:
         """Execute a tool call and return the result."""
+        # Enforce agent tool whitelist
+        allowed_tools = (agent_context or {}).get("allowed_tools")
+        if allowed_tools and tool_name not in allowed_tools:
+            return {"success": False, "error": f"Tool '{tool_name}' not in agent's allowed tools"}
+
         # Custom company tools + platform tools (both in _custom_handlers)
         if tool_name in self._custom_handlers:
             try:
@@ -267,7 +273,7 @@ class ToolExecutor:
         if tool_name.startswith("mcp__"):
             try:
                 return await asyncio.wait_for(
-                    self._execute_mcp_tool(tool_name, tool_input),
+                    self._execute_mcp_tool(tool_name, tool_input, agent_context),
                     timeout=TOOL_TIMEOUT,
                 )
             except asyncio.TimeoutError:
@@ -277,7 +283,9 @@ class ToolExecutor:
         # Unknown tool
         return {"success": False, "error": f"Unknown tool: {tool_name}"}
 
-    async def _execute_mcp_tool(self, tool_name: str, tool_input: dict) -> dict:
+    async def _execute_mcp_tool(
+        self, tool_name: str, tool_input: dict, agent_context: dict | None = None,
+    ) -> dict:
         """Execute a tool via the appropriate MCP server client."""
         parts = tool_name.split("__", 2)
         if len(parts) < 3:
@@ -286,6 +294,19 @@ class ToolExecutor:
         server_name = parts[1]  # e.g., "google-workspace", "slack", "postgres"
         method_name = parts[2]  # e.g., "send_gmail_message"
 
+        # Try client-specific MCP server first
+        client_id = (agent_context or {}).get("client_id")
+        if client_id and self._client_mcp_manager:
+            try:
+                client_session = await self._client_mcp_manager.get_client(client_id, server_name)
+                if client_session:
+                    result = await client_session.call_tool(method_name, tool_input)
+                    return {"success": True, "result": result}
+            except Exception as e:
+                logger.error("Client MCP %s/%s tool %s failed: %s", client_id, server_name, method_name, e)
+                return {"success": False, "error": str(e)}
+
+        # Fallback to company-level MCP client
         client = self._mcp_clients.get(server_name)
         if not client:
             return {
