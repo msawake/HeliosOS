@@ -91,7 +91,7 @@ export default function MCPsPage() {
             </div>
           ))}
         </div>
-      ) : query ? <p className="text-gray-500">No MCP packages found for "{query}"</p> : null}
+      ) : query ? <p className="text-gray-500">No MCP packages found for &quot;{query}&quot;</p> : null}
     </div>
   );
 }

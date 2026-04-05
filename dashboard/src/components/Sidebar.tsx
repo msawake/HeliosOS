@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: '/agents/create', label: 'Create Agent', icon: '+' },
   { href: '/workflows', label: 'Workflows', icon: '⇄' },
   { href: '/approvals', label: 'Approvals', icon: '✓' },
+  { href: '/clients', label: 'Clients', icon: '⊕' },
 ];
 
 const ADMIN_ITEMS = [

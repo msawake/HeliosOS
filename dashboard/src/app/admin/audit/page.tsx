@@ -1,67 +1,47 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { api } from '@/lib/api';
+
+interface AuditEntry {
+  timestamp?: string;
+  action?: string;
+  agent?: string;
+  details?: string;
+  [key: string]: unknown;
+}
 
 export default function AuditPage() {
-  const [logs, setLogs] = useState<any[]>([]);
+  const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/audit')
-      .then((r) => r.json())
-      .then(setLogs)
-      .catch(() => setLogs([]))
+    api.getAudit(200)
+      .then(setEntries)
+      .catch(() => setEntries([]))
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <p className="text-gray-400">Loading...</p>;
-
   return (
     <div>
-      <h1 className="text-2xl font-bold text-white mb-6">Audit Log</h1>
+      <h1 className="text-2xl font-bold text-white mb-2">Audit Log</h1>
+      <p className="text-sm text-gray-400 mb-6">Complete record of agent actions, approvals, and system events for compliance.</p>
 
-      {logs.length === 0 ? (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
-          <p className="text-gray-400 mb-2">No audit entries yet.</p>
-          <p className="text-gray-500 text-sm">
-            Audit logs are generated when agents execute tools, approvals are made,
-            and configuration changes occur. Connect a PostgreSQL database and enable
-            the audit logger in the hook chain to start collecting entries.
-          </p>
+      {loading ? <p className="text-gray-400">Loading audit log...</p> : entries.length > 0 ? (
+        <div className="space-y-1">
+          {entries.map((e, i) => (
+            <div key={i} className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 flex items-center gap-4 text-sm">
+              <span className="text-gray-500 text-xs w-40 shrink-0">
+                {e.timestamp ? new Date(e.timestamp).toLocaleString() : 'N/A'}
+              </span>
+              <span className="text-amber-400 font-medium w-32 shrink-0">{e.action || 'unknown'}</span>
+              {e.agent && <span className="text-gray-400 w-36 shrink-0 truncate">{e.agent}</span>}
+              <span className="text-gray-500 truncate">{e.details || JSON.stringify(e)}</span>
+            </div>
+          ))}
         </div>
       ) : (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-800 text-gray-400 text-xs uppercase">
-                <th className="px-4 py-3 text-left">Time</th>
-                <th className="px-4 py-3 text-left">Agent</th>
-                <th className="px-4 py-3 text-left">Department</th>
-                <th className="px-4 py-3 text-left">Action</th>
-                <th className="px-4 py-3 text-left">Decision</th>
-                <th className="px-4 py-3 text-left">Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.map((log, i) => (
-                <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30">
-                  <td className="px-4 py-3 text-gray-400">{log.timestamp || '-'}</td>
-                  <td className="px-4 py-3 text-white">{log.agent_id || '-'}</td>
-                  <td className="px-4 py-3 text-gray-300">{log.department || '-'}</td>
-                  <td className="px-4 py-3 text-gray-300">{log.hook_event || log.tool_name || '-'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-0.5 rounded ${
-                      log.decision === 'allowed' ? 'bg-green-500/20 text-green-400' :
-                      log.decision === 'blocked' ? 'bg-red-500/20 text-red-400' :
-                      'bg-gray-700 text-gray-400'
-                    }`}>{log.decision || '-'}</span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-500 text-xs max-w-xs truncate">{log.reasoning || '-'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <p className="text-gray-500">No audit entries. Actions are logged as agents operate and humans approve/deny requests.</p>
       )}
     </div>
   );

@@ -90,7 +90,7 @@ export default function SkillsPage() {
             </div>
           ))}
         </div>
-      ) : query ? <p className="text-gray-500">No skills found for "{query}"</p> : null}
+      ) : query ? <p className="text-gray-500">No skills found for &quot;{query}&quot;</p> : null}
     </div>
   );
 }

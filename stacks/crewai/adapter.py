@@ -19,6 +19,7 @@ from stacks.base import (
     AgentResult,
     AgentStackAdapter,
     AgentStatus,
+    OwnershipType,
 )
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,12 @@ class CrewAIAdapter(AgentStackAdapter):
                 user_prompt=prompt,
                 tool_definitions=tools or None,
                 tool_executor=self._tool_executor,
-                agent_context={"agent_id": agent_id, "department": agent_def.department},
+                agent_context={
+                    "agent_id": agent_id,
+                    "department": agent_def.department,
+                    "client_id": agent_def.owner_id if agent_def.ownership == OwnershipType.CLIENT else None,
+                    "allowed_tools": agent_def.tools or None,
+                },
             )
             result.agent_id = agent_id
             return result
