@@ -31,12 +31,8 @@ async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders(), ...options?.headers },
     ...options,
   });
-  if (res.status === 401 && typeof window !== 'undefined') {
-    // Clear stale auth and redirect to login
-    sessionStorage.removeItem('forgeos_token');
-    sessionStorage.removeItem('forgeos_api_key');
-    window.location.href = '/login';
-    throw new Error('Authentication required');
+  if (res.status === 401) {
+    throw new Error('API returned 401 — check that backend is running with --no-auth');
   }
   if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
   return res.json();
@@ -80,6 +76,26 @@ export interface CreateAgentPayload {
     reasoning_model?: string;
     provider: string;
   };
+  client_id?: string;
+  system_prompt?: string;
+}
+
+export interface ClientSummary {
+  id: string;
+  name: string;
+  status: string;
+  config: Record<string, unknown>;
+  created_at: string;
+  agent_count: number;
+  mcp_server_count: number;
+}
+
+export interface ClientMCPConfig {
+  server_name: string;
+  package: string;
+  env_vars: Record<string, string>;
+  args: string[];
+  enabled: boolean;
 }
 
 export interface WizardChatMessage {
@@ -94,6 +110,39 @@ export interface WizardChatResponse {
   ready_to_deploy: boolean;
   warnings: string[];
   mode: string;
+}
+
+export interface EventEntry {
+  id: string;
+  name: string;
+  source: string;
+  target_department?: string;
+  status: string;
+  priority?: string;
+  payload?: Record<string, unknown>;
+  timestamp?: string;
+}
+
+export interface SystemHealth {
+  status: string;
+  components: Record<string, unknown>;
+}
+
+export interface KnowledgeEntry {
+  id: string;
+  title: string;
+  category: string;
+  content: string;
+  tags?: string[];
+}
+
+export interface ScheduledJob {
+  agent_id: string;
+  name: string;
+  schedule: string;
+  next_run?: string;
+  last_run?: string;
+  status: string;
 }
 
 export const api = {
@@ -126,4 +175,63 @@ export const api = {
     fetchJSON<any>(`/api/approvals/${id}/deny`, { method: 'POST' }),
 
   getWorkflows: () => fetchJSON<any[]>('/api/workflows'),
+
+  // Admin
+  getSystemHealth: () => fetchJSON<SystemHealth>('/api/admin/health'),
+  getMetrics: () => fetchJSON<Record<string, unknown>>('/api/admin/metrics'),
+  getEvents: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return fetchJSON<EventEntry[]>(`/api/admin/events${qs}`);
+  },
+  searchKnowledge: (query?: string, category?: string) => {
+    const p = new URLSearchParams();
+    if (query) p.set('query', query);
+    if (category) p.set('category', category);
+    const qs = p.toString() ? `?${p}` : '';
+    return fetchJSON<KnowledgeEntry[]>(`/api/admin/knowledge${qs}`);
+  },
+  getScheduledJobs: () => fetchJSON<ScheduledJob[]>('/api/platform/scheduler'),
+  getAudit: (limit?: number) => fetchJSON<any[]>(`/api/audit${limit ? `?limit=${limit}` : ''}`),
+
+  // Skills
+  getSkillDomains: () => fetchJSON<{ total: number; domains: { domain: string; count: number }[] }>('/api/skills/domains'),
+  searchSkills: (query: string, domain?: string) => {
+    const p = new URLSearchParams({ query });
+    if (domain) p.set('domain', domain);
+    return fetchJSON<{ count: number; skills: any[] }>(`/api/skills/search?${p}`);
+  },
+  getSkill: (name: string) => fetchJSON<any>(`/api/skills/${encodeURIComponent(name)}`),
+
+  // MCPs
+  getMCPCategories: () => fetchJSON<{ total: number; categories: { category: string; count: number }[] }>('/api/mcps/categories'),
+  searchMCPs: (query: string, category?: string) => {
+    const p = new URLSearchParams({ query });
+    if (category) p.set('category', category);
+    return fetchJSON<{ count: number; packages: any[] }>(`/api/mcps/search?${p}`);
+  },
+  getMCPPackage: (name: string) => fetchJSON<any>(`/api/mcps/${encodeURIComponent(name)}`),
+
+  // Clients
+  getClients: () => fetchJSON<ClientSummary[]>('/api/clients'),
+  getClient: (id: string) => fetchJSON<ClientSummary & { mcp_servers: ClientMCPConfig[] }>(`/api/clients/${encodeURIComponent(id)}`),
+  createClient: (id: string, name: string, config?: Record<string, unknown>) =>
+    fetchJSON<ClientSummary>('/api/clients', {
+      method: 'POST',
+      body: JSON.stringify({ id, name, config: config || {} }),
+    }),
+  archiveClient: (id: string) =>
+    fetchJSON<{ ok: boolean }>(`/api/clients/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  getClientMCPServers: (clientId: string) =>
+    fetchJSON<ClientMCPConfig[]>(`/api/clients/${encodeURIComponent(clientId)}/mcp-servers`),
+  addClientMCPServer: (clientId: string, config: { server_name: string; package: string; env_vars?: Record<string, string>; args?: string[] }) =>
+    fetchJSON<ClientMCPConfig>(`/api/clients/${encodeURIComponent(clientId)}/mcp-servers`, {
+      method: 'POST',
+      body: JSON.stringify(config),
+    }),
+  deleteClientMCPServer: (clientId: string, serverName: string) =>
+    fetchJSON<{ ok: boolean }>(`/api/clients/${encodeURIComponent(clientId)}/mcp-servers/${encodeURIComponent(serverName)}`, {
+      method: 'DELETE',
+    }),
+  getClientAgents: (clientId: string) =>
+    fetchJSON<AgentSummary[]>(`/api/clients/${encodeURIComponent(clientId)}/agents`),
 };

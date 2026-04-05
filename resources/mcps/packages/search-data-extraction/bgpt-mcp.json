@@ -1,0 +1,10 @@
+{
+  "type": "mcp-server",
+  "name": "BGPT MCP",
+  "packageName": "bgpt-mcp",
+  "description": "Search scientific papers with structured experimental data extracted from full-text studies. Returns 25+ fields per paper including methods, results, sample sizes, quality scores, and conclusions.",
+  "url": "https://github.com/connerlambden/bgpt-mcp",
+  "runtime": "node",
+  "license": "MIT",
+  "env": {}
+}

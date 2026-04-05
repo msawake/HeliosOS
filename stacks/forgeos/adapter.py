@@ -19,6 +19,7 @@ from stacks.base import (
     AgentStackAdapter,
     AgentStatus,
     ExecutionType,
+    OwnershipType,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,12 @@ class ForgeOSAdapter(AgentStackAdapter):
                 user_prompt=prompt,
                 tool_definitions=tools or None,
                 tool_executor=self._tool_executor,
-                agent_context={"agent_id": agent_id, "department": agent_def.department},
+                agent_context={
+                    "agent_id": agent_id,
+                    "department": agent_def.department,
+                    "client_id": agent_def.owner_id if agent_def.ownership == OwnershipType.CLIENT else None,
+                    "allowed_tools": agent_def.tools or None,
+                },
                 context=context,
             )
             result.agent_id = agent_id

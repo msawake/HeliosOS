@@ -1,0 +1,16 @@
+{
+  "type": "mcp-server",
+  "name": "Google-Analytics",
+  "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/77/GAnalytics.svg/1024px-GAnalytics.svg.png",
+  "packageName": "@toolsdk.ai/google-analytics-mcp",
+  "description": "MCP server for Google Analytics Data API",
+  "url": "https://github.com/Seey215/google-analytics-mcp",
+  "runtime": "node",
+  "license": "MIT",
+  "env": {
+    "GOOGLE_CREDENTIALS": {
+      "description": "Your Google service account credentials (JSON string from Cloud Console)",
+      "required": true
+    }
+  }
+}
