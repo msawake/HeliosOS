@@ -1,34 +1,104 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+    @apply bg-[#f7f7f8] text-[#0d0d0d] antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Scrollbar styling (Webkit) */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #d1d1d1;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #a0a0a0;
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbar but keep scroll behavior (sidebar nav) */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
   }
 }
 
 @layer components {
+  /* Cards — OpenAI style: white bg, subtle border, no heavy shadows */
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6;
+    @apply bg-white rounded-[10px] border border-[#e5e5e5] p-6;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   }
+  .card:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    transition: box-shadow 0.15s ease;
+  }
+
+  /* Badges — OpenAI style: neutral gray base, teal for active states only */
   .badge {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    @apply inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium
+           bg-gray-100 text-[#6e6e80] border border-gray-200;
   }
-  .badge-forgeos { @apply bg-blue-100 text-blue-800; }
-  .badge-crewai { @apply bg-purple-100 text-purple-800; }
-  .badge-adk { @apply bg-green-100 text-green-800; }
-  .badge-openclaw { @apply bg-orange-100 text-orange-800; }
-  .badge-always_on { @apply bg-emerald-100 text-emerald-800; }
-  .badge-scheduled { @apply bg-amber-100 text-amber-800; }
-  .badge-event_driven { @apply bg-cyan-100 text-cyan-800; }
-  .badge-reflex { @apply bg-pink-100 text-pink-800; }
-  .badge-autonomous { @apply bg-indigo-100 text-indigo-800; }
-  .badge-personal { @apply bg-violet-100 text-violet-800; }
-  .badge-shared { @apply bg-teal-100 text-teal-800; }
-  .badge-running { @apply bg-green-100 text-green-800; }
-  .badge-idle { @apply bg-gray-100 text-gray-600; }
-  .badge-stopped { @apply bg-red-100 text-red-800; }
-  .badge-failed { @apply bg-red-100 text-red-800; }
-  .badge-completed { @apply bg-blue-100 text-blue-800; }
+  /* Stacks — all neutral gray (category labels, not status) */
+  .badge-forgeos     { @apply bg-gray-100 text-[#6e6e80] border-gray-200; }
+  .badge-crewai      { @apply bg-gray-100 text-[#6e6e80] border-gray-200; }
+  .badge-adk         { @apply bg-gray-100 text-[#6e6e80] border-gray-200; }
+  .badge-openclaw    { @apply bg-gray-100 text-[#6e6e80] border-gray-200; }
+  /* Execution types — all neutral gray */
+  .badge-always_on   { @apply bg-gray-100 text-[#6e6e80] border-gray-200; }
+  .badge-scheduled   { @apply bg-gray-100 text-[#6e6e80] border-gray-200; }
+  .badge-event_driven { @apply bg-gray-100 text-[#6e6e80] border-gray-200; }
+  .badge-reflex      { @apply bg-gray-100 text-[#6e6e80] border-gray-200; }
+  .badge-autonomous  { @apply bg-gray-100 text-[#6e6e80] border-gray-200; }
+  /* Ownership — neutral */
+  .badge-personal    { @apply bg-gray-100 text-[#6e6e80] border-gray-200; }
+  .badge-shared      { @apply bg-gray-100 text-[#6e6e80] border-gray-200; }
+  .badge-client      { @apply bg-gray-100 text-[#6e6e80] border-gray-200; }
+  /* Status — only these get color: active=teal, error=red, warn=amber */
+  .badge-running     { @apply bg-[#f0fdf8] text-[#10A37F] border-[#10A37F]/20; }
+  .badge-idle        { @apply bg-gray-100 text-[#8e8ea0] border-gray-200; }
+  .badge-stopped     { @apply bg-red-50 text-red-600 border-red-200; }
+  .badge-failed      { @apply bg-red-50 text-red-600 border-red-200; }
+  .badge-completed   { @apply bg-gray-100 text-[#6e6e80] border-gray-200; }
+  .badge-paused      { @apply bg-amber-50 text-amber-600 border-amber-200; }
+
+  /* Buttons — teal accent primary, neutral secondary */
+  .btn-primary {
+    @apply px-4 py-2 bg-[#10A37F] hover:bg-[#0d8c6d] text-white text-sm font-medium
+           rounded-[8px] transition-colors duration-150;
+  }
+  .btn-secondary {
+    @apply px-4 py-2 bg-white hover:bg-gray-50 text-[#0d0d0d] text-sm font-medium
+           border border-[#d1d1d1] rounded-[8px] transition-colors duration-150;
+  }
+  .btn-ghost {
+    @apply px-4 py-2 text-[#6e6e80] hover:text-[#0d0d0d] hover:bg-gray-100 text-sm font-medium
+           rounded-[8px] transition-colors duration-150;
+  }
+  .btn-danger {
+    @apply px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium
+           rounded-[8px] transition-colors duration-150;
+  }
+
+  /* Inputs — clean, neutral, rounded */
+  input[type="text"], input[type="password"], input[type="email"],
+  input[type="number"], input[type="search"], textarea, select {
+    @apply rounded-[8px] border-[#d1d1d1] bg-white text-[#0d0d0d] text-sm
+           placeholder-[#8e8ea0] focus:border-[#10A37F] focus:ring-1 focus:ring-[#10A37F]/30;
+  }
 }

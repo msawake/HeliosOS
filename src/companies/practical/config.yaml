@@ -1,0 +1,24 @@
+company:
+  name: "Practical Agents"
+  domain: "practical"
+  mission: "Agents that save real time on real tasks. Each passes the deploy-tomorrow test."
+
+budgets:
+  daily_token_budget: 500_000
+  critical_reserve_pct: 10
+  per_session_cost_limit_usd: 5.00
+
+models:
+  orchestrator_default: "gpt-4o"
+  doer_default: "gpt-4o-mini"
+
+rate_limits:
+  max_tool_calls_per_session: 50
+  max_api_calls_per_minute: 30
+
+hitl:
+  sla:
+    email_send: 4.0
+    financial: 24.0
+    contract: 48.0
+    content: 4.0

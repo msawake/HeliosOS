@@ -1,0 +1,33 @@
+# ----------------------------------------------------------------------------
+# Chaos Mesh: Network Delay
+#
+# Injects 500ms latency + 100ms jitter on the API pods for 10 minutes.
+# Tests that:
+#   1. LLM streaming still works under added latency
+#   2. Tool timeouts (60s default) are not breached by network lag alone
+#   3. Client MCP connections survive transient slowdowns
+#   4. Frontend WebSocket reconnects gracefully
+#
+# Apply:  kubectl apply -f deploy/k8s/chaos/network-delay.yaml
+# Remove: kubectl delete -f deploy/k8s/chaos/network-delay.yaml
+# ----------------------------------------------------------------------------
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: forgeos-api-net-delay
+  namespace: forgeos
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces:
+      - forgeos
+    labelSelectors:
+      app.kubernetes.io/name: forgeos
+      app.kubernetes.io/component: api
+  delay:
+    latency: "500ms"
+    correlation: "25"
+    jitter: "100ms"
+  direction: both
+  duration: "10m"

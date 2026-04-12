@@ -53,23 +53,34 @@ polling_intervals:
   monitoring_cycle_minutes: 2
 
 mcp_servers:
+  # Tier1 servers are disabled for local dev — they require real credentials
+  # and take too long to download/connect without them. Enable per-server
+  # when you have the corresponding API keys configured.
+  # tier1:
+  #   - name: "google-workspace"
+  #     package: "google-workspace-mcp"
+  #     required: false
+  #   - name: "slack"
+  #     package: "@anthropic/mcp-server-slack"
+  #     required: false
+  #   - name: "postgres"
+  #     package: "@modelcontextprotocol/server-postgres"
+  #     required: false
+  #   - name: "stripe"
+  #     package: "@stripe/mcp"
+  #     required: false
   tier1:
-    - name: "google-workspace"
-      package: "google-workspace-mcp"
-      required: true
-    - name: "slack"
-      package: "@anthropic/mcp-server-slack"
-      required: true
-    - name: "postgres"
-      package: "@modelcontextprotocol/server-postgres"
-      required: true
-    - name: "stripe"
-      package: "@stripe/mcp"
-      required: true
-  tier2:
-    - name: "analytics"
-      package: "analytics-mcp"
+    - name: "filesystem"
+      package: "@modelcontextprotocol/server-filesystem"
       required: false
-    - name: "crm"
-      package: "crm-mcp"
-      required: false
+      args:
+        - "/Users/jama/Desktop"
+        - "/Users/jama/Downloads"
+        - "/Users/jama/Documents"
+    # gdrive disabled for now (causes boot crashes on timeout)
+    # - name: "gdrive"
+    #   package: "@modelcontextprotocol/server-gdrive"
+    #   required: false
+    #   env_vars:
+    #     GDRIVE_OAUTH_PATH: "/Users/jama/Documents/one/config/google/credentials.json"
+    #     GDRIVE_CREDENTIALS_PATH: "/Users/jama/.npm/_npx/901beb8b1a496dd2/node_modules/.gdrive-server-credentials.json"

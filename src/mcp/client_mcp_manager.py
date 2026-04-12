@@ -64,6 +64,9 @@ class ClientMCPManager:
         self._lock = asyncio.Lock()
         # In-memory config cache for dev mode (no DB)
         self._config_cache: dict[str, list[dict]] = {}
+        # Cooldown: track failed connections to avoid retry storms
+        self._connect_cooldowns: dict[tuple[str, str], float] = {}  # key → earliest_retry_time
+        self._COOLDOWN_SECONDS = 60.0
 
     def register_client_config(self, client_id: str, configs: list[dict]) -> None:
         """Register MCP configs for a client (in-memory, for dev/no-DB mode)."""
@@ -88,6 +91,12 @@ class ClientMCPManager:
                     # Expired — disconnect and reconnect
                     await self._disconnect_one(key)
 
+            # Check cooldown (avoid retry storms after connection failure)
+            cooldown_until = self._connect_cooldowns.get(key, 0)
+            if time.time() < cooldown_until:
+                logger.debug("MCP %s/%s in cooldown until %.0f", client_id, server_name, cooldown_until)
+                return None
+
             # Load config
             config = self._load_server_config(client_id, server_name)
             if not config:
@@ -110,6 +119,7 @@ class ClientMCPManager:
                     return conn.session
             except Exception as e:
                 logger.error("Failed to connect client MCP %s/%s: %s", client_id, server_name, e)
+                self._connect_cooldowns[key] = time.time() + self._COOLDOWN_SECONDS
                 return None
 
         return None
@@ -240,7 +250,16 @@ class ClientMCPManager:
         read_stream, write_stream = await transport.__aenter__()
         session = ClientSession(read_stream, write_stream)
         await session.__aenter__()
-        await session.initialize()
+        try:
+            await asyncio.wait_for(session.initialize(), timeout=10.0)
+        except asyncio.TimeoutError:
+            logger.error("MCP session.initialize() timed out for %s/%s", client_id, server_name)
+            try:
+                await session.__aexit__(None, None, None)
+                await transport.__aexit__(None, None, None)
+            except Exception:
+                pass
+            return None
 
         # Discover tools
         tools_response = await session.list_tools()

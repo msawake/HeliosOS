@@ -120,7 +120,7 @@ function CreateAgentForm() {
       <p className="text-gray-500 mb-2">Deploy a new agent across any stack</p>
       <p className="text-sm text-gray-500 mb-8">
         Prefer a guided chat?{' '}
-        <Link href="/agents/create/ai" className="text-brand-600 font-medium hover:underline">
+        <Link href="/agents/create/ai" className="text-[#10A37F] font-medium hover:underline">
           Use the AI wizard
         </Link>
         .
@@ -133,7 +133,7 @@ function CreateAgentForm() {
             key={i}
             onClick={() => setStep(i)}
             className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium text-center transition-colors ${
-              i === step ? 'bg-brand-600 text-white' : i < step ? 'bg-brand-100 text-brand-700' : 'bg-gray-100 text-gray-400'
+              i === step ? 'bg-[#10A37F] text-white' : i < step ? 'bg-[#f0fdf8] text-[#0a7a5e]' : 'bg-gray-100 text-gray-400'
             }`}
           >
             {s.title}
@@ -151,7 +151,7 @@ function CreateAgentForm() {
                   key={s}
                   onClick={() => { update('stack', s); setStep(1); }}
                   className={`p-4 rounded-xl border-2 text-left transition-all ${
-                    form.stack === s ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:border-gray-300'
+                    form.stack === s ? 'border-[#10A37F] bg-[#f0fdf8]' : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
                   <span className={`badge badge-${s} mb-2`}>{STACK_LABELS[s]}</span>
@@ -176,7 +176,7 @@ function CreateAgentForm() {
                   key={t}
                   onClick={() => { update('execution_type', t); setStep(2); }}
                   className={`w-full p-3 rounded-lg border-2 text-left transition-all ${
-                    form.execution_type === t ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:border-gray-300'
+                    form.execution_type === t ? 'border-[#10A37F] bg-[#f0fdf8]' : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
                   <span className={`badge badge-${t}`}>{EXEC_LABELS[t]}</span>
@@ -247,7 +247,7 @@ function CreateAgentForm() {
                 <input type="text" value={form.tools} onChange={(e) => update('tools', e.target.value)} className="w-full rounded-lg border-gray-300" placeholder="gmail, calendar, hubspot" />
               </div>
             </div>
-            <button onClick={() => setStep(3)} className="mt-6 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium">Next: LLM Config</button>
+            <button onClick={() => setStep(3)} className="mt-6 px-4 py-2 bg-[#10A37F] text-white rounded-lg text-sm font-medium">Next: LLM Config</button>
           </div>
         )}
 
@@ -272,7 +272,7 @@ function CreateAgentForm() {
                 <input type="text" value={form.reasoning_model} onChange={(e) => update('reasoning_model', e.target.value)} className="w-full rounded-lg border-gray-300" placeholder="For deep thinking tasks" />
               </div>
             </div>
-            <button onClick={() => setStep(4)} className="mt-6 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium">Next: Review</button>
+            <button onClick={() => setStep(4)} className="mt-6 px-4 py-2 bg-[#10A37F] text-white rounded-lg text-sm font-medium">Next: Review</button>
           </div>
         )}
 
@@ -291,7 +291,7 @@ function CreateAgentForm() {
             <button
               onClick={handleSubmit}
               disabled={submitting || !form.name}
-              className="mt-6 w-full py-3 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors"
+              className="mt-6 w-full py-3 bg-[#10A37F] text-white rounded-lg font-medium hover:bg-[#0d8c6d] disabled:opacity-50 transition-colors"
             >
               {submitting ? 'Deploying...' : 'Deploy Agent'}
             </button>

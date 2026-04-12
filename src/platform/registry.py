@@ -52,6 +52,20 @@ class AgentRegistry:
         )
         return agent_def.agent_id
 
+    def update(self, agent_def: AgentDefinition) -> str:
+        """Update an existing agent definition in-place. Preserves status."""
+        if agent_def.agent_id not in self._agents:
+            raise ValueError(f"Agent {agent_def.agent_id} not found for update")
+        if self._store and hasattr(self._store, 'update'):
+            self._store.update(agent_def)
+        elif self._store:
+            # Fallback: unregister + register if store doesn't have update()
+            self._store.unregister(agent_def.agent_id)
+            self._store.register(agent_def)
+        self._agents[agent_def.agent_id] = agent_def
+        logger.info("Updated agent %s (%s)", agent_def.name, agent_def.agent_id)
+        return agent_def.agent_id
+
     def unregister(self, agent_id: str) -> bool:
         if agent_id in self._agents:
             if self._store:

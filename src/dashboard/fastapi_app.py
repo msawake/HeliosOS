@@ -23,7 +23,7 @@ from typing import Any, Optional
 
 from fastapi import FastAPI, WebSocket, Request, Depends, HTTPException, Query, Security
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 
@@ -75,6 +75,13 @@ class ClientMCPConfigRequest(BaseModel):
     package: str
     env_vars: dict = {}
     args: list[str] = []
+
+class DevTokenRequest(BaseModel):
+    password: str = ""
+
+class AgentChatRequest(BaseModel):
+    message: str
+    session_id: str | None = None
 
 class ApprovalAction(BaseModel):
     reason: str = ""
@@ -144,6 +151,7 @@ def create_fastapi_app(
     admin_invoker=None,
     admin_registry=None,
     ontology=None,
+    tenant_id: str = "default",
 ) -> FastAPI:
 
     app = FastAPI(
@@ -154,6 +162,48 @@ def create_fastapi_app(
         docs_url="/docs",
         redoc_url="/redoc",
     )
+
+    # Audit log (falls back to in-memory ring buffer when no DB)
+    from src.platform.audit import AuditLog
+    from src.platform.alerts import AlertDispatcher, ALERT_TRIGGER_ACTIONS
+    audit = AuditLog(db_client=db_client, tenant_id=tenant_id)
+    alert_dispatcher = AlertDispatcher.from_env()
+
+    def _safe_count(fn) -> int:
+        """Call fn() and return len(result), or 0 on any error."""
+        try:
+            return len(fn())
+        except Exception:
+            return 0
+
+    def _audit(action: str, **kwargs) -> None:
+        """Convenience helper — never raises. Also fires an alert if the
+        action is in `ALERT_TRIGGER_ACTIONS`."""
+        try:
+            audit.record(action, **kwargs)
+        except Exception as e:
+            logger.warning("Audit record failed for %s: %s", action, e)
+        # Auto-fire alerts for critical actions
+        if action in ALERT_TRIGGER_ACTIONS:
+            try:
+                import asyncio
+                asyncio.create_task(
+                    alert_dispatcher.from_audit_action(
+                        action,
+                        resource_type=kwargs.get("resource_type", ""),
+                        resource_id=kwargs.get("resource_id", ""),
+                        details=kwargs.get("details", {}),
+                    )
+                )
+            except Exception as e:
+                logger.debug("Alert dispatch for %s failed: %s", action, e)
+
+    # Bind audit log into the LLM router so failovers are recorded
+    if llm_router is not None and hasattr(llm_router, "bind_audit"):
+        try:
+            llm_router.bind_audit(audit)
+        except Exception:
+            pass
 
     # CORS
     app.add_middleware(
@@ -172,6 +222,7 @@ def create_fastapi_app(
     PUBLIC_PATHS = {
         "/api/health", "/api/readiness", "/", "/admin", "/intelligence",
         "/docs", "/redoc", "/openapi.json",
+        "/api/auth/token", "/api/me",
     }
 
     async def check_auth(request: Request, api_key: str = Security(api_key_header)):
@@ -188,10 +239,56 @@ def create_fastapi_app(
             raise HTTPException(status_code=401, detail="API key required")
         return api_key
 
-    # Session stores
+    # Session stores (protected by async locks)
     _admin_sessions: dict[str, list[dict]] = {}
     _intel_sessions: dict[str, list[dict]] = {}
     _launched_agents: dict[str, dict] = {}  # track launched agents {id: {status, launched_at, output}}
+    _session_lock = asyncio.Lock()  # protects _chat_sessions, _admin_sessions, _intel_sessions
+
+    # Session limits
+    _SESSION_MAX_AGE_SECONDS = 7200  # 2 hours
+    _SESSION_MAX_COUNT = 10_000
+
+    async def _evict_stale_sessions():
+        """Periodic background task: evict sessions older than 2 hours."""
+        while True:
+            await asyncio.sleep(600)  # every 10 minutes
+            now = datetime.now(timezone.utc)
+            for store_name, store in [
+                ("chat", _chat_sessions),
+                ("admin", _admin_sessions),
+                ("intel", _intel_sessions),
+            ]:
+                to_remove = []
+                for sid, data in store.items():
+                    created = data.get("created_at", "") if isinstance(data, dict) else ""
+                    if isinstance(created, str) and created:
+                        try:
+                            created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                            if (now - created_dt).total_seconds() > _SESSION_MAX_AGE_SECONDS:
+                                to_remove.append(sid)
+                        except (ValueError, TypeError):
+                            pass
+                    elif isinstance(data, list):
+                        # admin/intel sessions are plain lists — no timestamp, evict if store is too large
+                        pass
+                # Enforce max count (evict oldest first)
+                if len(store) > _SESSION_MAX_COUNT:
+                    to_remove.extend(list(store.keys())[:len(store) - _SESSION_MAX_COUNT])
+                for sid in set(to_remove):
+                    store.pop(sid, None)
+                if to_remove:
+                    logger.info("Evicted %d stale %s sessions", len(set(to_remove)), store_name)
+
+    # Start background eviction task on first request
+    _eviction_started = {"v": False}
+
+    @app.middleware("http")
+    async def _start_eviction_once(request, call_next):
+        if not _eviction_started["v"]:
+            _eviction_started["v"] = True
+            asyncio.ensure_future(_evict_stale_sessions())
+        return await call_next(request)
 
     # ------------------------------------------------------------------
     # Health
@@ -205,8 +302,8 @@ def create_fastapi_app(
             "llm_providers": llm_router.available_providers() if llm_router else [],
             "adapters": list(platform_executor._adapters.keys()) if platform_executor and hasattr(platform_executor, "_adapters") else [],
             "agents_registered": len(platform_registry.list_all()) if platform_registry else 0,
-            "pending_approvals": len(company_system.hitl.get_pending()) if company_system else 0,
-            "pending_events": len(company_system.event_bus.query()) if company_system else 0,
+            "pending_approvals": _safe_count(lambda: company_system.hitl.get_pending()) if company_system else 0,
+            "pending_events": _safe_count(lambda: company_system.event_bus.query()) if company_system else 0,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         return {"status": "ok", "components": components}
@@ -246,6 +343,9 @@ def create_fastapi_app(
         if not company_system:
             raise HTTPException(500, "System not initialized")
         company_system.hitl.approve(request_id, approver=body.approved_by or "api", reason=body.reason)
+        _audit("approval.approve", actor=body.approved_by or "api",
+               resource_type="approval", resource_id=request_id,
+               details={"reason": body.reason})
         return {"success": True}
 
     @app.post("/api/approvals/{request_id}/reject", tags=["approvals"])
@@ -254,6 +354,9 @@ def create_fastapi_app(
         if not company_system:
             raise HTTPException(500, "System not initialized")
         company_system.hitl.reject(request_id, reason=body.reason)
+        _audit("approval.reject", actor=body.rejected_by or "api",
+               resource_type="approval", resource_id=request_id,
+               details={"reason": body.reason})
         return {"success": True}
 
     # ------------------------------------------------------------------
@@ -358,20 +461,52 @@ def create_fastapi_app(
                 system_prompt=req.system_prompt,
             )
             agent_id = await platform_executor.deploy(defn)
+            _audit("agent.deploy", resource_type="agent", resource_id=agent_id,
+                   details={"name": req.name, "stack": req.stack,
+                            "execution_type": req.execution_type,
+                            "ownership": ownership.value,
+                            "client_id": req.client_id})
             return {"agent_id": agent_id, "name": req.name, "stack": req.stack}
         except Exception as e:
+            _audit("agent.deploy", outcome="failure", resource_type="agent",
+                   resource_id=req.name, details={"error": str(e)})
             raise HTTPException(400, str(e))
 
     @app.post("/api/platform/agents/{agent_id}/invoke", tags=["agents"])
     async def invoke_agent(agent_id: str, req: InvokeRequest, _auth=Depends(check_auth)):
-        """Invoke an agent with a prompt."""
+        """Invoke an agent with a prompt.
+
+        Tries the platform executor first (agents deployed via the new
+        multi-stack system), then falls back to the legacy admin_invoker
+        (pre-registered company agents from config).
+        """
+        # Path 1: Platform executor (new multi-stack agents)
+        if platform_executor:
+            agent_def = platform_executor.registry.get(agent_id)
+            if agent_def:
+                try:
+                    result = await platform_executor.invoke(agent_id, req.prompt, req.context)
+                    return {
+                        "agent_id": agent_id,
+                        "status": result.status.value if hasattr(result.status, "value") else str(result.status),
+                        "result": (result.output or "")[:2000],
+                        "error": result.error,
+                        "cost_usd": 0,
+                        "duration": getattr(result, "elapsed_ms", 0) / 1000,
+                        "tool_calls": len(result.tool_calls) if result.tool_calls else 0,
+                        "tokens_used": result.tokens_used,
+                    }
+                except Exception as e:
+                    raise HTTPException(500, str(e))
+
+        # Path 2: Legacy admin invoker (company agents from config.yaml)
         if admin_invoker:
             try:
                 result = await admin_invoker.invoke(agent_id, req.prompt)
                 return {
                     "agent_id": agent_id,
                     "status": result.status.value if hasattr(result.status, "value") else str(result.status),
-                    "result": result.result[:1000] if result.result else "",
+                    "result": result.result[:2000] if result.result else "",
                     "error": result.error,
                     "cost_usd": getattr(result, "cost_usd", 0),
                     "duration": getattr(result, "duration_seconds", 0),
@@ -379,13 +514,217 @@ def create_fastapi_app(
                 }
             except Exception as e:
                 raise HTTPException(500, str(e))
-        raise HTTPException(500, "Invoker not available")
+
+        raise HTTPException(500, "No invoker available")
+
+    # ------------------------------------------------------------------
+    # Agent Update (edit in-place)
+    # ------------------------------------------------------------------
+
+    @app.put("/api/platform/agents/{agent_id}", tags=["agents"])
+    async def update_agent(agent_id: str, req: AgentCreateRequest, _auth=Depends(check_auth)):
+        """Update an existing agent's configuration in-place."""
+        if not platform_registry:
+            raise HTTPException(500, "Platform registry not available")
+        agent_def = platform_registry.get(agent_id)
+        if not agent_def:
+            raise HTTPException(404, f"Agent {agent_id} not found")
+
+        from stacks.base import ExecutionType, LLMConfig
+
+        # Apply only non-empty/non-default fields from the request
+        if req.name and req.name != "string":
+            agent_def.name = req.name
+        if req.description:
+            agent_def.description = req.description
+        if req.system_prompt:
+            agent_def.system_prompt = req.system_prompt
+        if req.tools:
+            agent_def.tools = req.tools
+        if req.schedule is not None:
+            agent_def.schedule = req.schedule
+        if req.event_triggers:
+            agent_def.event_triggers = req.event_triggers
+        if req.department:
+            agent_def.department = req.department
+        if req.goal:
+            agent_def.goal = req.goal
+        if req.metadata:
+            agent_def.metadata.update(req.metadata)
+        if req.chat_model and req.chat_model != "gpt-4o":
+            agent_def.llm_config = LLMConfig(
+                chat_model=req.chat_model,
+                provider=req.provider or agent_def.llm_config.provider,
+            )
+
+        # Check if execution type changed
+        new_exec = req.execution_type
+        old_exec = agent_def.execution_type.value
+        if new_exec and new_exec != old_exec and new_exec != "event_driven":
+            # Stop old execution, re-wire new
+            if platform_executor:
+                await platform_executor.stop_agent(agent_id)
+            agent_def.execution_type = ExecutionType(new_exec)
+            if platform_executor:
+                await platform_executor._wire_execution(agent_def)
+
+        # Update in registry + sync to adapter's internal dict
+        platform_registry.update(agent_def)
+        if platform_executor:
+            adapter = platform_executor.get_adapter(agent_def.stack)
+            if adapter and hasattr(adapter, '_agents'):
+                adapter._agents[agent_id] = agent_def
+
+        _audit("agent.update", resource_type="agent", resource_id=agent_id,
+               details={"name": agent_def.name, "tools": agent_def.tools,
+                        "schedule": agent_def.schedule})
+        return agent_def.to_dict()
+
+    # ------------------------------------------------------------------
+    # Agent Chat (multi-turn conversation with streaming)
+    # ------------------------------------------------------------------
+
+    # In-memory session store (shared with executor)
+    _chat_sessions: dict[str, dict] = {}  # session_id → {agent_id, messages, created_at, ...}
+
+    @app.post("/api/platform/agents/{agent_id}/chat/stream", tags=["chat"])
+    async def agent_chat_stream(agent_id: str, req: AgentChatRequest):
+        """Multi-turn streaming chat with an agent.
+
+        Creates or resumes a conversation session. Streams SSE events:
+        text_delta, tool_call, tool_result, hitl_request, done, error.
+        """
+        if not platform_executor:
+            raise HTTPException(500, "Platform executor not available")
+
+        agent_def = None
+        if platform_registry:
+            agent_def = platform_registry.get(agent_id)
+        if not agent_def:
+            raise HTTPException(404, f"Agent {agent_id} not found")
+
+        # Session management (atomic via setdefault to avoid race conditions)
+        sid = req.session_id or str(uuid.uuid4())
+        session = _chat_sessions.setdefault(sid, {
+            "agent_id": agent_id,
+            "messages": [],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        session["messages"].append({"role": "user", "content": req.message})
+
+        # Build conversation history (copy to avoid mutation during streaming)
+        history = list(session["messages"][:-1])
+
+        async def generate():
+            # First event: session ID
+            yield f"data: {json.dumps({'type': 'session', 'session_id': sid})}\n\n"
+
+            try:
+                from src.platform.agentic_loop import (
+                    build_tool_definitions,
+                    run_agentic_loop_with_events,
+                )
+                from stacks.base import build_agent_context
+
+                tools = build_tool_definitions(
+                    getattr(platform_executor, '_tool_executor', None)
+                    or (platform_executor.get_adapter("forgeos") and getattr(platform_executor.get_adapter("forgeos"), "_tool_executor", None)),
+                    agent_def.tools or None,
+                )
+                system = agent_def.system_prompt or f"You are {agent_def.name}. {agent_def.description}"
+                ctx = build_agent_context(agent_def, agent_id)
+
+                # Get the tool_executor from the forgeos adapter
+                te = None
+                for stack_name in ("forgeos", "crewai", "adk", "openclaw"):
+                    adapter = platform_executor.get_adapter(stack_name)
+                    if adapter and hasattr(adapter, "_tool_executor") and adapter._tool_executor:
+                        te = adapter._tool_executor
+                        break
+
+                if te is None:
+                    yield f"data: {json.dumps({'type': 'error', 'error': 'No tool executor available — MCP servers may not be connected'})}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'tokens_used': 0, 'text': ''})}\n\n"
+                    return
+
+                full_text = ""
+                async for ev in run_agentic_loop_with_events(
+                    llm_router=llm_router,
+                    llm_config=agent_def.llm_config,
+                    system_prompt=system,
+                    user_prompt=req.message,
+                    tool_definitions=tools or None,
+                    tool_executor=te,
+                    agent_context=ctx,
+                    history=history if history else None,
+                ):
+                    yield f"data: {json.dumps(ev, default=str)}\n\n"
+                    if ev.get("type") == "text_delta":
+                        full_text += ev.get("content", "")
+                    elif ev.get("type") == "done":
+                        # Only use done.text as fallback if nothing was streamed
+                        if not full_text and ev.get("text"):
+                            full_text = ev["text"]
+
+                # Save assistant response to session
+                if full_text:
+                    session["messages"].append({"role": "assistant", "content": full_text})
+
+            except Exception as e:
+                logger.exception("Agent chat stream error for %s", agent_id)
+                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'tokens_used': 0, 'text': ''})}\n\n"
+
+        return StreamingResponse(generate(), media_type="text/event-stream")
+
+    @app.get("/api/platform/agents/{agent_id}/chat/sessions", tags=["chat"])
+    async def list_chat_sessions(agent_id: str):
+        """List all chat sessions for an agent."""
+        sessions = []
+        for sid, data in _chat_sessions.items():
+            if data.get("agent_id") == agent_id:
+                msgs = data.get("messages", [])
+                preview = ""
+                if msgs:
+                    first_user = next((m["content"] for m in msgs if m["role"] == "user"), "")
+                    preview = first_user[:100]
+                sessions.append({
+                    "session_id": sid,
+                    "created_at": data.get("created_at", ""),
+                    "message_count": len(msgs),
+                    "preview": preview,
+                })
+        sessions.sort(key=lambda s: s["created_at"], reverse=True)
+        return sessions
+
+    @app.get("/api/platform/agents/{agent_id}/chat/history", tags=["chat"])
+    async def get_chat_history(agent_id: str, session_id: str = Query(...)):
+        """Get the full message history for a chat session."""
+        session = _chat_sessions.get(session_id)
+        if not session or session.get("agent_id") != agent_id:
+            raise HTTPException(404, "Session not found")
+        return {
+            "session_id": session_id,
+            "agent_id": agent_id,
+            "messages": session.get("messages", []),
+            "created_at": session.get("created_at", ""),
+        }
+
+    @app.delete("/api/platform/agents/{agent_id}/chat/sessions/{session_id}", tags=["chat"])
+    async def delete_chat_session(agent_id: str, session_id: str):
+        """Delete a chat session."""
+        session = _chat_sessions.get(session_id)
+        if not session or session.get("agent_id") != agent_id:
+            raise HTTPException(404, "Session not found")
+        del _chat_sessions[session_id]
+        return {"ok": True}
 
     @app.post("/api/platform/agents/{agent_id}/stop", tags=["agents"])
     async def stop_agent(agent_id: str, _auth=Depends(check_auth)):
         """Stop a running agent."""
         if platform_executor:
             await platform_executor.stop_agent(agent_id)
+        _audit("agent.stop", resource_type="agent", resource_id=agent_id)
         return {"ok": True}
 
     @app.delete("/api/platform/agents/{agent_id}", tags=["agents"])
@@ -393,6 +732,7 @@ def create_fastapi_app(
         """Undeploy and delete an agent."""
         if platform_executor:
             await platform_executor.undeploy(agent_id)
+        _audit("agent.undeploy", resource_type="agent", resource_id=agent_id)
         return {"ok": True}
 
     # ------------------------------------------------------------------
@@ -666,26 +1006,120 @@ def create_fastapi_app(
 
     @app.post("/api/admin/chat/stream", tags=["admin"])
     async def admin_chat_stream(req: ChatRequest):
-        """SSE streaming version of admin chat. Returns token-by-token."""
+        """Real SSE streaming admin chat.
+
+        When an LLM router is configured with a real provider, this streams
+        tokens as they arrive from Anthropic/OpenAI. Otherwise it falls back
+        to the legacy chunked emulation.
+        """
         async def generate():
             yield f"data: {json.dumps({'type': 'thinking', 'content': 'Processing...'})}\n\n"
-            # Get response via regular path
             msg = req.message.strip()
+            msg_lower = msg.lower().strip()
+
+            # Path 0: Handle known commands instantly (no LLM needed)
+            fast_response = None
+
+            if msg_lower in ("list agents", "show agents", "agents"):
+                agents_list = []
+                if platform_registry:
+                    agents_list = [a.to_dict() for a in platform_registry.list_all()]
+                if admin_tools:
+                    agents_list.extend(admin_tools.list_agents())
+                if agents_list:
+                    lines = [f"**{len(agents_list)} agents registered:**\n"]
+                    for a in agents_list:
+                        name = a.get("name", a.get("agent_id", "?"))
+                        status = a.get("status", "?")
+                        stack = a.get("stack", "?")
+                        lines.append(f"- **{name}** ({stack}) — {status}")
+                    fast_response = "\n".join(lines)
+                else:
+                    fast_response = "No agents registered. Deploy one via the AI Wizard or manual form."
+
+            elif msg_lower in ("system status", "status", "health"):
+                parts = ["**System Status:**\n"]
+                if platform_registry:
+                    s = platform_registry.summary()
+                    parts.append(f"- Agents: {s.get('total', 0)} total, {s.get('running', 0)} running")
+                if company_system:
+                    try:
+                        pending = len(company_system.hitl.get_pending())
+                        parts.append(f"- Pending approvals: {pending}")
+                    except Exception:
+                        pass
+                if llm_router:
+                    parts.append(f"- LLM providers: {', '.join(llm_router.available_providers())}")
+                fast_response = "\n".join(parts)
+
+            elif msg_lower in ("show approvals", "pending approvals", "approvals"):
+                if company_system:
+                    pending = company_system.hitl.get_pending()
+                    if pending:
+                        lines = [f"**{len(pending)} pending approvals:**\n"]
+                        for p in pending[:10]:
+                            lines.append(f"- **{p.get('title', '?')}** ({p.get('category', '?')}) — risk: {p.get('risk_assessment', '?')}")
+                        fast_response = "\n".join(lines)
+                    else:
+                        fast_response = "No pending approvals."
+                else:
+                    fast_response = "HITL system not available."
+
+            elif msg_lower in ("help", "?"):
+                fast_response = (
+                    "Available commands:\n"
+                    "- `list agents` — show all registered agents\n"
+                    "- `system status` — health check\n"
+                    "- `show approvals` — pending HITL items\n"
+                    "- Or ask any question — I'll answer using the LLM"
+                )
+
+            if fast_response:
+                yield f"data: {json.dumps({'type': 'text_delta', 'content': fast_response})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'tokens_used': 0})}\n\n"
+                return
+
+            # Path 1: Real streaming via LLM router (for open-ended questions)
+            if llm_router and "simulated" not in llm_router.available_providers():
+                try:
+                    from stacks.base import LLMConfig
+                    # Pick the first real provider + a sensible default model
+                    providers_available = llm_router.available_providers()
+                    if "anthropic" in providers_available:
+                        cfg = LLMConfig(chat_model="claude-sonnet-4-5", provider="anthropic")
+                    elif "openai" in providers_available:
+                        cfg = LLMConfig(chat_model="gpt-4o", provider="openai")
+                    else:
+                        cfg = LLMConfig(chat_model="claude-sonnet-4-5", provider="anthropic")
+
+                    messages = [
+                        {"role": "system",
+                         "content": "You are the ForgeOS admin assistant. Respond concisely."},
+                        {"role": "user", "content": msg},
+                    ]
+                    async for ev in llm_router.chat_stream(cfg, messages):
+                        yield f"data: {json.dumps(ev)}\n\n"
+                    return
+                except Exception as e:
+                    logger.exception("Real streaming path failed, falling back")
+                    yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+                    return
+
+            # Path 2: Legacy fallback via admin_invoker (chunked emulation)
             if admin_invoker and admin_registry:
                 try:
                     result = await admin_invoker.invoke("admin-orchestrator", msg)
                     text = result.result or "No response."
-                    # Simulate streaming by chunking
                     words = text.split()
                     for i in range(0, len(words), 3):
                         chunk = " ".join(words[i:i+3])
                         yield f"data: {json.dumps({'type': 'text_delta', 'content': chunk + ' '})}\n\n"
                         await asyncio.sleep(0.05)
                 except Exception as e:
-                    yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+                    yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
             else:
                 yield f"data: {json.dumps({'type': 'text_delta', 'content': 'Admin agent not available.'})}\n\n"
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'tokens_used': 0})}\n\n"
 
         return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -709,10 +1143,115 @@ def create_fastapi_app(
 
     @app.get("/api/admin/metrics", tags=["admin"])
     async def admin_metrics(metric_name: str = None):
-        """Query metrics."""
-        if not admin_tools:
-            return {"dashboard": {}}
-        return admin_tools.query_metrics(metric_name=metric_name)
+        """Real aggregated metrics: usage, audit counts, agents, scheduler, workflows."""
+        # 1. Usage (today + month-to-date) from UsageEnforcer
+        usage_daily: dict = {}
+        usage_monthly: dict = {}
+        try:
+            from src.billing.plans import UsageEnforcer
+            enforcer = UsageEnforcer(db_client) if db_client else UsageEnforcer()
+            usage_daily = enforcer.get_usage_summary(tenant_id)
+            usage_monthly = enforcer.get_monthly_summary(tenant_id)
+        except Exception as e:
+            logger.debug("metrics: usage aggregation failed: %s", e)
+
+        # 2. Audit counts — last 24h by action
+        audit_24h: dict[str, int] = {}
+        audit_total_24h = 0
+        try:
+            since = (datetime.now(timezone.utc) - __import__("datetime").timedelta(hours=24)).isoformat()
+            entries = audit.query(limit=1000, since=since)
+            for e in entries:
+                action = e.get("action", "unknown")
+                audit_24h[action] = audit_24h.get(action, 0) + 1
+            audit_total_24h = len(entries)
+        except Exception as e:
+            logger.debug("metrics: audit aggregation failed: %s", e)
+
+        # 3. Agent counts by status / execution_type / stack
+        agents_summary: dict = {"total": 0, "running": 0}
+        agents_by_stack: dict = {}
+        agents_by_exec: dict = {}
+        if platform_registry:
+            try:
+                summary = platform_registry.summary()
+                agents_summary = {
+                    "total": summary.get("total", 0),
+                    "running": summary.get("running", 0),
+                }
+                agents_by_stack = summary.get("by_stack", {})
+                agents_by_exec = summary.get("by_execution_type", {})
+            except Exception as e:
+                logger.debug("metrics: agent summary failed: %s", e)
+
+        # 4. Scheduler status + lag (how far past next_run_at we are for any job)
+        scheduled_jobs_count = 0
+        scheduler_lag_seconds = 0.0
+        if platform_executor and getattr(platform_executor, "scheduler", None):
+            try:
+                jobs = platform_executor.scheduler.list_jobs()
+                scheduled_jobs_count = len(jobs)
+                now = datetime.now(timezone.utc)
+                max_lag = 0.0
+                for job in jobs:
+                    next_run_str = job.get("next_run_at")
+                    if not next_run_str:
+                        continue
+                    try:
+                        nr = datetime.fromisoformat(next_run_str.replace("Z", "+00:00"))
+                        if nr.tzinfo is None:
+                            nr = nr.replace(tzinfo=timezone.utc)
+                        lag = (now - nr).total_seconds()
+                        if lag > max_lag:
+                            max_lag = lag
+                    except Exception:
+                        pass
+                scheduler_lag_seconds = max(0.0, max_lag)
+            except Exception as e:
+                logger.debug("metrics: scheduler aggregation failed: %s", e)
+
+        # 5. Approvals + workflows count
+        pending_approvals = 0
+        active_workflows = 0
+        if company_system:
+            try:
+                pending_approvals = len(company_system.hitl.get_pending())
+            except Exception:
+                pass
+        if workflow_engine:
+            try:
+                from src.workflows.definitions import WorkflowStatus
+                active_workflows = len(workflow_engine.list_workflows(WorkflowStatus.RUNNING))
+            except Exception:
+                pass
+
+        result = {
+            "usage": {
+                "daily": usage_daily,
+                "monthly": usage_monthly,
+            },
+            "audit": {
+                "total_24h": audit_total_24h,
+                "by_action_24h": audit_24h,
+            },
+            "agents": {
+                **agents_summary,
+                "by_stack": agents_by_stack,
+                "by_execution_type": agents_by_exec,
+            },
+            "scheduler": {
+                "jobs": scheduled_jobs_count,
+                "max_lag_seconds": round(scheduler_lag_seconds, 1),
+            },
+            "approvals": {"pending": pending_approvals},
+            "workflows": {"active": active_workflows},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+        if metric_name:
+            # Back-compat: return only the requested metric sub-tree if it exists
+            return result.get(metric_name, result)
+        return result
 
     @app.get("/api/admin/events", tags=["admin"])
     async def admin_events(department: str = None, status: str = None, priority: str = None):
@@ -824,7 +1363,12 @@ def create_fastapi_app(
 
     @app.get("/api/platform/scheduler", tags=["platform"])
     async def list_scheduler_jobs():
-        """List scheduled jobs."""
+        """List scheduled jobs from the platform scheduler."""
+        if platform_executor and getattr(platform_executor, "scheduler", None):
+            try:
+                return platform_executor.scheduler.list_jobs()
+            except Exception as e:
+                logger.warning("Failed to list scheduler jobs: %s", e)
         return []
 
     # ------------------------------------------------------------------
@@ -966,133 +1510,360 @@ def create_fastapi_app(
     # Client management (per-client agent infrastructure)
     # ===================================================================
 
-    # In-memory client store for dev mode (no DB)
-    _clients: dict[str, dict] = {}
-    _client_mcp_configs: dict[str, list[dict]] = {}  # client_id -> list of configs
+    from src.platform.client_store import PostgresClientStore, PostgresClientMCPStore
+
+    client_store = PostgresClientStore(db_client=db_client, tenant_id=tenant_id)
+    client_mcp_store = PostgresClientMCPStore(db_client=db_client, tenant_id=tenant_id)
+
+    # Optional: reference to the ClientMCPManager so we can refresh its cache
+    # after config writes (the adapter-wired manager lives on the executor).
+    def _refresh_client_mcp_cache(client_id: str) -> None:
+        try:
+            mgr = None
+            if platform_executor:
+                mgr = getattr(platform_executor, "_client_mcp_manager", None)
+            if mgr is None and company_system:
+                mgr = getattr(company_system, "_client_mcp_manager", None)
+            if mgr is not None:
+                configs = client_mcp_store.list_for_client(client_id)
+                mgr.register_client_config(client_id, configs)
+        except Exception as e:
+            logger.warning("Failed to refresh ClientMCPManager cache for %s: %s", client_id, e)
+
+    def _client_with_counts(client: dict) -> dict:
+        """Enrich a client dict with agent_count and mcp_server_count."""
+        cid = client["id"]
+        agent_count = 0
+        if platform_registry:
+            try:
+                agents = platform_registry.query(ownership="client", owner_id=cid)
+                agent_count = len(agents)
+            except Exception:
+                pass
+        return {
+            **client,
+            "agent_count": agent_count,
+            "mcp_server_count": client_mcp_store.count_for_client(cid),
+        }
 
     @app.post("/api/clients", tags=["clients"], status_code=201)
     async def create_client(req: ClientCreateRequest, _auth=Depends(check_auth)):
         """Create a new client for scoped agent deployments."""
-        if req.id in _clients:
-            raise HTTPException(409, f"Client '{req.id}' already exists")
-        client = {
-            "id": req.id,
-            "name": req.name,
-            "status": "active",
-            "config": req.config,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "agent_count": 0,
-            "mcp_server_count": 0,
-        }
-        _clients[req.id] = client
-        return client
+        try:
+            client = client_store.create(req.id, req.name, req.config)
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+        _audit("client.create", resource_type="client", resource_id=req.id,
+               details={"name": req.name})
+        return _client_with_counts(client)
 
     @app.get("/api/clients", tags=["clients"])
     async def list_clients():
         """List all clients."""
-        result = []
-        for cid, client in _clients.items():
-            # Count agents for this client
-            agent_count = 0
-            if platform_registry:
-                agents = platform_registry.query(ownership="client", owner_id=cid)
-                agent_count = len(agents)
-            client["agent_count"] = agent_count
-            client["mcp_server_count"] = len(_client_mcp_configs.get(cid, []))
-            result.append(client)
-        return result
+        return [_client_with_counts(c) for c in client_store.list_all()]
 
     @app.get("/api/clients/{client_id}", tags=["clients"])
     async def get_client(client_id: str):
         """Get client details."""
-        client = _clients.get(client_id)
+        client = client_store.get(client_id)
         if not client:
             raise HTTPException(404, f"Client '{client_id}' not found")
-        agent_count = 0
-        if platform_registry:
-            agents = platform_registry.query(ownership="client", owner_id=client_id)
-            agent_count = len(agents)
-        client["agent_count"] = agent_count
-        client["mcp_server_count"] = len(_client_mcp_configs.get(client_id, []))
-        client["mcp_servers"] = _client_mcp_configs.get(client_id, [])
-        return client
+        result = _client_with_counts(client)
+        result["mcp_servers"] = client_mcp_store.list_for_client(client_id, redact_secrets=True)
+        return result
 
     @app.delete("/api/clients/{client_id}", tags=["clients"])
     async def archive_client(client_id: str, _auth=Depends(check_auth)):
         """Archive a client."""
-        client = _clients.get(client_id)
-        if not client:
+        if not client_store.exists(client_id):
             raise HTTPException(404, f"Client '{client_id}' not found")
-        client["status"] = "archived"
+        client_store.archive(client_id)
+        _audit("client.archive", resource_type="client", resource_id=client_id)
         return {"ok": True, "status": "archived"}
 
     @app.post("/api/clients/{client_id}/mcp-servers", tags=["clients"], status_code=201)
     async def add_client_mcp(client_id: str, req: ClientMCPConfigRequest, _auth=Depends(check_auth)):
         """Add an MCP server config for a client."""
-        if client_id not in _clients:
+        if not client_store.exists(client_id):
             raise HTTPException(404, f"Client '{client_id}' not found")
-        configs = _client_mcp_configs.setdefault(client_id, [])
-        # Check for duplicates
-        for cfg in configs:
-            if cfg["server_name"] == req.server_name:
-                raise HTTPException(409, f"Server '{req.server_name}' already configured for client '{client_id}'")
-        config = {
-            "server_name": req.server_name,
-            "package": req.package,
-            "env_vars": req.env_vars,
-            "args": req.args,
-            "enabled": True,
-        }
-        configs.append(config)
+        try:
+            config = client_mcp_store.add(
+                client_id, req.server_name, req.package, req.env_vars, req.args,
+            )
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+        _refresh_client_mcp_cache(client_id)
+        _audit("client_mcp.add", resource_type="client_mcp",
+               resource_id=f"{client_id}:{req.server_name}",
+               details={"package": req.package})
         return config
 
     @app.get("/api/clients/{client_id}/mcp-servers", tags=["clients"])
     async def list_client_mcps(client_id: str):
-        """List MCP server configs for a client."""
-        if client_id not in _clients:
+        """List MCP server configs for a client (secrets redacted)."""
+        if not client_store.exists(client_id):
             raise HTTPException(404, f"Client '{client_id}' not found")
-        configs = _client_mcp_configs.get(client_id, [])
-        # Redact env_vars (secrets)
-        return [
-            {**cfg, "env_vars": {k: "***" for k in cfg.get("env_vars", {})}}
-            for cfg in configs
-        ]
+        return client_mcp_store.list_for_client(client_id, redact_secrets=True)
 
     @app.put("/api/clients/{client_id}/mcp-servers/{server_name}", tags=["clients"])
     async def update_client_mcp(client_id: str, server_name: str, req: ClientMCPConfigRequest, _auth=Depends(check_auth)):
         """Update an MCP server config for a client."""
-        configs = _client_mcp_configs.get(client_id, [])
-        for i, cfg in enumerate(configs):
-            if cfg["server_name"] == server_name:
-                configs[i] = {
-                    "server_name": req.server_name,
-                    "package": req.package,
-                    "env_vars": req.env_vars,
-                    "args": req.args,
-                    "enabled": True,
-                }
-                return configs[i]
-        raise HTTPException(404, f"Server '{server_name}' not found for client '{client_id}'")
+        updated = client_mcp_store.update(
+            client_id, server_name, req.package, req.env_vars, req.args,
+        )
+        if not updated:
+            raise HTTPException(404, f"Server '{server_name}' not found for client '{client_id}'")
+        _refresh_client_mcp_cache(client_id)
+        _audit("client_mcp.update", resource_type="client_mcp",
+               resource_id=f"{client_id}:{server_name}",
+               details={"package": req.package})
+        return updated
 
     @app.delete("/api/clients/{client_id}/mcp-servers/{server_name}", tags=["clients"])
     async def delete_client_mcp(client_id: str, server_name: str, _auth=Depends(check_auth)):
         """Remove an MCP server config from a client."""
-        configs = _client_mcp_configs.get(client_id, [])
-        for i, cfg in enumerate(configs):
-            if cfg["server_name"] == server_name:
-                configs.pop(i)
-                return {"ok": True}
-        raise HTTPException(404, f"Server '{server_name}' not found for client '{client_id}'")
+        if not client_mcp_store.delete(client_id, server_name):
+            raise HTTPException(404, f"Server '{server_name}' not found for client '{client_id}'")
+        _refresh_client_mcp_cache(client_id)
+        _audit("client_mcp.delete", resource_type="client_mcp",
+               resource_id=f"{client_id}:{server_name}")
+        return {"ok": True}
 
     @app.get("/api/clients/{client_id}/agents", tags=["clients"])
     async def list_client_agents(client_id: str):
         """List all agents scoped to a client."""
-        if client_id not in _clients:
+        if not client_store.exists(client_id):
             raise HTTPException(404, f"Client '{client_id}' not found")
         if not platform_registry:
             return []
         agents = platform_registry.query(ownership="client", owner_id=client_id)
         return [a.to_dict() if hasattr(a, "to_dict") else {"agent_id": str(a)} for a in agents]
+
+    # ===================================================================
+    # Auth (dev mode)
+    # ===================================================================
+
+    @app.post("/api/auth/token", tags=["auth"])
+    async def create_dev_token(req: DevTokenRequest):
+        """Dev-mode login endpoint.
+
+        When FORGEOS_ALLOW_DEV_LOGIN=1 (default in local dev), accepts a
+        password (default "forgeos", override via FORGEOS_DEV_PASSWORD) and
+        returns a simple session token. For production SaaS, replace with a
+        real JWT/Firebase/OAuth flow.
+        """
+        import os as _os
+        allow_dev = _os.environ.get("FORGEOS_ALLOW_DEV_LOGIN", "1").lower() in ("1", "true", "yes")
+        expected = _os.environ.get("FORGEOS_DEV_PASSWORD", "forgeos")
+
+        if not allow_dev:
+            raise HTTPException(403, "Dev login disabled. Set FORGEOS_ALLOW_DEV_LOGIN=1 to enable.")
+        if req.password != expected:
+            raise HTTPException(401, "Invalid password")
+
+        token = f"dev-{uuid.uuid4().hex}"
+        _audit("auth.login", actor="dev", resource_type="session", resource_id=token[:12])
+        return {
+            "token": token,
+            "user": {
+                "user_id": "dev-user",
+                "email": "dev@forgeos.local",
+                "tenant_id": tenant_id,
+                "role": "admin",
+                "name": "Dev User",
+            },
+        }
+
+    @app.get("/api/me", tags=["auth"])
+    async def get_me(request: Request):
+        """Return the current user based on the Authorization or X-API-Key header.
+
+        In dev mode, any "dev-*" bearer token is accepted and returns a static
+        dev user. In production, replace with real JWT verification.
+        """
+        auth_header = request.headers.get("Authorization", "")
+        api_key = request.headers.get("X-API-Key", "")
+
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            if token.startswith("dev-"):
+                return {
+                    "user_id": "dev-user",
+                    "email": "dev@forgeos.local",
+                    "tenant_id": tenant_id,
+                    "role": "admin",
+                    "name": "Dev User",
+                }
+        if api_key:
+            # Accept any non-empty API key in dev mode
+            return {
+                "user_id": "api-user",
+                "email": "api@forgeos.local",
+                "tenant_id": tenant_id,
+                "role": "operator",
+                "name": "API User",
+            }
+        raise HTTPException(401, "Not authenticated")
+
+    # ===================================================================
+    # Provider status (read-only)
+    # ===================================================================
+
+    @app.get("/api/admin/providers", tags=["admin"])
+    async def admin_providers():
+        """Return configuration status for each LLM provider.
+
+        Does NOT return secret values. Used by the Settings page to show
+        whether Anthropic/OpenAI/Google are wired up in this deployment.
+        """
+        import os as _os
+        status: dict[str, dict] = {}
+
+        # Anthropic
+        anthropic_key = _os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        has_anthropic = False
+        if llm_router is not None:
+            has_anthropic = "anthropic" in getattr(llm_router, "_clients", {})
+        status["anthropic"] = {
+            "configured": bool(anthropic_key) or has_anthropic,
+            "client_initialized": has_anthropic,
+            "env_var": "ANTHROPIC_API_KEY",
+        }
+
+        # OpenAI
+        openai_key = _os.environ.get("OPENAI_API_KEY", "").strip()
+        has_openai = False
+        if llm_router is not None:
+            has_openai = "openai" in getattr(llm_router, "_clients", {})
+        status["openai"] = {
+            "configured": bool(openai_key) or has_openai,
+            "client_initialized": has_openai,
+            "env_var": "OPENAI_API_KEY",
+        }
+
+        # Google ADK / Gemini
+        google_key = _os.environ.get("GOOGLE_API_KEY", "").strip() or _os.environ.get("GEMINI_API_KEY", "").strip()
+        try:
+            import google.adk as _adk  # noqa: F401
+            adk_installed = True
+        except ImportError:
+            adk_installed = False
+        status["google"] = {
+            "configured": bool(google_key),
+            "client_initialized": adk_installed,
+            "env_var": "GOOGLE_API_KEY",
+            "sdk_installed": adk_installed,
+        }
+
+        # Feature flags
+        feature_flags = {
+            "real_http": _os.environ.get("FORGEOS_ENABLE_REAL_HTTP", "").lower() in ("1", "true", "yes"),
+            "real_github": _os.environ.get("FORGEOS_ENABLE_REAL_GITHUB", "").lower() in ("1", "true", "yes"),
+            "real_messaging": _os.environ.get("FORGEOS_ENABLE_REAL_MESSAGING", "").lower() in ("1", "true", "yes"),
+            "real_crm": _os.environ.get("FORGEOS_ENABLE_REAL_CRM", "").lower() in ("1", "true", "yes"),
+        }
+
+        return {
+            "providers": status,
+            "feature_flags": feature_flags,
+            "available_providers": (
+                llm_router.available_providers() if llm_router else ["simulated"]
+            ),
+        }
+
+    # ===================================================================
+    # Prometheus metrics
+    # ===================================================================
+
+    @app.get("/metrics", include_in_schema=False)
+    async def prometheus_metrics():
+        """Prometheus scrape endpoint.
+
+        Refreshes snapshot gauges (agent counts, scheduler lag, pending
+        approvals) before emitting. Counters are incremented at call sites.
+        Returns plain text in Prometheus exposition format.
+        """
+        try:
+            from src.platform.metrics import refresh_platform_gauges, render_prometheus
+            refresh_platform_gauges(
+                platform_registry=platform_registry,
+                platform_executor=platform_executor,
+                company_system=company_system,
+                workflow_engine=workflow_engine,
+            )
+            body, content_type = render_prometheus()
+            return Response(content=body, media_type=content_type)
+        except Exception as e:
+            logger.warning("metrics endpoint failed: %s", e)
+            return Response(content=b"# metrics unavailable\n", media_type="text/plain")
+
+    # ===================================================================
+    # Billing / usage
+    # ===================================================================
+
+    @app.get("/api/billing/usage", tags=["billing"])
+    async def billing_usage():
+        """Return today's and month-to-date usage for the current tenant."""
+        try:
+            from src.billing.plans import UsageEnforcer, get_plan_limits
+            enforcer = UsageEnforcer(db_client) if db_client else UsageEnforcer()
+            daily = enforcer.get_usage_summary(tenant_id)
+            monthly = enforcer.get_monthly_summary(tenant_id)
+            # Determine plan from tenant record (falls back to 'starter')
+            plan_name = "starter"
+            if db_client and getattr(db_client, "is_connected", False):
+                try:
+                    with db_client.admin() as conn:
+                        row = conn.execute_one(
+                            "SELECT plan FROM tenants WHERE id = %s", (tenant_id,),
+                        )
+                        if row and row.get("plan"):
+                            plan_name = row["plan"]
+                except Exception:
+                    pass
+            limits = get_plan_limits(plan_name)
+            return {
+                "tenant_id": tenant_id,
+                "plan": plan_name,
+                "daily": daily,
+                "monthly": monthly,
+                "limits": {
+                    "daily_tokens": limits.daily_tokens,
+                    "daily_workflows": limits.daily_workflows,
+                    "max_agents": limits.max_agents,
+                    "max_mcp_servers": limits.max_mcp_servers,
+                },
+            }
+        except Exception as e:
+            logger.warning("Billing usage query failed: %s", e)
+            return {
+                "tenant_id": tenant_id,
+                "plan": "starter",
+                "daily": {"tokens": 0, "cost_usd": 0},
+                "monthly": {"tokens": 0, "cost_usd": 0},
+                "limits": {},
+            }
+
+    # ===================================================================
+    # Audit log
+    # ===================================================================
+
+    @app.get("/api/audit", tags=["audit"])
+    async def list_audit_entries(
+        limit: int = Query(100, ge=1, le=1000),
+        resource_type: str | None = None,
+        resource_id: str | None = None,
+        action: str | None = None,
+        since: str | None = None,
+    ):
+        """Query the audit log."""
+        return audit.query(
+            limit=limit,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            action=action,
+            since=since,
+        )
 
     return app
 

@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ForgeOS Documentation</title>
+<style>
+:root{--bg:#0F172A;--surface:#1E293B;--surface2:#253349;--border:#334155;--text:#F8FAFC;--muted:#94A3B8;--accent:#60A5FA;--green:#34D399;--red:#F87171;--orange:#FB923C;--purple:#A78BFA;--cyan:#06B6D4;--code-bg:#121820;--radius:10px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.7;font-size:15px}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(15,23,42,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;height:52px;gap:4px}
+nav .logo{font-weight:700;font-size:16px;color:var(--text);margin-right:24px;white-space:nowrap}
+nav a{color:var(--muted);padding:6px 14px;border-radius:6px;font-size:13.5px;font-weight:500;transition:all .2s}
+nav a:hover,nav a.active{color:var(--text);background:var(--surface);text-decoration:none}
+.wrap{max-width:1120px;margin:0 auto;padding:76px 24px 60px}
+h1{font-size:38px;font-weight:700;letter-spacing:-.5px;margin-bottom:6px}
+h2{font-size:24px;font-weight:600;margin-top:48px;margin-bottom:16px;padding-top:24px;border-top:1px solid var(--border)}
+h3{font-size:18px;font-weight:600;margin-top:28px;margin-bottom:10px}
+.sub{color:var(--muted);font-size:17px;margin-bottom:32px}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600}
+.badge-blue{background:rgba(96,165,250,.15);color:var(--accent)}
+.badge-green{background:rgba(52,211,153,.15);color:var(--green)}
+.badge-purple{background:rgba(167,139,250,.15);color:var(--purple)}
+.badge-orange{background:rgba(251,146,60,.15);color:var(--orange)}
+
+/* Stats */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:32px 0}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;text-align:center}
+.stat .num{font-size:32px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.stat .label{color:var(--muted);font-size:13px;margin-top:4px}
+
+/* Concept box */
+.concept{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:32px 0}
+.concept-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px}
+.concept-card h3{margin-top:0;font-size:17px}
+.concept-card.framework{border-top:3px solid var(--accent)}
+.concept-card.agents{border-top:3px solid var(--green)}
+.concept-card ul{list-style:none;padding:0;margin:10px 0 0}
+.concept-card li{padding:4px 0;color:var(--muted);font-size:14px}
+.concept-card li::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:8px;vertical-align:middle}
+.concept-card.framework li::before{background:var(--accent)}
+.concept-card.agents li::before{background:var(--green)}
+
+/* Callout */
+.callout{background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.25);border-radius:var(--radius);padding:16px 20px;margin:20px 0;font-size:14px;color:#93C5FD}
+.callout strong{color:var(--accent)}
+
+/* Architecture diagram */
+.arch{margin:32px 0}
+.arch-layer{border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;margin-bottom:-1px;position:relative}
+.arch-layer .tag{position:absolute;top:-10px;left:16px;background:var(--bg);padding:0 8px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px}
+.arch-layer.top{border-color:var(--cyan)}
+.arch-layer.top .tag{color:var(--cyan)}
+.arch-layer.mid{border-color:var(--accent)}
+.arch-layer.mid .tag{color:var(--accent)}
+.arch-layer.bot-l{border-color:var(--purple)}
+.arch-layer.bot-l .tag{color:var(--purple)}
+.arch-layer.bot-r{border-color:var(--green)}
+.arch-layer.bot-r .tag{color:var(--green)}
+.arch-grid{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.arch-box{background:var(--surface2);border-radius:6px;padding:6px 12px;font-size:13px;font-weight:500;white-space:nowrap}
+.arch-bottom{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+
+/* Nav cards */
+.nav-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:32px 0}
+.nav-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;transition:border-color .2s,transform .15s;cursor:pointer;display:block}
+.nav-card:hover{border-color:var(--accent);transform:translateY(-2px);text-decoration:none}
+.nav-card .icon{font-size:28px;margin-bottom:8px}
+.nav-card h3{margin:0 0 6px;font-size:16px;color:var(--text)}
+.nav-card p{color:var(--muted);font-size:13px;margin:0}
+.nav-card .go{color:var(--accent);font-size:13px;margin-top:10px;display:inline-block;font-weight:500}
+
+/* Code */
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;overflow-x:auto;font-size:13.5px;line-height:1.6;margin:16px 0}
+code{font-family:'JetBrains Mono','Fira Code',monospace}
+:not(pre)>code{background:var(--surface);padding:2px 7px;border-radius:4px;font-size:13px}
+
+/* Table */
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{background:var(--surface);text-align:left;padding:10px 14px;font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+td{padding:10px 14px;border-top:1px solid var(--border)}
+tr:hover td{background:rgba(30,41,59,.5)}
+
+/* Tech stack */
+.tech-grid{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
+.tech{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:6px 14px;font-size:13px;font-weight:500;color:var(--muted)}
+
+/* Responsive */
+@media(max-width:768px){
+.stats{grid-template-columns:repeat(2,1fr)}
+.concept{grid-template-columns:1fr}
+.nav-cards{grid-template-columns:1fr}
+.arch-bottom{grid-template-columns:1fr}
+h1{font-size:28px}
+}
+</style>
+</head>
+<body>
+
+<nav>
+<span class="logo">ForgeOS Docs</span>
+<a href="forgeos-docs.html" class="active">Overview</a>
+<a href="forgeos-docs-architecture.html">Architecture</a>
+<a href="forgeos-docs-agents.html">Agents</a>
+<a href="forgeos-docs-stacks.html">Stacks</a>
+<a href="forgeos-docs-api.html">API Reference</a>
+<a href="forgeos-docs-operations.html">Operations</a>
+</nav>
+
+<div class="wrap">
+
+<h1>ForgeOS Documentation</h1>
+<p class="sub">Multi-Stack AI Agent Platform <span class="badge badge-blue">v3.0</span> <span class="badge badge-green">April 2026</span></p>
+
+<!-- Stats -->
+<div class="stats">
+<div class="stat"><div class="num">112</div><div class="label">Python Files</div></div>
+<div class="stat"><div class="num">730</div><div class="label">Tests Passing</div></div>
+<div class="stat"><div class="num">74</div><div class="label">Deployed Agents</div></div>
+<div class="stat"><div class="num">61</div><div class="label">API Endpoints</div></div>
+</div>
+
+<!-- Framework vs Agents -->
+<h2 id="concept">The Core Concept: Framework vs Agents</h2>
+
+<div class="concept">
+<div class="concept-card framework">
+<h3>The ForgeOS Framework</h3>
+<p style="color:var(--muted);font-size:14px">The platform. The operating system. Boots once, runs forever.</p>
+<ul>
+<li>Agent Registry &mdash; stores and queries all agents</li>
+<li>Platform Executor &mdash; deploys, invokes, recovers agents</li>
+<li>LLM Router &mdash; routes to Anthropic/OpenAI with retry + failover</li>
+<li>Agentic Loop &mdash; LLM &harr; tool execution cycle</li>
+<li>Scheduler &mdash; cron-based agent scheduling</li>
+<li>Event Bus &mdash; pub/sub for cross-agent messaging</li>
+<li>Tool Executor &mdash; MCP + custom tool routing</li>
+<li>Dashboard &mdash; Next.js admin console</li>
+<li>FastAPI &mdash; 61 REST endpoints</li>
+<li>Audit + Metrics + Alerts</li>
+</ul>
+</div>
+<div class="concept-card agents">
+<h3>The Agents</h3>
+<p style="color:var(--muted);font-size:14px">The workloads. The programs. Deployed, invoked, managed by the framework.</p>
+<ul>
+<li>Defined by <code>AgentDefinition</code></li>
+<li>Name, stack, execution type, tools, system prompt</li>
+<li>5 execution lifecycles (always-on, scheduled, event, reflex, autonomous)</li>
+<li>3 ownership types (personal, shared, client)</li>
+<li>4 stack adapters (ForgeOS, CrewAI, ADK, OpenClaw)</li>
+<li>Deploy via API, dashboard, or AI wizard</li>
+<li>Invoke via REST API or streaming chat</li>
+<li>74 agents across sales, marketing, finance, ops, HR, legal</li>
+<li>Each has a system prompt, tool whitelist, and LLM config</li>
+<li>7 status states (idle, running, paused, stopped, completed, failed, quarantined)</li>
+</ul>
+</div>
+</div>
+
+<div class="callout">
+<strong>Think of it like Kubernetes:</strong> ForgeOS is the cluster &mdash; it provides scheduling, networking (event bus), storage (session store), and monitoring (audit log). Agents are the pods &mdash; you define what they do, and the framework runs them. The framework does not perform business tasks; agents do.
+</div>
+
+<!-- Architecture -->
+<h2 id="arch">Architecture</h2>
+
+<div class="arch">
+<div class="arch-layer top">
+<span class="tag">Presentation</span>
+<div class="arch-grid">
+<div class="arch-box">Next.js Dashboard</div>
+<div class="arch-box">FastAPI (61 endpoints)</div>
+<div class="arch-box">SSE Streaming</div>
+<div class="arch-box">WebSocket</div>
+</div>
+</div>
+<div class="arch-layer mid">
+<span class="tag">Platform Layer</span>
+<div class="arch-grid">
+<div class="arch-box">Registry</div>
+<div class="arch-box">Executor</div>
+<div class="arch-box">Scheduler</div>
+<div class="arch-box">Event Bus</div>
+<div class="arch-box">LLM Router</div>
+<div class="arch-box">Agentic Loop</div>
+<div class="arch-box">Audit Log</div>
+<div class="arch-box">Metrics</div>
+<div class="arch-box">Alerts</div>
+</div>
+</div>
+<div class="arch-bottom">
+<div class="arch-layer bot-l">
+<span class="tag">Stack Adapters</span>
+<div class="arch-grid">
+<div class="arch-box">ForgeOS</div>
+<div class="arch-box">CrewAI</div>
+<div class="arch-box">Google ADK</div>
+<div class="arch-box">OpenClaw</div>
+</div>
+</div>
+<div class="arch-layer bot-r">
+<span class="tag">Core + Companies</span>
+<div class="arch-grid">
+<div class="arch-box">Database</div>
+<div class="arch-box">MCP Tools</div>
+<div class="arch-box">Hooks</div>
+<div class="arch-box">Sessions</div>
+<div class="arch-box">5 Companies</div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Stack Adapters -->
+<h2 id="stacks">Stack Adapters</h2>
+<table>
+<tr><th>Stack</th><th>Runtime</th><th>SDK</th><th>Best For</th></tr>
+<tr><td><strong>ForgeOS</strong> <span class="badge badge-blue">Native</span></td><td>Platform agentic loop</td><td>None (built-in)</td><td>Default. Most flexible, full tool access</td></tr>
+<tr><td><strong>CrewAI</strong> <span class="badge badge-purple">Crews</span></td><td>Crew.kickoff() in thread pool</td><td><code>crewai</code></td><td>Multi-role collaboration patterns</td></tr>
+<tr><td><strong>Google ADK</strong> <span class="badge badge-orange">ADK</span></td><td>Runner.run_async() event stream</td><td><code>google-adk</code></td><td>Google ecosystem, Gemini models</td></tr>
+<tr><td><strong>OpenClaw</strong> <span class="badge badge-green">Gateway</span></td><td>HTTP gateway subprocess</td><td>Node.js + openclaw2</td><td>Markdown-driven, SOUL pattern</td></tr>
+</table>
+<p style="color:var(--muted);font-size:14px;margin-top:8px">All adapters fall back to the ForgeOS native agentic loop when their SDK is not installed.</p>
+
+<!-- Execution Types -->
+<h2 id="execution">Execution Types</h2>
+<table>
+<tr><th>Type</th><th>Behavior</th><th>Example</th></tr>
+<tr><td><code>always_on</code></td><td>Runs continuously in a loop</td><td>System health monitor (every 60s)</td></tr>
+<tr><td><code>scheduled</code></td><td>Triggered by cron expression</td><td>Daily report generator (<code>0 9 * * *</code>)</td></tr>
+<tr><td><code>event_driven</code></td><td>Triggered by event bus messages</td><td>Alert responder on <code>cost.exceeded</code></td></tr>
+<tr><td><code>reflex</code></td><td>On-demand, responds to API calls</td><td>Chat agent, Q&amp;A assistant</td></tr>
+<tr><td><code>autonomous</code></td><td>Goal-directed, iterates until done</td><td>Research agent working toward objective</td></tr>
+</table>
+
+<!-- Quick Start -->
+<h2 id="quickstart">Quick Start</h2>
+<pre><code><span style="color:var(--muted)"># 1. Install</span>
+pip install -e ".[dev]"
+
+<span style="color:var(--muted)"># 2. Configure</span>
+echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env
+
+<span style="color:var(--muted)"># 3. Boot</span>
+PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
+
+<span style="color:var(--muted)"># 4. Dashboard (separate terminal)</span>
+cd dashboard && npm install && npm run dev
+
+<span style="color:var(--muted)"># 5. Deploy first agent</span>
+curl -s -X POST http://localhost:5000/api/platform/agents \
+  -H "Content-Type: application/json" \
+  -d '{"name":"hello-agent","stack":"forgeos","execution_type":"reflex",
+       "description":"Test agent","chat_model":"claude-sonnet-4-5-20250514"}'</code></pre>
+
+<!-- Navigation Cards -->
+<h2 id="explore">Explore the Documentation</h2>
+<div class="nav-cards">
+<a href="forgeos-docs-architecture.html" class="nav-card">
+<div class="icon">&#9881;</div>
+<h3>Architecture</h3>
+<p>Three-layer design, platform components, boot sequence, data flow, agent definition schema.</p>
+<span class="go">Explore Architecture &rarr;</span>
+</a>
+<a href="forgeos-docs-agents.html" class="nav-card">
+<div class="icon">&#9889;</div>
+<h3>Agents</h3>
+<p>5 execution types, 3 ownership types, tools &amp; MCP, deployment, lifecycle management.</p>
+<span class="go">Explore Agents &rarr;</span>
+</a>
+<a href="forgeos-docs-stacks.html" class="nav-card">
+<div class="icon">&#128736;</div>
+<h3>Stack Adapters</h3>
+<p>ForgeOS, CrewAI, ADK, OpenClaw &mdash; how each works, tool bridging, when to use which.</p>
+<span class="go">Explore Stacks &rarr;</span>
+</a>
+<a href="forgeos-docs-api.html" class="nav-card">
+<div class="icon">&#128268;</div>
+<h3>API Reference</h3>
+<p>All 61 FastAPI endpoints across 18 sections with request/response examples.</p>
+<span class="go">Explore API &rarr;</span>
+</a>
+<a href="forgeos-docs-operations.html" class="nav-card">
+<div class="icon">&#128640;</div>
+<h3>Operations</h3>
+<p>Configuration, deployment (Docker/K8s/GCP), monitoring, database, project history.</p>
+<span class="go">Explore Operations &rarr;</span>
+</a>
+<a href="forgeos-docs.html#concept" class="nav-card">
+<div class="icon">&#128218;</div>
+<h3>Framework vs Agents</h3>
+<p>The core distinction. ForgeOS is the OS. Agents are the programs. Kubernetes analogy.</p>
+<span class="go">Read Above &uarr;</span>
+</a>
+</div>
+
+<!-- Graceful Degradation -->
+<h2 id="degradation">Graceful Degradation</h2>
+<table>
+<tr><th>Component</th><th>Available</th><th>Unavailable</th></tr>
+<tr><td>Anthropic API key</td><td>Real LLM calls</td><td>Simulated responses</td></tr>
+<tr><td>PostgreSQL</td><td>Persistent storage + RLS</td><td>In-memory (lost on restart)</td></tr>
+<tr><td>Redis</td><td>Distributed rate limiting</td><td>In-memory rate limiting</td></tr>
+<tr><td>MCP servers</td><td>Real tool execution</td><td>"Not connected" errors</td></tr>
+<tr><td>CrewAI/ADK SDK</td><td>Native framework execution</td><td>Falls back to ForgeOS loop</td></tr>
+</table>
+
+<!-- Tech Stack -->
+<h2 id="tech">Tech Stack</h2>
+<div class="tech-grid">
+<span class="tech">Python 3.11+</span>
+<span class="tech">FastAPI</span>
+<span class="tech">asyncio</span>
+<span class="tech">Next.js 15</span>
+<span class="tech">React 19</span>
+<span class="tech">Tailwind CSS</span>
+<span class="tech">TypeScript</span>
+<span class="tech">PostgreSQL 16</span>
+<span class="tech">pgvector</span>
+<span class="tech">Anthropic Claude</span>
+<span class="tech">OpenAI GPT</span>
+<span class="tech">MCP Protocol</span>
+<span class="tech">Docker</span>
+<span class="tech">Kubernetes</span>
+<span class="tech">Terraform (GCP)</span>
+<span class="tech">Prometheus</span>
+<span class="tech">Grafana</span>
+<span class="tech">GitHub Actions</span>
+</div>
+
+<!-- Project Structure -->
+<h2 id="structure">Project Structure</h2>
+<pre><code>.
++-- src/                 <span style="color:var(--muted)"># Platform + core framework (112 files, 30K lines)</span>
+|   +-- bootstrap.py     <span style="color:var(--muted)"># Boot sequence</span>
+|   +-- platform/        <span style="color:var(--muted)"># Registry, executor, scheduler, event bus, LLM router</span>
+|   +-- core/            <span style="color:var(--muted)"># Database, hooks, session store, migrations</span>
+|   +-- mcp/             <span style="color:var(--muted)"># MCP server manager, tool executor, providers</span>
+|   +-- companies/       <span style="color:var(--muted)"># 5 company packages</span>
+|   +-- dashboard/       <span style="color:var(--muted)"># FastAPI app (61 endpoints)</span>
+|   +-- intelligence/    <span style="color:var(--muted)"># Ontology, connectors, intelligence agents</span>
+|   +-- billing/         <span style="color:var(--muted)"># Stripe billing, usage enforcement</span>
+|   +-- api/             <span style="color:var(--muted)"># Auth, tenant management</span>
+|   +-- workflows/       <span style="color:var(--muted)"># DAG workflow engine</span>
++-- stacks/              <span style="color:var(--muted)"># Stack adapter layer</span>
+|   +-- base.py          <span style="color:var(--muted)"># AgentStackAdapter ABC, enums</span>
+|   +-- forgeos/         <span style="color:var(--muted)"># Native adapter</span>
+|   +-- crewai/          <span style="color:var(--muted)"># CrewAI adapter</span>
+|   +-- adk/             <span style="color:var(--muted)"># Google ADK adapter</span>
+|   +-- openclaw/        <span style="color:var(--muted)"># OpenClaw adapter</span>
++-- dashboard/           <span style="color:var(--muted)"># Next.js 15 + React 19 frontend</span>
++-- agents/              <span style="color:var(--muted)"># Deployed agent configs (74 agents)</span>
++-- tests/               <span style="color:var(--muted)"># 730 tests across 42 files</span>
++-- infrastructure/      <span style="color:var(--muted)"># Docker, Terraform, database migrations</span>
++-- deploy/              <span style="color:var(--muted)"># Kubernetes manifests</span>
++-- observability/       <span style="color:var(--muted)"># Prometheus + Grafana</span>
++-- docs/                <span style="color:var(--muted)"># Markdown documentation (15 files)</span></code></pre>
+
+<div style="text-align:center;margin-top:48px;padding-top:24px;border-top:1px solid var(--border);color:var(--muted);font-size:13px">
+ForgeOS v3.0 &mdash; Multi-Stack AI Agent Platform &mdash; Built with Claude Code &mdash; April 2026
+</div>
+
+</div>
+</body>
+</html>

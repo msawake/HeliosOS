@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ForgeOS Docs — Stack Adapters</title>
+<style>
+:root{--bg:#0F172A;--surface:#1E293B;--surface2:#253349;--border:#334155;--text:#F8FAFC;--muted:#94A3B8;--accent:#60A5FA;--green:#34D399;--red:#F87171;--orange:#FB923C;--purple:#A78BFA;--cyan:#06B6D4;--code-bg:#121820;--radius:10px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.7;font-size:15px}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(15,23,42,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;height:52px;gap:4px}
+nav .logo{font-weight:700;font-size:16px;color:var(--text);margin-right:24px;white-space:nowrap}
+nav a{color:var(--muted);padding:6px 14px;border-radius:6px;font-size:13.5px;font-weight:500;transition:all .2s}
+nav a:hover,nav a.active{color:var(--text);background:var(--surface);text-decoration:none}
+.wrap{max-width:1120px;margin:0 auto;padding:76px 24px 60px}
+h1{font-size:38px;font-weight:700;letter-spacing:-.5px;margin-bottom:6px}
+h2{font-size:24px;font-weight:600;margin-top:48px;margin-bottom:16px;padding-top:24px;border-top:1px solid var(--border)}
+h3{font-size:18px;font-weight:600;margin-top:28px;margin-bottom:10px}
+.sub{color:var(--muted);font-size:17px;margin-bottom:32px}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600}
+.badge-blue{background:rgba(96,165,250,.15);color:var(--accent)}
+.badge-green{background:rgba(52,211,153,.15);color:var(--green)}
+.badge-purple{background:rgba(167,139,250,.15);color:var(--purple)}
+.badge-orange{background:rgba(251,146,60,.15);color:var(--orange)}
+
+/* Stats */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:32px 0}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;text-align:center}
+.stat .num{font-size:32px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.stat .label{color:var(--muted);font-size:13px;margin-top:4px}
+
+/* Concept box */
+.concept{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:32px 0}
+.concept-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px}
+.concept-card h3{margin-top:0;font-size:17px}
+.concept-card.framework{border-top:3px solid var(--accent)}
+.concept-card.agents{border-top:3px solid var(--green)}
+.concept-card ul{list-style:none;padding:0;margin:10px 0 0}
+.concept-card li{padding:4px 0;color:var(--muted);font-size:14px}
+.concept-card li::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:8px;vertical-align:middle}
+.concept-card.framework li::before{background:var(--accent)}
+.concept-card.agents li::before{background:var(--green)}
+
+/* Callout */
+.callout{background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.25);border-radius:var(--radius);padding:16px 20px;margin:20px 0;font-size:14px;color:#93C5FD}
+.callout strong{color:var(--accent)}
+.callout.green{background:rgba(52,211,153,.08);border-color:rgba(52,211,153,.25);color:var(--green)}
+.callout.green strong{color:var(--green)}
+.callout.purple{background:rgba(167,139,250,.08);border-color:rgba(167,139,250,.25);color:var(--purple)}
+.callout.purple strong{color:var(--purple)}
+.callout.orange{background:rgba(251,146,60,.08);border-color:rgba(251,146,60,.25);color:var(--orange)}
+.callout.orange strong{color:var(--orange)}
+
+/* Architecture diagram */
+.arch{margin:32px 0}
+.arch-layer{border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;margin-bottom:-1px;position:relative}
+.arch-layer .tag{position:absolute;top:-10px;left:16px;background:var(--bg);padding:0 8px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px}
+.arch-layer.top{border-color:var(--cyan)}
+.arch-layer.top .tag{color:var(--cyan)}
+.arch-layer.mid{border-color:var(--accent)}
+.arch-layer.mid .tag{color:var(--accent)}
+.arch-layer.bot-l{border-color:var(--purple)}
+.arch-layer.bot-l .tag{color:var(--purple)}
+.arch-layer.bot-r{border-color:var(--green)}
+.arch-layer.bot-r .tag{color:var(--green)}
+.arch-grid{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.arch-box{background:var(--surface2);border-radius:6px;padding:6px 12px;font-size:13px;font-weight:500;white-space:nowrap}
+.arch-bottom{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+
+/* Nav cards */
+.nav-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:32px 0}
+.nav-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;transition:border-color .2s,transform .15s;cursor:pointer;display:block}
+.nav-card:hover{border-color:var(--accent);transform:translateY(-2px);text-decoration:none}
+.nav-card .icon{font-size:28px;margin-bottom:8px}
+.nav-card h3{margin:0 0 6px;font-size:16px;color:var(--text)}
+.nav-card p{color:var(--muted);font-size:13px;margin:0}
+.nav-card .go{color:var(--accent);font-size:13px;margin-top:10px;display:inline-block;font-weight:500}
+
+/* Code */
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;overflow-x:auto;font-size:13.5px;line-height:1.6;margin:16px 0}
+code{font-family:'JetBrains Mono','Fira Code',monospace}
+:not(pre)>code{background:var(--surface);padding:2px 7px;border-radius:4px;font-size:13px}
+
+/* Table */
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{background:var(--surface);text-align:left;padding:10px 14px;font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+td{padding:10px 14px;border-top:1px solid var(--border)}
+tr:hover td{background:rgba(30,41,59,.5)}
+
+/* Tech stack */
+.tech-grid{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
+.tech{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:6px 14px;font-size:13px;font-weight:500;color:var(--muted)}
+
+/* Stack card */
+.stack-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin:24px 0}
+.stack-card.blue{border-top:3px solid var(--accent)}
+.stack-card.purple{border-top:3px solid var(--purple)}
+.stack-card.orange{border-top:3px solid var(--orange)}
+.stack-card.green{border-top:3px solid var(--green)}
+.stack-card h3{margin-top:0}
+
+/* Flow diagram */
+.flow{display:flex;align-items:center;gap:0;flex-wrap:wrap;margin:16px 0;padding:14px 18px;background:var(--code-bg);border:1px solid var(--border);border-radius:var(--radius);overflow-x:auto}
+.flow .step{padding:5px 12px;border-radius:6px;font-size:12.5px;font-weight:600;white-space:nowrap}
+.flow .step.blue{background:rgba(96,165,250,.15);color:var(--accent)}
+.flow .step.purple{background:rgba(167,139,250,.15);color:var(--purple)}
+.flow .step.orange{background:rgba(251,146,60,.15);color:var(--orange)}
+.flow .step.green{background:rgba(52,211,153,.15);color:var(--green)}
+.flow .step.neutral{background:var(--surface2);color:var(--muted)}
+.flow .arrow{color:var(--muted);font-size:13px;margin:0 6px;flex-shrink:0}
+.flow .loop-label{color:var(--muted);font-size:11px;margin-left:8px;font-style:italic}
+
+/* Pros / Cons */
+.pros-cons{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+.pros-cons div{padding:14px 18px;border-radius:var(--radius);font-size:13.5px}
+.pros-cons .pros{background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.2)}
+.pros-cons .cons{background:rgba(248,113,113,.06);border:1px solid rgba(248,113,113,.2)}
+.pros-cons h4{font-size:13px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.pros-cons .pros h4{color:var(--green)}
+.pros-cons .cons h4{color:var(--red)}
+.pros-cons ul{list-style:none;padding:0;margin:0}
+.pros-cons li{padding:3px 0;color:var(--muted);font-size:13px}
+.pros-cons .pros li::before{content:"+ ";color:var(--green);font-weight:700}
+.pros-cons .cons li::before{content:"- ";color:var(--red);font-weight:700}
+
+/* Numbered steps */
+.steps{counter-reset:step;margin:20px 0;padding:0;list-style:none}
+.steps li{counter-increment:step;padding:12px 16px 12px 52px;position:relative;border-left:2px solid var(--border);margin-left:16px;color:var(--muted);font-size:14px}
+.steps li::before{content:counter(step);position:absolute;left:-16px;top:10px;width:30px;height:30px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);color:var(--accent);font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center}
+.steps li strong{color:var(--text)}
+.steps li code{font-size:12.5px}
+
+/* Responsive */
+@media(max-width:768px){
+.stats{grid-template-columns:repeat(2,1fr)}
+.concept{grid-template-columns:1fr}
+.nav-cards{grid-template-columns:1fr}
+.arch-bottom{grid-template-columns:1fr}
+.pros-cons{grid-template-columns:1fr}
+.flow{flex-wrap:wrap}
+h1{font-size:28px}
+}
+</style>
+</head>
+<body>
+
+<nav>
+<span class="logo">ForgeOS Docs</span>
+<a href="forgeos-docs.html">Overview</a>
+<a href="forgeos-docs-architecture.html">Architecture</a>
+<a href="forgeos-docs-agents.html">Agents</a>
+<a href="forgeos-docs-stacks.html" class="active">Stacks</a>
+<a href="forgeos-docs-api.html">API Reference</a>
+<a href="forgeos-docs-operations.html">Operations</a>
+</nav>
+
+<div class="wrap">
+
+<h1>Stack Adapters</h1>
+<p class="sub">4 agent runtimes, 1 uniform interface <span class="badge badge-blue">v3.0</span></p>
+
+<div class="stats">
+<div class="stat"><div class="num">4</div><div class="label">Stack Adapters</div></div>
+<div class="stat"><div class="num">1</div><div class="label">Common Interface</div></div>
+<div class="stat"><div class="num">7</div><div class="label">Abstract Methods</div></div>
+<div class="stat"><div class="num">100%</div><div class="label">Fallback Coverage</div></div>
+</div>
+
+<!-- Section 1: Overview -->
+<h2 id="overview">The Common Interface</h2>
+
+<p style="color:var(--muted);font-size:14px;margin-bottom:16px">
+Every stack adapter implements <code>AgentStackAdapter</code> from <code>stacks/base.py</code>. The platform executor, scheduler, and event bus call these methods uniformly &mdash; they never reach into adapter internals. When a stack's SDK is unavailable, each adapter gracefully falls back to the ForgeOS native agentic loop.
+</p>
+
+<pre><code><span style="color:var(--accent)">class</span> <span style="color:var(--text)">AgentStackAdapter</span>(<span style="color:var(--muted)">ABC</span>):
+    <span style="color:var(--muted)">"""Interface that every agent stack must implement."""</span>
+
+    stack_name: <span style="color:var(--cyan)">str</span>  <span style="color:var(--muted)"># "forgeos", "crewai", "adk", "openclaw"</span>
+
+    <span style="color:var(--accent)">async def</span> <span style="color:var(--green)">create_agent</span>(self, agent_def: AgentDefinition) -> <span style="color:var(--cyan)">str</span>:
+        <span style="color:var(--muted)">"""Provision an agent from the definition. Returns agent_id."""</span>
+
+    <span style="color:var(--accent)">async def</span> <span style="color:var(--green)">invoke</span>(self, agent_id: <span style="color:var(--cyan)">str</span>, prompt: <span style="color:var(--cyan)">str</span>,
+                     context: <span style="color:var(--cyan)">dict</span> | None = None,
+                     history: <span style="color:var(--cyan)">list</span>[dict] | None = None) -> AgentResult:
+        <span style="color:var(--muted)">"""Run a single invocation of the agent."""</span>
+
+    <span style="color:var(--accent)">async def</span> <span style="color:var(--green)">start_loop</span>(self, agent_id: <span style="color:var(--cyan)">str</span>) -> None:
+        <span style="color:var(--muted)">"""Start a persistent loop (always-on / autonomous agents)."""</span>
+
+    <span style="color:var(--accent)">async def</span> <span style="color:var(--green)">stop</span>(self, agent_id: <span style="color:var(--cyan)">str</span>) -> None:
+        <span style="color:var(--muted)">"""Stop a running agent."""</span>
+
+    <span style="color:var(--accent)">def</span> <span style="color:var(--green)">get_status</span>(self, agent_id: <span style="color:var(--cyan)">str</span>) -> AgentStatus:
+        <span style="color:var(--muted)">"""Return the current status of an agent."""</span>
+
+    <span style="color:var(--accent)">def</span> <span style="color:var(--green)">scaffold_files</span>(self, agent_def: AgentDefinition) -> <span style="color:var(--cyan)">dict</span>[str, str]:
+        <span style="color:var(--muted)">"""Return {relative_path: file_contents} for scaffold templates."""</span>
+
+    <span style="color:var(--accent)">async def</span> <span style="color:var(--green)">recover</span>(self) -> <span style="color:var(--cyan)">int</span>:
+        <span style="color:var(--muted)">"""Optional: stack-specific recovery after boot. Returns count."""</span></code></pre>
+
+<div class="callout">
+<strong>Uniform dispatch:</strong> The platform executor calls <code>adapter.invoke(agent_id, prompt)</code> regardless of whether the agent runs on ForgeOS, CrewAI, ADK, or OpenClaw. The adapter handles SDK initialization, tool bridging, and fallback internally.
+</div>
+
+<!-- Section 2: Comparison Matrix -->
+<h2 id="comparison">Comparison Matrix</h2>
+
+<div style="overflow-x:auto">
+<table>
+<tr>
+<th>Dimension</th>
+<th><span class="badge badge-blue">ForgeOS</span></th>
+<th><span class="badge badge-purple">CrewAI</span></th>
+<th><span class="badge badge-orange">ADK</span></th>
+<th><span class="badge badge-green">OpenClaw</span></th>
+</tr>
+<tr>
+<td><strong>File</strong></td>
+<td><code>stacks/forgeos/adapter.py</code></td>
+<td><code>stacks/crewai/adapter.py</code></td>
+<td><code>stacks/adk/adapter.py</code></td>
+<td><code>stacks/openclaw/adapter.py</code></td>
+</tr>
+<tr>
+<td><strong>Runtime</strong></td>
+<td>Platform agentic loop</td>
+<td>Crew.kickoff() in thread pool</td>
+<td>Runner.run_async() event stream</td>
+<td>HTTP gateway subprocess</td>
+</tr>
+<tr>
+<td><strong>SDK Required</strong></td>
+<td>None (built-in)</td>
+<td><code>pip install crewai</code></td>
+<td><code>pip install google-adk</code></td>
+<td>Node.js + openclaw2 directory</td>
+</tr>
+<tr>
+<td><strong>LLM Routing</strong></td>
+<td>Via LLMRouter (Anthropic/OpenAI)</td>
+<td>Via LiteLLM (inside CrewAI)</td>
+<td>AnthropicLlm / LiteLlm / Gemini string</td>
+<td>Via gateway (OpenAI-compatible API)</td>
+</tr>
+<tr>
+<td><strong>Tool Bridging</strong></td>
+<td>Direct <code>tool_executor.execute()</code></td>
+<td><code>BaseTool</code> subclass per tool</td>
+<td><code>FunctionTool</code> wrapper per tool</td>
+<td>Tools listed in AGENTS.md</td>
+</tr>
+<tr>
+<td><strong>Multi-turn</strong></td>
+<td>Full history via <code>run_agentic_loop(history=...)</code></td>
+<td>History injected into task description</td>
+<td>History via ADK session service</td>
+<td>History via platform fallback</td>
+</tr>
+<tr>
+<td><strong>Fallback</strong></td>
+<td>&mdash; (this IS the fallback)</td>
+<td>Platform agentic loop</td>
+<td>Platform agentic loop</td>
+<td>Platform agentic loop</td>
+</tr>
+<tr>
+<td><strong>Best For</strong></td>
+<td>Default choice, full flexibility</td>
+<td>Role-based collaboration</td>
+<td>Google ecosystem, Gemini</td>
+<td>Markdown-driven, file-first agents</td>
+</tr>
+</table>
+</div>
+
+<p style="color:var(--muted);font-size:14px;margin-top:8px">All non-native adapters fall back to the ForgeOS agentic loop when their SDK is not installed or agent creation fails.</p>
+
+<!-- Section 3: ForgeOS Native -->
+<h2 id="forgeos">ForgeOS Native</h2>
+
+<div class="stack-card blue">
+<h3><span class="badge badge-blue">Native</span> &nbsp; ForgeOS Adapter</h3>
+<p style="color:var(--muted);font-size:14px;margin-bottom:16px">The default and simplest adapter. Uses the platform's own agentic loop directly with zero external dependencies.</p>
+
+<div class="flow">
+<span class="step blue">invoke()</span>
+<span class="arrow">&rarr;</span>
+<span class="step blue">build_tool_definitions()</span>
+<span class="arrow">&rarr;</span>
+<span class="step blue">run_agentic_loop()</span>
+<span class="arrow">&rarr;</span>
+<span class="step neutral">LLM</span>
+<span class="arrow">&harr;</span>
+<span class="step neutral">tool_executor</span>
+<span class="arrow">&rarr;</span>
+<span class="step blue">AgentResult</span>
+<span class="loop-label">LLM &harr; tools loop until done</span>
+</div>
+
+<h3>How It Works</h3>
+<ul style="color:var(--muted);font-size:14px;list-style:none;padding:0">
+<li style="padding:4px 0"><strong style="color:var(--accent)">Create:</strong> Stores the <code>AgentDefinition</code> in an internal dict. No SDK initialization needed &mdash; the agent is immediately ready.</li>
+<li style="padding:4px 0"><strong style="color:var(--accent)">Invoke:</strong> Builds tool definitions from <code>tool_executor</code>, constructs a system prompt from the agent definition, then runs the LLM &rarr; tool_use &rarr; execute &rarr; tool_result &rarr; LLM loop until complete.</li>
+<li style="padding:4px 0"><strong style="color:var(--accent)">Tools:</strong> Passed directly to the LLM as Anthropic-format tool definitions. Tool calls route through <code>tool_executor.execute()</code> with zero wrapping overhead.</li>
+</ul>
+
+<div class="callout" style="margin-top:16px">
+<strong>When to use:</strong> Default choice for all agents. No SDK dependency. Full access to all platform features. Best for reflex agents, scheduled agents, and any agent that primarily uses MCP tools.
+</div>
+
+<div class="pros-cons">
+<div class="pros">
+<h4>Pros</h4>
+<ul>
+<li>Zero external dependencies</li>
+<li>Full access to all platform features</li>
+<li>Direct tool execution (no bridging overhead)</li>
+<li>Native multi-turn history support</li>
+<li>This IS the fallback &mdash; always available</li>
+</ul>
+</div>
+<div class="cons">
+<h4>Cons</h4>
+<ul>
+<li>Single-agent only (no built-in crew/delegation)</li>
+<li>No native workflow composition primitives</li>
+<li>Tied to the ForgeOS agentic loop pattern</li>
+</ul>
+</div>
+</div>
+</div>
+
+<!-- Section 4: CrewAI -->
+<h2 id="crewai">CrewAI</h2>
+
+<div class="stack-card purple">
+<h3><span class="badge badge-purple">Crews</span> &nbsp; CrewAI Adapter</h3>
+<p style="color:var(--muted);font-size:14px;margin-bottom:16px">Wraps the CrewAI framework for role-based agent collaboration. Agents are defined with roles, goals, and backstories, then orchestrated by a Crew.</p>
+
+<div class="flow">
+<span class="step purple">invoke()</span>
+<span class="arrow">&rarr;</span>
+<span class="step purple">Crew.kickoff()</span>
+<span class="arrow">&rarr;</span>
+<span class="step neutral">thread pool</span>
+<span class="arrow">&rarr;</span>
+<span class="step purple">CrewAgent</span>
+<span class="arrow">&rarr;</span>
+<span class="step neutral">BaseTool._run()</span>
+<span class="arrow">&rarr;</span>
+<span class="step neutral">new event loop</span>
+<span class="arrow">&rarr;</span>
+<span class="step purple">tool_executor</span>
+</div>
+
+<h3>Tool Bridging</h3>
+<p style="color:var(--muted);font-size:14px;margin-bottom:12px">CrewAI tools must be <code>BaseTool</code> subclasses with a <code>_run(**kwargs) -&gt; str</code> method. The adapter creates a wrapper class for each ForgeOS tool. A new event loop is created per tool call because CrewAI runs in a worker thread (via <code>run_in_executor</code>), which has no active asyncio loop.</p>
+
+<pre><code><span style="color:var(--accent)">class</span> <span style="color:var(--text)">ForgeOSTool</span>(<span style="color:var(--purple)">CrewBaseTool</span>):
+    name: <span style="color:var(--cyan)">str</span> = <span style="color:var(--green)">"mcp__google-workspace__send_gmail_message"</span>
+    description: <span style="color:var(--cyan)">str</span> = <span style="color:var(--green)">"Send email via Gmail API"</span>
+
+    <span style="color:var(--accent)">def</span> <span style="color:var(--green)">_run</span>(self, **kwargs) -> <span style="color:var(--cyan)">str</span>:
+        loop = asyncio.new_event_loop()
+        <span style="color:var(--accent)">try</span>:
+            result = loop.run_until_complete(
+                tool_executor.execute(self.name, kwargs, agent_context)
+            )
+        <span style="color:var(--accent)">finally</span>:
+            loop.close()
+        <span style="color:var(--accent)">return</span> <span style="color:var(--cyan)">str</span>(result)</code></pre>
+
+<div class="callout purple" style="margin-top:16px">
+<strong>When to use:</strong> When agents need explicit role definitions and you want CrewAI's built-in delegation patterns. Good for multi-step workflows where the "crew" metaphor fits (e.g., a researcher + writer + editor pipeline).
+</div>
+
+<div class="pros-cons">
+<div class="pros">
+<h4>Pros</h4>
+<ul>
+<li>Role-based collaboration out of the box</li>
+<li>Built-in delegation and task sequencing</li>
+<li>Rich ecosystem of CrewAI community tools</li>
+<li>LiteLLM auto-detects model providers</li>
+</ul>
+</div>
+<div class="cons">
+<h4>Cons</h4>
+<ul>
+<li>Requires <code>pip install crewai</code></li>
+<li>Blocking <code>kickoff()</code> runs in thread pool</li>
+<li>New event loop per tool call (overhead)</li>
+<li>History injected as text (not native turns)</li>
+</ul>
+</div>
+</div>
+</div>
+
+<!-- Section 5: Google ADK -->
+<h2 id="adk">Google ADK</h2>
+
+<div class="stack-card orange">
+<h3><span class="badge badge-orange">ADK</span> &nbsp; Google ADK Adapter</h3>
+<p style="color:var(--muted);font-size:14px;margin-bottom:16px">Wraps Google's Agent Development Kit for enterprise workflows. Supports native Gemini models, with Anthropic and OpenAI via the model factory.</p>
+
+<div class="flow">
+<span class="step orange">invoke()</span>
+<span class="arrow">&rarr;</span>
+<span class="step orange">Runner.run_async()</span>
+<span class="arrow">&rarr;</span>
+<span class="step neutral">event stream</span>
+<span class="arrow">&rarr;</span>
+<span class="step neutral">extract text / tools / tokens</span>
+<span class="arrow">&rarr;</span>
+<span class="step orange">AgentResult</span>
+</div>
+
+<h3>Model Factory</h3>
+<p style="color:var(--muted);font-size:14px;margin-bottom:12px">The <code>_build_adk_model()</code> function routes model strings to the correct ADK model class:</p>
+
+<table>
+<tr><th>Model Prefix</th><th>ADK Model</th><th>Fallback</th></tr>
+<tr><td><code>claude-*</code></td><td><code>AnthropicLlm(model=...)</code></td><td><code>LiteLlm("anthropic/...")</code></td></tr>
+<tr><td><code>gpt-*</code> / <code>o3-*</code> / <code>o1-*</code></td><td><code>LiteLlm("openai/...")</code></td><td>&mdash;</td></tr>
+<tr><td><code>gemini-*</code></td><td>Bare string (ADK native)</td><td>&mdash;</td></tr>
+</table>
+
+<h3>Tool Bridging</h3>
+<p style="color:var(--muted);font-size:14px;margin-bottom:12px">ADK tools are <code>FunctionTool</code> instances wrapping async functions. ADK inspects the function signature to build a schema, so the wrapper accepts <code>**kwargs</code>.</p>
+
+<pre><code><span style="color:var(--accent)">async def</span> <span style="color:var(--green)">_wrapper</span>(**kwargs):
+    <span style="color:var(--muted)">"""Run the ForgeOS tool and return the raw result dict."""</span>
+    result = <span style="color:var(--accent)">await</span> tool_executor.execute(tool_name, kwargs, agent_context)
+    <span style="color:var(--accent)">return</span> result <span style="color:var(--accent)">if</span> isinstance(result, <span style="color:var(--cyan)">dict</span>) <span style="color:var(--accent)">else</span> {<span style="color:var(--green)">"result"</span>: <span style="color:var(--cyan)">str</span>(result)}
+
+tool = <span style="color:var(--orange)">FunctionTool</span>(_wrapper)</code></pre>
+
+<div class="callout orange" style="margin-top:16px">
+<strong>When to use:</strong> When integrating with Google Cloud services, using Gemini models natively, or when you need ADK's built-in <code>SequentialAgent</code> / <code>ParallelAgent</code> composition patterns for multi-agent orchestration.
+</div>
+
+<div class="pros-cons">
+<div class="pros">
+<h4>Pros</h4>
+<ul>
+<li>Native Gemini support (bare string, zero wrapping)</li>
+<li>Async event stream architecture</li>
+<li>Built-in SequentialAgent / ParallelAgent</li>
+<li>InMemorySessionService for state management</li>
+<li>Multi-model via AnthropicLlm + LiteLlm</li>
+</ul>
+</div>
+<div class="cons">
+<h4>Cons</h4>
+<ul>
+<li>Requires <code>pip install google-adk</code></li>
+<li>Heavier SDK footprint</li>
+<li>Agent names must be valid identifiers (no dashes)</li>
+<li>Content objects require google.genai.types</li>
+</ul>
+</div>
+</div>
+</div>
+
+<!-- Section 6: OpenClaw -->
+<h2 id="openclaw">OpenClaw</h2>
+
+<div class="stack-card green">
+<h3><span class="badge badge-green">Gateway</span> &nbsp; OpenClaw Adapter</h3>
+<p style="color:var(--muted);font-size:14px;margin-bottom:16px">Wraps the OpenClaw framework, which uses a file-first approach with markdown-based agent configuration. Agents are defined by SOUL.md personality files and communicate via an HTTP gateway subprocess.</p>
+
+<div class="flow">
+<span class="step green">invoke()</span>
+<span class="arrow">&rarr;</span>
+<span class="step green">_ensure_gateway()</span>
+<span class="arrow">&rarr;</span>
+<span class="step neutral">HTTP POST</span>
+<span class="arrow">&rarr;</span>
+<span class="step neutral">/v1/chat/completions</span>
+<span class="arrow">&rarr;</span>
+<span class="step neutral">parse response</span>
+<span class="arrow">&rarr;</span>
+<span class="step green">AgentResult</span>
+</div>
+
+<h3>Gateway Lifecycle</h3>
+<p style="color:var(--muted);font-size:14px;margin-bottom:12px">The <code>OpenClawGateway</code> class manages a Node.js subprocess serving an OpenAI-compatible REST API:</p>
+
+<div class="flow">
+<span class="step green">start()</span>
+<span class="arrow">&rarr;</span>
+<span class="step neutral">node openclaw.mjs gateway</span>
+<span class="arrow">&rarr;</span>
+<span class="step green">_wait_for_ready()</span>
+<span class="arrow">&rarr;</span>
+<span class="step neutral">poll /health (0.5s, 30s timeout)</span>
+<span class="arrow">&rarr;</span>
+<span class="step green">chat()</span>
+<span class="arrow">&rarr;</span>
+<span class="step green">stop()</span>
+<span class="arrow">&rarr;</span>
+<span class="step neutral">SIGTERM &rarr; SIGKILL (5s)</span>
+</div>
+
+<p style="color:var(--muted);font-size:14px;margin-top:12px">The gateway auto-restarts after crashes (no one-shot gate). Start is protected by <code>asyncio.Lock</code> to prevent double-start.</p>
+
+<h3>Workspace Files</h3>
+<p style="color:var(--muted);font-size:14px;margin-bottom:12px">Each agent gets a workspace directory at <code>~/.openclaw-forgeos/workspaces/{agent-name}/</code>:</p>
+
+<table>
+<tr><th>File</th><th>Purpose</th></tr>
+<tr><td><code>SOUL.md</code></td><td>System prompt and personality definition</td></tr>
+<tr><td><code>AGENTS.md</code></td><td>Agent metadata, department, tools list</td></tr>
+<tr><td><code>HEARTBEAT.md</code></td><td>Schedule, cron triggers, event triggers</td></tr>
+<tr><td><code>memory.md</code></td><td>Persistent memory (updated by agent at runtime)</td></tr>
+</table>
+
+<div class="callout green" style="margin-top:16px">
+<strong>When to use:</strong> When you want markdown-driven agent definitions (SOUL.md pattern), or when integrating with the OpenClaw ecosystem. Good for agents that emphasize memory and personality over tool use.
+</div>
+
+<div class="pros-cons">
+<div class="pros">
+<h4>Pros</h4>
+<ul>
+<li>Markdown-first &mdash; edit agents in any text editor</li>
+<li>Persistent memory built into the workspace</li>
+<li>OpenAI-compatible API (standard protocol)</li>
+<li>Gateway auto-restarts on crash</li>
+<li>Workspace recovery on boot via <code>recover()</code></li>
+</ul>
+</div>
+<div class="cons">
+<h4>Cons</h4>
+<ul>
+<li>Requires Node.js + openclaw2 directory</li>
+<li>HTTP subprocess adds latency vs in-process</li>
+<li>Tools configured in AGENTS.md (not code-level bridging)</li>
+<li>30s startup timeout for gateway health check</li>
+</ul>
+</div>
+</div>
+</div>
+
+<!-- Section 7: Scaffold Files -->
+<h2 id="scaffold">Scaffold Files</h2>
+
+<p style="color:var(--muted);font-size:14px;margin-bottom:16px">Each adapter generates different files when an agent is deployed. The <code>scaffold_files()</code> method returns a <code>dict[str, str]</code> mapping relative file paths to their contents.</p>
+
+<div style="overflow-x:auto">
+<table>
+<tr>
+<th>File</th>
+<th><span class="badge badge-blue">ForgeOS</span></th>
+<th><span class="badge badge-purple">CrewAI</span></th>
+<th><span class="badge badge-orange">ADK</span></th>
+<th><span class="badge badge-green">OpenClaw</span></th>
+</tr>
+<tr>
+<td><code>agent.py</code></td>
+<td>AgentDefinition object</td>
+<td>&mdash;</td>
+<td>ADK Agent + model + tools</td>
+<td>&mdash;</td>
+</tr>
+<tr>
+<td><code>agents.py</code></td>
+<td>&mdash;</td>
+<td>CrewAgent definition</td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+</tr>
+<tr>
+<td><code>tasks.py</code></td>
+<td>&mdash;</td>
+<td>CrewTask templates</td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+</tr>
+<tr>
+<td><code>crew.py</code></td>
+<td>&mdash;</td>
+<td>Crew orchestrator</td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+</tr>
+<tr>
+<td><code>tools.py</code></td>
+<td>Tool definitions list</td>
+<td>Tool definitions list</td>
+<td>FunctionTool wrappers</td>
+<td>&mdash;</td>
+</tr>
+<tr>
+<td><code>workflow.py</code></td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+<td>SequentialAgent wrapper</td>
+<td>&mdash;</td>
+</tr>
+<tr>
+<td><code>__init__.py</code></td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+<td>Package exports</td>
+<td>&mdash;</td>
+</tr>
+<tr>
+<td><code>prompts/system.md</code></td>
+<td>System prompt template</td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+</tr>
+<tr>
+<td><code>prompts/system_prompt.txt</code></td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+<td>System prompt template</td>
+<td>&mdash;</td>
+</tr>
+<tr>
+<td><code>config.yaml</code></td>
+<td>Agent configuration</td>
+<td>Agent configuration</td>
+<td>Agent configuration</td>
+<td>Agent configuration</td>
+</tr>
+<tr>
+<td><code>SOUL.md</code></td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+<td>Agent personality</td>
+</tr>
+<tr>
+<td><code>AGENTS.md</code></td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+<td>Agent metadata</td>
+</tr>
+<tr>
+<td><code>HEARTBEAT.md</code></td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+<td>Schedule + triggers</td>
+</tr>
+<tr>
+<td><code>SKILLS/default.yaml</code></td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+<td>Tool/skill definitions</td>
+</tr>
+<tr>
+<td><code>MEMORY/long-term.md</code></td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+<td>&mdash;</td>
+<td>Persistent memory</td>
+</tr>
+</table>
+</div>
+
+<!-- Section 8: Adding a New Stack -->
+<h2 id="new-stack">Adding a New Stack</h2>
+
+<p style="color:var(--muted);font-size:14px;margin-bottom:16px">To add a fifth stack adapter (e.g., LangGraph), follow these 6 steps. The platform layer, dashboard, and API will automatically discover the new stack.</p>
+
+<ol class="steps">
+<li><strong>Create the adapter module.</strong> Add <code>stacks/langgraph/__init__.py</code> and <code>stacks/langgraph/adapter.py</code> with a class that extends <code>AgentStackAdapter</code>.</li>
+<li><strong>Implement all 6 required methods.</strong> <code>create_agent()</code>, <code>invoke()</code>, <code>start_loop()</code>, <code>stop()</code>, <code>get_status()</code>, and <code>scaffold_files()</code>. Optionally override <code>recover()</code> for boot-time state rebuilding.</li>
+<li><strong>Set the stack name.</strong> Define <code>stack_name = "langgraph"</code> as a class attribute. This string is used for routing, registry lookups, and API responses.</li>
+<li><strong>Register the stack name.</strong> Add <code>"langgraph"</code> to the <code>STACK_NAMES</code> tuple in <code>stacks/base.py</code>. This enables validation in <code>AgentDefinition.__post_init__()</code>.</li>
+<li><strong>Register in bootstrap.</strong> Add the adapter to <code>src/bootstrap.py</code> in the <code>_register_adapters()</code> function so the platform executor discovers it at boot.</li>
+<li><strong>Implement scaffold_files().</strong> Return a <code>dict[str, str]</code> of file templates matching the new framework's project layout. The dashboard and API use this to generate agent code on deployment.</li>
+</ol>
+
+<div class="callout" style="margin-top:24px">
+<strong>Graceful degradation:</strong> Follow the pattern used by CrewAI and ADK &mdash; detect the SDK at import time, store a boolean flag (e.g., <code>LANGGRAPH_AVAILABLE</code>), and fall back to <code>run_agentic_loop()</code> when the SDK is missing. This ensures agents always run, even without the external dependency.
+</div>
+
+<div style="text-align:center;margin-top:48px;padding-top:24px;border-top:1px solid var(--border);color:var(--muted);font-size:13px">
+ForgeOS v3.0 &mdash; Multi-Stack AI Agent Platform &mdash; Built with Claude Code &mdash; April 2026
+</div>
+
+</div>
+</body>
+</html>

@@ -139,6 +139,7 @@ class PlatformBootstrap:
         self.workflow_engine = None
         self._db = None
         self._running = False
+        self._init_stages: set[str] = set()  # tracks completed init stages for safe cleanup
 
     async def boot(self, api_listen_port: int = 5000):
         _load_dotenv_from_repo_root()
@@ -181,11 +182,17 @@ class PlatformBootstrap:
             self._register_adapters()
 
             logger.info("[Phase 4] Building platform executor...")
+            # Initialize session store for multi-turn agent chat
+            from src.core.session_store import InMemorySessionStore
+            self._session_store = InMemorySessionStore()
+            logger.info("  Session store: IN-MEMORY")
+
             self.executor = PlatformExecutor(
                 registry=self.platform_registry,
                 scheduler=self.scheduler,
                 event_bus=self.event_bus,
             )
+            self.executor._session_store = self._session_store
             for name, adapter in self._adapters.items():
                 self.executor.register_adapter(adapter)
 
@@ -194,11 +201,37 @@ class PlatformBootstrap:
             if recovered:
                 await self.executor.recover()
 
-            logger.info("[Phase 5] Seeding knowledge base...")
-            if self.system:
-                self.system.seed_knowledge_base(company_id=self.company_id)
+            # Ensure the default tenant exists (required for FK constraints)
+            if self._db and self._db.is_connected:
+                try:
+                    with self._db.admin() as conn:
+                        existing = conn.execute_one(
+                            "SELECT id FROM tenants WHERE id = %s", (self.tenant_id,)
+                        )
+                        if not existing:
+                            conn.execute(
+                                "INSERT INTO tenants (id, name, plan, status) "
+                                "VALUES (%s, %s, 'starter', 'active')",
+                                (self.tenant_id, self.config.get("company", {}).get("name", "Default")),
+                            )
+                            conn.commit()
+                            logger.info("  Created default tenant: %s", self.tenant_id)
+                        else:
+                            logger.info("  Tenant %s already exists", self.tenant_id)
+                except Exception as e:
+                    logger.error(
+                        "  Failed to ensure tenant '%s': %s. "
+                        "Agent deployments may fail with FK constraint errors.",
+                        self.tenant_id, e,
+                    )
 
-            self._seed_dev_hitl_if_enabled()
+            logger.info("[Phase 5] Seeding knowledge base...")
+            try:
+                if self.system:
+                    self.system.seed_knowledge_base(company_id=self.company_id)
+                self._seed_dev_hitl_if_enabled()
+            except Exception as e:
+                logger.warning("  Seeding failed (non-fatal, continuing boot): %s", e)
 
             logger.info("[Phase 6] Creating workflow engine...")
             self.workflow_engine = WorkflowEngine(invoker=self.legacy_invoker)
@@ -225,23 +258,26 @@ class PlatformBootstrap:
         self._running = True
 
     async def _cleanup(self):
-        """Clean up resources on boot failure."""
-        if hasattr(self, '_mcp_manager') and self._mcp_manager:
-            try:
-                await self._mcp_manager.disconnect_all()
-            except Exception:
-                pass
-        if hasattr(self, '_db') and self._db:
-            try:
-                self._db.close()
-            except Exception:
-                pass
+        """Clean up resources on boot failure. Only cleans stages that completed."""
+        stages = getattr(self, '_init_stages', set())
+        if "mcp_connected" in stages or "mcp_manager" in stages:
+            if hasattr(self, '_mcp_manager') and self._mcp_manager:
+                try:
+                    await self._mcp_manager.disconnect_all()
+                except Exception:
+                    pass
+        if "db_init" in stages:
+            if hasattr(self, '_db') and self._db:
+                try:
+                    self._db.close()
+                except Exception:
+                    pass
         if hasattr(self, 'scheduler') and self.scheduler:
             try:
                 self.scheduler.stop_all()
             except Exception:
                 pass
-        logger.info("Cleanup complete after boot failure")
+        logger.info("Cleanup complete after boot failure (stages: %s)", stages)
 
     async def _init_platform(self):
         api_keys = {}
@@ -291,9 +327,23 @@ class PlatformBootstrap:
 
     async def _init_legacy_subsystems(self):
         """Initialize the existing ForgeOS company subsystems for backward compat."""
+        self._init_stages.add("db_init")
         self._db = create_database_client()
         if self._db.is_connected:
             logger.info("  Database: CONNECTED (PostgreSQL)")
+            if os.environ.get("FORGEOS_SKIP_MIGRATIONS", "").lower() not in ("1", "true", "yes"):
+                try:
+                    from src.core.migrations import run_migrations
+                    result = run_migrations(self._db)
+                    logger.info(
+                        "  Migrations: %d applied, %d skipped (of %d total)",
+                        result.get("applied", 0),
+                        result.get("skipped", 0),
+                        result.get("total", 0),
+                    )
+                except Exception as e:
+                    logger.error("  Migrations failed: %s", e)
+                    raise
         else:
             logger.info("  Database: IN-MEMORY (set DATABASE_URL for persistence)")
 
@@ -306,7 +356,16 @@ class PlatformBootstrap:
         )
 
         self._mcp_manager = MCPServerManager(self.config)
-        mcp_clients = await self._mcp_manager.connect_all()
+        self._init_stages.add("mcp_manager")
+        try:
+            mcp_clients = await asyncio.wait_for(
+                self._mcp_manager.connect_all(),
+                timeout=float(os.environ.get("FORGEOS_MCP_BOOT_TIMEOUT", "30")),
+            )
+            self._init_stages.add("mcp_connected")
+        except asyncio.TimeoutError:
+            logger.warning("MCP connect_all() timed out after 30s — continuing with partial MCP")
+            mcp_clients = self._mcp_manager.get_clients()
 
         from src.mcp.client_mcp_manager import ClientMCPManager
         self._client_mcp_manager = ClientMCPManager(
@@ -318,6 +377,17 @@ class PlatformBootstrap:
             mcp_clients=mcp_clients,
             client_mcp_manager=self._client_mcp_manager,
         )
+
+        # Attach UsageEnforcer so the agentic loop can record tokens/cost.
+        try:
+            from src.billing.plans import UsageEnforcer
+            self._usage_enforcer = UsageEnforcer(self._db)
+            tool_executor._usage_enforcer = self._usage_enforcer
+            logger.info("  Usage enforcer: wired to tool executor")
+        except Exception as e:
+            logger.warning("  Usage enforcer not wired: %s", e)
+            self._usage_enforcer = None
+
         for server_name, schemas in self._mcp_manager.get_all_tool_schemas().items():
             tool_executor.register_mcp_tools(server_name, schemas)
 
@@ -365,7 +435,11 @@ class PlatformBootstrap:
             "forgeos": ForgeOSAdapter(llm_router=self.llm_router, tool_executor=te),
             "crewai": CrewAIAdapter(llm_router=self.llm_router, tool_executor=te),
             "adk": ADKAdapter(llm_router=self.llm_router, tool_executor=te),
-            "openclaw": OpenClawAdapter(llm_router=self.llm_router, tool_executor=te),
+            "openclaw": OpenClawAdapter(
+                llm_router=self.llm_router,
+                tool_executor=te,
+                openclaw_dir=os.environ.get("OPENCLAW_DIR", str(Path(__file__).resolve().parents[1] / "openclaw2")),
+            ),
         }
         for name, adapter in self._adapters.items():
             logger.info("  Stack registered: %s", name)
@@ -432,6 +506,7 @@ class PlatformBootstrap:
             admin_invoker=self.legacy_invoker,
             admin_registry=self.legacy_registry,
             ontology=getattr(self, 'ontology', None),
+            tenant_id=self.tenant_id,
         )
 
     def start_api_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):

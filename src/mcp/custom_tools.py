@@ -553,7 +553,8 @@ class KnowledgeEntry:
 class KnowledgeBase:
     """
     Company knowledge base for policies, procedures, decisions, and FAQs.
-    In production, backed by PostgreSQL + Pinecone for semantic search.
+    In-memory only. When a database is available, `CompanySystem` uses
+    `PostgresKnowledgeBase` from `src.mcp.persistence` instead.
     """
 
     def __init__(self):
@@ -565,7 +566,7 @@ class KnowledgeBase:
         title: str,
         content: str,
         tags: list[str],
-        created_by: str,
+        created_by: str = "system",
         department: str = "",
     ) -> str:
         entry = KnowledgeEntry(
@@ -586,7 +587,7 @@ class KnowledgeBase:
         department: str | None = None,
         limit: int = 10,
     ) -> list[dict]:
-        """Search knowledge base. In production, uses vector similarity."""
+        """Search knowledge base (in-memory keyword matching)."""
         results = []
         query_lower = query.lower()
         for entry in self._entries.values():
@@ -594,7 +595,6 @@ class KnowledgeBase:
                 continue
             if department and entry.department != department:
                 continue
-            # Simple keyword matching (vector search in production)
             score = 0
             if query_lower in entry.title.lower():
                 score += 10

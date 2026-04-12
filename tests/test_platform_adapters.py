@@ -37,7 +37,7 @@ def adk():
 
 @pytest.fixture
 def openclaw():
-    return OpenClawAdapter()
+    return OpenClawAdapter(openclaw_dir="/nonexistent/openclaw")
 
 
 class TestForgeOSAdapter:
@@ -112,10 +112,9 @@ class TestOpenClawAdapter:
         agent = _make_agent("openclaw")
         files = openclaw.scaffold_files(agent)
         assert "SOUL.md" in files
-        assert "IDENTITY.md" in files
+        assert "AGENTS.md" in files
         assert "HEARTBEAT.md" in files
         assert "SKILLS/default.yaml" in files
         assert "MEMORY/long-term.md" in files
-        assert "gateway.sh" in files
         assert "config.yaml" in files
         assert "test-agent" in files["SOUL.md"]

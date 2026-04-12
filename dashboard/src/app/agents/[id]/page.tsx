@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Badge } from '@/components/Badge';
 import { STACK_LABELS, EXEC_LABELS } from '@/lib/utils';
 import type { AgentSummary } from '@/lib/api';
@@ -95,6 +96,14 @@ export default function AgentDetailPage() {
           <p className="text-xs text-gray-400 font-mono mt-1">{agent.agent_id}</p>
         </div>
         <div className="flex gap-2">
+          <Link href={`/agents/${agent.agent_id}/chat`}
+            className="px-4 py-1.5 text-sm bg-[#10A37F] text-white rounded-lg hover:bg-[#0d8c6d] font-medium">
+            Chat
+          </Link>
+          <Link href={`/agents/create/ai?edit=${agent.agent_id}`}
+            className="px-4 py-1.5 text-sm bg-white border border-[#d1d1d1] text-[#0d0d0d] rounded-lg hover:bg-gray-50 font-medium">
+            Edit with AI
+          </Link>
           <button onClick={handleStop} className="px-3 py-1.5 text-sm bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200">
             Stop
           </button>
@@ -142,7 +151,7 @@ export default function AgentDetailPage() {
             <button
               type="submit"
               disabled={invokeLoading || !invokePrompt.trim()}
-              className="px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50"
+              className="px-4 py-2 bg-[#10A37F] text-white rounded-lg text-sm font-medium hover:bg-[#0d8c6d] disabled:opacity-50"
             >
               {invokeLoading ? 'Running…' : 'Run invoke'}
             </button>

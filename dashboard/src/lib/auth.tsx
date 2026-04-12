@@ -15,6 +15,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   token: string | null;
   isAuthenticated: boolean;
+  loaded: boolean;  // true once sessionStorage restore completes
   login: (token: string) => Promise<void>;
   loginWithApiKey: (apiKey: string) => void;
   logout: () => void;
@@ -29,8 +30,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const router = useRouter();
-  const pathname = usePathname();
 
   // Restore from sessionStorage on mount
   useEffect(() => {
@@ -38,14 +39,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const savedKey = sessionStorage.getItem(API_KEY_KEY);
     if (savedToken) {
       setToken(savedToken);
-      fetchMe(savedToken, null).then(setUser).catch(() => {
-        sessionStorage.removeItem(TOKEN_KEY);
-      });
+      fetchMe(savedToken, null)
+        .then(setUser)
+        .catch(() => {
+          sessionStorage.removeItem(TOKEN_KEY);
+        })
+        .finally(() => setLoaded(true));
     } else if (savedKey) {
       setApiKey(savedKey);
-      fetchMe(null, savedKey).then(setUser).catch(() => {
-        sessionStorage.removeItem(API_KEY_KEY);
-      });
+      fetchMe(null, savedKey)
+        .then(setUser)
+        .catch(() => {
+          sessionStorage.removeItem(API_KEY_KEY);
+        })
+        .finally(() => setLoaded(true));
+    } else {
+      setLoaded(true);
     }
   }, []);
 
@@ -78,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAuthenticated = user !== null;
 
   return (
-    <AuthContext.Provider value={{ user, token: token || apiKey, isAuthenticated, login, loginWithApiKey, logout }}>
+    <AuthContext.Provider value={{ user, token: token || apiKey, isAuthenticated, loaded, login, loginWithApiKey, logout }}>
       {children}
     </AuthContext.Provider>
   );
@@ -90,17 +99,35 @@ export function useAuth() {
   return ctx;
 }
 
-/** Wrapper that redirects to /login if not authenticated. */
+/** Wrapper that redirects to /login if not authenticated.
+ *
+ * Honors `NEXT_PUBLIC_REQUIRE_AUTH` — when "0" or unset, auth is optional
+ * and all pages render without gating. Set to "1" to enforce the login flow.
+ */
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loaded } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
+  const required = process.env.NEXT_PUBLIC_REQUIRE_AUTH === '1';
+
   useEffect(() => {
+    if (!required) return;
+    if (!loaded) return;  // Wait for sessionStorage restore
     if (!isAuthenticated && pathname !== '/login') {
       router.push('/login');
     }
-  }, [isAuthenticated, pathname, router]);
+  }, [required, loaded, isAuthenticated, pathname, router]);
+
+  // When auth is not required, always render
+  if (!required) {
+    return <>{children}</>;
+  }
+
+  // Still loading — show nothing briefly instead of flashing redirect
+  if (!loaded) {
+    return <div className="min-h-screen bg-gray-950" />;
+  }
 
   if (!isAuthenticated && pathname !== '/login') {
     return null;

@@ -19,3 +19,18 @@ agents/shared/
 .env
 .env.local
 .env.*.local
+config/google/credentials.json
+
+# Large third-party runtimes
+openclaw2/
+
+# Downloaded reference files
+*.pdf
+Types of AI Agents*/
+forgeos-conversation-transcript.md
+
+# Local tool state
+.bagentpro/
+
+# Docker-generated env
+infrastructure/docker/.env

@@ -255,10 +255,16 @@ class ToolExecutor:
         agent_context: dict | None = None,
     ) -> dict:
         """Execute a tool call and return the result."""
-        # Enforce agent tool whitelist
+        # Enforce agent tool whitelist (supports exact match and wildcard prefixes)
         allowed_tools = (agent_context or {}).get("allowed_tools")
-        if allowed_tools and tool_name not in allowed_tools:
-            return {"success": False, "error": f"Tool '{tool_name}' not in agent's allowed tools"}
+        if allowed_tools:
+            is_allowed = tool_name in allowed_tools or any(
+                tool_name.startswith(prefix.rstrip("*"))
+                for prefix in allowed_tools
+                if prefix.endswith("*")
+            )
+            if not is_allowed:
+                return {"success": False, "error": f"Tool '{tool_name}' not in agent's allowed tools"}
 
         # Custom company tools + platform tools (both in _custom_handlers)
         if tool_name in self._custom_handlers:

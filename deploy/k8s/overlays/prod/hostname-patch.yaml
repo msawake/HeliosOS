@@ -1,0 +1,10 @@
+# Prod: production hostname + real LetsEncrypt cluster-issuer
+- op: replace
+  path: /spec/rules/0/host
+  value: forgeos.example.com
+- op: replace
+  path: /spec/tls/0/hosts/0
+  value: forgeos.example.com
+- op: replace
+  path: /metadata/annotations/cert-manager.io~1cluster-issuer
+  value: letsencrypt-prod

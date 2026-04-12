@@ -157,8 +157,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  updateAgent: (id: string, payload: CreateAgentPayload) =>
+    fetchJSON<Record<string, unknown>>(`/api/platform/agents/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
 
-  wizardChat: (messages: WizardChatMessage[], context?: Record<string, string>) =>
+  wizardChat: (messages: WizardChatMessage[], context?: Record<string, unknown>) =>
     fetchJSON<WizardChatResponse>('/api/platform/wizard/chat', {
       method: 'POST',
       body: JSON.stringify({ messages, context }),
@@ -172,9 +177,28 @@ export const api = {
   approveItem: (id: string) =>
     fetchJSON<any>(`/api/approvals/${id}/approve`, { method: 'POST' }),
   denyItem: (id: string) =>
-    fetchJSON<any>(`/api/approvals/${id}/deny`, { method: 'POST' }),
+    fetchJSON<any>(`/api/approvals/${id}/reject`, { method: 'POST' }),
 
   getWorkflows: () => fetchJSON<any[]>('/api/workflows'),
+
+  getProviderStatus: () =>
+    fetchJSON<{
+      providers: Record<string, { configured: boolean; client_initialized: boolean; env_var: string; sdk_installed?: boolean }>;
+      feature_flags: Record<string, boolean>;
+      available_providers: string[];
+    }>('/api/admin/providers'),
+
+  adminChat: (message: string, session_id: string = 'admin') =>
+    fetchJSON<{ response: string; session_id: string; turns: number }>('/api/admin/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message, session_id }),
+    }),
+
+  intelligenceAsk: (question: string, session_id: string = 'intelligence') =>
+    fetchJSON<{ response: string; session_id: string; turns: number }>('/api/intelligence/ask', {
+      method: 'POST',
+      body: JSON.stringify({ question, session_id }),
+    }),
 
   // Admin
   getSystemHealth: () => fetchJSON<SystemHealth>('/api/admin/health'),

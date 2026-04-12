@@ -1,0 +1,76 @@
+# ----------------------------------------------------------------------------
+# ForgeOS .dockerignore
+#
+# Keeps the build context small and excludes files that would otherwise bloat
+# the final image or leak secrets. Applies to BOTH the API Dockerfile
+# (infrastructure/docker/Dockerfile) and the Web Dockerfile (dashboard/Dockerfile).
+# ----------------------------------------------------------------------------
+
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+.tox
+.venv
+venv
+env
+
+# Tests and docs (not shipped in runtime image)
+tests
+docs
+*.md
+!README.md
+examples
+notebooks
+playground
+
+# Dashboard build artifacts
+dashboard/node_modules
+dashboard/.next
+dashboard/out
+
+# Ephemeral agent workspace (mounted as PVC at runtime)
+agents
+
+# OpenClaw sub-tree (its own Docker image)
+openclaw2
+
+# Secrets and local state
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+.terraform
+.terraform.lock.hcl
+terraform.tfstate*
+
+# Editor / OS
+.vscode
+.idea
+*.swp
+.DS_Store
+Thumbs.db
+
+# Database dumps
+*.sql.gz
+*.dump
+
+# Other large unrelated files
+*.pdf
+*.html
+forgeos-*.html
+leadforge-*.html
+types-agents.html

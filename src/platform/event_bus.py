@@ -77,7 +77,15 @@ class EventBus:
         self._mailboxes: dict[str, list[AgentMessage]] = defaultdict(list)
 
     def subscribe(self, event_name: str, agent_id: str, callback: EventCallback) -> None:
-        self._subscribers[event_name].append((agent_id, callback))
+        # Idempotent: if this agent is already subscribed to this event,
+        # replace its callback (no duplicate subscriptions on recover).
+        existing = self._subscribers[event_name]
+        for i, (aid, _cb) in enumerate(existing):
+            if aid == agent_id:
+                existing[i] = (agent_id, callback)
+                logger.debug("Agent %s re-subscribed to event '%s' (callback replaced)", agent_id, event_name)
+                return
+        existing.append((agent_id, callback))
         if self._subscription_store:
             self._subscription_store.add(event_name, agent_id)
         logger.info("Agent %s subscribed to event '%s'", agent_id, event_name)

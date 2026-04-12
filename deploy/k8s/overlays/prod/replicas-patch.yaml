@@ -1,0 +1,14 @@
+# Prod: 3 replicas per tier (satisfies PDB minAvailable: 2 during rollouts)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgeos-api
+spec:
+  replicas: 3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgeos-web
+spec:
+  replicas: 3
