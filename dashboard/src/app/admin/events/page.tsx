@@ -24,7 +24,7 @@ export default function EventsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-white mb-2">Events</h1>
+      <h1 className="text-2xl font-semibold text-[#0d0d0d] mb-2">Events</h1>
       <p className="text-sm text-gray-400 mb-6">Platform event bus activity. Filter by department or status.</p>
 
       <div className="flex gap-3 mb-6 flex-wrap">
@@ -37,7 +37,7 @@ export default function EventsPage() {
           <option value="processed">Processed</option>
           <option value="failed">Failed</option>
         </select>
-        <button onClick={load} className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-sm rounded-lg font-medium">
+        <button onClick={load} className="px-4 py-2 bg-[#10A37F] hover:bg-[#0d8c6d] text-white text-sm rounded-lg font-medium">
           Filter
         </button>
       </div>
@@ -45,11 +45,11 @@ export default function EventsPage() {
       {loading ? <p className="text-gray-400">Loading events...</p> : events.length > 0 ? (
         <div className="space-y-2">
           {events.map((e, i) => (
-            <div key={e.id || i} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <div key={e.id || i} className="bg-white border border-[#e5e5e5] rounded-xl p-4">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-white font-medium text-sm">{e.name}</span>
-                <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-400">{e.status}</span>
-                {e.priority && <span className="text-xs px-2 py-0.5 rounded bg-red-500/20 text-red-400">{e.priority}</span>}
+                <span className="text-[#0d0d0d] font-medium text-sm">{e.name}</span>
+                <span className="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">{e.status}</span>
+                {e.priority && <span className="text-xs px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200">{e.priority}</span>}
               </div>
               <div className="flex gap-4 text-xs text-gray-500 mt-1">
                 <span>Source: {e.source}</span>

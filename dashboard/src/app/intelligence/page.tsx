@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { api } from '@/lib/api';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -25,15 +26,10 @@ export default function IntelligencePage() {
     setMessages(updated);
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/intelligence/ask', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, session_id: 'intelligence' }),
-      });
-      const data = await res.json();
-      setMessages([...updated, { role: 'assistant', content: data.response || data.error || 'No response' }]);
-    } catch {
-      setMessages([...updated, { role: 'assistant', content: 'Error: could not reach the intelligence backend.' }]);
+      const data = await api.intelligenceAsk(text, 'intelligence');
+      setMessages([...updated, { role: 'assistant', content: data.response || 'No response' }]);
+    } catch (e: any) {
+      setMessages([...updated, { role: 'assistant', content: `Error: ${e.message || 'could not reach the intelligence backend.'}` }]);
     } finally {
       setLoading(false);
     }
@@ -42,7 +38,7 @@ export default function IntelligencePage() {
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
       <div className="mb-4">
-        <h1 className="text-2xl font-bold text-white mb-1">Intelligence</h1>
+        <h1 className="text-2xl font-semibold text-[#0d0d0d] mb-1">Intelligence</h1>
         <p className="text-sm text-gray-400">Query the organizational knowledge graph, ontology, and connected data sources.</p>
       </div>
 
@@ -53,7 +49,7 @@ export default function IntelligencePage() {
             <div className="flex flex-wrap gap-2 justify-center">
               {['What agents are running?', 'Show me sales metrics', 'Which departments have the most agents?'].map((q) => (
                 <button key={q} onClick={() => { setInput(q); }}
-                  className="text-xs px-3 py-1.5 bg-gray-800 text-gray-400 rounded-lg hover:bg-gray-700 transition-colors">
+                  className="text-xs px-3 py-1.5 bg-[#f7f7f8] text-gray-400 rounded-lg hover:bg-gray-100 transition-colors">
                   {q}
                 </button>
               ))}
@@ -64,8 +60,8 @@ export default function IntelligencePage() {
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[70%] rounded-xl px-4 py-3 text-sm whitespace-pre-wrap ${
               m.role === 'user'
-                ? 'bg-indigo-600 text-white'
-                : 'bg-gray-800 text-gray-200 border border-gray-700'
+                ? 'bg-[#10A37F] text-white'
+                : 'bg-[#f7f7f8] text-[#0d0d0d] border border-[#d1d1d1]'
             }`}>
               {m.content}
             </div>
@@ -73,7 +69,7 @@ export default function IntelligencePage() {
         ))}
         {loading && (
           <div className="flex justify-start">
-            <div className="bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-gray-400">
+            <div className="bg-[#f7f7f8] border border-[#d1d1d1] rounded-xl px-4 py-3 text-sm text-gray-400">
               Analyzing...
             </div>
           </div>
@@ -90,7 +86,7 @@ export default function IntelligencePage() {
           className="flex-1 px-4 py-3 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm placeholder-gray-400"
         />
         <button onClick={send} disabled={loading}
-          className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm rounded-lg font-medium">
+          className="px-6 py-3 bg-[#10A37F] hover:bg-[#0d8c6d] disabled:opacity-50 text-white text-sm rounded-lg font-medium">
           Ask
         </button>
       </div>

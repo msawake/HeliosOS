@@ -483,13 +483,39 @@ async def run_wizard_turn(
         # Append reminder to the last user message
         conv_messages[-1]["content"] += format_reminder
 
+    # Edit mode: inject existing agent config as preamble so the wizard
+    # knows it's refining an existing agent, not creating from scratch.
+    if ctx.get("mode") == "edit" and ctx.get("existing_agent"):
+        agent = ctx["existing_agent"]
+        tools_str = ", ".join(agent.get("tools", [])) or "none"
+        edit_preamble = {
+            "role": "user",
+            "content": (
+                f"I want to EDIT an existing deployed agent. Here is its current configuration:\n\n"
+                f"Name: {agent.get('name', '?')}\n"
+                f"Stack: {agent.get('stack', '?')}\n"
+                f"Execution type: {agent.get('execution_type', '?')}"
+                f" (schedule: {agent.get('schedule') or 'none'})\n"
+                f"Tools: {tools_str}\n"
+                f"Description: {agent.get('description', '')}\n"
+                f"Department: {agent.get('department', '')}\n"
+                f"System prompt: {(agent.get('system_prompt') or '')[:500]}\n"
+                f"LLM: {agent.get('llm_config', {}).get('chat_model', '?')} "
+                f"({agent.get('llm_config', {}).get('provider', '?')})\n\n"
+                f"Please modify this agent based on my next message. "
+                f"Keep ALL existing fields unless I specifically ask to change them. "
+                f"Return a complete updated proposal."
+            ),
+        }
+        conv_messages.insert(0, edit_preamble)
+
     api_messages = [
         {"role": "system", "content": WIZARD_SYSTEM_V2},
         *conv_messages,
     ]
 
     # Agent loop — let the wizard use tools
-    max_tool_turns = 8
+    max_tool_turns = 100
     for turn in range(max_tool_turns):
         try:
             response = await llm_router.chat(llm_config, api_messages, tools=WIZARD_TOOLS)
@@ -554,13 +580,16 @@ def _parse_wizard_response(raw_text: str, ctx: dict) -> dict:
 
     parsed = extract_json_object(raw_text)
     if not parsed:
+        # No JSON found — this is a conversational response (e.g., greeting,
+        # clarifying question, or freeform advice). Return as a normal chat
+        # turn with no proposal. NOT an error.
         return {
             "assistant_message": raw_text or "I couldn't generate a valid response. Please try again.",
             "proposal": None,
-            "clarifying_questions": ["What is the main task this agent should perform?"],
+            "clarifying_questions": [],
             "ready_to_deploy": False,
-            "warnings": ["Could not parse JSON from wizard response"],
-            "mode": "llm_unparsed",
+            "warnings": [],
+            "mode": "llm",
         }
 
     assistant_message = str(parsed.get("assistant_message", "")).strip() or "Here is the agent design."

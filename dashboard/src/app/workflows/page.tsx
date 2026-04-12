@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Badge } from '@/components/Badge';
 
 interface Workflow {
@@ -34,7 +35,11 @@ export default function WorkflowsPage() {
       ) : (
         <div className="space-y-3">
           {workflows.map((wf) => (
-            <div key={wf.id} className="card flex items-center gap-4">
+            <Link
+              key={wf.id}
+              href={`/workflows/${wf.id}`}
+              className="card flex items-center gap-4 hover:shadow-md transition-shadow"
+            >
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">{wf.name}</span>
@@ -46,12 +51,12 @@ export default function WorkflowsPage() {
               <div className="w-32">
                 <div className="flex items-center gap-2">
                   <div className="flex-1 bg-gray-200 rounded-full h-2">
-                    <div className="bg-brand-500 h-2 rounded-full" style={{ width: `${wf.progress}%` }} />
+                    <div className="bg-[#10A37F] h-2 rounded-full" style={{ width: `${wf.progress}%` }} />
                   </div>
                   <span className="text-xs text-gray-500">{wf.progress}%</span>
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}

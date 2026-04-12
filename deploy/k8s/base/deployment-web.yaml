@@ -6,7 +6,8 @@ metadata:
     app.kubernetes.io/name: forgeos
     app.kubernetes.io/component: web
 spec:
-  replicas: 1
+  # Bumped to 2 so the PodDisruptionBudget (minAvailable: 1) is satisfiable.
+  replicas: 2
   selector:
     matchLabels:
       app.kubernetes.io/name: forgeos
@@ -17,6 +18,19 @@ spec:
         app.kubernetes.io/name: forgeos
         app.kubernetes.io/component: web
     spec:
+      # Non-root UID matches dashboard/Dockerfile `nextjs` user (1001).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      volumes:
+        # /tmp for any temp files (required because readOnlyRootFilesystem)
+        - name: tmp
+          emptyDir: {}
+        # Next.js writes incremental cache here even in standalone mode
+        - name: next-cache
+          emptyDir: {}
       containers:
         - name: web
           image: forgeos-web:latest
@@ -24,6 +38,16 @@ spec:
           ports:
             - name: http
               containerPort: 3000
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: next-cache
+              mountPath: /app/.next/cache
           env:
             - name: NODE_ENV
               value: production

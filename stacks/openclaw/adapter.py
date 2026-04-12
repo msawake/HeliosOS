@@ -1,20 +1,27 @@
 """
 OpenClaw Stack Adapter.
 
-**STATUS: STUB** -- Scaffolds agents in the OpenClaw file-first pattern
-(SOUL.md, IDENTITY.md, HEARTBEAT.md, SKILLS/, MEMORY/) but invocations
-are currently routed through the platform LLMRouter. Real OpenClaw
-gateway runtime is deferred.
+Manages a real OpenClaw gateway process and communicates via its HTTP REST API
+(OpenAI-compatible /v1/chat/completions) and CLI for agent invocation.
 
-TODO: Wire real OpenClaw gateway (gateway.sh launcher, SOUL.md parsing,
-      HEARTBEAT.md scheduling, MEMORY/ persistence).
+The gateway runs as a subprocess on a dedicated port. Each ForgeOS agent maps
+to an OpenClaw workspace with SOUL.md, AGENTS.md, and tool configurations.
+
+When the gateway is unavailable, falls back to the platform agentic loop.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
+import shutil
+import signal
 import textwrap
+import time
+from pathlib import Path
+from typing import Any
 
 from stacks.base import (
     AgentDefinition,
@@ -22,61 +29,350 @@ from stacks.base import (
     AgentStackAdapter,
     AgentStatus,
     OwnershipType,
+    build_agent_context,
 )
 
 logger = logging.getLogger(__name__)
 
+# Default path to the openclaw2 runtime
+OPENCLAW_DIR = os.environ.get(
+    "OPENCLAW_DIR",
+    str(Path(__file__).resolve().parents[2] / "openclaw2"),
+)
+OPENCLAW_PORT = int(os.environ.get("OPENCLAW_PORT", "18789"))
+OPENCLAW_STATE_DIR = os.environ.get(
+    "OPENCLAW_STATE_DIR",
+    str(Path.home() / ".openclaw-forgeos"),
+)
+
+
+class OpenClawGateway:
+    """Manages the OpenClaw gateway subprocess lifecycle."""
+
+    def __init__(self, openclaw_dir: str = OPENCLAW_DIR, port: int = OPENCLAW_PORT):
+        self.openclaw_dir = Path(openclaw_dir)
+        self.port = port
+        self._process: asyncio.subprocess.Process | None = None
+        self._ready = False
+        self._auth_token: str = ""
+
+    @property
+    def available(self) -> bool:
+        """Check if the openclaw2 runtime exists on disk."""
+        return (self.openclaw_dir / "openclaw.mjs").exists()
+
+    @property
+    def running(self) -> bool:
+        return self._process is not None and self._process.returncode is None
+
+    @property
+    def base_url(self) -> str:
+        return f"http://127.0.0.1:{self.port}"
+
+    async def start(self) -> bool:
+        """Start the OpenClaw gateway as a subprocess."""
+        if self.running:
+            return True
+
+        if not self.available:
+            logger.warning("OpenClaw runtime not found at %s", self.openclaw_dir)
+            return False
+
+        state_dir = Path(OPENCLAW_STATE_DIR)
+        state_dir.mkdir(parents=True, exist_ok=True)
+
+        env = {
+            **os.environ,
+            "OPENCLAW_STATE_DIR": str(state_dir),
+            "NODE_ENV": "production",
+        }
+
+        try:
+            self._process = await asyncio.create_subprocess_exec(
+                "node", str(self.openclaw_dir / "openclaw.mjs"),
+                "gateway",
+                "--port", str(self.port),
+                "--bind", "loopback",
+                "--auth", "none",
+                cwd=str(self.openclaw_dir),
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            logger.info("OpenClaw gateway starting on port %d (pid %d)", self.port, self._process.pid)
+
+            # Wait for gateway to become ready
+            self._ready = await self._wait_for_ready(timeout=30)
+            if self._ready:
+                logger.info("OpenClaw gateway ready on http://127.0.0.1:%d", self.port)
+            else:
+                logger.error("OpenClaw gateway failed to start within 30s")
+                await self.stop()
+            return self._ready
+
+        except Exception as e:
+            logger.error("Failed to start OpenClaw gateway: %s", e)
+            return False
+
+    async def _wait_for_ready(self, timeout: float = 30) -> bool:
+        """Poll the health endpoint until the gateway is ready."""
+        import httpx
+        deadline = time.time() + timeout
+        async with httpx.AsyncClient(timeout=2) as client:
+            while time.time() < deadline:
+                try:
+                    resp = await client.get(f"{self.base_url}/health")
+                    if resp.status_code == 200:
+                        return True
+                except Exception:
+                    pass
+                await asyncio.sleep(0.5)
+        return False
+
+    async def stop(self):
+        """Stop the gateway subprocess."""
+        if self._process and self._process.returncode is None:
+            logger.info("Stopping OpenClaw gateway (pid %d)", self._process.pid)
+            self._process.terminate()
+            try:
+                await asyncio.wait_for(self._process.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                self._process.kill()
+                await self._process.wait()
+            self._process = None
+            self._ready = False
+
+    async def chat(self, messages: list[dict], model: str = "claude-sonnet-4-5") -> dict:
+        """Send a chat completion request to the OpenClaw gateway."""
+        import httpx
+        url = f"{self.base_url}/v1/chat/completions"
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=300) as client:
+                resp = await client.post(url, json=payload)
+                if resp.status_code == 200:
+                    return resp.json()
+                else:
+                    return {"error": f"HTTP {resp.status_code}: {resp.text}"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def invoke_agent(self, message: str, agent_id: str = "main") -> str:
+        """Invoke an agent turn via the CLI (fire-and-forget style)."""
+        if not self.available:
+            return "[OpenClaw not available]"
+
+        proc = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "node", str(self.openclaw_dir / "openclaw.mjs"),
+                "agent",
+                "--message", message,
+                cwd=str(self.openclaw_dir),
+                env={
+                    **os.environ,
+                    "OPENCLAW_STATE_DIR": str(Path(OPENCLAW_STATE_DIR)),
+                },
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
+            output = stdout.decode().strip()
+            if proc.returncode != 0:
+                err = stderr.decode().strip()
+                logger.error("OpenClaw agent error: %s", err)
+                return output or f"[Error: {err[:200]}]"
+            return output
+        except asyncio.TimeoutError:
+            # Kill the subprocess to prevent leaks
+            if proc and proc.returncode is None:
+                proc.kill()
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=2)
+                except asyncio.TimeoutError:
+                    logger.error("Failed to kill timed-out OpenClaw process (pid=%s)", proc.pid)
+            return "[OpenClaw agent timed out after 300s]"
+        except Exception as e:
+            return f"[OpenClaw error: {e}]"
+        finally:
+            # Ensure process is cleaned up
+            if proc and proc.returncode is None:
+                proc.kill()
+
 
 class OpenClawAdapter(AgentStackAdapter):
+    """
+    Real OpenClaw stack adapter.
+
+    Manages a live OpenClaw gateway subprocess and routes agent invocations
+    through its HTTP API. Falls back to the platform agentic loop when the
+    gateway is unavailable.
+    """
+
     stack_name = "openclaw"
 
-    def __init__(self, llm_router=None, tool_executor=None):
+    def __init__(self, llm_router=None, tool_executor=None, openclaw_dir: str = OPENCLAW_DIR):
         self._llm_router = llm_router
         self._tool_executor = tool_executor
         self._agents: dict[str, AgentDefinition] = {}
         self._loops: dict[str, asyncio.Task] = {}
+        self._gateway = OpenClawGateway(openclaw_dir=openclaw_dir)
+        self._gateway_lock = asyncio.Lock()  # prevents double gateway start
+
+    async def _ensure_gateway(self) -> bool:
+        """Start the gateway if not already running. Retries on crash.
+        Serialized via lock to prevent double-start."""
+        if self._gateway.running:
+            return True
+        if not self._gateway.available:
+            return False
+        async with self._gateway_lock:
+            # Re-check after acquiring lock (another task may have started it)
+            if self._gateway.running:
+                return True
+            return await self._gateway.start()
 
     async def create_agent(self, agent_def: AgentDefinition) -> str:
         self._agents[agent_def.agent_id] = agent_def
+        # Write workspace files for the agent
+        self._setup_workspace(agent_def)
         logger.info("OpenClaw agent created: %s (%s)", agent_def.name, agent_def.agent_id)
         return agent_def.agent_id
 
-    async def invoke(self, agent_id: str, prompt: str, context: dict | None = None) -> AgentResult:
+    def _setup_workspace(self, agent_def: AgentDefinition):
+        """Write SOUL.md and workspace files into the OpenClaw state directory."""
+        workspace = Path(OPENCLAW_STATE_DIR) / "workspaces" / agent_def.name
+        workspace.mkdir(parents=True, exist_ok=True)
+
+        soul = agent_def.system_prompt or (
+            f"You are {agent_def.name}.\n\n"
+            f"{agent_def.description or agent_def.goal or 'Assist effectively.'}\n\n"
+            f"## Rules\n"
+            f"- Think step by step using ReAct: Think → Act → Observe → Repeat\n"
+            f"- Never guess — confirm before external actions\n"
+            f"- Log decisions to memory\n"
+            f"- Respect rate limits and budgets\n"
+        )
+        (workspace / "SOUL.md").write_text(soul)
+
+        agents_md = (
+            f"# {agent_def.name}\n\n"
+            f"Department: {agent_def.department or 'general'}\n"
+            f"Owner: {agent_def.owner_id or 'platform'}\n"
+            f"Execution: {agent_def.execution_type.value}\n"
+        )
+        if agent_def.tools:
+            agents_md += "\n## Available Tools\n" + "\n".join(f"- {t}" for t in agent_def.tools) + "\n"
+        (workspace / "AGENTS.md").write_text(agents_md)
+
+        if agent_def.schedule:
+            heartbeat = f"# Heartbeat\n\nSchedule: {agent_def.schedule}\n"
+            if agent_def.event_triggers:
+                heartbeat += "\nEvent triggers:\n" + "\n".join(f"- {t}" for t in agent_def.event_triggers) + "\n"
+            (workspace / "HEARTBEAT.md").write_text(heartbeat)
+
+        (workspace / "memory.md").write_text(f"# Memory for {agent_def.name}\n\n")
+        logger.info("OpenClaw workspace written: %s", workspace)
+
+    async def invoke(self, agent_id: str, prompt: str, context: dict | None = None, history: list[dict] | None = None) -> AgentResult:
         agent_def = self._agents.get(agent_id)
         if not agent_def:
             return AgentResult(agent_id=agent_id, status=AgentStatus.FAILED, error="Agent not found")
 
-        if self._llm_router:
-            from src.platform.agentic_loop import run_agentic_loop, build_tool_definitions
-            tools = build_tool_definitions(self._tool_executor, agent_def.tools or None)
-            system = (
-                f"[SOUL] You are {agent_def.name}.\n{agent_def.description}\n\n"
-                f"Use ReAct loop: Think → Act → Observe → Repeat.\n"
-                f"Pause and ping on any external action. Log decisions to memory."
-            )
-            result = await run_agentic_loop(
-                llm_router=self._llm_router,
-                llm_config=agent_def.llm_config,
-                system_prompt=system,
-                user_prompt=prompt,
-                tool_definitions=tools or None,
-                tool_executor=self._tool_executor,
-                agent_context={
-                    "agent_id": agent_id,
-                    "department": agent_def.department,
-                    "client_id": agent_def.owner_id if agent_def.ownership == OwnershipType.CLIENT else None,
-                    "allowed_tools": agent_def.tools or None,
-                },
-                context=context,
-            )
+        start_time = time.time()
+
+        # Try real OpenClaw gateway first
+        gateway_ok = await self._ensure_gateway()
+        if gateway_ok:
+            result = await self._invoke_via_gateway(agent_def, prompt)
             result.agent_id = agent_id
+            result.elapsed_ms = (time.time() - start_time) * 1000
             return result
+
+        # Fallback to platform agentic loop
+        if self._llm_router:
+            return await self._invoke_via_platform(agent_id, agent_def, prompt, context, start_time, history=history)
 
         return AgentResult(
             agent_id=agent_id,
             status=AgentStatus.COMPLETED,
             output=f"[OpenClaw simulated] Agent '{agent_def.name}' processed: {prompt[:100]}",
+            elapsed_ms=(time.time() - start_time) * 1000,
         )
+
+    async def _invoke_via_gateway(self, agent_def: AgentDefinition, prompt: str) -> AgentResult:
+        """Invoke agent through the OpenClaw gateway HTTP API."""
+        system_msg = agent_def.system_prompt or (
+            f"You are {agent_def.name}. {agent_def.description or ''}\n"
+            f"Use ReAct loop. Log decisions to memory."
+        )
+        messages = [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": prompt},
+        ]
+
+        model = agent_def.llm_config.chat_model
+        response = await self._gateway.chat(messages, model=model)
+
+        if "error" in response:
+            return AgentResult(
+                agent_id="",
+                status=AgentStatus.FAILED,
+                error=f"OpenClaw gateway error: {response['error']}",
+            )
+
+        # Parse OpenAI-compatible response
+        try:
+            choices = response.get("choices", [])
+            if not choices:
+                output = str(response)
+                tokens = 0
+            else:
+                choice = choices[0]
+                output = choice.get("message", {}).get("content", "")
+                tokens = response.get("usage", {}).get("total_tokens", 0)
+        except (IndexError, KeyError, TypeError, AttributeError):
+            output = str(response)
+            tokens = 0
+
+        return AgentResult(
+            agent_id="",
+            status=AgentStatus.COMPLETED,
+            output=output,
+            tokens_used=tokens,
+        )
+
+    async def _invoke_via_platform(
+        self, agent_id: str, agent_def: AgentDefinition,
+        prompt: str, context: dict | None, start_time: float,
+        history: list[dict] | None = None,
+    ) -> AgentResult:
+        """Fallback: invoke through the shared platform agentic loop."""
+        from src.platform.agentic_loop import run_agentic_loop, build_tool_definitions
+        tools = build_tool_definitions(self._tool_executor, agent_def.tools or None)
+        system = (
+            f"[SOUL] You are {agent_def.name}.\n{agent_def.description}\n\n"
+            f"Use ReAct loop: Think → Act → Observe → Repeat.\n"
+            f"Pause and ping on any external action. Log decisions to memory."
+        )
+        result = await run_agentic_loop(
+            llm_router=self._llm_router,
+            llm_config=agent_def.llm_config,
+            system_prompt=system,
+            user_prompt=prompt,
+            tool_definitions=tools or None,
+            tool_executor=self._tool_executor,
+            agent_context=build_agent_context(agent_def, agent_id),
+            context=context,
+            history=history,
+        )
+        result.agent_id = agent_id
+        result.elapsed_ms = (time.time() - start_time) * 1000
+        return result
 
     async def start_loop(self, agent_id: str) -> None:
         agent_def = self._agents.get(agent_id)
@@ -87,7 +383,8 @@ class OpenClawAdapter(AgentStackAdapter):
             interval = agent_def.metadata.get("heartbeat_interval_seconds", 900)
             while True:
                 try:
-                    await self.invoke(agent_id, f"Heartbeat cycle for {agent_def.name}")
+                    await self.invoke(agent_id, f"Heartbeat cycle for {agent_def.name}. "
+                                                f"Check pending items. Read HEARTBEAT.md if present.")
                 except asyncio.CancelledError:
                     break
                 except Exception:
@@ -101,6 +398,32 @@ class OpenClawAdapter(AgentStackAdapter):
         if task:
             task.cancel()
 
+    async def shutdown(self) -> None:
+        """Stop all loops and the gateway."""
+        for agent_id in list(self._loops):
+            await self.stop(agent_id)
+        await self._gateway.stop()
+
+    async def recover(self) -> int:
+        """Rewrite workspace files for all known agents after boot recovery.
+
+        After the registry reloads agents from persistence, executor.recover()
+        calls adapter.create_agent() for each agent (which re-registers them
+        in `self._agents` and rewrites workspace files). This method adds
+        belt-and-braces: it scans `self._agents` and ensures every workspace
+        is present on disk (useful if the state dir was wiped).
+        """
+        recovered = 0
+        for agent_def in list(self._agents.values()):
+            try:
+                self._setup_workspace(agent_def)
+                recovered += 1
+            except Exception:
+                logger.exception("OpenClaw workspace recovery failed for %s", agent_def.name)
+        if recovered:
+            logger.info("OpenClaw: recovered %d workspace(s)", recovered)
+        return recovered
+
     def get_status(self, agent_id: str) -> AgentStatus:
         if agent_id in self._loops and not self._loops[agent_id].done():
             return AgentStatus.RUNNING
@@ -109,6 +432,7 @@ class OpenClawAdapter(AgentStackAdapter):
         return AgentStatus.STOPPED
 
     def scaffold_files(self, agent_def: AgentDefinition) -> dict[str, str]:
+        """Generate OpenClaw workspace files for deployment."""
         schedule_section = ""
         if agent_def.schedule:
             schedule_section = f"\nSchedule: {agent_def.schedule}"
@@ -130,30 +454,31 @@ class OpenClawAdapter(AgentStackAdapter):
 
             """)
 
+        soul = agent_def.system_prompt or textwrap.dedent(f"""\
+            # SOUL
+
+            You are {agent_def.name} — an autonomous OpenClaw agent.
+
+            Goal: {agent_def.goal or agent_def.description or 'Assist the user effectively.'}
+
+            Always think step-by-step. Use ReAct loop.
+            Human-in-the-loop: pause and ping on any external send action.
+
+            ## Rules
+            - Never guess — always confirm with MCP before external actions
+            - Log every decision to MEMORY/
+            - Respect rate limits and budgets
+        """)
+
         return {
-            "SOUL.md": textwrap.dedent(f"""\
-                # SOUL
+            "SOUL.md": soul,
+            "AGENTS.md": textwrap.dedent(f"""\
+                # {agent_def.name}
 
-                You are {agent_def.name} — an autonomous OpenClaw agent.
-
-                Goal: {agent_def.goal or agent_def.description or 'Assist the user effectively.'}
-
-                Always think step-by-step. Use ReAct loop.
-                Human-in-the-loop: pause and ping Slack on any external send action.
-
-                ## Rules
-                - Never guess — always confirm with MCP before external actions
-                - Log every decision to MEMORY/
-                - Respect rate limits and budgets
-            """),
-            "IDENTITY.md": textwrap.dedent(f"""\
-                # IDENTITY
-
-                Agent: {agent_def.name}
-                Owner: {agent_def.owner_id or 'corporate'}
                 Department: {agent_def.department or 'general'}
-                Style: Professional, concise, proactive.
-                Never guess — always confirm with MCP before external actions.
+                Owner: {agent_def.owner_id or 'platform'}
+                Execution: {agent_def.execution_type.value}
+                Stack: openclaw (OpenClaw gateway)
             """),
             "HEARTBEAT.md": textwrap.dedent(f"""\
                 # HEARTBEAT
@@ -174,7 +499,7 @@ class OpenClawAdapter(AgentStackAdapter):
                 # Long-Term Memory for {agent_def.name}
 
                 ## Session History
-                (auto-populated by the gateway runtime)
+                (auto-populated by the OpenClaw gateway runtime)
 
                 ## Learned Preferences
                 (agent updates this as it learns user patterns)
@@ -184,18 +509,10 @@ class OpenClawAdapter(AgentStackAdapter):
                 stack: openclaw
                 execution_type: {agent_def.execution_type.value}
                 ownership: {agent_def.ownership.value}
-                heartbeat_interval_seconds: 900
+                heartbeat_interval_seconds: {agent_def.metadata.get('heartbeat_interval_seconds', 900)}
                 llm:
                   chat_model: "{agent_def.llm_config.chat_model}"
                   provider: "{agent_def.llm_config.provider}"
                 tools: {agent_def.tools!r}
-            """),
-            "gateway.sh": textwrap.dedent(f"""\
-                #!/bin/bash
-                # Launch OpenClaw agent: {agent_def.name}
-                # Requires: node + openclaw gateway installed
-                # node /opt/openclaw/gateway.js --soul SOUL.md --identity IDENTITY.md --heartbeat HEARTBEAT.md
-                echo "OpenClaw agent '{agent_def.name}' — gateway placeholder"
-                echo "Install openclaw runtime and update this script"
             """),
         }

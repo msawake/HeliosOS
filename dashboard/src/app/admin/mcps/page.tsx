@@ -23,11 +23,13 @@ export default function MCPsPage() {
     }).catch(() => {});
   }, []);
 
-  function search() {
-    if (!query.trim()) return;
+  function search(q?: string, cat?: string) {
+    const searchQuery = q ?? query;
+    const searchCat = cat ?? category;
+    if (!searchQuery.trim()) return;
     setLoading(true);
     setExpanded(null);
-    api.searchMCPs(query, category || undefined)
+    api.searchMCPs(searchQuery, searchCat || undefined)
       .then((r) => setPackages(r.packages || []))
       .catch(() => setPackages([]))
       .finally(() => setLoading(false));
@@ -44,7 +46,7 @@ export default function MCPsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-white mb-2">MCP Registry</h1>
+      <h1 className="text-2xl font-semibold text-[#0d0d0d] mb-2">MCP Registry</h1>
       <p className="text-sm text-gray-400 mb-6">{total.toLocaleString()} MCP server packages across {categories.length} categories. Connect external services to your agents.</p>
 
       <div className="flex gap-3 mb-6 flex-wrap">
@@ -56,16 +58,16 @@ export default function MCPsPage() {
           <option value="">All Categories</option>
           {categories.map((c) => <option key={c.category} value={c.category}>{c.category} ({c.count})</option>)}
         </select>
-        <button onClick={search} className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded-lg font-medium">Search</button>
+        <button onClick={() => search()} className="px-4 py-2 bg-[#10A37F] hover:bg-[#0d8c6d] text-white text-sm rounded-lg font-medium">Search</button>
       </div>
 
       {!query && categories.length > 0 && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           {categories.slice(0, 16).map((c) => (
-            <button key={c.category} onClick={() => { setCategory(c.category); setQuery(c.category); setTimeout(search, 0); }}
-              className="bg-gray-900 border border-gray-800 rounded-xl p-3 text-left hover:border-purple-500 transition-colors">
-              <p className="text-white font-medium text-sm">{c.category}</p>
-              <p className="text-gray-500 text-xs">{c.count} packages</p>
+            <button key={c.category} onClick={() => { setCategory(c.category); setQuery(c.category); search(c.category, c.category); }}
+              className="bg-white border border-[#e5e5e5] rounded-xl p-3 text-left hover:border-[#10A37F] transition-colors">
+              <p className="text-[#0d0d0d] font-medium text-sm">{c.category}</p>
+              <p className="text-[#8e8ea0] text-xs">{c.count} packages</p>
             </button>
           ))}
         </div>
@@ -74,18 +76,18 @@ export default function MCPsPage() {
       {loading ? <p className="text-gray-400">Searching...</p> : packages.length > 0 ? (
         <div className="space-y-2">
           {packages.map((p) => (
-            <div key={p.name} className="bg-gray-900 border border-gray-800 rounded-xl">
+            <div key={p.name} className="bg-white border border-[#e5e5e5] rounded-xl">
               <button onClick={() => toggleExpand(p.name)} className="w-full text-left p-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-white font-medium text-sm font-mono">{p.name}</span>
-                  <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-400">{p.category}</span>
+                  <span className="text-[#0d0d0d] font-medium text-sm font-mono">{p.name}</span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-violet-50 text-violet-700">{p.category}</span>
                 </div>
-                <p className="text-gray-400 text-sm">{p.description}</p>
+                <p className="text-[#6e6e80] text-sm">{p.description}</p>
               </button>
               {expanded === p.name && expandedConfig && (
-                <div className="px-4 pb-4 border-t border-gray-800 pt-3">
+                <div className="px-4 pb-4 border-t border-[#e5e5e5] pt-3">
                   <p className="text-xs text-gray-500 mb-2">Connection Config:</p>
-                  <pre className="bg-gray-950 rounded-lg p-4 text-xs text-gray-300 overflow-auto max-h-96">{JSON.stringify(expandedConfig, null, 2)}</pre>
+                  <pre className="bg-[#f7f7f8] rounded-lg p-4 text-xs text-[#6e6e80] overflow-auto max-h-96">{JSON.stringify(expandedConfig, null, 2)}</pre>
                 </div>
               )}
             </div>

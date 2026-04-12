@@ -19,6 +19,41 @@ export default function ClientDetailPage() {
   const [mcpPackage, setMcpPackage] = useState('');
   const [mcpEnvVars, setMcpEnvVars] = useState('');
 
+  // MCP registry browser
+  const [showBrowser, setShowBrowser] = useState(false);
+  const [browserQuery, setBrowserQuery] = useState('');
+  const [browserResults, setBrowserResults] = useState<Array<{ name: string; description: string; category: string }>>([]);
+  const [browsing, setBrowsing] = useState(false);
+
+  async function searchRegistry(query: string) {
+    if (!query.trim()) return;
+    setBrowsing(true);
+    try {
+      const data = await api.searchMCPs(query);
+      setBrowserResults(data.packages || []);
+    } catch {
+      setBrowserResults([]);
+    } finally {
+      setBrowsing(false);
+    }
+  }
+
+  function pickFromRegistry(pkg: { name: string; description: string }) {
+    // Derive a server_name from the package name
+    const shortName = pkg.name
+      .replace(/^@[^/]+\//, '')  // strip scope
+      .replace(/^mcp-server-/, '')
+      .replace(/^server-/, '')
+      .replace(/-mcp$/, '')
+      .replace(/[^a-z0-9]/gi, '_')
+      .toLowerCase();
+    setMcpName(shortName || pkg.name);
+    setMcpPackage(pkg.name);
+    setMcpEnvVars('{}');
+    setShowBrowser(false);
+    setShowAddMCP(true);
+  }
+
   function load() {
     setLoading(true);
     Promise.all([
@@ -76,26 +111,83 @@ export default function ClientDetailPage() {
   return (
     <div>
       <div className="flex items-center gap-3 mb-6">
-        <Link href="/clients" className="text-gray-500 hover:text-white text-sm">&larr; Clients</Link>
+        <Link href="/clients" className="text-gray-500 hover:text-[#0d0d0d] text-sm">&larr; Clients</Link>
         <span className="text-gray-700">/</span>
-        <h1 className="text-2xl font-bold text-white">{client.name}</h1>
+        <h1 className="text-2xl font-semibold text-[#0d0d0d]">{client.name}</h1>
         <span className={`text-xs px-2 py-0.5 rounded ${
-          client.status === 'active' ? 'bg-green-500/20 text-green-400' : 'bg-gray-700 text-gray-400'
+          client.status === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-500 border border-gray-200'
         }`}>{client.status}</span>
       </div>
 
       {/* MCP Servers Section */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold text-white">MCP Servers</h2>
-          <button onClick={() => setShowAddMCP(!showAddMCP)}
-            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs rounded-lg">
-            + Add Server
-          </button>
+          <h2 className="text-lg font-semibold text-[#0d0d0d]">MCP Servers</h2>
+          <div className="flex gap-2">
+            <button onClick={() => setShowBrowser(true)}
+              className="px-3 py-1.5 bg-[#10A37F] hover:bg-[#0d8c6d] text-white text-xs rounded-lg">
+              Browse Registry
+            </button>
+            <button onClick={() => setShowAddMCP(!showAddMCP)}
+              className="px-3 py-1.5 bg-[#10A37F] hover:bg-[#0d8c6d] text-white text-xs rounded-lg">
+              + Add Server
+            </button>
+          </div>
         </div>
 
+        {showBrowser && (
+          <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+               onClick={() => setShowBrowser(false)}>
+            <div className="bg-white border border-[#e5e5e5] rounded-xl p-5 max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col"
+                 onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-[#0d0d0d] font-semibold">MCP Registry — 4,548 packages</h3>
+                <button onClick={() => setShowBrowser(false)}
+                  className="text-gray-400 hover:text-[#0d0d0d]">✕</button>
+              </div>
+              <div className="flex gap-2 mb-4">
+                <input
+                  value={browserQuery}
+                  onChange={(e) => setBrowserQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && searchRegistry(browserQuery)}
+                  placeholder="Search: jira, slack, postgres, stripe..."
+                  autoFocus
+                  className="flex-1 px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm"
+                />
+                <button onClick={() => searchRegistry(browserQuery)}
+                  className="px-4 py-2 bg-[#10A37F] hover:bg-[#0d8c6d] text-white text-sm rounded-lg font-medium">
+                  Search
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto space-y-2">
+                {browsing ? (
+                  <p className="text-gray-500 text-sm text-center py-8">Searching…</p>
+                ) : browserResults.length === 0 ? (
+                  <p className="text-gray-500 text-sm text-center py-8">
+                    {browserQuery ? `No results for "${browserQuery}"` : 'Enter a search term to browse the registry'}
+                  </p>
+                ) : (
+                  browserResults.map((pkg) => (
+                    <button
+                      key={pkg.name}
+                      onClick={() => pickFromRegistry(pkg)}
+                      className="w-full text-left p-3 bg-[#f7f7f8] border border-[#e5e5e5] hover:border-[#10A37F] rounded-lg transition-colors"
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[#0d0d0d] font-medium font-mono text-sm">{pkg.name}</span>
+                        <span className="text-xs px-2 py-0.5 rounded bg-violet-50 text-violet-700">{pkg.category}</span>
+                      </div>
+                      <p className="text-gray-500 text-xs">{pkg.description}</p>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {showAddMCP && (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4 space-y-3">
+          <div className="bg-white border border-[#e5e5e5] rounded-xl p-4 mb-4 space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-gray-400 block mb-1">Server Name</label>
@@ -114,7 +206,7 @@ export default function ClientDetailPage() {
                 placeholder='{"JIRA_URL": "https://acme.atlassian.net", "JIRA_TOKEN": "..."}'
                 className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm h-20 font-mono" />
             </div>
-            <button onClick={addMCP} className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded-lg">
+            <button onClick={addMCP} className="px-4 py-2 bg-[#10A37F] hover:bg-[#0d8c6d] text-white text-sm rounded-lg">
               Add MCP Server
             </button>
           </div>
@@ -123,11 +215,11 @@ export default function ClientDetailPage() {
         {mcpServers.length > 0 ? (
           <div className="space-y-2">
             {mcpServers.map((s) => (
-              <div key={s.server_name} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between">
+              <div key={s.server_name} className="bg-white border border-[#e5e5e5] rounded-xl p-4 flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-white font-medium font-mono">{s.server_name}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded ${s.enabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-700 text-gray-400'}`}>
+                    <span className="text-[#0d0d0d] font-medium font-mono">{s.server_name}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded ${s.enabled ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-500 border border-gray-200'}`}>
                       {s.enabled ? 'enabled' : 'disabled'}
                     </span>
                   </div>
@@ -148,9 +240,9 @@ export default function ClientDetailPage() {
       {/* Agents Section */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold text-white">Agents ({agents.length})</h2>
+          <h2 className="text-lg font-semibold text-[#0d0d0d]">Agents ({agents.length})</h2>
           <Link href={`/agents/create?client_id=${clientId}`}
-            className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-xs rounded-lg">
+            className="px-3 py-1.5 bg-[#10A37F] hover:bg-[#0d8c6d] text-white text-xs rounded-lg">
             + Deploy Agent
           </Link>
         </div>
@@ -159,13 +251,13 @@ export default function ClientDetailPage() {
           <div className="space-y-2">
             {agents.map((a) => (
               <Link key={a.agent_id} href={`/agents/${a.agent_id}`}
-                className="bg-gray-900 border border-gray-800 rounded-xl p-4 block hover:border-sky-500 transition-colors">
+                className="bg-white border border-[#e5e5e5] rounded-xl p-4 block hover:border-[#10A37F] transition-colors">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-white font-medium">{a.name}</span>
-                  <span className="text-xs px-2 py-0.5 rounded bg-sky-500/20 text-sky-400">{a.stack}</span>
-                  <span className="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-400">{a.execution_type}</span>
+                  <span className="text-[#0d0d0d] font-medium">{a.name}</span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-cyan-50 text-cyan-700">{a.stack}</span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500 border border-gray-200">{a.execution_type}</span>
                   <span className={`text-xs px-2 py-0.5 rounded ${
-                    a.status === 'running' ? 'bg-green-500/20 text-green-400' : 'bg-gray-700 text-gray-400'
+                    a.status === 'running' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-500 border border-gray-200'
                   }`}>{a.status}</span>
                 </div>
                 <p className="text-gray-400 text-sm">{a.description}</p>

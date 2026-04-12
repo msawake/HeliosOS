@@ -2,15 +2,27 @@ interface StatCardProps {
   title: string;
   value: string | number;
   subtitle?: string;
-  color?: string;
+  color?: 'brand' | 'green' | 'violet' | 'teal' | 'amber' | 'red' | 'default';
 }
 
-export function StatCard({ title, value, subtitle, color = 'blue' }: StatCardProps) {
+const COLOR_MAP: Record<string, string> = {
+  brand: 'text-[#10A37F]',
+  green: 'text-emerald-600',
+  violet: 'text-violet-600',
+  teal: 'text-teal-600',
+  amber: 'text-amber-600',
+  red: 'text-red-600',
+  default: 'text-[#0d0d0d]',
+};
+
+export function StatCard({ title, value, subtitle, color = 'default' }: StatCardProps) {
   return (
     <div className="card">
-      <p className="text-sm font-medium text-gray-500">{title}</p>
-      <p className={`text-3xl font-bold mt-1 text-${color}-600`}>{value}</p>
-      {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
+      <p className="text-[13px] font-medium text-[#6e6e80]">{title}</p>
+      <p className={`text-3xl font-semibold mt-1 ${COLOR_MAP[color] || COLOR_MAP.default}`}>
+        {value}
+      </p>
+      {subtitle && <p className="text-xs text-[#8e8ea0] mt-1">{subtitle}</p>}
     </div>
   );
 }

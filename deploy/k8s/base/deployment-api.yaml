@@ -6,7 +6,8 @@ metadata:
     app.kubernetes.io/name: forgeos
     app.kubernetes.io/component: api
 spec:
-  replicas: 1
+  # Bumped to 2 so the PodDisruptionBudget (minAvailable: 1) is satisfiable.
+  replicas: 2
   selector:
     matchLabels:
       app.kubernetes.io/name: forgeos
@@ -21,6 +22,21 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
+      volumes:
+        # Agent scaffold output (PlatformExecutor writes here at deploy time)
+        - name: agents
+          persistentVolumeClaim:
+            claimName: forgeos-agents
+        # OpenClaw workspace state (SOUL.md, memory/, etc.)
+        - name: openclaw-state
+          persistentVolumeClaim:
+            claimName: forgeos-openclaw-state
+        # Ephemeral tmp (required because readOnlyRootFilesystem: true)
+        - name: tmp
+          emptyDir: {}
+        # Python / pip runtime cache (optional, keeps startup warm)
+        - name: cache
+          emptyDir: {}
       containers:
         - name: api
           image: forgeos-api:latest
@@ -31,6 +47,17 @@ spec:
           securityContext:
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: agents
+              mountPath: /app/agents
+            - name: openclaw-state
+              mountPath: /home/forgeos/.openclaw-forgeos
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /home/forgeos/.cache
           envFrom:
             - configMapRef:
                 name: forgeos-config

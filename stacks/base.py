@@ -36,6 +36,7 @@ class AgentStatus(Enum):
     STOPPED = "stopped"
     FAILED = "failed"
     COMPLETED = "completed"
+    QUARANTINED = "quarantined"
 
 
 STACK_NAMES = ("forgeos", "crewai", "adk", "openclaw")
@@ -46,12 +47,14 @@ class LLMConfig:
     chat_model: str = "claude-4-sonnet"
     reasoning_model: str | None = None
     provider: str = "anthropic"
+    metadata: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
             "chat_model": self.chat_model,
             "reasoning_model": self.reasoning_model,
             "provider": self.provider,
+            "metadata": self.metadata,
         }
 
 
@@ -139,8 +142,16 @@ class AgentStackAdapter(ABC):
         ...
 
     @abstractmethod
-    async def invoke(self, agent_id: str, prompt: str, context: dict | None = None) -> AgentResult:
-        """Run a single invocation of the agent."""
+    async def invoke(
+        self, agent_id: str, prompt: str, context: dict | None = None,
+        history: list[dict] | None = None,
+    ) -> AgentResult:
+        """Run a single invocation of the agent.
+
+        When *history* is provided, it contains prior conversation turns
+        (user/assistant message dicts) that should be injected between the
+        system prompt and the current user message for multi-turn context.
+        """
         ...
 
     @abstractmethod
@@ -165,3 +176,36 @@ class AgentStackAdapter(ABC):
         scaffold template for a new agent in this stack.
         """
         ...
+
+    async def recover(self) -> int:
+        """Stack-specific recovery after boot.
+
+        Called by PlatformExecutor.recover() AFTER every agent has been
+        re-registered via create_agent(). Adapters can override to rebuild
+        external state (workspace files, subprocess connections, etc.).
+
+        Default: no-op. Returns the number of items recovered.
+        """
+        return 0
+
+
+def build_agent_context(agent_def: AgentDefinition, agent_id: str) -> dict:
+    """Shared helper: build the per-invocation agent_context dict.
+
+    Every adapter should pass the result of this function as `agent_context`
+    to `run_agentic_loop()`. Fields carried through:
+        - agent_id, department
+        - client_id (if ownership is CLIENT)
+        - allowed_tools (for whitelist enforcement)
+        - tenant_id, plan, monthly_limit_usd (for cost tracking in the loop)
+    """
+    metadata = agent_def.metadata or {}
+    return {
+        "agent_id": agent_id,
+        "department": agent_def.department,
+        "client_id": agent_def.owner_id if agent_def.ownership == OwnershipType.CLIENT else None,
+        "allowed_tools": agent_def.tools or None,
+        "tenant_id": metadata.get("tenant_id", "default"),
+        "plan": metadata.get("plan", "starter"),
+        "monthly_limit_usd": metadata.get("monthly_limit_usd"),
+    }

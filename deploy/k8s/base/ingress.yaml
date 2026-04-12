@@ -1,5 +1,16 @@
-# Portable Ingress: works with any CNCF-compatible ingress controller (nginx, traefik, HAProxy, etc.).
-# Set spec.rules[0].host to your DNS name; create TLS secret or use cert-manager.
+# ----------------------------------------------------------------------------
+# Ingress for the forgeos namespace.
+#
+# The `host` value below is a placeholder. Override per environment via a
+# Kustomize overlay (see deploy/k8s/overlays/{dev,staging,prod}/).
+#
+# TLS: cert-manager annotation points to a cluster-issuer named
+# `letsencrypt-prod`. Install cert-manager + define the issuer before apply:
+#   https://cert-manager.io/docs/installation/
+#
+# The `forgeos-tls` secret is created automatically by cert-manager when the
+# cluster-issuer resolves the DNS challenge for the host below.
+# ----------------------------------------------------------------------------
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -7,15 +18,30 @@ metadata:
   labels:
     app.kubernetes.io/name: forgeos
   annotations:
-    # Example for ingress-nginx (remove or replace for your cluster):
-    # nginx.ingress.kubernetes.io/proxy-body-size: "16m"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    # WebSocket support for /ws/agents
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$remote_addr"
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - forgeos.example.local
+      secretName: forgeos-tls
   rules:
     - host: forgeos.example.local
       http:
         paths:
           - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: forgeos-api
+                port:
+                  number: 5000
+          - path: /ws
             pathType: Prefix
             backend:
               service:
@@ -29,7 +55,3 @@ spec:
                 name: forgeos-web
                 port:
                   number: 3000
-  # tls:
-  #   - hosts:
-  #       - forgeos.example.local
-  #     secretName: forgeos-tls

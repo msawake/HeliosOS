@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ForgeOS — 10 Candidate Agents for Enterprise Deployment</title>
+<style>
+:root{--bg:#0a0a0f;--s1:#12121a;--s2:#1a1a28;--s3:#22223a;--bd:#2a2a3d;--t1:#e0e0e8;--t2:#8888a0;--t3:#666680;--ac:#6366f1;--ac2:#818cf8;--g:#22c55e;--g2:#4ade80;--r:#ef4444;--o:#f59e0b;--cy:#06b6d4;--pk:#ec4899;--pp:#a855f7}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--t1);line-height:1.65}
+.hero{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);padding:70px 60px 50px;text-align:center;border-bottom:1px solid var(--bd);position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 25% 40%,rgba(99,102,241,.18),transparent 55%),radial-gradient(circle at 75% 60%,rgba(6,182,212,.12),transparent 55%)}
+.hero h1{font-size:2.5rem;font-weight:800;background:linear-gradient(135deg,#fff,#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:10px;position:relative}
+.hero .sub{font-size:1.05rem;color:var(--t2);max-width:720px;margin:0 auto;position:relative}
+.container{max-width:1200px;margin:0 auto;padding:40px 60px}
+h2.sec{font-size:1.6rem;font-weight:700;margin:50px 0 16px;padding-bottom:8px;border-bottom:2px solid var(--ac)}
+h3{font-size:1.2rem;font-weight:600;margin:24px 0 10px;color:var(--ac2)}
+h4{font-size:1rem;font-weight:600;margin:16px 0 6px;color:var(--cy)}
+p{margin-bottom:9px;font-size:.91rem}
+ul,ol{padding-left:20px;margin-bottom:10px}
+li{margin-bottom:3px;font-size:.88rem}
+pre{background:var(--s2);border:1px solid var(--bd);border-radius:8px;padding:14px 18px;overflow-x:auto;font-size:.8rem;line-height:1.5;margin:12px 0;color:var(--g2);font-family:'JetBrains Mono','Fira Code',monospace;white-space:pre}
+code{background:var(--s2);padding:1px 5px;border-radius:4px;font-size:.82rem;font-family:'JetBrains Mono','Fira Code',monospace}
+.tw{overflow-x:auto;margin:14px 0;border-radius:10px;border:1px solid var(--bd)}
+table{width:100%;border-collapse:collapse;font-size:.84rem}
+th{background:var(--s2);color:var(--ac2);padding:9px 12px;text-align:left;font-weight:600;border-bottom:2px solid var(--bd);white-space:nowrap}
+td{padding:8px 12px;border-bottom:1px solid var(--bd);vertical-align:top}
+tr:hover td{background:rgba(99,102,241,.03)}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:.68rem;font-weight:700;text-transform:uppercase;vertical-align:middle}
+.b-p1{background:rgba(34,197,94,.15);color:var(--g);border:1px solid rgba(34,197,94,.3)}
+.b-p2{background:rgba(245,158,11,.15);color:var(--o);border:1px solid rgba(245,158,11,.3)}
+.b-p3{background:rgba(239,68,68,.15);color:var(--r);border:1px solid rgba(239,68,68,.3)}
+.b-sched{background:rgba(6,182,212,.12);color:var(--cy);border:1px solid rgba(6,182,212,.25)}
+.b-event{background:rgba(245,158,11,.12);color:var(--o);border:1px solid rgba(245,158,11,.25)}
+.b-always{background:rgba(168,85,247,.12);color:var(--pp);border:1px solid rgba(168,85,247,.25)}
+.b-opus{background:rgba(168,85,247,.15);color:var(--pp);border:1px solid rgba(168,85,247,.3)}
+.b-sonnet{background:rgba(99,102,241,.15);color:var(--ac2);border:1px solid rgba(99,102,241,.3)}
+.b-haiku{background:rgba(6,182,212,.15);color:var(--cy);border:1px solid rgba(6,182,212,.3)}
+.co{border-radius:10px;padding:16px 20px;margin:14px 0;font-size:.9rem}
+.co.info{background:linear-gradient(135deg,rgba(99,102,241,.08),rgba(6,182,212,.04));border:1px solid rgba(99,102,241,.2)}
+.co.success{background:linear-gradient(135deg,rgba(34,197,94,.08),rgba(6,182,212,.04));border:1px solid rgba(34,197,94,.2)}
+.co.warn{background:linear-gradient(135deg,rgba(245,158,11,.08),rgba(239,68,68,.04));border:1px solid rgba(245,158,11,.2)}
+.agent-card{background:var(--s1);border:1px solid var(--bd);border-radius:12px;margin:24px 0;overflow:hidden}
+.agent-header{padding:18px 24px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.agent-header .rank{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.2rem;font-weight:800;flex-shrink:0;border:2px solid var(--bd)}
+.agent-header .title{font-size:1.15rem;font-weight:700;flex:1}
+.agent-header .badges{display:flex;gap:6px;flex-wrap:wrap}
+.agent-body{padding:0 24px 22px;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.agent-body .full{grid-column:1/-1}
+.agent-section h4{margin-top:0;font-size:.88rem}
+.agent-section{background:var(--s2);border-radius:8px;padding:14px 16px}
+.score-mini{display:flex;align-items:center;gap:6px;margin:3px 0;font-size:.8rem}
+.score-mini .bar-w{flex:1;background:var(--bg);border-radius:4px;height:14px;overflow:hidden;max-width:120px}
+.score-mini .bar{height:100%;border-radius:4px}
+.score-mini .val{width:20px;text-align:right;font-weight:700;font-size:.75rem}
+.divider{height:1px;background:linear-gradient(90deg,transparent,var(--bd),transparent);margin:36px 0}
+@media(max-width:900px){.agent-body{grid-template-columns:1fr}.container{padding:20px}.hero{padding:40px 20px}.hero h1{font-size:1.8rem}}
+</style>
+</head>
+<body>
+
+<div class="hero">
+<h1>10 Candidate Agents for Enterprise Deployment</h1>
+<p class="sub">Extending the 4-agent roadmap with 10 additional autonomous agents &mdash; scored, phased, and mapped to ForgeOS capabilities</p>
+</div>
+
+<div class="container">
+
+<div class="co info">
+<strong>Context:</strong> These 10 agents complement the original 4 (Client Data Analyzer, Invoice Processor, Email Responder, Activity Manager). Same scoring system: 8 dimensions, 1-5 each, 40 max. Same design constraints: autonomous, always-on, event-driven, or scheduled &mdash; no chat-based agents. Same graduated autonomy model: Shadow &rarr; Supervised &rarr; HITL-Gated &rarr; Autonomous.
+</div>
+
+<!-- ======================== RANKING TABLE ======================== -->
+<h2 class="sec">Ranking Overview</h2>
+
+<div class="tw">
+<table>
+<tr><th>#</th><th>Agent</th><th>Execution Type</th><th>Score</th><th>Phase</th><th>Key Risk</th></tr>
+<tr><td>1</td><td><strong>Timesheet Anomaly Detector</strong></td><td><span class="badge b-sched">Scheduled</span></td><td style="color:var(--g)"><strong>11/40</strong></td><td><span class="badge b-p1">Phase 1</span></td><td>False positives embarrass employees</td></tr>
+<tr><td>2</td><td><strong>SLA Watchdog</strong></td><td><span class="badge b-always">Always-On</span></td><td style="color:var(--g)"><strong>14/40</strong></td><td><span class="badge b-p1">Phase 1</span></td><td>Alert fatigue if thresholds are wrong</td></tr>
+<tr><td>3</td><td><strong>Contract Renewal Tracker</strong></td><td><span class="badge b-sched">Scheduled</span> <span class="badge b-event">Event</span></td><td style="color:var(--g)"><strong>16/40</strong></td><td><span class="badge b-p1">Phase 1</span></td><td>Missed renewal = auto-renew trap</td></tr>
+<tr><td>4</td><td><strong>Meeting Action Extractor</strong></td><td><span class="badge b-event">Event-Driven</span></td><td style="color:var(--o)"><strong>19/40</strong></td><td><span class="badge b-p2">Phase 2</span></td><td>Wrong action items assigned to wrong people</td></tr>
+<tr><td>5</td><td><strong>Employee Access Auditor</strong></td><td><span class="badge b-sched">Scheduled</span></td><td style="color:var(--o)"><strong>20/40</strong></td><td><span class="badge b-p2">Phase 2</span></td><td>False positive &rarr; lock out a user mid-work</td></tr>
+<tr><td>6</td><td><strong>Expense Report Processor</strong></td><td><span class="badge b-event">Event-Driven</span></td><td style="color:var(--o)"><strong>24/40</strong></td><td><span class="badge b-p2">Phase 2</span></td><td>Wrong rejection upsets employees</td></tr>
+<tr><td>7</td><td><strong>Vendor Payment Reconciler</strong></td><td><span class="badge b-sched">Scheduled</span></td><td style="color:var(--o)"><strong>25/40</strong></td><td><span class="badge b-p2">Phase 2</span></td><td>Missed match = delayed vendor payment</td></tr>
+<tr><td>8</td><td><strong>Compliance &amp; Policy Monitor</strong></td><td><span class="badge b-always">Always-On</span></td><td style="color:var(--r)"><strong>28/40</strong></td><td><span class="badge b-p3">Phase 3</span></td><td>False negative = missed regulation</td></tr>
+<tr><td>9</td><td><strong>Client Onboarding Pipeline</strong></td><td><span class="badge b-event">Event-Driven</span></td><td style="color:var(--r)"><strong>30/40</strong></td><td><span class="badge b-p3">Phase 3</span></td><td>Botched onboarding = lost client on day 1</td></tr>
+<tr><td>10</td><td><strong>Proposal / SOW Generator</strong></td><td><span class="badge b-event">Event-Driven</span></td><td style="color:var(--r)"><strong>33/40</strong></td><td><span class="badge b-p3">Phase 3</span></td><td>Wrong pricing in proposal = margin loss or lost deal</td></tr>
+</table>
+</div>
+
+<!-- ======================== AGENT 1 ======================== -->
+<div class="agent-card" style="border-color:rgba(34,197,94,.3)">
+<div class="agent-header" style="background:rgba(34,197,94,.04)">
+<div class="rank" style="color:var(--g);border-color:rgba(34,197,94,.4)">1</div>
+<div class="title">Timesheet Anomaly Detector</div>
+<div class="badges">
+<span class="badge b-sched">Scheduled</span>
+<span class="badge b-haiku">Haiku</span>
+<span class="badge b-p1">Phase 1</span>
+</div>
+</div>
+<div class="agent-body">
+<div class="agent-section">
+<h4>What It Does</h4>
+<p>Runs weekly (Friday PM). Pulls timesheets from the time-tracking system, compares hours logged against project budgets and allocations. Flags: over-billing on capped contracts, under-reporting by team members, entries without project codes, hours exceeding physical limits, and patterns suggesting time-padding.</p>
+<p><strong>Output:</strong> Anomaly report to project managers with flagged entries and reasons. No modifications to timesheets &mdash; purely analytical.</p>
+</div>
+<div class="agent-section">
+<h4>Complexity Score: 11/40</h4>
+<div class="score-mini"><span style="width:140px">Integrations</span><div class="bar-w"><div class="bar" style="width:20%;background:var(--g)"></div></div><div class="val">1</div></div>
+<div class="score-mini"><span style="width:140px">Read/Write</span><div class="bar-w"><div class="bar" style="width:20%;background:var(--g)"></div></div><div class="val">1</div></div>
+<div class="score-mini"><span style="width:140px">Client-Facing</span><div class="bar-w"><div class="bar" style="width:20%;background:var(--g)"></div></div><div class="val">1</div></div>
+<div class="score-mini"><span style="width:140px">Data Structure</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+<div class="score-mini"><span style="width:140px">Reversibility</span><div class="bar-w"><div class="bar" style="width:20%;background:var(--g)"></div></div><div class="val">1</div></div>
+<div class="score-mini"><span style="width:140px">Business Context</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+<div class="score-mini"><span style="width:140px">HITL Required</span><div class="bar-w"><div class="bar" style="width:20%;background:var(--g)"></div></div><div class="val">1</div></div>
+<div class="score-mini"><span style="width:140px">Failure Cost</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+</div>
+<div class="agent-section">
+<h4>ForgeOS Configuration</h4>
+<ul>
+<li><strong>Schedule:</strong> <code>"0 17 * * 5"</code> (Friday 5 PM)</li>
+<li><strong>Model:</strong> Haiku &mdash; structured numerical comparison, no complex reasoning needed</li>
+<li><strong>MCP:</strong> Time-tracking API (read), Google Sheets (budget data)</li>
+<li><strong>Reuses:</strong> <code>invoice-categorizer</code> pattern (structured data comparison + anomaly flagging)</li>
+<li><strong>HITL:</strong> None. Report is informational. Managers decide action.</li>
+</ul>
+</div>
+<div class="agent-section">
+<h4>Risks &amp; Mitigations</h4>
+<ul>
+<li><strong>False positives embarrass employees:</strong> Reports go ONLY to managers, never team-wide. First 4 weeks: managers validate before any follow-up.</li>
+<li><strong>Threshold miscalibration:</strong> Start conservative (flag only &gt;20% deviation), tighten over time based on manager feedback.</li>
+</ul>
+</div>
+</div>
+</div>
+
+<!-- ======================== AGENT 2 ======================== -->
+<div class="agent-card" style="border-color:rgba(34,197,94,.3)">
+<div class="agent-header" style="background:rgba(34,197,94,.04)">
+<div class="rank" style="color:var(--g);border-color:rgba(34,197,94,.4)">2</div>
+<div class="title">SLA Watchdog</div>
+<div class="badges">
+<span class="badge b-always">Always-On</span>
+<span class="badge b-haiku">Haiku</span>
+<span class="badge b-p1">Phase 1</span>
+</div>
+</div>
+<div class="agent-body">
+<div class="agent-section">
+<h4>What It Does</h4>
+<p>Continuously monitors all client SLAs across systems (Jira ticket response times, delivery deadlines, uptime commitments). <strong>Predicts breaches 24 hours before they happen</strong> based on current velocity and remaining work. Sends graduated alerts: warning at 24h, escalation at 12h, critical at 4h.</p>
+<p><strong>Output:</strong> Slack alerts to account managers and team leads. Escalation to department heads if breach is imminent. Read-only &mdash; never modifies tickets or deadlines.</p>
+</div>
+<div class="agent-section">
+<h4>Complexity Score: 14/40</h4>
+<div class="score-mini"><span style="width:140px">Integrations</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Read/Write</span><div class="bar-w"><div class="bar" style="width:20%;background:var(--g)"></div></div><div class="val">1</div></div>
+<div class="score-mini"><span style="width:140px">Client-Facing</span><div class="bar-w"><div class="bar" style="width:20%;background:var(--g)"></div></div><div class="val">1</div></div>
+<div class="score-mini"><span style="width:140px">Data Structure</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+<div class="score-mini"><span style="width:140px">Reversibility</span><div class="bar-w"><div class="bar" style="width:20%;background:var(--g)"></div></div><div class="val">1</div></div>
+<div class="score-mini"><span style="width:140px">Business Context</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">HITL Required</span><div class="bar-w"><div class="bar" style="width:20%;background:var(--g)"></div></div><div class="val">1</div></div>
+<div class="score-mini"><span style="width:140px">Failure Cost</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+</div>
+<div class="agent-section">
+<h4>ForgeOS Configuration</h4>
+<ul>
+<li><strong>Execution:</strong> Always-on, 5-minute tick cycle</li>
+<li><strong>Model:</strong> Haiku &mdash; reads structured SLA data, compares deadlines, simple arithmetic</li>
+<li><strong>MCP:</strong> Jira (read tickets + SLAs), Google Calendar (delivery dates), CRM (client SLA terms)</li>
+<li><strong>Reuses:</strong> <code>ops-monitoring</code> pattern (continuous health monitoring + alerting)</li>
+<li><strong>HITL:</strong> None. Alerts are informational &mdash; humans decide the response.</li>
+<li><strong>EventBus:</strong> Publishes <code>sla.warning</code>, <code>sla.breach_imminent</code>, <code>sla.breached</code> events that other agents can subscribe to</li>
+</ul>
+</div>
+<div class="agent-section">
+<h4>Risks &amp; Mitigations</h4>
+<ul>
+<li><strong>Alert fatigue:</strong> Start with only Critical SLAs (contractual penalties). Add lower tiers once team trusts the signal quality. Aggregate similar alerts into daily digest.</li>
+<li><strong>Prediction inaccuracy:</strong> Use conservative estimates (assume no work happens on weekends/after-hours). Better to over-alert than miss a breach.</li>
+</ul>
+</div>
+</div>
+</div>
+
+<!-- ======================== AGENT 3 ======================== -->
+<div class="agent-card" style="border-color:rgba(34,197,94,.3)">
+<div class="agent-header" style="background:rgba(34,197,94,.04)">
+<div class="rank" style="color:var(--g);border-color:rgba(34,197,94,.4)">3</div>
+<div class="title">Contract Renewal Tracker</div>
+<div class="badges">
+<span class="badge b-sched">Scheduled</span>
+<span class="badge b-event">Event</span>
+<span class="badge b-sonnet">Sonnet</span>
+<span class="badge b-p1">Phase 1</span>
+</div>
+</div>
+<div class="agent-body">
+<div class="agent-section">
+<h4>What It Does</h4>
+<p>Scans all active contracts (vendor and client) daily. Extracts renewal dates, auto-renewal clauses, cancellation windows, and price escalation terms. Sends graduated alerts at 90, 60, and 30 days before expiry. At 60 days, generates a renewal brief: contract summary, historical spend, market alternatives, and recommended negotiation points.</p>
+<p><strong>Output:</strong> Renewal timeline dashboard + proactive briefs to account/procurement managers. Event-driven trigger when a contract document is uploaded to scan it immediately.</p>
+</div>
+<div class="agent-section">
+<h4>Complexity Score: 16/40</h4>
+<div class="score-mini"><span style="width:140px">Integrations</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+<div class="score-mini"><span style="width:140px">Read/Write</span><div class="bar-w"><div class="bar" style="width:20%;background:var(--g)"></div></div><div class="val">1</div></div>
+<div class="score-mini"><span style="width:140px">Client-Facing</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+<div class="score-mini"><span style="width:140px">Data Structure</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Reversibility</span><div class="bar-w"><div class="bar" style="width:20%;background:var(--g)"></div></div><div class="val">1</div></div>
+<div class="score-mini"><span style="width:140px">Business Context</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">HITL Required</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+<div class="score-mini"><span style="width:140px">Failure Cost</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+</div>
+<div class="agent-section">
+<h4>ForgeOS Configuration</h4>
+<ul>
+<li><strong>Schedule:</strong> Daily scan at 7 AM + event-driven on <code>contract.uploaded</code></li>
+<li><strong>Model:</strong> Sonnet &mdash; needs to parse unstructured contract language and extract dates/clauses</li>
+<li><strong>MCP:</strong> Google Workspace (Drive for contracts, Sheets for tracking), CRM (client/vendor records)</li>
+<li><strong>Reuses:</strong> <code>contract-checker</code> (clause extraction, RED/YELLOW/GREEN flagging)</li>
+<li><strong>HITL:</strong> Renewal briefs reviewed before distribution. Auto-renewal warnings are informational (no HITL).</li>
+<li><strong>Ontology:</strong> <code>Contract</code> type: parties, start_date, end_date, auto_renew, cancellation_window_days, annual_value, escalation_clause</li>
+</ul>
+</div>
+<div class="agent-section">
+<h4>Risks &amp; Mitigations</h4>
+<ul>
+<li><strong>Missed auto-renewal trap:</strong> Conservative approach &mdash; if cancellation window is unclear, alert at 120 days. Flag any contract with "auto-renew" language as HIGH priority.</li>
+<li><strong>Wrong date extraction from complex contracts:</strong> Dual-extraction + human verification for the first 20 contracts to build trust in accuracy.</li>
+</ul>
+</div>
+</div>
+</div>
+
+<!-- ======================== AGENT 4 ======================== -->
+<div class="agent-card" style="border-color:rgba(245,158,11,.3)">
+<div class="agent-header" style="background:rgba(245,158,11,.04)">
+<div class="rank" style="color:var(--o);border-color:rgba(245,158,11,.4)">4</div>
+<div class="title">Meeting Action Extractor</div>
+<div class="badges">
+<span class="badge b-event">Event-Driven</span>
+<span class="badge b-sonnet">Sonnet</span>
+<span class="badge b-p2">Phase 2</span>
+</div>
+</div>
+<div class="agent-body">
+<div class="agent-section">
+<h4>What It Does</h4>
+<p>Triggers when a meeting recording or transcript becomes available (event: <code>meeting.ended</code>). Processes the transcript to extract: key decisions made, action items with assignees and deadlines, open questions, and a 3-paragraph meeting summary. Creates Jira tickets for each action item and sends a digest to all attendees.</p>
+<p><strong>Output:</strong> Structured meeting summary + auto-created Jira tasks. Writes to Jira and email.</p>
+</div>
+<div class="agent-section">
+<h4>Complexity Score: 19/40</h4>
+<div class="score-mini"><span style="width:140px">Integrations</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Read/Write</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Client-Facing</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+<div class="score-mini"><span style="width:140px">Data Structure</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Reversibility</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+<div class="score-mini"><span style="width:140px">Business Context</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+<div class="score-mini"><span style="width:140px">HITL Required</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+<div class="score-mini"><span style="width:140px">Failure Cost</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+</div>
+<div class="agent-section">
+<h4>ForgeOS Configuration</h4>
+<ul>
+<li><strong>Trigger:</strong> <code>meeting.ended</code> event (from calendar integration or recording platform webhook)</li>
+<li><strong>Model:</strong> Sonnet &mdash; needs strong comprehension of conversational context to identify commitments vs. casual mentions</li>
+<li><strong>MCP:</strong> Google Calendar (attendee list), Jira (create tasks), Google Workspace (send digest email)</li>
+<li><strong>Reuses:</strong> <code>standup-digest</code> (message summarization) + <code>meeting-prep</code> (attendee/context lookup)</li>
+<li><strong>HITL:</strong> Meeting summary + action items sent to organizer for review before Jira tickets are created. After trust is established: auto-create tasks, organizer can delete unwanted ones.</li>
+</ul>
+</div>
+<div class="agent-section">
+<h4>Risks &amp; Mitigations</h4>
+<ul>
+<li><strong>Wrong assignee on action items:</strong> When ambiguous ("someone should look into this"), assign to meeting organizer with a note "please reassign." Never guess.</li>
+<li><strong>Hallucinated decisions:</strong> Only extract explicit commitments ("I will...", "Let's do...", "We agreed..."). Ignore speculative discussion.</li>
+<li><strong>Confidential meetings processed inappropriately:</strong> Allow organizer to tag meetings as "no-AI" in calendar. Agent skips those.</li>
+</ul>
+</div>
+</div>
+</div>
+
+<!-- ======================== AGENT 5 ======================== -->
+<div class="agent-card" style="border-color:rgba(245,158,11,.3)">
+<div class="agent-header" style="background:rgba(245,158,11,.04)">
+<div class="rank" style="color:var(--o);border-color:rgba(245,158,11,.4)">5</div>
+<div class="title">Employee Access Auditor</div>
+<div class="badges">
+<span class="badge b-sched">Scheduled</span>
+<span class="badge b-sonnet">Sonnet</span>
+<span class="badge b-p2">Phase 2</span>
+</div>
+</div>
+<div class="agent-body">
+<div class="agent-section">
+<h4>What It Does</h4>
+<p>Weekly audit of system access across all tools (Google Workspace, Jira, CRM, SAP, Slack, code repos). Flags: dormant accounts (no login in 60+ days), orphaned permissions (departed employees still active), over-privileged users (admin rights not justified by role), and shared service accounts with no owner. Produces an access risk report for IT/Security.</p>
+<p><strong>Output:</strong> Access audit report with remediation recommendations. Can optionally create tickets in Jira for IT to action. Does NOT revoke access directly (Phase 2 caution).</p>
+</div>
+<div class="agent-section">
+<h4>Complexity Score: 20/40</h4>
+<div class="score-mini"><span style="width:140px">Integrations</span><div class="bar-w"><div class="bar" style="width:80%;background:var(--o)"></div></div><div class="val">4</div></div>
+<div class="score-mini"><span style="width:140px">Read/Write</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+<div class="score-mini"><span style="width:140px">Client-Facing</span><div class="bar-w"><div class="bar" style="width:20%;background:var(--g)"></div></div><div class="val">1</div></div>
+<div class="score-mini"><span style="width:140px">Data Structure</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+<div class="score-mini"><span style="width:140px">Reversibility</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+<div class="score-mini"><span style="width:140px">Business Context</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">HITL Required</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Failure Cost</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+</div>
+<div class="agent-section">
+<h4>ForgeOS Configuration</h4>
+<ul>
+<li><strong>Schedule:</strong> <code>"0 6 * * 1"</code> (Monday 6 AM)</li>
+<li><strong>Model:</strong> Sonnet &mdash; needs to reason about role-to-permission mappings and identify anomalies</li>
+<li><strong>MCP:</strong> Google Workspace (user directory, admin reports), Jira (user list), identity provider (Okta/Azure AD if available)</li>
+<li><strong>HITL:</strong> Audit report reviewed by IT Security before any remediation tickets are created. NEVER auto-revoke access.</li>
+</ul>
+</div>
+<div class="agent-section">
+<h4>Risks &amp; Mitigations</h4>
+<ul>
+<li><strong>False positive locks out a working employee:</strong> Agent NEVER revokes. Only reports and optionally creates tickets for IT to action.</li>
+<li><strong>Incomplete visibility:</strong> Start with Google Workspace + Jira only. Add other systems incrementally as API access is provisioned.</li>
+<li><strong>Over-alerting on shared accounts:</strong> Maintain a whitelist of approved shared/service accounts in KnowledgeBase.</li>
+</ul>
+</div>
+</div>
+</div>
+
+<!-- ======================== AGENT 6 ======================== -->
+<div class="agent-card" style="border-color:rgba(245,158,11,.3)">
+<div class="agent-header" style="background:rgba(245,158,11,.04)">
+<div class="rank" style="color:var(--o);border-color:rgba(245,158,11,.4)">6</div>
+<div class="title">Expense Report Processor</div>
+<div class="badges">
+<span class="badge b-event">Event-Driven</span>
+<span class="badge b-sonnet">Sonnet</span>
+<span class="badge b-p2">Phase 2</span>
+</div>
+</div>
+<div class="agent-body">
+<div class="agent-section">
+<h4>What It Does</h4>
+<p>Triggers on <code>expense.submitted</code> event. Validates each line item against company expense policy: per-diem limits, allowed categories, required receipts, client-billable vs. internal classification. Flags policy violations, duplicate submissions, and suspicious patterns (round numbers, weekend meals for non-travel). Routes compliant reports for manager approval. Syncs approved expenses to the accounting system.</p>
+<p><strong>Output:</strong> Validated expense report with annotations + policy violation flags. Writes to accounting system after approval chain completes.</p>
+</div>
+<div class="agent-section">
+<h4>Complexity Score: 24/40</h4>
+<div class="score-mini"><span style="width:140px">Integrations</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Read/Write</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Client-Facing</span><div class="bar-w"><div class="bar" style="width:20%;background:var(--g)"></div></div><div class="val">1</div></div>
+<div class="score-mini"><span style="width:140px">Data Structure</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Reversibility</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Business Context</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">HITL Required</span><div class="bar-w"><div class="bar" style="width:80%;background:var(--o)"></div></div><div class="val">4</div></div>
+<div class="score-mini"><span style="width:140px">Failure Cost</span><div class="bar-w"><div class="bar" style="width:80%;background:var(--o)"></div></div><div class="val">4</div></div>
+</div>
+<div class="agent-section">
+<h4>ForgeOS Configuration</h4>
+<ul>
+<li><strong>Trigger:</strong> <code>expense.submitted</code> event</li>
+<li><strong>Model:</strong> Sonnet &mdash; needs to reason about policy rules, receipt matching, and pattern detection</li>
+<li><strong>MCP:</strong> Expense system API, accounting system (SAP/QuickBooks), Google Workspace (receipts from email)</li>
+<li><strong>Reuses:</strong> <code>invoice-categorizer</code> (transaction classification + anomaly detection)</li>
+<li><strong>HITL:</strong> Category <code>"financial"</code>. All flagged expenses require manager approval. Clean reports (&gt;95% confidence, &lt;$500 total) can auto-route to manager queue without AI-level HITL.</li>
+<li><strong>KnowledgeBase:</strong> Company expense policy loaded as rules (per-diem rates by city, receipt thresholds, allowed categories)</li>
+</ul>
+</div>
+<div class="agent-section">
+<h4>Risks &amp; Mitigations</h4>
+<ul>
+<li><strong>Wrong rejection frustrates employees:</strong> Agent never rejects &mdash; it flags and annotates. The manager makes the final call. Frame AI as "pre-review helper" not "expense cop."</li>
+<li><strong>Receipt matching errors:</strong> If receipt amount doesn't match claim within 5%, flag for human review rather than auto-rejecting.</li>
+</ul>
+</div>
+</div>
+</div>
+
+<!-- ======================== AGENT 7 ======================== -->
+<div class="agent-card" style="border-color:rgba(245,158,11,.3)">
+<div class="agent-header" style="background:rgba(245,158,11,.04)">
+<div class="rank" style="color:var(--o);border-color:rgba(245,158,11,.4)">7</div>
+<div class="title">Vendor Payment Reconciler</div>
+<div class="badges">
+<span class="badge b-sched">Scheduled</span>
+<span class="badge b-opus">Opus</span>
+<span class="badge b-p2">Phase 2</span>
+</div>
+</div>
+<div class="agent-body">
+<div class="agent-section">
+<h4>What It Does</h4>
+<p>Runs daily. Performs three-way matching: vendor invoices vs. purchase orders vs. delivery/service receipts. Identifies: unmatched invoices (no PO), partial deliveries, price discrepancies, duplicate vendor invoices, and invoices approaching payment terms (Net-30, Net-60). Prepares a payment batch recommendation with priority ordering (early-payment discounts first, approaching-deadline second).</p>
+<p><strong>Output:</strong> Reconciliation report + payment batch recommendation for AP team. Optionally creates payment records in SAP after HITL approval.</p>
+</div>
+<div class="agent-section">
+<h4>Complexity Score: 25/40</h4>
+<div class="score-mini"><span style="width:140px">Integrations</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Read/Write</span><div class="bar-w"><div class="bar" style="width:80%;background:var(--r)"></div></div><div class="val">4</div></div>
+<div class="score-mini"><span style="width:140px">Client-Facing</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+<div class="score-mini"><span style="width:140px">Data Structure</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Reversibility</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Business Context</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">HITL Required</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Failure Cost</span><div class="bar-w"><div class="bar" style="width:80%;background:var(--r)"></div></div><div class="val">4</div></div>
+</div>
+<div class="agent-section">
+<h4>ForgeOS Configuration</h4>
+<ul>
+<li><strong>Schedule:</strong> <code>"0 7 * * 1-5"</code> (weekday mornings)</li>
+<li><strong>Model:</strong> Opus &mdash; three-way matching across multiple document types requires high accuracy on financial data</li>
+<li><strong>MCP:</strong> SAP (POs, invoices, delivery receipts, payments), Google Sheets (manual tracking overflow)</li>
+<li><strong>Reuses:</strong> <code>invoice-categorizer</code> + Invoice Processor patterns (extraction + validation)</li>
+<li><strong>HITL:</strong> Category <code>"financial"</code>. Payment batch requires AP manager approval before any SAP writes.</li>
+<li><strong>Pairs with:</strong> Invoice Processor (Phase 2 original) &mdash; the Invoice Processor ingests invoices, the Reconciler matches them to POs and prepares payments. Deploy together.</li>
+</ul>
+</div>
+<div class="agent-section">
+<h4>Risks &amp; Mitigations</h4>
+<ul>
+<li><strong>Duplicate payment:</strong> Idempotency check on <code>hash(vendor + invoice_number + amount)</code>. Any match = block and flag.</li>
+<li><strong>Missed early-payment discount:</strong> Alert AP team 5 days before discount deadline expires. Track discounts captured vs. missed as a KPI.</li>
+</ul>
+</div>
+</div>
+</div>
+
+<!-- ======================== AGENT 8 ======================== -->
+<div class="agent-card" style="border-color:rgba(239,68,68,.3)">
+<div class="agent-header" style="background:rgba(239,68,68,.04)">
+<div class="rank" style="color:var(--r);border-color:rgba(239,68,68,.4)">8</div>
+<div class="title">Compliance &amp; Policy Monitor</div>
+<div class="badges">
+<span class="badge b-always">Always-On</span>
+<span class="badge b-opus">Opus</span>
+<span class="badge b-p3">Phase 3</span>
+</div>
+</div>
+<div class="agent-body">
+<div class="agent-section">
+<h4>What It Does</h4>
+<p>Continuously monitors regulatory sources (government gazettes, industry bodies, legal databases) for changes affecting the company's operations. Compares new regulations against internal policies, contracts, and processes. When a gap is detected, generates an impact assessment: what changed, who's affected, what needs updating, and by when. Tracks remediation progress.</p>
+<p><strong>Output:</strong> Regulatory change alerts + impact assessments + compliance gap reports. Can create Jira tickets for remediation tracking.</p>
+</div>
+<div class="agent-section">
+<h4>Complexity Score: 28/40</h4>
+<div class="score-mini"><span style="width:140px">Integrations</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Read/Write</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+<div class="score-mini"><span style="width:140px">Client-Facing</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+<div class="score-mini"><span style="width:140px">Data Structure</span><div class="bar-w"><div class="bar" style="width:100%;background:var(--r)"></div></div><div class="val">5</div></div>
+<div class="score-mini"><span style="width:140px">Reversibility</span><div class="bar-w"><div class="bar" style="width:40%;background:var(--g)"></div></div><div class="val">2</div></div>
+<div class="score-mini"><span style="width:140px">Business Context</span><div class="bar-w"><div class="bar" style="width:100%;background:var(--r)"></div></div><div class="val">5</div></div>
+<div class="score-mini"><span style="width:140px">HITL Required</span><div class="bar-w"><div class="bar" style="width:80%;background:var(--o)"></div></div><div class="val">4</div></div>
+<div class="score-mini"><span style="width:140px">Failure Cost</span><div class="bar-w"><div class="bar" style="width:100%;background:var(--r)"></div></div><div class="val">5</div></div>
+</div>
+<div class="agent-section">
+<h4>ForgeOS Configuration</h4>
+<ul>
+<li><strong>Execution:</strong> Always-on, 6-hour cycle (regulatory changes don't happen by the minute)</li>
+<li><strong>Model:</strong> Opus &mdash; must understand legal language, interpret regulatory intent, and map to business impact. Non-negotiable.</li>
+<li><strong>MCP:</strong> Web scraping/feeds (regulatory sources), Google Workspace (internal policies), Jira (remediation tracking)</li>
+<li><strong>Reuses:</strong> <code>legal-compliance</code> agent pattern (CAN-SPAM/GDPR/CCPA monitoring) + <code>competitor-monitor</code> (web scraping + change detection)</li>
+<li><strong>HITL:</strong> Every impact assessment reviewed by Legal/Compliance team before any remediation actions. The agent identifies, humans decide.</li>
+</ul>
+</div>
+<div class="agent-section">
+<h4>Risks &amp; Mitigations</h4>
+<ul>
+<li><strong>False negative (missed regulation):</strong> Highest-risk failure. Mitigate with redundant sources, quarterly manual audit of what the agent caught vs. what a human compliance officer found independently.</li>
+<li><strong>False positive overload:</strong> Start with a narrow scope (industry-specific regulations only). Expand coverage gradually.</li>
+<li><strong>Misinterpretation of legal language:</strong> All assessments are marked DRAFT. Compliance officer validates before the company acts.</li>
+</ul>
+</div>
+</div>
+</div>
+
+<!-- ======================== AGENT 9 ======================== -->
+<div class="agent-card" style="border-color:rgba(239,68,68,.3)">
+<div class="agent-header" style="background:rgba(239,68,68,.04)">
+<div class="rank" style="color:var(--r);border-color:rgba(239,68,68,.4)">9</div>
+<div class="title">Client Onboarding Pipeline</div>
+<div class="badges">
+<span class="badge b-event">Event-Driven</span>
+<span class="badge b-opus">Opus</span>
+<span class="badge b-p3">Phase 3</span>
+</div>
+</div>
+<div class="agent-body">
+<div class="agent-section">
+<h4>What It Does</h4>
+<p>Triggers on <code>client.signed</code> event. Orchestrates the entire onboarding workflow as a DAG: CRM record creation &rarr; welcome email sequence &rarr; project workspace setup (Jira board, shared drive, Slack channel) &rarr; kickoff meeting scheduling &rarr; document collection (NDA, SOW, contact list) &rarr; access provisioning &rarr; billing setup in Stripe. Tracks checklist completion and escalates stalled items.</p>
+<p><strong>Output:</strong> Fully onboarded client with all systems provisioned. Multi-system writes across 5+ platforms. Client-facing communications (welcome emails).</p>
+</div>
+<div class="agent-section">
+<h4>Complexity Score: 30/40</h4>
+<div class="score-mini"><span style="width:140px">Integrations</span><div class="bar-w"><div class="bar" style="width:100%;background:var(--r)"></div></div><div class="val">5</div></div>
+<div class="score-mini"><span style="width:140px">Read/Write</span><div class="bar-w"><div class="bar" style="width:100%;background:var(--r)"></div></div><div class="val">5</div></div>
+<div class="score-mini"><span style="width:140px">Client-Facing</span><div class="bar-w"><div class="bar" style="width:80%;background:var(--r)"></div></div><div class="val">4</div></div>
+<div class="score-mini"><span style="width:140px">Data Structure</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Reversibility</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Business Context</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">HITL Required</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Failure Cost</span><div class="bar-w"><div class="bar" style="width:80%;background:var(--r)"></div></div><div class="val">4</div></div>
+</div>
+<div class="agent-section">
+<h4>ForgeOS Configuration</h4>
+<ul>
+<li><strong>Trigger:</strong> <code>client.signed</code> event from CRM or manual trigger from account manager</li>
+<li><strong>Model:</strong> Opus &mdash; orchestrates a complex multi-step DAG across many systems, needs to handle partial failures gracefully</li>
+<li><strong>MCP:</strong> CRM, Google Workspace (email, Drive, Calendar), Jira, Slack, Stripe</li>
+<li><strong>Reuses:</strong> <code>onboarding-orchestrator</code> practical agent (exact use case, adapt for client-specific systems)</li>
+<li><strong>Workflow:</strong> ForgeOS DAG with <code>TaskGraphBuilder</code> &mdash; 8+ tasks with dependencies, parallel where possible</li>
+<li><strong>HITL:</strong> Welcome email reviewed before send. Billing setup approved before Stripe charge. Other steps (Jira board, Slack channel) can auto-execute.</li>
+</ul>
+</div>
+<div class="agent-section">
+<h4>Risks &amp; Mitigations</h4>
+<ul>
+<li><strong>Partial onboarding (3 of 8 steps complete, then failure):</strong> DAG engine tracks task status. Retry failed steps. Never re-execute completed steps (idempotency).</li>
+<li><strong>Wrong client data propagated everywhere:</strong> Validate CRM data at step 1 before creating anything. If data incomplete, pause and request from account manager.</li>
+<li><strong>Botched first impression:</strong> Welcome email and kickoff scheduling are the client-facing touchpoints. Both go through HITL until the template library is proven (&gt;20 successful onboardings).</li>
+</ul>
+</div>
+</div>
+</div>
+
+<!-- ======================== AGENT 10 ======================== -->
+<div class="agent-card" style="border-color:rgba(239,68,68,.3)">
+<div class="agent-header" style="background:rgba(239,68,68,.04)">
+<div class="rank" style="color:var(--r);border-color:rgba(239,68,68,.4)">10</div>
+<div class="title">Proposal / SOW Generator</div>
+<div class="badges">
+<span class="badge b-event">Event-Driven</span>
+<span class="badge b-opus">Opus</span>
+<span class="badge b-p3">Phase 3</span>
+</div>
+</div>
+<div class="agent-body">
+<div class="agent-section">
+<h4>What It Does</h4>
+<p>Triggers when an opportunity reaches a configurable stage in the CRM (e.g., "Proposal Requested"). Orchestrates: competitive intelligence gathering on the prospect, historical pricing analysis for similar deals, scope definition based on discovery notes, SOW draft using company templates with client-specific customization, pricing calculation with margin guardrails, and legal clause selection based on deal size and risk profile. Produces a ready-to-review proposal document.</p>
+<p><strong>Output:</strong> Complete proposal/SOW document in Google Docs. May be shared with the client — highest-stakes written deliverable.</p>
+</div>
+<div class="agent-section">
+<h4>Complexity Score: 33/40</h4>
+<div class="score-mini"><span style="width:140px">Integrations</span><div class="bar-w"><div class="bar" style="width:80%;background:var(--r)"></div></div><div class="val">4</div></div>
+<div class="score-mini"><span style="width:140px">Read/Write</span><div class="bar-w"><div class="bar" style="width:80%;background:var(--r)"></div></div><div class="val">4</div></div>
+<div class="score-mini"><span style="width:140px">Client-Facing</span><div class="bar-w"><div class="bar" style="width:100%;background:var(--r)"></div></div><div class="val">5</div></div>
+<div class="score-mini"><span style="width:140px">Data Structure</span><div class="bar-w"><div class="bar" style="width:80%;background:var(--r)"></div></div><div class="val">4</div></div>
+<div class="score-mini"><span style="width:140px">Reversibility</span><div class="bar-w"><div class="bar" style="width:60%;background:var(--o)"></div></div><div class="val">3</div></div>
+<div class="score-mini"><span style="width:140px">Business Context</span><div class="bar-w"><div class="bar" style="width:100%;background:var(--r)"></div></div><div class="val">5</div></div>
+<div class="score-mini"><span style="width:140px">HITL Required</span><div class="bar-w"><div class="bar" style="width:80%;background:var(--r)"></div></div><div class="val">4</div></div>
+<div class="score-mini"><span style="width:140px">Failure Cost</span><div class="bar-w"><div class="bar" style="width:80%;background:var(--r)"></div></div><div class="val">4</div></div>
+</div>
+<div class="agent-section">
+<h4>ForgeOS Configuration</h4>
+<ul>
+<li><strong>Trigger:</strong> <code>opportunity.stage_changed</code> event from CRM (stage = "Proposal Requested")</li>
+<li><strong>Model:</strong> Opus &mdash; must synthesize competitive intel, pricing logic, legal clauses, and persuasive writing into a cohesive document</li>
+<li><strong>MCP:</strong> CRM (opportunity data, contact info), Google Workspace (Docs for output, Sheets for pricing models), Web (competitor research)</li>
+<li><strong>Reuses:</strong> <code>proposal-orchestrator</code> practical agent (exact use case: research &rarr; pricing &rarr; writing &rarr; legal &rarr; assembly) + <code>contract-checker</code> (legal clause selection) + <code>competitor-monitor</code> (competitive positioning)</li>
+<li><strong>Workflow:</strong> 5-step DAG via <code>TaskGraphBuilder</code>: research &rarr; pricing &rarr; drafting &rarr; legal review &rarr; assembly</li>
+<li><strong>HITL:</strong> <strong>Always.</strong> Every proposal is reviewed by the account executive before client delivery. Pricing reviewed by finance if &gt;$50K deal. Legal clauses reviewed if custom terms needed.</li>
+</ul>
+</div>
+<div class="agent-section">
+<h4>Risks &amp; Mitigations</h4>
+<ul>
+<li><strong>Wrong pricing (under-bid = margin loss, over-bid = lost deal):</strong> Pricing guardrails in KnowledgeBase: minimum margin by service type, maximum discount without VP approval. Agent cannot generate pricing outside guardrails.</li>
+<li><strong>Generic-sounding proposal ("AI slop"):</strong> Use Opus, not Sonnet/Haiku. Require client-specific details in every section. Reject drafts that don't reference at least 3 specifics from discovery notes.</li>
+<li><strong>Outdated competitive intel:</strong> Competitive data refreshed by <code>competitor-monitor</code> agent weekly. Proposals cite data freshness date.</li>
+<li><strong>Sending wrong proposal to wrong client:</strong> Proposal document title includes client name. HITL reviewer verifies before sharing.</li>
+</ul>
+</div>
+</div>
+</div>
+
+<!-- ======================== COMBINED ROADMAP ======================== -->
+<div class="divider"></div>
+<h2 class="sec">Combined 14-Agent Roadmap</h2>
+
+<div class="co success">
+<strong>All 14 agents (original 4 + these 10) mapped across 3 phases.</strong> Within each phase, agents are ordered by complexity score. Deploy sequentially within a phase or in parallel if integration surfaces are independent.
+</div>
+
+<div class="tw">
+<table>
+<tr><th>Phase</th><th>Agent</th><th>Score</th><th>Type</th><th>Model</th><th>Key Integration</th><th>Deploy Time</th></tr>
+<tr style="background:rgba(34,197,94,.04)"><td rowspan="5"><strong style="color:var(--g)">Phase 1</strong><br><span style="font-size:.7rem;color:var(--t3)">Foundation<br>Weeks 1-6</span></td>
+<td><strong>Timesheet Anomaly Detector</strong></td><td>11</td><td><span class="badge b-sched">Scheduled</span></td><td><span class="badge b-haiku">Haiku</span></td><td>Time-tracking API</td><td>1 week</td></tr>
+<tr style="background:rgba(34,197,94,.04)"><td><strong>Client Data Analyzer</strong> *</td><td>13</td><td><span class="badge b-sched">Sched</span>+<span class="badge b-event">Event</span></td><td><span class="badge b-sonnet">Sonnet</span></td><td>CRM, Google Workspace</td><td>2-3 weeks</td></tr>
+<tr style="background:rgba(34,197,94,.04)"><td><strong>SLA Watchdog</strong></td><td>14</td><td><span class="badge b-always">Always-On</span></td><td><span class="badge b-haiku">Haiku</span></td><td>Jira, Calendar, CRM</td><td>2 weeks</td></tr>
+<tr style="background:rgba(34,197,94,.04)"><td><strong>Contract Renewal Tracker</strong></td><td>16</td><td><span class="badge b-sched">Sched</span>+<span class="badge b-event">Event</span></td><td><span class="badge b-sonnet">Sonnet</span></td><td>Drive (contracts), CRM</td><td>2 weeks</td></tr>
+
+<tr style="background:rgba(245,158,11,.04)"><td rowspan="5"><strong style="color:var(--o)">Phase 2</strong><br><span style="font-size:.7rem;color:var(--t3)">Intelligence<br>Weeks 7-14</span></td>
+<td><strong>Meeting Action Extractor</strong></td><td>19</td><td><span class="badge b-event">Event</span></td><td><span class="badge b-sonnet">Sonnet</span></td><td>Calendar, Jira, Email</td><td>2-3 weeks</td></tr>
+<tr style="background:rgba(245,158,11,.04)"><td><strong>Employee Access Auditor</strong></td><td>20</td><td><span class="badge b-sched">Scheduled</span></td><td><span class="badge b-sonnet">Sonnet</span></td><td>Google Admin, Jira, IdP</td><td>2 weeks</td></tr>
+<tr style="background:rgba(245,158,11,.04)"><td><strong>Expense Report Processor</strong></td><td>24</td><td><span class="badge b-event">Event</span></td><td><span class="badge b-sonnet">Sonnet</span></td><td>Expense system, SAP</td><td>3 weeks</td></tr>
+<tr style="background:rgba(245,158,11,.04)"><td><strong>Vendor Payment Reconciler</strong></td><td>25</td><td><span class="badge b-sched">Scheduled</span></td><td><span class="badge b-opus">Opus</span></td><td>SAP (PO+Invoice+Receipt)</td><td>3-4 weeks</td></tr>
+<tr style="background:rgba(245,158,11,.04)"><td><strong>Invoice Processor</strong> *</td><td>26</td><td><span class="badge b-event">Event</span>+<span class="badge b-sched">Sched</span></td><td><span class="badge b-opus">Opus</span></td><td>Email, SAP OData</td><td>4-5 weeks</td></tr>
+
+<tr style="background:rgba(239,68,68,.04)"><td rowspan="5"><strong style="color:var(--r)">Phase 3</strong><br><span style="font-size:.7rem;color:var(--t3)">Full Autonomy<br>Weeks 15-24</span></td>
+<td><strong>Compliance &amp; Policy Monitor</strong></td><td>28</td><td><span class="badge b-always">Always-On</span></td><td><span class="badge b-opus">Opus</span></td><td>Regulatory feeds, Jira</td><td>4-5 weeks</td></tr>
+<tr style="background:rgba(239,68,68,.04)"><td><strong>Client Onboarding Pipeline</strong></td><td>30</td><td><span class="badge b-event">Event</span></td><td><span class="badge b-opus">Opus</span></td><td>CRM, Jira, Slack, Stripe, Email</td><td>4-5 weeks</td></tr>
+<tr style="background:rgba(239,68,68,.04)"><td><strong>Activity Manager</strong> *</td><td>32</td><td><span class="badge b-always">Always-On</span>+<span class="badge b-event">Event</span></td><td><span class="badge b-opus">Opus</span></td><td>Jira, Calendar, CRM, Slack</td><td>5-6 weeks</td></tr>
+<tr style="background:rgba(239,68,68,.04)"><td><strong>Proposal / SOW Generator</strong></td><td>33</td><td><span class="badge b-event">Event</span></td><td><span class="badge b-opus">Opus</span></td><td>CRM, Google Docs, Web</td><td>4-5 weeks</td></tr>
+<tr style="background:rgba(239,68,68,.04)"><td><strong>Email/Enquiry Responder</strong> *</td><td>36</td><td><span class="badge b-event">Event</span></td><td><span class="badge b-opus">Opus</span></td><td>Gmail, CRM, KnowledgeBase</td><td>5-6 weeks</td></tr>
+</table>
+</div>
+<p style="font-size:.8rem;color:var(--t3)">* = Original 4 agents from the deployment roadmap</p>
+
+<!-- ======================== CROSS-AGENT EVENTS ======================== -->
+<div class="divider"></div>
+<h2 class="sec">Cross-Agent Event Map</h2>
+
+<pre>
+Timesheet Detector                          SLA Watchdog
+  publishes: timesheet.anomaly  ──────&rarr;     subscribes: flags over-billed clients
+                                             publishes: sla.breach_imminent  ────&rarr;  Activity Manager
+                                                                                     (creates priority Jira ticket)
+
+Contract Renewal Tracker                    Proposal / SOW Generator
+  publishes: contract.expiring  ──────&rarr;     subscribes: pre-loads renewal context into proposal
+                                             publishes: proposal.generated  ─────&rarr;  Email Responder
+                                                                                     (drafts delivery email)
+
+Meeting Action Extractor                    Activity Manager
+  publishes: action_item.created ─────&rarr;     subscribes: creates/updates Jira ticket
+                                             publishes: deadline.missed  ─────────&rarr;  SLA Watchdog (alert)
+
+Invoice Processor                           Vendor Payment Reconciler
+  publishes: invoice.processed  ──────&rarr;     subscribes: includes in three-way match
+                                             publishes: payment.ready  ──────────&rarr;  Expense Report Processor
+                                                                                     (cross-validates)
+
+Client Onboarding Pipeline                  Client Data Analyzer
+  publishes: client.onboarded  ───────&rarr;     subscribes: starts first scheduled analysis
+                                             publishes: anomaly.detected  ───────&rarr;  Email Responder
+                                                                                     (proactive client outreach)
+
+Access Auditor                              Compliance Monitor
+  publishes: access.violation  ───────&rarr;     subscribes: includes in compliance report
+                                             publishes: regulation.changed  ─────&rarr;  Contract Renewal Tracker
+                                                                                     (flags affected contracts)
+</pre>
+
+<div class="co info">
+<strong>The compounding effect:</strong> 14 agents connected by events create an autonomous operations layer. The SLA Watchdog catches risks the Activity Manager acts on. The Invoice Processor feeds the Reconciler which feeds payment batches. The Compliance Monitor flags regulatory changes that the Contract Tracker applies to upcoming renewals. No single agent works in isolation &mdash; the system is greater than the sum of its parts.
+</div>
+
+<!-- Footer -->
+<div style="text-align:center;padding:50px 0 40px;color:var(--t3);font-size:.82rem">
+<p>ForgeOS &mdash; 14-Agent Enterprise Deployment Plan</p>
+<p>10 candidate agents + 4 original roadmap agents across 3 phases</p>
+</div>
+
+</div>
+</body>
+</html>

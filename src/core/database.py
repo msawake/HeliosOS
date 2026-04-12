@@ -125,7 +125,12 @@ class DatabaseClient:
             raise RuntimeError("Database not connected")
 
         with self._pool.connection() as conn:
-            conn.execute("SET app.current_tenant = %s", (tenant_id,))
+            # SET doesn't support parameterized queries ($1) — use
+            # set_config() which does, and is SQL-injection-safe.
+            conn.execute(
+                "SELECT set_config('app.current_tenant', %s, true)",
+                (tenant_id,),
+            )
             yield TenantConnection(conn, tenant_id)
 
     @contextmanager
@@ -138,7 +143,8 @@ class DatabaseClient:
             raise RuntimeError("Database not connected")
 
         with self._pool.connection() as conn:
-            conn.execute("RESET app.current_tenant")
+            # RESET doesn't take parameters; set_config with empty string is equivalent.
+            conn.execute("SELECT set_config('app.current_tenant', '', true)")
             yield TenantConnection(conn, tenant_id=None)
 
     def close(self):
@@ -162,6 +168,14 @@ class TenantConnection:
         except psycopg.ProgrammingError:
             # No results (INSERT/UPDATE/DELETE)
             return cursor.rowcount
+
+    def execute_many(self, query: str, params: tuple | dict | None = None) -> list:
+        """Execute a query and return all rows as a list of dicts."""
+        cursor = self._conn.execute(query, params)
+        try:
+            return cursor.fetchall()
+        except psycopg.ProgrammingError:
+            return []
 
     def execute_one(self, query: str, params: tuple | dict | None = None) -> dict | None:
         """Execute a query and return a single row."""

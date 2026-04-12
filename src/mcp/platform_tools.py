@@ -1120,7 +1120,7 @@ PLATFORM_TOOL_DEFINITIONS: list[dict[str, Any]] = [
 # Handler registry (maps tool name -> handler function)
 # ===========================================================================
 
-_HANDLER_MAP: dict[str, Any] = {
+_SIMULATED_HANDLERS: dict[str, Any] = {
     "platform__crm_search_leads": handle_crm_search_leads,
     "platform__crm_update_lead": handle_crm_update_lead,
     "platform__crm_get_pipeline": handle_crm_get_pipeline,
@@ -1138,6 +1138,34 @@ _HANDLER_MAP: dict[str, Any] = {
     "platform__send_message": handle_send_message,
     "platform__read_messages": handle_read_messages,
 }
+
+
+def _build_handler_map() -> dict[str, Any]:
+    """Build the final handler map, preferring real providers when enabled.
+
+    For each tool in `_SIMULATED_HANDLERS`, check if a real provider is
+    registered and enabled via env flag. If yes, use the real handler;
+    otherwise fall back to the simulated version.
+    """
+    try:
+        from src.mcp import providers
+    except Exception as e:
+        logger.debug("Providers module not available, using all simulated: %s", e)
+        return dict(_SIMULATED_HANDLERS)
+
+    handler_map: dict[str, Any] = {}
+    for tool_name, sim_handler in _SIMULATED_HANDLERS.items():
+        real = providers.resolve(tool_name)
+        if real is not None:
+            handler_map[tool_name] = real
+            logger.info("Platform tool %s: REAL provider enabled", tool_name)
+        else:
+            handler_map[tool_name] = sim_handler
+    return handler_map
+
+
+# The runtime map — built once at module import so status() reflects env at boot.
+_HANDLER_MAP: dict[str, Any] = _build_handler_map()
 
 
 # ===========================================================================

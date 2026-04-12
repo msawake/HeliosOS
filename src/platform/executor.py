@@ -52,6 +52,7 @@ class PlatformExecutor:
         self.agents_root = Path(agents_root)
         self._adapters: dict[str, AgentStackAdapter] = {}
         self._autonomous_tasks: dict[str, asyncio.Task] = {}
+        self._session_locks: dict[str, asyncio.Lock] = {}  # per-session_id locks
 
     def register_adapter(self, adapter: AgentStackAdapter) -> None:
         self._adapters[adapter.stack_name] = adapter
@@ -121,6 +122,24 @@ class PlatformExecutor:
                 shutil.rmtree(agent_dir, ignore_errors=True)
             raise
 
+        # Validate that referenced tools actually exist
+        if agent_def.tools:
+            try:
+                from src.platform.agentic_loop import build_tool_definitions
+                te = getattr(adapter, "_tool_executor", None)
+                available = build_tool_definitions(te, None)
+                available_names = {t.get("name", "") for t in available}
+                missing = [t for t in agent_def.tools if t not in available_names and not t.endswith("*")]
+                if missing:
+                    logger.warning(
+                        "Agent '%s' references tools not currently available: %s. "
+                        "These tools will be unavailable at invocation time.",
+                        agent_def.name, missing,
+                    )
+                    agent_def.metadata["_missing_tools_at_deploy"] = missing
+            except Exception as e:
+                logger.debug("Tool validation skipped: %s", e)
+
         logger.info(
             "Deployed agent '%s' [stack=%s, type=%s, ownership=%s] -> %s",
             agent_def.name,
@@ -131,8 +150,20 @@ class PlatformExecutor:
         )
         return agent_id
 
-    async def invoke(self, agent_id: str, prompt: str, context: dict | None = None) -> AgentResult:
-        """Invoke an agent by ID, routing to the correct stack adapter."""
+    async def invoke(
+        self,
+        agent_id: str,
+        prompt: str,
+        context: dict | None = None,
+        session_id: str | None = None,
+    ) -> AgentResult:
+        """Invoke an agent by ID, routing to the correct stack adapter.
+
+        When *session_id* is provided and a session store is available,
+        the prior conversation history is loaded and passed to the adapter
+        so the LLM sees the full multi-turn context. After invocation,
+        the new user+assistant turn is appended and saved.
+        """
         agent_def = self.registry.get(agent_id)
         if not agent_def:
             return AgentResult(
@@ -149,19 +180,57 @@ class PlatformExecutor:
                 error=f"No adapter for stack '{agent_def.stack}'",
             )
 
-        self.registry.set_status(agent_id, AgentStatus.RUNNING)
-        try:
-            result = await adapter.invoke(agent_id, prompt, context)
-            self.registry.set_status(agent_id, result.status)
-            return result
-        except Exception as e:
-            self.registry.set_status(agent_id, AgentStatus.FAILED)
-            logger.exception("Agent %s invocation failed", agent_id)
-            return AgentResult(
-                agent_id=agent_id,
-                status=AgentStatus.FAILED,
-                error=str(e),
-            )
+        # Acquire per-session lock to prevent concurrent load/save races
+        # (setdefault is atomic for dict key creation, avoiding race conditions)
+        session_lock = None
+        if session_id:
+            session_lock = self._session_locks.setdefault(session_id, asyncio.Lock())
+
+        async def _do_invoke():
+            # Load conversation history from session store
+            history: list[dict] | None = None
+            session = None
+            if session_id and hasattr(self, '_session_store') and self._session_store:
+                session = self._session_store.get(session_id)
+                if session:
+                    history = session.messages
+
+            self.registry.set_status(agent_id, AgentStatus.RUNNING)
+            try:
+                result = await adapter.invoke(agent_id, prompt, context, history=history)
+                self.registry.set_status(agent_id, result.status)
+
+                # Save updated conversation to session store
+                if session_id and hasattr(self, '_session_store') and self._session_store:
+                    if session is None:
+                        from src.core.session_store import AgentSession
+                        session = AgentSession(
+                            session_id=session_id,
+                            agent_id=agent_id,
+                            tenant_id=(context or {}).get("tenant_id", "default"),
+                            messages=[],
+                            system_prompt=agent_def.system_prompt or agent_def.description or "",
+                        )
+                    session.messages.append({"role": "user", "content": prompt})
+                    session.messages.append({"role": "assistant", "content": result.output or ""})
+                    session.turns_completed += 1
+                    session.output_tokens += result.tokens_used
+                    self._session_store.save(session)
+
+                return result
+            except Exception as e:
+                self.registry.set_status(agent_id, AgentStatus.FAILED)
+                logger.exception("Agent %s invocation failed", agent_id)
+                return AgentResult(
+                    agent_id=agent_id,
+                    status=AgentStatus.FAILED,
+                    error=str(e),
+                )
+
+        if session_lock:
+            async with session_lock:
+                return await _do_invoke()
+        return await _do_invoke()
 
     async def stop_agent(self, agent_id: str) -> bool:
         agent_def = self.registry.get(agent_id)
@@ -237,7 +306,9 @@ class PlatformExecutor:
                 self.event_bus.subscribe(trigger, agent_id, _event_callback)
 
         elif agent_def.execution_type == ExecutionType.REFLEX:
-            pass
+            # REFLEX: no persistent lifecycle — agent responds to direct
+            # invocations only. Mark ready for on-demand calls.
+            self.registry.set_status(agent_id, AgentStatus.IDLE)
 
         elif agent_def.execution_type == ExecutionType.AUTONOMOUS:
             task = asyncio.create_task(
@@ -248,48 +319,151 @@ class PlatformExecutor:
             self.registry.set_status(agent_id, AgentStatus.RUNNING)
 
     async def _run_autonomous_loop(self, agent_def: AgentDefinition) -> None:
-        """Goal-directed loop: invoke repeatedly until goal is met or stopped."""
+        """Goal-directed loop: invoke repeatedly until goal is met or stopped.
+
+        Crash-safe: wraps each iteration in try/except. Unhandled exceptions
+        increment a crash counter and apply exponential backoff. The loop
+        bails out to FAILED after `max_crashes_before_give_up` consecutive
+        crashes.
+
+        Supports metadata:
+          - max_iterations (default 50)
+          - loop_interval_seconds (default 30)
+          - restart_on_failure (default False) — if True, FAILED iterations
+            don't terminate the loop immediately
+          - max_crashes_before_give_up (default 3) — after this many
+            consecutive crashes, force status to FAILED and exit
+        """
         agent_id = agent_def.agent_id
         goal = agent_def.goal or "Complete the assigned objective."
         max_iterations = agent_def.metadata.get("max_iterations", 50)
         sleep_between = agent_def.metadata.get("loop_interval_seconds", 30)
+        restart_on_failure = bool(agent_def.metadata.get("restart_on_failure", False))
+        max_crashes = int(agent_def.metadata.get("max_crashes_before_give_up", 3))
+        crash_count = 0
+        completed = False
 
         logger.info("Starting autonomous loop for %s: goal=%s", agent_id, goal)
+
         for i in range(max_iterations):
+            # Check for external stop (e.g., via executor.stop_agent)
             if self.registry.get_status(agent_id) == AgentStatus.STOPPED:
-                break
+                logger.info("Autonomous loop for %s stopped externally", agent_id)
+                return
+
             prompt = f"[Iteration {i + 1}/{max_iterations}] Goal: {goal}"
-            result = await self.invoke(agent_id, prompt)
-            if result.status == AgentStatus.COMPLETED:
-                logger.info("Agent %s reached goal after %d iterations", agent_id, i + 1)
-                break
-            if result.status == AgentStatus.FAILED:
-                logger.warning("Agent %s failed during autonomous loop", agent_id)
-                break
+            try:
+                result = await self.invoke(agent_id, prompt)
+                crash_count = 0  # reset on successful invoke
+
+                if result.status == AgentStatus.COMPLETED:
+                    logger.info("Agent %s reached goal after %d iterations", agent_id, i + 1)
+                    completed = True
+                    break
+                if result.status == AgentStatus.FAILED:
+                    logger.warning("Agent %s failed during iteration %d: %s",
+                                   agent_id, i + 1, result.error)
+                    if not restart_on_failure:
+                        self.registry.set_status(agent_id, AgentStatus.FAILED)
+                        return
+                    # Otherwise, fall through to sleep and retry
+            except asyncio.CancelledError:
+                # Task cancelled (e.g., from stop_agent) — propagate cleanly
+                raise
+            except Exception:
+                crash_count += 1
+                logger.exception(
+                    "Autonomous loop crash (%d/%d) for agent %s",
+                    crash_count, max_crashes, agent_id,
+                )
+                if crash_count >= max_crashes:
+                    logger.error(
+                        "Agent %s quarantined after %d consecutive crashes",
+                        agent_id, crash_count,
+                    )
+                    self.registry.set_status(agent_id, AgentStatus.QUARANTINED)
+                    return
+                # Exponential backoff before retry (capped at 60s)
+                backoff = min(60, 2 ** crash_count)
+                await asyncio.sleep(backoff)
+                continue
+
             await asyncio.sleep(sleep_between)
 
-        self.registry.set_status(agent_id, AgentStatus.COMPLETED)
+        if completed:
+            self.registry.set_status(agent_id, AgentStatus.COMPLETED)
+        else:
+            # Iterations exhausted without a terminal state — mark IDLE so
+            # the agent can be re-invoked via the regular API.
+            logger.info("Autonomous loop for %s exhausted max_iterations (%d)",
+                        agent_id, max_iterations)
+            self.registry.set_status(agent_id, AgentStatus.IDLE)
 
     async def recover(self) -> int:
         """Re-wire execution for all agents loaded from persistent storage.
 
         Call this after boot when registry has been loaded from the database.
         Returns the number of agents that were re-wired.
+
+        Agents in terminal states (FAILED, STOPPED) are **not** re-wired
+        unless their metadata contains `restart_on_failure: true`. This
+        prevents a boot-time crash loop from a bad autonomous agent.
         """
         agents = self.registry.list_all()
         recovered = 0
+        skipped = 0
+        stranded = []
         for agent_def in agents:
             adapter = self._adapters.get(agent_def.stack)
             if not adapter:
+                stranded.append(agent_def.agent_id)
+                logger.warning(
+                    "Agent %s (stack=%s) stranded: no adapter registered",
+                    agent_def.agent_id, agent_def.stack,
+                )
                 continue
+
+            # Skip agents that were terminally failed/stopped before the crash,
+            # unless explicitly opted in via metadata.
+            prev_status = self.registry.get_status(agent_def.agent_id)
+            # Never auto-recover quarantined agents — requires manual intervention
+            if prev_status == AgentStatus.QUARANTINED:
+                logger.info(
+                    "Skipping recovery of %s (QUARANTINED — requires manual restart)",
+                    agent_def.agent_id,
+                )
+                skipped += 1
+                continue
+            if prev_status in (AgentStatus.FAILED, AgentStatus.STOPPED):
+                if not agent_def.metadata.get("restart_on_failure", False):
+                    logger.info(
+                        "Skipping recovery of %s (status=%s, restart_on_failure=false)",
+                        agent_def.agent_id, prev_status.value,
+                    )
+                    skipped += 1
+                    continue
+
             try:
                 await adapter.create_agent(agent_def)
                 await self._wire_execution(agent_def)
                 recovered += 1
             except Exception:
                 logger.exception("Failed to recover agent %s", agent_def.agent_id)
-        if recovered:
-            logger.info("Recovered %d agents from persistent store", recovered)
+        if recovered or skipped or stranded:
+            logger.info(
+                "Recovered %d agents, skipped %d (terminal), stranded %d (no adapter) from persistent store",
+                recovered, skipped, len(stranded),
+            )
+
+        # Per-adapter stack recovery (e.g., rewrite workspace files).
+        for adapter_name, adapter in self._adapters.items():
+            try:
+                count = await adapter.recover()
+                if count:
+                    logger.info("  %s adapter recovered %d item(s)", adapter_name, count)
+            except Exception:
+                logger.exception("Adapter %s recover() failed", adapter_name)
+
         return recovered
 
     def _resolve_agent_dir(self, agent_def: AgentDefinition) -> Path:

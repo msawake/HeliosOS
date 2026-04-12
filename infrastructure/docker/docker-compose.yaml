@@ -1,24 +1,34 @@
 version: "3.9"
 
+# ----------------------------------------------------------------------------
+# ForgeOS local dev stack.
+#
+# Before running: bash infrastructure/docker/docker-setup.sh
+# This creates a .env file in this directory with a random DB_PASSWORD.
+# Then: docker compose up --build
+#
+# DB_PASSWORD and ANTHROPIC_API_KEY MUST be set (no defaults). docker compose
+# will fail fast with a clear message if they're missing.
+# ----------------------------------------------------------------------------
+
 services:
-  # PostgreSQL database
   postgres:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: leadforge
       POSTGRES_USER: leadforge_admin
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD not set — run infrastructure/docker/docker-setup.sh first}
     ports:
-      - "5432:5432"
+      - "5433:5432"  # 5433 to avoid conflict with local Postgres on 5432
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      # Init scripts removed — migration runner (src/core/migrations.py)
+      # handles schema creation on boot for clean versioning.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U leadforge_admin -d leadforge"]
       interval: 5s
       retries: 5
 
-  # Redis cache
   redis:
     image: redis:7-alpine
     ports:
@@ -28,24 +38,24 @@ services:
       interval: 5s
       retries: 5
 
-  # AI Company application
   app:
     build:
       context: ../..
       dockerfile: infrastructure/docker/Dockerfile
+      target: api
     ports:
       - "5000:5000"
     environment:
-      - DATABASE_URL=postgresql://leadforge_admin:${DB_PASSWORD:-changeme}@postgres:5432/leadforge
+      - DATABASE_URL=postgresql://leadforge_admin:${DB_PASSWORD:?}@postgres:5432/leadforge
       - REDIS_URL=redis://redis:6379
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY not set — add it to .env}
       - PYTHONPATH=/app
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: ["python", "-m", "src.bootstrap", "--dashboard", "--demo"]
+    command: ["python", "-m", "src.bootstrap", "--dashboard", "--loop"]
 
 volumes:
   postgres_data:

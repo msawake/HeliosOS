@@ -1,32 +1,84 @@
-FROM python:3.12-slim
+# syntax=docker/dockerfile:1.6
+# =============================================================================
+# ForgeOS API image
+#
+# Two-stage build:
+#   builder → installs production deps into /install (cached by pyproject.toml)
+#   api     → slim runtime that copies /install + src/, runs as non-root user
+#
+# Build:
+#   docker buildx build --target api -f infrastructure/docker/Dockerfile -t forgeos-api:test .
+#
+# CI note: `.github/workflows/docker-publish.yml` passes `target: api` — do not
+# rename that stage without updating the workflow.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Stage 1 — builder
+# ---------------------------------------------------------------------------
+FROM python:3.12-slim AS builder
+WORKDIR /build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential curl git \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml .
+
+# Install into a prefix we'll copy into the runtime image.
+# `[production,scheduler]` pulls openai + mcp + apscheduler + psycopg[binary,pool]
+# + redis + GCP libs + stripe + otel. Fallback keeps a minimal install for
+# environments that can't read the optional extras.
+RUN pip install --no-cache-dir --prefix=/install ".[production,scheduler]" \
+    || pip install --no-cache-dir --prefix=/install \
+        "pyyaml>=6.0" \
+        "fastapi>=0.115" \
+        "uvicorn[standard]>=0.34" \
+        "anthropic>=0.52" \
+        "python-dotenv>=1.0"
+
+# ---------------------------------------------------------------------------
+# Stage 2 — api (runtime)
+# ---------------------------------------------------------------------------
+FROM python:3.12-slim AS api
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -g 1000 forgeos \
+    && useradd -u 1000 -g forgeos -s /sbin/nologin -m -d /home/forgeos forgeos
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+# Copy installed Python packages from builder
+COPY --from=builder /install /usr/local
 
-# Install Python dependencies
-COPY pyproject.toml .
-RUN pip install --no-cache-dir ".[production]" 2>/dev/null || pip install --no-cache-dir pyyaml flask anthropic
+# Copy application code (ownership matches the non-root user)
+COPY --chown=forgeos:forgeos src/ src/
+COPY --chown=forgeos:forgeos stacks/ stacks/
+COPY --chown=forgeos:forgeos config/ config/
+COPY --chown=forgeos:forgeos infrastructure/database/ infrastructure/database/
+COPY --chown=forgeos:forgeos resources/ resources/
+COPY --chown=forgeos:forgeos pyproject.toml .
 
-# Copy application code
-COPY src/ src/
-COPY config/ config/
-COPY infrastructure/database/schema.sql infrastructure/database/schema.sql
+# Create writable runtime dirs. K8s mounts PVCs at these paths; local `docker run`
+# uses these directly. fsGroup 1000 on K8s matches the user below.
+RUN mkdir -p /app/agents /home/forgeos/.openclaw-forgeos \
+    && chown -R forgeos:forgeos /app/agents /home/forgeos/.openclaw-forgeos
 
-# Environment
-ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
-ENV PORT=5000
+USER forgeos
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    PORT=5000
+
+EXPOSE 5000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:${PORT}/api/health || exit 1
 
-EXPOSE ${PORT}
+# tini ensures proper signal handling and zombie reaping
+ENTRYPOINT ["/usr/bin/tini", "--"]
 
-# Default: boot company with dashboard
+# Default: boot platform with dashboard + main loop
 CMD ["python", "-m", "src.bootstrap", "--dashboard", "--loop"]

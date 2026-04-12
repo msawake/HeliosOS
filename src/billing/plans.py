@@ -3,6 +3,10 @@ ForgeOS pricing plans and usage enforcement.
 
 Defines plan tiers with token limits, agent counts, and workflow quotas.
 Enforces limits before agent invocations.
+
+Per-token pricing (USD) is computed via `TOKEN_PRICING`, keyed by model
+name prefix. Token costs are recorded in `usage_records.metric='cost_usd'`
+alongside raw token counts so dashboards can aggregate by tenant/period.
 """
 
 from __future__ import annotations
@@ -12,6 +16,61 @@ from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Per-token pricing (USD per 1M tokens)
+# ---------------------------------------------------------------------------
+# Sources (approximate, as of April 2026):
+#   Anthropic: https://www.anthropic.com/pricing
+#   OpenAI:    https://openai.com/pricing
+
+TOKEN_PRICING = {
+    # Anthropic Claude
+    "claude-opus-4": {"input": 15.00, "output": 75.00},
+    "claude-opus-4-6": {"input": 15.00, "output": 75.00},
+    "claude-sonnet-4": {"input": 3.00, "output": 15.00},
+    "claude-sonnet-4-5": {"input": 3.00, "output": 15.00},
+    "claude-sonnet-4-6": {"input": 3.00, "output": 15.00},
+    "claude-haiku-4": {"input": 0.80, "output": 4.00},
+    "claude-haiku-4-5": {"input": 0.80, "output": 4.00},
+    "claude-3-5-sonnet": {"input": 3.00, "output": 15.00},
+    "claude-3-5-haiku": {"input": 0.80, "output": 4.00},
+    "claude-3-opus": {"input": 15.00, "output": 75.00},
+    # OpenAI
+    "gpt-4o": {"input": 2.50, "output": 10.00},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
+    "gpt-4.1": {"input": 2.50, "output": 10.00},
+    "o3": {"input": 15.00, "output": 60.00},
+    "o3-mini": {"input": 1.10, "output": 4.40},
+    # Default fallback
+    "default": {"input": 3.00, "output": 15.00},
+}
+
+
+def estimate_cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
+    """Estimate USD cost for a given (model, input, output) tuple.
+
+    Uses longest-prefix match against `TOKEN_PRICING` so specific version
+    suffixes (e.g., `claude-3-5-sonnet-20241022`) fall back to the family
+    price. Tokens are assumed billable per million.
+    """
+    if not model:
+        return 0.0
+    model_lower = model.lower()
+    pricing = None
+    # Longest-prefix match
+    for key in sorted(TOKEN_PRICING.keys(), key=len, reverse=True):
+        if key == "default":
+            continue
+        if model_lower.startswith(key):
+            pricing = TOKEN_PRICING[key]
+            break
+    if pricing is None:
+        pricing = TOKEN_PRICING["default"]
+    input_cost = (input_tokens / 1_000_000) * pricing["input"]
+    output_cost = (output_tokens / 1_000_000) * pricing["output"]
+    return round(input_cost + output_cost, 6)
 
 
 @dataclass
@@ -136,6 +195,37 @@ class UsageEnforcer:
             "workflows": self._get_daily_usage(tenant_id, "workflows"),
             "agent_invocations": self._get_daily_usage(tenant_id, "agent_invocations"),
             "tool_calls": self._get_daily_usage(tenant_id, "tool_calls"),
+            "cost_usd": self._get_daily_usage(tenant_id, "cost_usd"),
+        }
+
+    def get_monthly_summary(self, tenant_id: str) -> dict:
+        """Get month-to-date usage totals for a tenant."""
+        return {
+            "tokens": self._get_monthly_usage(tenant_id, "tokens"),
+            "agent_invocations": self._get_monthly_usage(tenant_id, "agent_invocations"),
+            "tool_calls": self._get_monthly_usage(tenant_id, "tool_calls"),
+            "cost_usd": self._get_monthly_usage(tenant_id, "cost_usd"),
+        }
+
+    def check_monthly_cost(
+        self, tenant_id: str, monthly_limit_usd: float | None = None,
+    ) -> dict:
+        """Check whether the tenant's MTD cost is under a monthly cap.
+
+        Returns `{allowed, cost_usd, limit_usd, remaining}`.
+        When `monthly_limit_usd` is None (or 0), no enforcement is applied.
+        """
+        cost = self._get_monthly_usage(tenant_id, "cost_usd")
+        if not monthly_limit_usd or monthly_limit_usd <= 0:
+            return {
+                "allowed": True, "cost_usd": cost,
+                "limit_usd": None, "remaining": None,
+            }
+        return {
+            "allowed": cost < monthly_limit_usd,
+            "cost_usd": cost,
+            "limit_usd": monthly_limit_usd,
+            "remaining": max(0, monthly_limit_usd - cost),
         }
 
     def _get_daily_usage(self, tenant_id: str, metric: str) -> float:
@@ -150,3 +240,17 @@ class UsageEnforcer:
                 (tenant_id, metric),
             )
             return float(row["amount"]) if row else 0
+
+    def _get_monthly_usage(self, tenant_id: str, metric: str) -> float:
+        """Get month-to-date usage for a specific metric."""
+        if not self._db or not self._db.is_connected:
+            return 0
+
+        with self._db.admin() as conn:
+            row = conn.execute_one(
+                "SELECT COALESCE(SUM(amount), 0) AS total FROM usage_records "
+                "WHERE tenant_id = %s AND date >= date_trunc('month', CURRENT_DATE) "
+                "AND metric = %s",
+                (tenant_id, metric),
+            )
+            return float(row["total"]) if row else 0

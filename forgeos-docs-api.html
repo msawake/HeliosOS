@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ForgeOS Docs &mdash; API Reference</title>
+<style>
+:root{--bg:#0F172A;--surface:#1E293B;--surface2:#253349;--border:#334155;--text:#F8FAFC;--muted:#94A3B8;--accent:#60A5FA;--green:#34D399;--red:#F87171;--orange:#FB923C;--purple:#A78BFA;--cyan:#06B6D4;--code-bg:#121820;--radius:10px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.7;font-size:15px}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(15,23,42,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;height:52px;gap:4px}
+nav .logo{font-weight:700;font-size:16px;color:var(--text);margin-right:24px;white-space:nowrap}
+nav a{color:var(--muted);padding:6px 14px;border-radius:6px;font-size:13.5px;font-weight:500;transition:all .2s}
+nav a:hover,nav a.active{color:var(--text);background:var(--surface);text-decoration:none}
+.wrap{max-width:1120px;margin:0 auto;padding:76px 24px 60px}
+h1{font-size:34px;font-weight:700;letter-spacing:-.5px;margin-bottom:6px}
+h2{font-size:22px;font-weight:600;margin-top:48px;margin-bottom:16px;padding-top:24px;border-top:1px solid var(--border)}
+.sub{color:var(--muted);font-size:17px;margin-bottom:32px}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;overflow-x:auto;font-size:13px;line-height:1.5;margin:10px 0}
+code{font-family:'JetBrains Mono','Fira Code',monospace}
+:not(pre)>code{background:var(--surface);padding:2px 7px;border-radius:4px;font-size:13px}
+.method{display:inline-block;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:700;margin-right:8px;font-family:monospace}
+.method-get{background:rgba(52,211,153,.15);color:var(--green)}
+.method-post{background:rgba(96,165,250,.15);color:var(--accent)}
+.method-put{background:rgba(251,146,60,.15);color:var(--orange)}
+.method-delete{background:rgba(248,113,113,.15);color:var(--red)}
+.ep{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;margin:12px 0}
+.ep-header{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.ep-path{font-family:monospace;font-size:14px;font-weight:600}
+.ep-desc{color:var(--muted);font-size:14px;margin-bottom:8px}
+.ep-auth{font-size:12px;padding:2px 8px;border-radius:12px;background:rgba(148,163,184,.1);color:var(--muted)}
+.toc{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:24px 0}
+.toc a{display:block;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;transition:border-color .2s;font-size:14px}
+.toc a:hover{border-color:var(--accent);text-decoration:none}
+.toc .cnt{color:var(--muted);font-size:12px;float:right}
+.kw{color:var(--cyan)}.st{color:var(--green)}.nu{color:var(--orange)}
+@media(max-width:768px){.toc{grid-template-columns:1fr}h1{font-size:26px}}
+</style>
+</head>
+<body>
+
+<nav>
+<span class="logo">ForgeOS Docs</span>
+<a href="forgeos-docs.html">Overview</a>
+<a href="forgeos-docs-architecture.html">Architecture</a>
+<a href="forgeos-docs-agents.html">Agents</a>
+<a href="forgeos-docs-stacks.html">Stacks</a>
+<a href="forgeos-docs-api.html" class="active">API Reference</a>
+<a href="forgeos-docs-operations.html">Operations</a>
+</nav>
+
+<div class="wrap">
+
+<h1>API Reference</h1>
+<p class="sub">58 FastAPI endpoints across 18 sections &mdash; Base URL: <code>http://localhost:5000</code></p>
+
+<!-- TOC -->
+<div class="toc">
+<a href="#health">Health &amp; System <span class="cnt">3</span></a>
+<a href="#agents">Agents <span class="cnt">13</span></a>
+<a href="#wizard">Agent Wizard <span class="cnt">1</span></a>
+<a href="#events">Events <span class="cnt">2</span></a>
+<a href="#approvals">Approvals <span class="cnt">4</span></a>
+<a href="#admin">Admin Chat <span class="cnt">6</span></a>
+<a href="#intel">Intelligence <span class="cnt">4</span></a>
+<a href="#audit">Audit <span class="cnt">1</span></a>
+<a href="#billing">Billing <span class="cnt">1</span></a>
+<a href="#providers">Providers <span class="cnt">1</span></a>
+<a href="#auth">Auth <span class="cnt">2</span></a>
+<a href="#clients">Clients <span class="cnt">8</span></a>
+<a href="#workflows">Workflows <span class="cnt">2</span></a>
+<a href="#messaging">Messaging <span class="cnt">2</span></a>
+<a href="#scheduler">Scheduler <span class="cnt">1</span></a>
+<a href="#skills">Skills <span class="cnt">3</span></a>
+<a href="#mcps">MCPs <span class="cnt">3</span></a>
+</div>
+
+<!-- Health -->
+<h2 id="health">Health &amp; System</h2>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/health</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">System health check. Returns component status, agent count, pending approvals.</div>
+<pre><code>{ <span class="kw">"status"</span>: <span class="st">"ok"</span>, <span class="kw">"components"</span>: { <span class="kw">"database"</span>: <span class="nu">true</span>, <span class="kw">"agents_registered"</span>: <span class="nu">41</span>, <span class="kw">"llm_providers"</span>: [<span class="st">"anthropic"</span>] } }</code></pre>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/readiness</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">K8s readiness probe. Returns 503 until boot is complete.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/metrics</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Prometheus scrape endpoint. Returns metrics in exposition format.</div>
+</div>
+
+<!-- Agents -->
+<h2 id="agents">Agents</h2>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/platform/overview</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Registry summary: counts by stack, execution type, and status.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/platform/agents</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">List all agents. Filter: <code>?stack=forgeos&amp;execution_type=scheduled&amp;department=sales</code></div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/platform/agents/{agent_id}</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Get a single agent definition with status.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-post">POST</span><span class="ep-path">/api/platform/agents</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">Deploy a new agent. Returns 201 with agent definition.</div>
+<pre><code>{
+  <span class="kw">"name"</span>: <span class="st">"my-agent"</span>,
+  <span class="kw">"stack"</span>: <span class="st">"forgeos"</span>,
+  <span class="kw">"execution_type"</span>: <span class="st">"reflex"</span>,
+  <span class="kw">"description"</span>: <span class="st">"A helpful assistant"</span>,
+  <span class="kw">"chat_model"</span>: <span class="st">"claude-sonnet-4-5-20250514"</span>,
+  <span class="kw">"tools"</span>: [<span class="st">"mcp__filesystem__*"</span>],
+  <span class="kw">"system_prompt"</span>: <span class="st">"You are a helpful assistant."</span>
+}</code></pre>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-put">PUT</span><span class="ep-path">/api/platform/agents/{agent_id}</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">Update an existing agent (tools, system prompt, LLM config, execution type).</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-post">POST</span><span class="ep-path">/api/platform/agents/{agent_id}/invoke</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">One-shot agent invocation. Returns AgentResult with output text and tool calls.</div>
+<pre><code>{ <span class="kw">"prompt"</span>: <span class="st">"Generate the daily report"</span>, <span class="kw">"context"</span>: {} }</code></pre>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-post">POST</span><span class="ep-path">/api/platform/agents/{agent_id}/chat/stream</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Streaming multi-turn chat via SSE. Events: text_delta, tool_call, tool_result, hitl_request, done, error.</div>
+<pre><code>{ <span class="kw">"message"</span>: <span class="st">"Hello!"</span>, <span class="kw">"session_id"</span>: <span class="st">"optional-session-id"</span> }</code></pre>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/platform/agents/{agent_id}/chat/sessions</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">List chat sessions for an agent.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/platform/agents/{agent_id}/chat/history</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Get full message history for a session. Query: <code>?session_id=...</code></div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-delete">DELETE</span><span class="ep-path">/api/platform/agents/{agent_id}/chat/sessions/{session_id}</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Delete a chat session.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-post">POST</span><span class="ep-path">/api/platform/agents/{agent_id}/stop</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">Stop a running agent (cancels loops, removes scheduled jobs).</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-delete">DELETE</span><span class="ep-path">/api/platform/agents/{agent_id}</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">Undeploy and delete an agent (stops, removes files, unregisters).</div>
+</div>
+
+<!-- Wizard -->
+<h2 id="wizard">Agent Wizard</h2>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-post">POST</span><span class="ep-path">/api/platform/wizard/chat</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">AI-assisted agent design. Send conversation messages, get agent config proposals or follow-up questions.</div>
+<pre><code>{ <span class="kw">"messages"</span>: [{ <span class="kw">"role"</span>: <span class="st">"user"</span>, <span class="kw">"content"</span>: <span class="st">"Create a sales lead scoring agent"</span> }], <span class="kw">"context"</span>: {} }</code></pre>
+</div>
+
+<!-- Events -->
+<h2 id="events">Events</h2>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/events</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">List events. Filter: <code>?department=sales&amp;status=PENDING&amp;priority=P0_CRITICAL</code></div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-post">POST</span><span class="ep-path">/api/platform/events</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">Fire a custom event to the event bus.</div>
+<pre><code>{ <span class="kw">"name"</span>: <span class="st">"lead.qualified"</span>, <span class="kw">"payload"</span>: { <span class="kw">"lead_id"</span>: <span class="st">"L-123"</span> } }</code></pre>
+</div>
+
+<!-- Approvals -->
+<h2 id="approvals">Approvals (HITL)</h2>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/approvals</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">List all pending approval requests. Filter: <code>?category=financial</code></div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/approvals/{request_id}</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Get approval request details and status.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-post">POST</span><span class="ep-path">/api/approvals/{request_id}/approve</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Approve a pending request. Body: <code>{ "approved_by": "user@example.com", "notes": "..." }</code></div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-post">POST</span><span class="ep-path">/api/approvals/{request_id}/reject</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Reject a pending request. Body: <code>{ "rejected_by": "user@example.com", "reason": "..." }</code></div>
+</div>
+
+<!-- Admin Chat -->
+<h2 id="admin">Admin Chat</h2>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-post">POST</span><span class="ep-path">/api/admin/chat</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Non-streaming admin chat. Supports commands: "list agents", "system status", "show approvals".</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-post">POST</span><span class="ep-path">/api/admin/chat/stream</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Streaming admin chat via SSE. Same commands plus full LLM conversation.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/admin/health</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Detailed system health with component breakdown.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/admin/metrics</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Admin dashboard metrics (agent counts, event counts, etc.).</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/admin/events</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">List recent events for admin dashboard.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/admin/knowledge</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Search/list knowledge base entries.</div>
+</div>
+
+<!-- Intelligence -->
+<h2 id="intel">Intelligence</h2>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-post">POST</span><span class="ep-path">/api/intelligence/ask</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Ask the intelligence system a question (ontology-aware).</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/intelligence/ontology/schema</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Get the ontology schema (entity types, relationships).</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/intelligence/ontology/objects</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">List ontology objects. Filter: <code>?type=Lead&amp;limit=50</code></div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-post">POST</span><span class="ep-path">/api/intelligence/connectors/sync</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">Trigger a data connector sync (pulls data from external systems).</div>
+</div>
+
+<!-- Audit -->
+<h2 id="audit">Audit</h2>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/audit</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">Query audit log. Filter: <code>?action=agent.deploy&amp;limit=100</code></div>
+</div>
+
+<!-- Billing -->
+<h2 id="billing">Billing &amp; Usage</h2>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/billing/usage</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">Current billing period usage (tokens, cost, invocations).</div>
+</div>
+
+<!-- Providers -->
+<h2 id="providers">Providers</h2>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/admin/providers</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">LLM provider status (which are configured, which are active).</div>
+</div>
+
+<!-- Auth -->
+<h2 id="auth">Auth</h2>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-post">POST</span><span class="ep-path">/api/auth/token</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Generate a dev API token. Body: <code>{ "name": "dev-token" }</code></div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/me</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">Get current user/token info.</div>
+</div>
+
+<!-- Clients -->
+<h2 id="clients">Clients</h2>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-post">POST</span><span class="ep-path">/api/clients</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">Create a new client.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/clients</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">List all clients.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/clients/{client_id}</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">Get client details.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-delete">DELETE</span><span class="ep-path">/api/clients/{client_id}</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">Delete a client.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/clients/{client_id}/agents</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">List agents owned by a client.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-post">POST</span><span class="ep-path">/api/clients/{client_id}/mcp-servers</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">Add a client-scoped MCP server configuration.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/clients/{client_id}/mcp-servers</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">List MCP servers configured for a client.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-delete">DELETE</span><span class="ep-path">/api/clients/{client_id}/mcp-servers/{server_name}</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">Remove a client MCP server.</div>
+</div>
+
+<!-- Workflows -->
+<h2 id="workflows">Workflows</h2>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/workflows</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">List all workflow definitions.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/workflows/{workflow_id}</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">Get workflow details including task graph and status.</div>
+</div>
+
+<!-- Messaging -->
+<h2 id="messaging">Inter-Agent Messaging</h2>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-post">POST</span><span class="ep-path">/api/platform/messages</span><span class="ep-auth">Auth Required</span></div>
+<div class="ep-desc">Send a message between agents. Body: <code>{ "from_agent": "...", "to_agent": "...", "content": "..." }</code></div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/platform/messages/{agent_id}</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Get messages for an agent.</div>
+</div>
+
+<!-- Scheduler -->
+<h2 id="scheduler">Scheduler</h2>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/platform/scheduler</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">List all scheduled jobs with next run time.</div>
+</div>
+
+<!-- Skills -->
+<h2 id="skills">Skills Registry</h2>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/skills/domains</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">List skill domains (categories).</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/skills/search</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Search skills by keyword. Query: <code>?q=email&amp;domain=marketing</code></div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/skills/{name}</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Get skill definition by name.</div>
+</div>
+
+<!-- MCPs -->
+<h2 id="mcps">MCP Package Registry</h2>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/mcps/categories</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">List MCP package categories.</div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/mcps/search</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Search MCP packages. Query: <code>?q=google&amp;category=cloud-platforms</code></div>
+</div>
+
+<div class="ep">
+<div class="ep-header"><span class="method method-get">GET</span><span class="ep-path">/api/mcps/{name}</span><span class="ep-auth">Public</span></div>
+<div class="ep-desc">Get MCP package details.</div>
+</div>
+
+<div style="text-align:center;margin-top:48px;padding-top:24px;border-top:1px solid var(--border);color:var(--muted);font-size:13px">
+ForgeOS v3.0 &mdash; API Reference (58 endpoints) &mdash; April 2026
+</div>
+
+</div>
+</body>
+</html>

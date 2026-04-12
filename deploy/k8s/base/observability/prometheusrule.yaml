@@ -1,0 +1,152 @@
+# ----------------------------------------------------------------------------
+# PrometheusRule — alerting rules for ForgeOS.
+#
+# Alerts are grouped by severity. The `severity` label matches the
+# `AlertSeverity` enum in src/platform/alerts.py, so rule routing in
+# Alertmanager can reuse the same value.
+#
+# Requires Prometheus Operator. Alerts fire via Alertmanager; pair with
+# the src/platform/alerts.py dispatcher if you want in-process alerting
+# instead.
+# ----------------------------------------------------------------------------
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: forgeos-alerts
+  labels:
+    app.kubernetes.io/name: forgeos
+    release: prometheus  # adjust to match your Prometheus CR's ruleSelector
+spec:
+  groups:
+    # -------------------------------------------------------------------
+    # Critical — page immediately
+    # -------------------------------------------------------------------
+    - name: forgeos.critical
+      interval: 30s
+      rules:
+        - alert: ForgeOSAPIDown
+          expr: |
+            up{job="forgeos-api"} == 0
+          for: 2m
+          labels:
+            severity: sev1
+            component: api
+          annotations:
+            summary: "ForgeOS API is down"
+            description: "The forgeos-api service has not been scraped successfully for 2 minutes."
+            runbook_url: "https://docs.forgeos/runbooks/api-down"
+
+        - alert: ForgeOSHighErrorRate
+          expr: |
+            (
+              sum(rate(forgeos_agent_invoke_total{outcome="failed"}[5m]))
+              /
+              sum(rate(forgeos_agent_invoke_total[5m]))
+            ) > 0.10
+          for: 5m
+          labels:
+            severity: sev1
+            component: platform
+          annotations:
+            summary: "ForgeOS agent error rate > 10%"
+            description: "Agent invocation failure rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+
+        - alert: ForgeOSDatabaseDown
+          expr: |
+            absent(up{job="forgeos-api"} == 1)
+          for: 3m
+          labels:
+            severity: sev1
+            component: database
+          annotations:
+            summary: "ForgeOS cannot reach the database"
+            description: "No successful API scrape for 3 minutes — check DB connectivity."
+
+    # -------------------------------------------------------------------
+    # Major — alert during business hours
+    # -------------------------------------------------------------------
+    - name: forgeos.major
+      interval: 30s
+      rules:
+        - alert: ForgeOSSchedulerLag
+          expr: |
+            forgeos_scheduler_lag_seconds > 600
+          for: 5m
+          labels:
+            severity: sev2
+            component: scheduler
+          annotations:
+            summary: "Scheduler lag exceeds 10 minutes"
+            description: "Scheduled jobs are running {{ $value | humanizeDuration }} behind schedule."
+
+        - alert: ForgeOSHighLLMFailoverRate
+          expr: |
+            sum(rate(forgeos_llm_failover_total[10m])) > 0.5
+          for: 5m
+          labels:
+            severity: sev2
+            component: llm
+          annotations:
+            summary: "LLM provider failover rate is high"
+            description: "Over 0.5 failovers/sec sustained for 5 minutes — primary provider likely unhealthy."
+
+        - alert: ForgeOSAutonomousCrashLoop
+          expr: |
+            sum(increase(forgeos_agent_deploy_total{outcome="crash_loop"}[1h])) > 0
+          for: 1m
+          labels:
+            severity: sev2
+            component: platform
+          annotations:
+            summary: "Autonomous agent crash loop detected"
+            description: "One or more autonomous agents exceeded max_crashes_before_give_up in the last hour."
+
+    # -------------------------------------------------------------------
+    # Warning — notify but don't page
+    # -------------------------------------------------------------------
+    - name: forgeos.warning
+      interval: 60s
+      rules:
+        - alert: ForgeOSApprovalBacklog
+          expr: |
+            forgeos_approvals_pending > 50
+          for: 10m
+          labels:
+            severity: sev3
+            component: hitl
+          annotations:
+            summary: "HITL approval backlog > 50"
+            description: "{{ $value }} approvals pending — human review throughput is backing up."
+
+        - alert: ForgeOSHighTokenUsage
+          expr: |
+            sum(rate(forgeos_llm_tokens_total[1h])) > 10000
+          for: 15m
+          labels:
+            severity: sev3
+            component: cost
+          annotations:
+            summary: "LLM token usage spike"
+            description: "Token consumption exceeded 10k/sec over the last 15 minutes. Check for runaway agents."
+
+        - alert: ForgeOSTenantCostOverage
+          expr: |
+            forgeos_tenant_cost_usd_month > 1000
+          for: 5m
+          labels:
+            severity: sev3
+            component: billing
+          annotations:
+            summary: "Tenant month-to-date cost > $1000"
+            description: "Tenant {{ $labels.tenant_id }} has consumed {{ $value | humanize }} USD this month."
+
+        - alert: ForgeOSSlowToolCalls
+          expr: |
+            histogram_quantile(0.99, sum(rate(forgeos_tool_duration_seconds_bucket[5m])) by (le, tool_name)) > 30
+          for: 10m
+          labels:
+            severity: sev3
+            component: mcp
+          annotations:
+            summary: "Tool P99 latency > 30s"
+            description: "Tool {{ $labels.tool_name }} P99 latency is {{ $value | humanizeDuration }}."

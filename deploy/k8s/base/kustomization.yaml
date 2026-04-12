@@ -6,11 +6,16 @@ namespace: forgeos
 resources:
   - namespace.yaml
   - configmap.yaml
+  - pvc.yaml
   - deployment-api.yaml
   - deployment-web.yaml
   - service-api.yaml
   - service-web.yaml
   - ingress.yaml
+  - networkpolicy.yaml
+  - hpa-api.yaml
+  - pdb-api.yaml
+  - pdb-web.yaml
 
 commonLabels:
   app.kubernetes.io/managed-by: kustomize

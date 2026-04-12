@@ -16,7 +16,8 @@ openai = ["openai>=1.0"]
 mcp = ["mcp>=1.0"]
 all-providers = ["openai>=1.0", "mcp>=1.0"]
 crewai = ["crewai>=0.80"]
-adk = ["google-adk>=1.0"]
+adk = ["google-adk[extensions]>=1.29"]
+scheduler = ["apscheduler>=3.10"]
 database = [
     "psycopg[binary,pool]>=3.2",
     "redis>=5.0",
@@ -29,6 +30,7 @@ gcp = [
     "firebase-admin>=6.0",
 ]
 observability = [
+    "prometheus-client>=0.20",
     "opentelemetry-api>=1.27",
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp-proto-grpc>=1.27",
@@ -36,6 +38,7 @@ observability = [
 production = [
     "openai>=1.0",
     "mcp>=1.0",
+    "apscheduler>=3.10",
     "psycopg[binary,pool]>=3.2",
     "redis>=5.0",
     "google-cloud-sql-connector[pg8000]>=1.4",
@@ -44,6 +47,7 @@ production = [
     "google-cloud-storage>=2.10",
     "firebase-admin>=6.0",
     "stripe>=7.0",
+    "prometheus-client>=0.20",
     "opentelemetry-api>=1.27",
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp-proto-grpc>=1.27",
@@ -54,6 +58,9 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
 ]
+
+[project.scripts]
+forgeos-migrate = "src.core.migrations:main"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

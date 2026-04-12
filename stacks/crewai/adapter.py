@@ -20,6 +20,7 @@ from stacks.base import (
     AgentStackAdapter,
     AgentStatus,
     OwnershipType,
+    build_agent_context,
 )
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,80 @@ try:
 except ImportError:
     CREWAI_AVAILABLE = False
     logger.info("CrewAI SDK not installed — using simulated adapter")
+
+try:
+    from crewai.tools import BaseTool as CrewBaseTool
+    CREWAI_TOOLS_AVAILABLE = CREWAI_AVAILABLE
+except ImportError:
+    CREWAI_TOOLS_AVAILABLE = False
+
+
+def _crewai_llm_id(llm_config) -> str:
+    """Map a ForgeOS LLMConfig to a CrewAI/LiteLLM-compatible model identifier.
+
+    CrewAI uses LiteLLM internally, which accepts either a bare model name
+    (`gpt-4o`, `claude-3-5-sonnet-20241022`) or a prefixed form
+    (`anthropic/claude-3-5-sonnet-...`). We pass a bare string since
+    LiteLLM auto-detects from the name.
+    """
+    return llm_config.chat_model
+
+
+def _build_crewai_tools(tool_executor, agent_def, agent_context: dict) -> list:
+    """Wrap ForgeOS tools as CrewAI BaseTool instances.
+
+    Each wrapper captures the tool name + schema and, on invocation, runs
+    `tool_executor.execute(...)` in a fresh event loop. Since CrewAI's
+    `crew.kickoff()` runs in a worker thread (via `run_in_executor`), each
+    wrapper executes in that thread without a live asyncio loop, so a new
+    loop is safe to create.
+    """
+    if not CREWAI_TOOLS_AVAILABLE or not tool_executor or not agent_def.tools:
+        return []
+
+    from src.platform.agentic_loop import build_tool_definitions
+
+    schemas = build_tool_definitions(tool_executor, agent_def.tools)
+    wrapped: list = []
+
+    for schema in schemas:
+        tool_name = schema.get("name", "")
+        tool_desc = schema.get("description", "") or f"ForgeOS tool: {tool_name}"
+        if not tool_name:
+            continue
+
+        def _make_wrapper(name_captured: str, desc_captured: str):
+            """Factory to capture name/desc per tool (closure trap otherwise)."""
+
+            class ForgeOSTool(CrewBaseTool):
+                name: str = name_captured
+                description: str = desc_captured
+
+                def _run(self, **kwargs) -> str:
+                    import asyncio as _asyncio
+                    try:
+                        loop = _asyncio.new_event_loop()
+                        try:
+                            result = loop.run_until_complete(
+                                tool_executor.execute(name_captured, kwargs, agent_context)
+                            )
+                        finally:
+                            loop.close()
+                    except Exception as e:
+                        logger.exception("CrewAI tool wrapper %s failed", name_captured)
+                        return f"Error: {e}"
+                    if isinstance(result, dict):
+                        if result.get("success") is False or "error" in result:
+                            return f"Error: {result.get('error', 'unknown')}"
+                        payload = result.get("result", result)
+                        return str(payload)
+                    return str(result)
+
+            return ForgeOSTool()
+
+        wrapped.append(_make_wrapper(tool_name, tool_desc))
+
+    return wrapped
 
 
 class CrewAIAdapter(AgentStackAdapter):
@@ -47,27 +122,47 @@ class CrewAIAdapter(AgentStackAdapter):
         self._agents[agent_def.agent_id] = agent_def
 
         if CREWAI_AVAILABLE:
-            crew_agent = CrewAgent(
+            # Build the agent_context CrewAI tools will use when invoked.
+            agent_context = build_agent_context(agent_def, agent_def.agent_id)
+            tools = _build_crewai_tools(self._tool_executor, agent_def, agent_context)
+            llm_id = _crewai_llm_id(agent_def.llm_config)
+
+            kwargs = dict(
                 role=agent_def.name,
                 goal=agent_def.goal or agent_def.description or "Complete the assigned task",
                 backstory=f"You are {agent_def.name}, an expert at your role within the crew.",
                 verbose=True,
                 allow_delegation=False,
             )
-            self._crew_agents[agent_def.agent_id] = crew_agent
-            logger.info("CrewAI real agent created: %s (%s)", agent_def.name, agent_def.agent_id)
+            if tools:
+                kwargs["tools"] = tools
+            if llm_id:
+                kwargs["llm"] = llm_id
+
+            try:
+                crew_agent = CrewAgent(**kwargs)
+                self._crew_agents[agent_def.agent_id] = crew_agent
+                logger.info(
+                    "CrewAI real agent created: %s (%s) — %d tools, llm=%s",
+                    agent_def.name, agent_def.agent_id, len(tools), llm_id,
+                )
+            except Exception as e:
+                logger.warning(
+                    "CrewAI real agent creation failed (%s); will fall back to platform loop: %s",
+                    agent_def.name, e,
+                )
         else:
             logger.info("CrewAI simulated agent created: %s (%s)", agent_def.name, agent_def.agent_id)
 
         return agent_def.agent_id
 
-    async def invoke(self, agent_id: str, prompt: str, context: dict | None = None) -> AgentResult:
+    async def invoke(self, agent_id: str, prompt: str, context: dict | None = None, history: list[dict] | None = None) -> AgentResult:
         agent_def = self._agents.get(agent_id)
         if not agent_def:
             return AgentResult(agent_id=agent_id, status=AgentStatus.FAILED, error="Agent not found")
 
         if CREWAI_AVAILABLE and agent_id in self._crew_agents:
-            return await self._invoke_real(agent_id, agent_def, prompt)
+            return await self._invoke_real(agent_id, agent_def, prompt, history)
 
         if self._llm_router:
             from src.platform.agentic_loop import run_agentic_loop, build_tool_definitions
@@ -85,12 +180,8 @@ class CrewAIAdapter(AgentStackAdapter):
                 user_prompt=prompt,
                 tool_definitions=tools or None,
                 tool_executor=self._tool_executor,
-                agent_context={
-                    "agent_id": agent_id,
-                    "department": agent_def.department,
-                    "client_id": agent_def.owner_id if agent_def.ownership == OwnershipType.CLIENT else None,
-                    "allowed_tools": agent_def.tools or None,
-                },
+                agent_context=build_agent_context(agent_def, agent_id),
+                history=history,
             )
             result.agent_id = agent_id
             return result
@@ -101,12 +192,23 @@ class CrewAIAdapter(AgentStackAdapter):
             output=f"[CrewAI simulated] Crew member '{agent_def.name}' processed: {prompt[:100]}",
         )
 
-    async def _invoke_real(self, agent_id: str, agent_def: AgentDefinition, prompt: str) -> AgentResult:
+    async def _invoke_real(
+        self, agent_id: str, agent_def: AgentDefinition, prompt: str,
+        history: list[dict] | None = None,
+    ) -> AgentResult:
         """Invoke via real CrewAI SDK — runs a single-agent Crew with one Task."""
         crew_agent = self._crew_agents[agent_id]
 
+        # Inject conversation history into task description so the crew has context
+        task_description = prompt
+        if history:
+            history_lines = "\n".join(
+                f"{m['role'].upper()}: {m['content']}" for m in history[-10:]  # last 10 turns
+            )
+            task_description = f"## Conversation History\n{history_lines}\n\n## Current Request\n{prompt}"
+
         task = CrewTask(
-            description=prompt,
+            description=task_description,
             agent=crew_agent,
             expected_output="Structured result with actionable insights",
         )
@@ -118,7 +220,7 @@ class CrewAIAdapter(AgentStackAdapter):
         )
 
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(None, crew.kickoff)
 
             output_text = str(result)

@@ -23,11 +23,13 @@ export default function SkillsPage() {
     }).catch(() => {});
   }, []);
 
-  function search() {
-    if (!query.trim()) return;
+  function search(q?: string, d?: string) {
+    const searchQuery = q ?? query;
+    const searchDomain = d ?? domain;
+    if (!searchQuery.trim()) return;
     setLoading(true);
     setExpanded(null);
-    api.searchSkills(query, domain || undefined)
+    api.searchSkills(searchQuery, searchDomain || undefined)
       .then((r) => setSkills(r.skills || []))
       .catch(() => setSkills([]))
       .finally(() => setLoading(false));
@@ -44,7 +46,7 @@ export default function SkillsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-white mb-2">Skills Library</h1>
+      <h1 className="text-2xl font-semibold text-[#0d0d0d] mb-2">Skills Library</h1>
       <p className="text-sm text-gray-400 mb-6">{total} reusable skills across {domains.length} domains. Skills are domain expertise that agents use to ground their behavior.</p>
 
       <div className="flex gap-3 mb-6 flex-wrap">
@@ -56,16 +58,16 @@ export default function SkillsPage() {
           <option value="">All Domains</option>
           {domains.map((d) => <option key={d.domain} value={d.domain}>{d.domain} ({d.count})</option>)}
         </select>
-        <button onClick={search} className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white text-sm rounded-lg font-medium">Search</button>
+        <button onClick={() => search()} className="px-4 py-2 bg-[#10A37F] hover:bg-[#0d8c6d] text-white text-sm rounded-lg font-medium">Search</button>
       </div>
 
       {!query && domains.length > 0 && (
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
           {domains.map((d) => (
-            <button key={d.domain} onClick={() => { setDomain(d.domain); setQuery(d.domain); setTimeout(search, 0); }}
-              className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-left hover:border-sky-500 transition-colors">
-              <p className="text-white font-medium">{d.domain}</p>
-              <p className="text-gray-500 text-sm">{d.count} skills</p>
+            <button key={d.domain} onClick={() => { setDomain(d.domain); setQuery(d.domain); search(d.domain, d.domain); }}
+              className="bg-white border border-[#e5e5e5] rounded-xl p-4 text-left hover:border-[#10A37F] transition-colors">
+              <p className="text-[#0d0d0d] font-medium">{d.domain}</p>
+              <p className="text-[#8e8ea0] text-sm">{d.count} skills</p>
             </button>
           ))}
         </div>
@@ -74,17 +76,17 @@ export default function SkillsPage() {
       {loading ? <p className="text-gray-400">Searching...</p> : skills.length > 0 ? (
         <div className="space-y-2">
           {skills.map((s) => (
-            <div key={s.name} className="bg-gray-900 border border-gray-800 rounded-xl">
+            <div key={s.name} className="bg-white border border-[#e5e5e5] rounded-xl">
               <button onClick={() => toggleExpand(s.name)} className="w-full text-left p-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-white font-medium">{s.name}</span>
-                  <span className="text-xs px-2 py-0.5 rounded bg-sky-500/20 text-sky-400">{s.domain}</span>
+                  <span className="text-[#0d0d0d] font-medium">{s.name}</span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-cyan-50 text-cyan-700">{s.domain}</span>
                 </div>
-                <p className="text-gray-400 text-sm">{s.description}</p>
+                <p className="text-[#6e6e80] text-sm">{s.description}</p>
               </button>
               {expanded === s.name && (
-                <div className="px-4 pb-4 border-t border-gray-800 pt-3">
-                  <pre className="bg-gray-950 rounded-lg p-4 text-xs text-gray-300 overflow-auto max-h-96 whitespace-pre-wrap">{expandedContent}</pre>
+                <div className="px-4 pb-4 border-t border-[#e5e5e5] pt-3">
+                  <pre className="bg-[#f7f7f8] rounded-lg p-4 text-xs text-[#6e6e80] overflow-auto max-h-96 whitespace-pre-wrap">{expandedContent}</pre>
                 </div>
               )}
             </div>

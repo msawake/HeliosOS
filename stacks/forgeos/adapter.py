@@ -20,6 +20,7 @@ from stacks.base import (
     AgentStatus,
     ExecutionType,
     OwnershipType,
+    build_agent_context,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,15 +40,26 @@ class ForgeOSAdapter(AgentStackAdapter):
         logger.info("ForgeOS agent created: %s (%s)", agent_def.name, agent_def.agent_id)
         return agent_def.agent_id
 
-    async def invoke(self, agent_id: str, prompt: str, context: dict | None = None) -> AgentResult:
+    async def invoke(
+        self, agent_id: str, prompt: str, context: dict | None = None,
+        history: list[dict] | None = None,
+    ) -> AgentResult:
         agent_def = self._agents.get(agent_id)
         if not agent_def:
             return AgentResult(agent_id=agent_id, status=AgentStatus.FAILED, error="Agent not found")
 
         if self._llm_router:
+            if not self._tool_executor:
+                logger.warning("ForgeOS invoke for %s: no tool_executor — agent will run without tools", agent_id)
             from src.platform.agentic_loop import run_agentic_loop, build_tool_definitions
             tools = build_tool_definitions(self._tool_executor, agent_def.tools or None)
-            system = f"You are {agent_def.name}. {agent_def.description}"
+            # Warn if agent expects MCP tools but none were resolved
+            if agent_def.tools and not tools:
+                logger.warning(
+                    "Agent %s has %d configured tools but none resolved — MCP servers may not be connected",
+                    agent_id, len(agent_def.tools),
+                )
+            system = agent_def.system_prompt or f"You are {agent_def.name}. {agent_def.description}"
             result = await run_agentic_loop(
                 llm_router=self._llm_router,
                 llm_config=agent_def.llm_config,
@@ -55,13 +67,9 @@ class ForgeOSAdapter(AgentStackAdapter):
                 user_prompt=prompt,
                 tool_definitions=tools or None,
                 tool_executor=self._tool_executor,
-                agent_context={
-                    "agent_id": agent_id,
-                    "department": agent_def.department,
-                    "client_id": agent_def.owner_id if agent_def.ownership == OwnershipType.CLIENT else None,
-                    "allowed_tools": agent_def.tools or None,
-                },
+                agent_context=build_agent_context(agent_def, agent_id),
                 context=context,
+                history=history,
             )
             result.agent_id = agent_id
             return result

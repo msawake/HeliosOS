@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ForgeOS Agent Engine — How Asyncio Agents Work</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0F172A;color:#E2E8F0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;min-height:100vh}
+a{color:#60A5FA;text-decoration:none}
+/* Sidebar */
+.sidebar{position:fixed;top:0;left:0;width:240px;height:100vh;background:#1E293B;border-right:1px solid #334155;padding:20px 0;overflow-y:auto;z-index:100}
+.sidebar h2{padding:0 20px 16px;font-size:14px;color:#94A3B8;text-transform:uppercase;letter-spacing:1px}
+.sidebar a{display:block;padding:10px 20px;font-size:14px;color:#94A3B8;border-left:3px solid transparent;transition:all .2s}
+.sidebar a:hover,.sidebar a.active{color:#F8FAFC;background:#0F172A;border-left-color:#3B82F6}
+/* Main */
+.main{margin-left:240px;flex:1;padding:40px 60px;max-width:1100px}
+h1{font-size:32px;margin-bottom:8px;color:#F8FAFC}
+.subtitle{color:#94A3B8;font-size:16px;margin-bottom:40px}
+h2{font-size:24px;margin:48px 0 20px;color:#F8FAFC;padding-top:20px}
+h3{font-size:18px;margin:24px 0 12px;color:#E2E8F0}
+p,.desc{color:#CBD5E1;line-height:1.7;margin-bottom:16px}
+/* Badges */
+.badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;margin-right:6px}
+.b-reflex{background:#6366F120;color:#818CF8;border:1px solid #6366F140}
+.b-model{background:#8B5CF620;color:#A78BFA;border:1px solid #8B5CF640}
+.b-goal{background:#EC489920;color:#F472B6;border:1px solid #EC489940}
+.b-utility{background:#F59E0B20;color:#FBBF24;border:1px solid #F59E0B40}
+.b-auto{background:#10B98120;color:#34D399;border:1px solid #10B98140}
+.b-haiku{background:#60A5FA20;color:#60A5FA;border:1px solid #60A5FA40}
+.b-sonnet{background:#A78BFA20;color:#A78BFA;border:1px solid #A78BFA40}
+.b-opus{background:#FB923C20;color:#FB923C;border:1px solid #FB923C40}
+.b-alwayson{background:#EF444420;color:#F87171;border:1px solid #EF444440}
+.b-scheduled{background:#3B82F620;color:#60A5FA;border:1px solid #3B82F640}
+.b-event{background:#F59E0B20;color:#FBBF24;border:1px solid #F59E0B40}
+.b-ondemand{background:#10B98120;color:#34D399;border:1px solid #10B98140}
+.b-company{background:#3B82F620;color:#60A5FA;border:1px solid #3B82F640}
+/* Pipeline */
+.pipeline{display:flex;flex-direction:column;gap:0;margin:24px 0}
+.pipe-step{display:flex;align-items:flex-start;cursor:pointer;position:relative}
+.pipe-num{width:44px;min-width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;margin-right:16px;flex-shrink:0;transition:transform .2s}
+.pipe-step:hover .pipe-num{transform:scale(1.15)}
+.pipe-body{flex:1;padding:12px 16px;background:#1E293B;border-radius:8px;border:1px solid #334155;margin-bottom:8px;transition:border-color .2s}
+.pipe-step:hover .pipe-body{border-color:#475569}
+.pipe-title{font-weight:600;color:#F8FAFC;font-size:15px}
+.pipe-file{font-size:12px;color:#64748B;font-family:monospace;margin-top:2px}
+.pipe-detail{display:none;margin-top:10px;color:#94A3B8;font-size:13px;line-height:1.6;border-top:1px solid #334155;padding-top:10px}
+.pipe-step.open .pipe-detail{display:block}
+.pipe-connector{width:2px;height:12px;background:#334155;margin-left:21px}
+.n1{background:#3B82F6}.n2{background:#EF4444}.n3{background:#F59E0B}.n4{background:#10B981}.n5{background:#8B5CF6}.n6{background:#EC4899}.n7{background:#6366F1}
+/* Code blocks */
+.code{background:#0F172A;border:1px solid #334155;border-radius:8px;padding:16px;font-family:'SF Mono',Menlo,Monaco,monospace;font-size:13px;line-height:1.6;overflow-x:auto;margin:16px 0;color:#E2E8F0}
+.code .kw{color:#C084FC}.code .fn{color:#60A5FA}.code .st{color:#34D399}.code .cm{color:#64748B}.code .op{color:#F59E0B}
+/* Bridge panels */
+.panels{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:24px 0}
+.panel{background:#1E293B;border:1px solid #334155;border-radius:8px;padding:20px}
+.panel h4{margin-bottom:10px;font-size:14px}
+.panel-problem h4{color:#F87171}.panel-solution h4{color:#34D399}.panel-but h4{color:#FBBF24}
+/* Tabs */
+.tabs{display:flex;gap:4px;margin:24px 0 0;flex-wrap:wrap}
+.tab{padding:10px 18px;background:#1E293B;border:1px solid #334155;border-bottom:none;border-radius:8px 8px 0 0;cursor:pointer;font-size:13px;color:#94A3B8;transition:all .2s}
+.tab:hover{color:#E2E8F0;background:#253349}
+.tab.active{color:#F8FAFC;background:#0F172A;border-color:#475569;border-bottom:1px solid #0F172A;position:relative;z-index:2}
+.tab-content{display:none;border:1px solid #475569;border-radius:0 8px 8px 8px;padding:24px;background:#0F172A}
+.tab-content.active{display:block}
+/* Agent header */
+.agent-header{display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+.agent-id{font-family:monospace;font-size:20px;font-weight:700;color:#F8FAFC}
+/* Timeline */
+.timeline{position:relative;padding-left:32px;margin:16px 0}
+.timeline::before{content:'';position:absolute;left:11px;top:0;bottom:0;width:2px;background:#334155}
+.tl-item{position:relative;margin-bottom:12px;cursor:pointer}
+.tl-dot{position:absolute;left:-32px;top:4px;width:22px;height:22px;border-radius:50%;background:#334155;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#94A3B8;z-index:1;transition:all .2s}
+.tl-item:hover .tl-dot{background:#475569}
+.tl-item.open .tl-dot{background:#3B82F6;color:#fff}
+.tl-head{font-weight:600;font-size:14px;color:#E2E8F0;padding:4px 0}
+.tl-body{display:none;color:#94A3B8;font-size:13px;line-height:1.6;margin-top:8px;padding:12px;background:#1E293B;border-radius:6px;border:1px solid #334155}
+.tl-item.open .tl-body{display:block}
+/* Insight box */
+.insight{background:#10B98115;border:1px solid #10B98140;border-radius:8px;padding:16px;margin:20px 0;color:#6EE7B7}
+.insight strong{color:#34D399}
+/* Event loop viz */
+.ev-loop{background:#1E293B;border:1px solid #334155;border-radius:12px;padding:24px;margin:24px 0;font-family:monospace;font-size:13px}
+.ev-row{display:flex;align-items:center;padding:6px 0;gap:12px}
+.ev-name{width:180px;color:#94A3B8}
+.ev-bar{flex:1;height:24px;border-radius:4px;position:relative;overflow:hidden}
+.ev-fill{height:100%;border-radius:4px;transition:width 1s linear}
+.ev-running .ev-fill{background:linear-gradient(90deg,#3B82F6,#60A5FA);animation:pulse 2s infinite}
+.ev-sleeping .ev-fill{background:#334155}
+.ev-waking .ev-fill{background:#F59E0B;animation:wake .5s}
+.ev-status{width:80px;text-align:right;font-size:11px}
+.ev-status.running{color:#60A5FA}.ev-status.sleeping{color:#64748B}.ev-status.waking{color:#FBBF24}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+@keyframes wake{0%{opacity:0}100%{opacity:1}}
+.ev-header{display:flex;justify-content:space-between;margin-bottom:16px;color:#94A3B8;font-size:12px;text-transform:uppercase;letter-spacing:1px}
+.ev-tick{color:#F59E0B;font-size:14px}
+/* Section divider */
+.divider{border:0;border-top:1px solid #1E293B;margin:40px 0}
+/* Responsive */
+@media(max-width:900px){.sidebar{display:none}.main{margin-left:0;padding:20px}.panels{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<nav class="sidebar">
+<h2>Navigation</h2>
+<a href="#components" class="active">7 Components</a>
+<a href="#bridge">Async/Sync Bridge</a>
+<a href="#examples">5 Agent Examples</a>
+<a href="#concurrency">Concurrency</a>
+</nav>
+
+<div class="main">
+
+<h1>ForgeOS Agent Engine</h1>
+<p class="subtitle">A visual guide to the 7 components, async/sync bridge, and 5 agent execution examples</p>
+
+<!-- ===== SECTION 1 ===== -->
+<h2 id="components">The 7 Components Every Agent Passes Through</h2>
+<p>Every agent invocation — whether a Simple Reflex checking emails or an Autonomous agent running a learning loop — flows through the same 7-step pipeline. Click each step to expand.</p>
+
+<div class="pipeline" id="pipeline">
+
+<div class="pipe-step" onclick="togglePipe(this)">
+<div class="pipe-num n1">1</div>
+<div class="pipe-body">
+<div class="pipe-title">AgentInvoker</div>
+<div class="pipe-file">src/core/agent_invoker.py</div>
+<div class="pipe-detail">
+<p>The universal entry point. <code>invoke(agent_id, prompt, task_metadata)</code> does:</p>
+<p>1. <strong>Registry lookup</strong> — finds the AgentConfig (model, tier, tools, system prompt)<br>
+2. <strong>Session create</strong> — generates UUID, registers as RUNNING<br>
+3. <strong>Audit log</strong> — records "agent_start" event<br>
+4. <strong>Dispatch</strong> — calls <code>await _execute_agent()</code> which enters the agentic loop<br>
+5. <strong>Error handling</strong> — catches TimeoutError, generic exceptions, updates status</p>
+<p>Also provides <strong>delegate_to_subagent()</strong> (single task with retry) and <strong>delegate_parallel()</strong> (multiple tasks via <code>asyncio.gather()</code>).</p>
+</div></div></div>
+
+<div class="pipe-connector"></div>
+
+<div class="pipe-step" onclick="togglePipe(this)">
+<div class="pipe-num n2">2</div>
+<div class="pipe-body">
+<div class="pipe-title">HookChain</div>
+<div class="pipe-file">src/core/hooks.py</div>
+<div class="pipe-detail">
+<p>7 governance checks run on <strong>every tool call</strong>, in order:</p>
+<p>1. <strong>Budget Pre-Check</strong> — estimates cost of next API call, BLOCKS if over limit<br>
+2. <strong>Rate Limiter</strong> — per-session count + per-minute sliding window<br>
+3. <strong>Auth Check</strong> — validates tool is in agent's allowed_tools list<br>
+4. <strong>Cost Tracker</strong> — tracks running session cost<br>
+5. <strong>Compliance Checker</strong> — scans outbound emails for PII, invalid claims<br>
+6. <strong>Slack Notifier</strong> — alerts humans on critical events<br>
+7. <strong>Audit Logger</strong> — immutable record of every action</p>
+<p>Each hook returns: <span style="color:#34D399">ALLOW</span>, <span style="color:#F87171">BLOCK</span>, or <span style="color:#FBBF24">ASK_HUMAN</span>. If any hook blocks, the tool call is denied.</p>
+</div></div></div>
+
+<div class="pipe-connector"></div>
+
+<div class="pipe-step" onclick="togglePipe(this)">
+<div class="pipe-num n3">3</div>
+<div class="pipe-body">
+<div class="pipe-title">Async/Sync Bridge</div>
+<div class="pipe-file">src/core/claude_client.py</div>
+<div class="pipe-detail">
+<p><code>asyncio.to_thread()</code> moves the agentic loop into a <strong>worker thread</strong>. This is critical because:</p>
+<p>• The LLM API client is <strong>synchronous</strong> — each call blocks for 2-30 seconds<br>
+• If it ran on the event loop, ALL other agents would freeze<br>
+• Worker threads let the event loop continue running other agents</p>
+<p>When the agentic loop (in the thread) needs to call an <strong>async tool</strong>, it bridges back via <code>asyncio.run_coroutine_threadsafe()</code>.</p>
+</div></div></div>
+
+<div class="pipe-connector"></div>
+
+<div class="pipe-step" onclick="togglePipe(this)">
+<div class="pipe-num n4">4</div>
+<div class="pipe-body">
+<div class="pipe-title">Agentic Loop (Reason → Act → Observe)</div>
+<div class="pipe-file">src/core/claude_client.py → _run_sync()</div>
+<div class="pipe-detail">
+<p>The core loop repeats up to 50 turns:</p>
+<p>1. <strong>Reason</strong> — Call LLM with conversation history. LLM produces text + tool calls<br>
+2. <strong>Act</strong> — For each tool call: run HookChain pre-checks → execute tool → run post-hooks<br>
+3. <strong>Observe</strong> — Append tool results to conversation, checkpoint session<br>
+4. <strong>Repeat</strong> — Until LLM returns <code>stop_reason: "end_turn"</code> (no more tool calls)</p>
+<p>LLM API calls use <strong>exponential backoff retry</strong>: 1s → 2s → 4s, max 3 attempts, capped at 30s.</p>
+</div></div></div>
+
+<div class="pipe-connector"></div>
+
+<div class="pipe-step" onclick="togglePipe(this)">
+<div class="pipe-num n5">5</div>
+<div class="pipe-body">
+<div class="pipe-title">ToolExecutor</div>
+<div class="pipe-file">src/mcp/tool_executor.py</div>
+<div class="pipe-detail">
+<p>Routes tool calls by name prefix:</p>
+<p>• <code>company__*</code> → <strong>in-process handlers</strong>: EventBus, HITLGateway, KnowledgeBase, MetricsStore<br>
+• <code>mcp__*</code> → <strong>external MCP servers</strong>: parsed as <code>mcp__&lt;server&gt;__&lt;method&gt;</code>, dispatched to the connected MCP client<br>
+• Unknown → returns error</p>
+<p>Example: <code>mcp__google-workspace__send_gmail_message</code> → Google Workspace MCP server → <code>send_gmail_message</code> method.</p>
+</div></div></div>
+
+<div class="pipe-connector"></div>
+
+<div class="pipe-step" onclick="togglePipe(this)">
+<div class="pipe-num n6">6</div>
+<div class="pipe-body">
+<div class="pipe-title">SessionStore</div>
+<div class="pipe-file">src/core/session_store.py</div>
+<div class="pipe-detail">
+<p>Saves full conversation state <strong>after every turn</strong>:</p>
+<p>• <code>messages</code> — complete conversation history<br>
+• <code>turns_completed</code>, <code>tool_calls_completed</code><br>
+• <code>input_tokens</code>, <code>output_tokens</code>, <code>cost_usd</code><br>
+• <code>last_checkpoint_at</code> — ISO timestamp</p>
+<p>Two backends: <strong>InMemorySessionStore</strong> (default, dict-based) and <strong>PostgresSessionStore</strong> (production, survives restarts). If the process crashes mid-conversation, the agent can resume from the last checkpoint.</p>
+</div></div></div>
+
+<div class="pipe-connector"></div>
+
+<div class="pipe-step" onclick="togglePipe(this)">
+<div class="pipe-num n7">7</div>
+<div class="pipe-body">
+<div class="pipe-title">AgentResult</div>
+<div class="pipe-file">src/core/agent_invoker.py</div>
+<div class="pipe-detail">
+<p>The final output returned to the caller:</p>
+<p>• <code>status</code> — completed / failed / timeout<br>
+• <code>result</code> — the agent's final text response<br>
+• <code>tokens_consumed</code> — total input + output tokens<br>
+• <code>cost_usd</code> — estimated dollar cost<br>
+• <code>duration</code> — wall-clock seconds<br>
+• <code>tool_calls</code> — count of tools executed<br>
+• <code>error</code> — error message if failed</p>
+</div></div></div>
+
+</div><!-- /pipeline -->
+
+<hr class="divider">
+
+<!-- ===== SECTION 2 ===== -->
+<h2 id="bridge">The Async/Sync Bridge — Why It Exists</h2>
+
+<div class="panels">
+<div class="panel panel-problem">
+<h4>Problem</h4>
+<p>The event loop runs all agents concurrently. But the LLM API is <strong>synchronous</strong> — each call blocks for 2-30 seconds. If called directly on the event loop, <strong>every other agent freezes</strong>.</p>
+</div>
+<div class="panel panel-solution">
+<h4>Solution</h4>
+<p><code>asyncio.to_thread()</code> runs the agentic loop in a <strong>worker thread</strong>. The event loop yields immediately and continues running other agents while the LLM call blocks in its own thread.</p>
+</div>
+<div class="panel panel-but">
+<h4>But... Tools Are Async</h4>
+<p>The ToolExecutor is async (MCP calls, DB queries). The worker thread bridges back to the event loop via <code>asyncio.run_coroutine_threadsafe()</code>, waits for the result, then continues.</p>
+</div>
+</div>
+
+<h3>The Three Code Layers</h3>
+
+<div class="code"><span class="cm"># Step 1: Invoker calls ClaudeClient (async → spawns thread)</span>
+<span class="kw">async def</span> <span class="fn">run</span>(self, ...):
+    <span class="kw">return await</span> asyncio.<span class="fn">to_thread</span>(self._run_sync, ...)  <span class="cm"># → worker thread</span>
+
+<span class="cm"># Step 2: Agentic loop runs in worker thread (sync, blocking OK)</span>
+<span class="kw">def</span> <span class="fn">_run_sync</span>(self, ...):
+    <span class="kw">for</span> turn <span class="kw">in</span> <span class="fn">range</span>(max_turns):
+        response = self.<span class="fn">_call_llm_with_retry</span>(...)     <span class="cm"># blocking — fine in thread</span>
+        <span class="kw">for</span> tool_call <span class="kw">in</span> response.tool_calls:
+            result = self.<span class="fn">_execute_tool</span>(...)            <span class="cm"># needs async bridge ↓</span>
+
+<span class="cm"># Step 3: Tool execution bridges back to event loop</span>
+<span class="kw">def</span> <span class="fn">_execute_tool</span>(self, tool_name, tool_input, ctx):
+    <span class="kw">return</span> <span class="fn">_run_async_from_thread</span>(                  <span class="cm"># sync thread → async loop</span>
+        self._executor.<span class="fn">execute</span>(tool_name, tool_input, ctx)
+    )</div>
+
+<hr class="divider">
+
+<!-- ===== SECTION 3 ===== -->
+<h2 id="examples">5 Agent Examples — Step by Step</h2>
+<p>Each example shows the same engine handling a fundamentally different agent behavior. Click turns to expand details.</p>
+
+<div class="tabs">
+<div class="tab active" onclick="switchTab(0)">auto-responder</div>
+<div class="tab" onclick="switchTab(1)">lead-scorer</div>
+<div class="tab" onclick="switchTab(2)">campaign-builder</div>
+<div class="tab" onclick="switchTab(3)">budget-optimizer</div>
+<div class="tab" onclick="switchTab(4)">sdr-autonomous</div>
+</div>
+
+<!-- TAB 0: auto-responder -->
+<div class="tab-content active" id="tc0">
+<div class="agent-header">
+<span class="agent-id">auto-responder</span>
+<span class="badge b-reflex">Simple Reflex</span>
+<span class="badge b-alwayson">Always-On</span>
+<span class="badge b-haiku">Haiku</span>
+<span class="badge b-company">LeadForge</span>
+</div>
+<p>Receives inbound email inquiries, sends canned acknowledgment. IF inbound email → THEN send template. No scoring, no personalization.</p>
+
+<h3>Execution Timeline</h3>
+<div class="timeline">
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">0</div>
+<div class="tl-head">Bootstrap: asyncio.create_task()</div>
+<div class="tl-body">During boot Phase 6, <code>_start_standing_swarms()</code> creates an asyncio task: <code>asyncio.create_task(_run_standing_agent("auto-responder", "Auto-Responder", 0))</code>. This runs in a <code>while self._running</code> loop, invoking the agent every 60 seconds.</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">1</div>
+<div class="tl-head">Turn 1 — Reason: Check for pending emails</div>
+<div class="tl-body">Haiku receives "Execute your standing duties..." prompt. System prompt says: "You respond to inbound emails with acknowledgment templates." Haiku calls <code>company__get_pending_events(type="email")</code>. HookChain allows (cheap agent, low risk). ToolExecutor routes to EventBus → returns 1 pending email.</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">2</div>
+<div class="tl-head">Turn 2 — Act: Send acknowledgment</div>
+<div class="tl-body">Haiku sees 1 pending email, decides to send template response. Calls <code>company__publish_event(type="email_response", payload={to: "hello@...", body: "Thanks, an SDR will follow up..."})</code>. HookChain allows. EventBus publishes successfully.</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">3</div>
+<div class="tl-head">Turn 3 — Done</div>
+<div class="tl-body">Haiku says "Done. Processed 1 inbound inquiry." <code>stop_reason: "end_turn"</code> — exits the agentic loop. SessionStore saves final state. Returns <code>AgentResult(status=COMPLETED, cost=$0.002)</code>.</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">∞</div>
+<div class="tl-head">Sleep 60s → Next cycle</div>
+<div class="tl-body"><code>await asyncio.sleep(60)</code> — yields control to the event loop. Other agents run during this time. After 60 seconds, the cycle repeats.</div></div>
+</div>
+
+<div class="insight"><strong>Key insight:</strong> Simple Reflex agents finish in 2-3 turns (~2 seconds). Haiku is fast and cheap ($0.002/cycle). The 60-second sleep between cycles is where asyncio runs all the other agents concurrently.</div>
+</div>
+
+<!-- TAB 1: lead-scorer -->
+<div class="tab-content" id="tc1">
+<div class="agent-header">
+<span class="agent-id">lead-scorer</span>
+<span class="badge b-model">Model-Based Reflex</span>
+<span class="badge b-event">Event-Triggered</span>
+<span class="badge b-sonnet">Sonnet</span>
+<span class="badge b-company">LeadForge</span>
+</div>
+<p>Scores leads using the BANT framework. Accumulates signals across interactions into a persistent lead profile. Flags leads as SQL when score ≥70 with ≥2 qualification signals.</p>
+
+<h3>Execution Timeline</h3>
+<div class="timeline">
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">E</div>
+<div class="tl-head">Event: Prospect opened pricing email</div>
+<div class="tl-body">EventBus receives engagement signal → triggers workflow task. WorkflowEngine dispatches: <code>invoker.invoke(agent_id="lead-scorer", prompt="Score lead #L-4521. New signal: email_open on pricing email.")</code> with <code>TaskMetadata(budget_tokens=5000)</code>.</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">1</div>
+<div class="tl-head">Turn 1 — Read existing lead profile</div>
+<div class="tl-body">Sonnet calls <code>company__search_knowledge("lead profile L-4521")</code>. KnowledgeBase returns existing state: <code>{score: 55, signals: {budget: 15, authority: 10, need: 20, timeline: 10}}</code>. This is the "model" in Model-Based — accumulated state from prior invocations.</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">2</div>
+<div class="tl-head">Turn 2 — Apply BANT scoring, update state</div>
+<div class="tl-body">Sonnet reasons: "Email open on pricing page = budget signal (+5) and timeline signal (+5). New score: 55 + 10 = 65. Qualification signals: budget ✓, need ✓ = 2. Below 70 threshold — flag as MQL." Calls <code>company__add_decision(category="lead_scoring", key="L-4521", value={score: 65, status: "MQL"})</code>.</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">3</div>
+<div class="tl-head">Turn 3 — Record metric</div>
+<div class="tl-body"><code>company__record_metric(name="leads.scored", value=1, labels={score: 65, status: "MQL"})</code></div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">4</div>
+<div class="tl-head">Turn 4 — Done</div>
+<div class="tl-body">"Lead L-4521 scored at 65 (MQL). One more engagement should trigger SQL threshold." Cost: $0.015, 4 turns.</div></div>
+</div>
+
+<div class="insight"><strong>Key insight:</strong> State persists in KnowledgeBase, not in agent memory. The agent read score 55 (from a previous invocation), applied +10, wrote 65. Next time this lead triggers an event, the agent picks up from 65. The "model" survives across invocations because it's externalized.</div>
+</div>
+
+<!-- TAB 2: campaign-builder -->
+<div class="tab-content" id="tc2">
+<div class="agent-header">
+<span class="agent-id">campaign-builder</span>
+<span class="badge b-goal">Goal-Based</span>
+<span class="badge b-ondemand">On-Demand / HITL</span>
+<span class="badge b-sonnet">Sonnet</span>
+<span class="badge b-company">LeadForge</span>
+</div>
+<p>Goal: "Launch outbound campaign for [ICP]." Plans the full sequence: research → prospect list → email sequences → human approval → schedule sends. Can delegate to sub-agents (Tier 2 = DEPARTMENT_LEAD).</p>
+
+<h3>Execution Timeline</h3>
+<div class="timeline">
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">H</div>
+<div class="tl-head">Human triggers: "Launch campaign for fintech CFOs"</div>
+<div class="tl-body">Operator uses dashboard or Slack. WorkflowEngine dispatches with <code>TaskMetadata(budget_tokens=50000, priority="high")</code>. Registry lookup: Sonnet, DEPARTMENT_LEAD, sales. <code>SUBAGENT_MAP["campaign-builder"] = ["sales-researcher", "sales-sdr"]</code> — this agent CAN delegate.</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">1</div>
+<div class="tl-head">Turn 1 — Plan: Break goal into steps</div>
+<div class="tl-body">Sonnet plans: 1) Research ICP → delegate to sales-researcher, 2) Build prospect list, 3) Write email sequences, 4) Get human approval via HITL, 5) Schedule sends → delegate to sales-sdr. Calls <code>company__search_knowledge("ICP fintech CFO")</code> for templates.</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">2</div>
+<div class="tl-head">Turn 2 — Delegate: Spawn sales-researcher sub-agent</div>
+<div class="tl-body">Calls <code>company__invoke_subagent(agent_id="sales-researcher", prompt="Research fintech companies Series B+. Find 50 CFO contacts.")</code>. This triggers a <strong>nested AgentInvoker.invoke()</strong> — the sub-agent runs its own agentic loop (4 turns: search → filter → compile → return). sales-researcher is Tier 3 WORKER — it CANNOT delegate further. Returns: "Found 47 CFOs matching criteria."</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">3</div>
+<div class="tl-head">Turn 3 — Write 3-email sequence</div>
+<div class="tl-body">Sonnet writes: Email 1 (cold intro, personalized), Email 2 (value prop follow-up, Day 3), Email 3 (social proof + CTA, Day 7).</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">4</div>
+<div class="tl-head">Turn 4 — HITL Gate: Request human approval</div>
+<div class="tl-body">Calls <code>company__request_approval(category="content", description="Email sequence for 47 fintech CFOs", sla_hours=4.0)</code>. HITLGateway creates approval request. Slack notification sent. Dashboard shows pending item. <strong>AGENT PAUSES HERE.</strong> Returns: "Awaiting approval APR-7823."</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">✓</div>
+<div class="tl-head">Human approves → New invocation</div>
+<div class="tl-body">Operator reviews emails in dashboard, clicks approve. EventBus fires <code>approval_granted</code>. WorkflowEngine dispatches NEW invocation of campaign-builder with prompt "Approval granted. Proceed with scheduling." Knowledge persists in KnowledgeBase across invocations.</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">5</div>
+<div class="tl-head">Turn 5 — Delegate: Send via sales-sdr</div>
+<div class="tl-body">Delegates to sales-sdr: "Schedule 3-email cadence for 47 contacts. Max 50 emails/SDR/day (CAN-SPAM)." Sub-agent executes, returns success. Final: "Campaign launched. First batch sends tomorrow at 9 AM EST."</div></div>
+</div>
+
+<div class="insight"><strong>Key insight:</strong> Three critical patterns: <strong>Delegation</strong> (Tier 2 spawns Tier 3 sub-agents as nested invoke() calls), <strong>HITL pause/resume</strong> (agent stops at approval gate, new invocation continues after human approves), <strong>Tier enforcement</strong> (Tier 3 workers cannot delegate further).</div>
+</div>
+
+<!-- TAB 3: budget-optimizer -->
+<div class="tab-content" id="tc3">
+<div class="agent-header">
+<span class="agent-id">budget-optimizer</span>
+<span class="badge b-utility">Utility-Based</span>
+<span class="badge b-scheduled">Scheduled</span>
+<span class="badge b-opus">Opus</span>
+<span class="badge b-company">LeadForge</span>
+</div>
+<p>Allocates daily marketing spend across channels (Google Ads, LinkedIn, email) to maximize cost-per-qualified-lead. Weighs channel performance, remaining budget, and constraints.</p>
+
+<h3>Execution Timeline</h3>
+<div class="timeline">
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">⏰</div>
+<div class="tl-head">Scheduled trigger: 6:00 AM daily</div>
+<div class="tl-body">Main loop tick detects scheduled task is ready. HookChain pre-check: CostTracker estimates $0.45 for Opus/30K tokens. Session cost $0.00, limit $50.00 → ALLOW.</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">1</div>
+<div class="tl-head">Turn 1 — Gather yesterday's channel performance</div>
+<div class="tl-body"><code>company__get_metric("marketing.channel_performance")</code> → Google Ads: $450 spend, 4 qualified, CPL $112.50 | LinkedIn: $300, 5 qualified, CPL $60.00 | Email: $50, 3 qualified, CPL $16.67</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">2</div>
+<div class="tl-head">Turn 2 — Gather budget constraints</div>
+<div class="tl-body"><code>company__get_metric("marketing.daily_budget")</code> → total: $800, remaining this month: $12,400</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">3</div>
+<div class="tl-head">Turn 3 — Reason: Utility function optimization</div>
+<div class="tl-body">Opus analyzes tradeoffs:<br><br>
+<strong>LinkedIn</strong>: Best CPL ($60) but saturates at ~$400/day<br>
+<strong>Email</strong>: Cheapest ($16.67) but at capacity (50 emails/SDR × 3 SDRs)<br>
+<strong>Google Ads</strong>: Expensive ($112.50) and Quality Score dropped<br><br>
+<strong>Optimization:</strong> Maximize qualified_leads = f(spend_per_channel), constrained to total ≤ $800.<br>
+Result: LinkedIn $400 (+$100), Google Ads $300 (-$150), Email $50 (same), Reserve $50.<br>
+Expected: 14 qualified leads (vs 12 yesterday), CPL $57.14 (vs $66.67).</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">4</div>
+<div class="tl-head">Turns 4-6 — Record + Publish</div>
+<div class="tl-body">Turn 4: <code>company__add_decision</code> (save allocation to KnowledgeBase)<br>
+Turn 5: <code>company__record_metric</code> (track allocation in MetricsStore)<br>
+Turn 6: <code>company__publish_event</code> (notify marketing dept of reallocation)</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">7</div>
+<div class="tl-head">Turn 7 — Done. Cost: $0.38</div>
+<div class="tl-body">"Daily budget optimized. Shifted $100 from Google Ads to LinkedIn based on CPL analysis. Expected: +2 qualified leads, -14% CPL." No HITL gate needed — reallocation is under $1K threshold.</div></div>
+</div>
+
+<div class="insight"><strong>Key insight:</strong> Utility-Based agents don't just execute a plan — they evaluate multiple options against a utility function (cost-per-qualified-lead) and pick the optimal one. Opus is needed for the multi-factor tradeoff reasoning. Scheduled daily because budget decisions are daily cycles.</div>
+</div>
+
+<!-- TAB 4: sdr-autonomous -->
+<div class="tab-content" id="tc4">
+<div class="agent-header">
+<span class="agent-id">sdr-autonomous</span>
+<span class="badge b-auto">Autonomous</span>
+<span class="badge b-alwayson">Always-On</span>
+<span class="badge b-opus">Opus</span>
+<span class="badge b-company">LeadForge</span>
+</div>
+<p>Full sales development loop: research → personalize outreach → send → track responses → adjust messaging → re-target. Self-tunes email templates based on reply rates. 3 concurrent instances.</p>
+
+<h3>Execution Timeline (Instance 0 — West Coast territory)</h3>
+<div class="timeline">
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">⚡</div>
+<div class="tl-head">Bootstrap: 3 instances via asyncio.create_task()</div>
+<div class="tl-body">Three concurrent instances launched: Instance 0 (West Coast), Instance 1 (Midwest), Instance 2 (East Coast). Each runs in its own asyncio task — they don't block each other. While one waits for an LLM call, the event loop runs the others.</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">1</div>
+<div class="tl-head">OBSERVE — Turn 1: Load current state</div>
+<div class="tl-body"><code>company__search_knowledge("sdr-autonomous-0 state")</code> → Returns: territory: west_coast, 23 active sequences, template performance: "direct-ask" 12% reply, "value-first" 17.6%, "social-proof" 8.3%.</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">2</div>
+<div class="tl-head">OBSERVE — Turn 2: Check engagement signals</div>
+<div class="tl-body"><code>company__get_pending_events(type="engagement")</code> → 3 signals: L-8821 replied positively, L-7703 visited pricing page, L-9102 email bounced.</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">3</div>
+<div class="tl-head">REFLECT — Turn 3: Analyze performance + decide adjustments</div>
+<div class="tl-body">Opus reflects: "value-first has 17.6% vs social-proof at 8.3% → retire social-proof. L-8821 replied positively → hand off to AE. L-7703 pricing visit → score them. L-9102 bounced → remove." <strong>ADJUSTMENT:</strong> Shift all new prospects to value-first template. Create value-first-v2 variant with shorter subject line.</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">4</div>
+<div class="tl-head">ACT — Turns 4-8: Execute adjustments</div>
+<div class="tl-body">Turn 4: Update strategy in KnowledgeBase (retire social-proof, activate value-first)<br>
+Turn 5: Hand off L-8821 to sales-ae via EventBus<br>
+Turn 6: Trigger lead scoring for L-7703<br>
+Turn 7: Mark L-9102 as invalid (bounce)<br>
+Turn 8: Request HITL approval for 5 new outreach emails (external action requires human approval in supervised mode)</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">9</div>
+<div class="tl-head">Turn 9-10 — Record metrics + Done. Cost: $0.52</div>
+<div class="tl-body">"Cycle complete. Retired social-proof template (8.3%). Doubled down on value-first (17.6%). Handed off L-8821. 5 new outreach pending approval." Then <code>await asyncio.sleep(60)</code> — next cycle picks up from the UPDATED strategy.</div></div>
+
+<div class="tl-item" onclick="toggleTl(this)"><div class="tl-dot">∞</div>
+<div class="tl-head">Cycle 2, 3, 4... Strategy evolves over weeks</div>
+<div class="tl-body">Each cycle reads the latest state, observes results, reflects, adjusts. Over days and weeks: templates get refined, reply rates improve, underperforming approaches get retired automatically. The agent gets better at its job without human intervention — that's what makes it Autonomous.</div></div>
+</div>
+
+<div class="insight"><strong>Key insight:</strong> Autonomous = learning loop. Each cycle: observe (signals) → reflect (analyze what's working) → adjust (change strategy) → act (execute). State persists in KnowledgeBase across cycles. Even in autonomous mode, external actions (emails) still go through HITL governance. Opus is required for the reflection reasoning.</div>
+</div>
+
+<hr class="divider">
+
+<!-- ===== SECTION 4 ===== -->
+<h2 id="concurrency">How Concurrency Actually Works</h2>
+<p>At any given moment, the event loop manages all agents simultaneously. Nothing on the event loop ever blocks — LLM calls run in worker threads, <code>asyncio.sleep()</code> yields control.</p>
+
+<div class="ev-loop">
+<div class="ev-header">
+<span>EVENT LOOP STATE</span>
+<span class="ev-tick" id="tick">Tick: 0</span>
+</div>
+
+<div class="ev-row">
+<span class="ev-name" style="color:#FB923C">● sdr-autonomous-0</span>
+<div class="ev-bar"><div class="ev-fill ev-running" id="ev0" style="width:60%"></div></div>
+<span class="ev-status running" id="evs0">RUNNING Turn 5</span>
+</div>
+
+<div class="ev-row">
+<span class="ev-name" style="color:#60A5FA">● auto-responder-0</span>
+<div class="ev-bar"><div class="ev-fill ev-sleeping" id="ev1" style="width:30%"></div></div>
+<span class="ev-status sleeping" id="evs1">SLEEP 42s</span>
+</div>
+
+<div class="ev-row">
+<span class="ev-name" style="color:#A78BFA">● sales-sdr-0</span>
+<div class="ev-bar"><div class="ev-fill ev-sleeping" id="ev2" style="width:70%"></div></div>
+<span class="ev-status sleeping" id="evs2">SLEEP 18s</span>
+</div>
+
+<div class="ev-row">
+<span class="ev-name" style="color:#A78BFA">● sales-sdr-1</span>
+<div class="ev-bar"><div class="ev-fill ev-sleeping" id="ev3" style="width:10%"></div></div>
+<span class="ev-status sleeping" id="evs3">SLEEP 55s</span>
+</div>
+
+<div class="ev-row">
+<span class="ev-name" style="color:#60A5FA">● ops-monitoring</span>
+<div class="ev-bar"><div class="ev-fill ev-sleeping" id="ev4" style="width:45%"></div></div>
+<span class="ev-status sleeping" id="evs4">SLEEP 33s</span>
+</div>
+
+<div class="ev-row">
+<span class="ev-name" style="color:#FB923C">● sdr-autonomous-1</span>
+<div class="ev-bar"><div class="ev-fill ev-sleeping" id="ev5" style="width:88%"></div></div>
+<span class="ev-status sleeping" id="evs5">SLEEP 7s</span>
+</div>
+
+</div>
+
+<p style="margin-top:16px;color:#94A3B8;font-size:13px">The animation above shows agents cycling through states. <strong style="color:#60A5FA">RUNNING</strong> = in a worker thread making LLM calls. <strong style="color:#64748B">SLEEPING</strong> = awaiting next cycle (<code>asyncio.sleep()</code>, yielding to the event loop). When a sleeping agent's timer expires, it wakes up and starts a new cycle — all without blocking any other agent.</p>
+
+</div><!-- /main -->
+
+<script>
+// Pipeline expand/collapse
+function togglePipe(el){el.classList.toggle('open')}
+
+// Timeline expand/collapse
+function toggleTl(el){el.classList.toggle('open')}
+
+// Tab switching
+function switchTab(idx){
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===idx));
+  document.querySelectorAll('.tab-content').forEach((c,i)=>c.classList.toggle('active',i===idx));
+}
+
+// Sidebar scroll highlighting
+const sections=['components','bridge','examples','concurrency'];
+const links=document.querySelectorAll('.sidebar a');
+window.addEventListener('scroll',()=>{
+  let current='';
+  sections.forEach(id=>{
+    const el=document.getElementById(id);
+    if(el&&el.getBoundingClientRect().top<200)current=id;
+  });
+  links.forEach(a=>{a.classList.toggle('active',a.getAttribute('href')==='#'+current)});
+});
+
+// Event loop animation
+const agents=[
+  {name:'sdr-autonomous-0',state:'running',timer:0,maxTimer:60,turn:5,maxTurn:10},
+  {name:'auto-responder-0',state:'sleeping',timer:42,maxTimer:60,turn:0,maxTurn:3},
+  {name:'sales-sdr-0',state:'sleeping',timer:18,maxTimer:60,turn:0,maxTurn:5},
+  {name:'sales-sdr-1',state:'sleeping',timer:55,maxTimer:60,turn:0,maxTurn:5},
+  {name:'ops-monitoring',state:'sleeping',timer:33,maxTimer:60,turn:0,maxTurn:2},
+  {name:'sdr-autonomous-1',state:'sleeping',timer:7,maxTimer:60,turn:0,maxTurn:10}
+];
+let tick=0;
+
+setInterval(()=>{
+  tick++;
+  document.getElementById('tick').textContent='Tick: '+tick;
+  agents.forEach((a,i)=>{
+    const fill=document.getElementById('ev'+i);
+    const stat=document.getElementById('evs'+i);
+    if(a.state==='sleeping'){
+      a.timer--;
+      if(a.timer<=0){
+        a.state='running';a.turn=1;
+        fill.className='ev-fill ev-running';
+        stat.className='ev-status running';
+      }else{
+        fill.style.width=(a.timer/a.maxTimer*100)+'%';
+        stat.textContent='SLEEP '+a.timer+'s';
+      }
+    }
+    if(a.state==='running'){
+      a.turn+=Math.random()>0.6?1:0;
+      fill.style.width=(a.turn/a.maxTurn*100)+'%';
+      stat.textContent='RUNNING Turn '+a.turn;
+      if(a.turn>=a.maxTurn){
+        a.state='sleeping';a.timer=a.maxTimer;a.turn=0;
+        fill.className='ev-fill ev-sleeping';
+        fill.style.width='100%';
+        stat.className='ev-status sleeping';
+        stat.textContent='SLEEP '+a.timer+'s';
+      }
+    }
+  });
+},1000);
+</script>
+
+</body>
+</html>

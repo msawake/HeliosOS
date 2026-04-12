@@ -1,10 +1,14 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with code in this repository.
 
 ## What This Is
 
-ForgeOS — a multi-tenant SaaS platform for running AI-operated companies as multi-agent swarms. Each "company" is a pluggable package under `src/companies/` with its own agent definitions, workflows, knowledge base, and demo. Five companies are built: **LeadForge AI** (B2B sales), **DealForge AI** (M&A deals), **TravelForge AI** (travel booking), **InsureForge AI** (insurance), **HomeForge AI** (real estate).
+**ForgeOS v3.0** — A multi-stack AI agent platform that deploys, orchestrates, and manages AI agents across four framework adapters (ForgeOS, CrewAI, Google ADK, OpenClaw) with five execution lifecycles and a Next.js dashboard.
+
+**Key distinction:** ForgeOS is the *framework* (the operating system). Agents are the *programs* that run inside it. The framework provides scheduling, tool execution, LLM routing, persistence, and monitoring. Agents define what work gets done.
+
+Five company packages are built: **LeadForge AI** (B2B sales), **DealForge AI** (M&A), **TravelForge AI** (travel), **InsureForge AI** (insurance), **HomeForge AI** (real estate).
 
 ## Commands
 
@@ -12,84 +16,99 @@ ForgeOS — a multi-tenant SaaS platform for running AI-operated companies as mu
 # Install (Python 3.11+)
 pip install -e ".[dev]"
 
-# Run all tests (325 tests)
-python -m pytest
+# Run all tests (730 tests)
+PYTHONPATH=. python -m pytest
 
-# Run a single test file
-python -m pytest tests/test_workflows.py
+# Run a single test
+PYTHONPATH=. python -m pytest tests/test_platform_executor.py
 
-# Lint
+# Lint / type check
 ruff check src/ tests/
-
-# Type check
 mypy src/
 
-# Boot the system (default: LeadForge, supervised mode)
-python -m src.bootstrap
+# Boot the platform
+PYTHONPATH=. python -m src.bootstrap --no-auth --dashboard --port 5000
 
-# Boot with options
-python -m src.bootstrap --company leadforge --mode supervised --dashboard --loop
-
-# Boot a different company
-python -m src.bootstrap --company dealforge
+# Next.js dashboard (separate terminal)
+cd dashboard && npm install && npm run dev
 ```
 
-## Architecture
+Note: `PYTHONPATH=.` is required because `stacks/` is a top-level package alongside `src/`.
 
-### Platform Layer (`src/core/`, `src/config/`, `src/mcp/`, `src/workflows/`, `src/dashboard/`)
+## Three-Layer Architecture
 
-- **`src/core/agent_invoker.py`** — `AgentInvoker` is the universal entry point. Contains `AgentConfig`, `AgentRegistry`, `AgentTier`, `TaskMetadata`, and delegation helpers.
-- **`src/core/claude_client.py`** — Provider-agnostic agentic loop. Uses `LLMClient` protocol (Claude or OpenAI). Includes retry with backoff, session checkpointing, and safe async/sync boundary.
-- **`src/core/model_client.py`** — `LLMClient` protocol + `AnthropicClient` + `OpenAIClient`. Shared `MODEL_PRICING` registry. Provider auto-detection from model name.
-- **`src/core/hooks.py`** — Seven-check governance chain: budget pre-check → rate limiter → auth checker → cost tracker → compliance checker → Slack notifier → audit logger. `CostTracker.pre_check()` blocks before API calls when budget is near limit.
-- **`src/core/session_store.py`** — Agent session persistence + checkpointing. `InMemorySessionStore` (default) and `PostgresSessionStore` (production). Conversations survive crashes.
-- **`src/core/database.py`** — Multi-tenant database layer. Connection pooling, tenant context via RLS (`SET app.current_tenant`), Cloud SQL connector support.
-- **`src/core/redis_rate_limiter.py`** — Distributed rate limiting via Redis. Atomic INCR + EXPIRE. Falls back to in-memory when Redis unavailable.
-- **`src/core/secrets.py`** — GCP Secret Manager with caching + env var fallback. Per-tenant API key retrieval.
-- **`src/mcp/custom_tools.py`** — In-process tools: `EventBus`, `HITLGateway`, `KnowledgeBase`, `MetricsStore`. `CompanySystem` auto-detects PostgreSQL vs in-memory.
-- **`src/mcp/persistence.py`** — PostgreSQL-backed: `PostgresEventBus`, `PostgresKnowledgeBase`, `PostgresMetricsStore`, `PostgresAuditWriter`.
-- **`src/mcp/tool_executor.py`** — Routes tool calls: `company__*` → in-process, `mcp__*` → MCP servers. Registers MCP tool schemas dynamically.
-- **`src/mcp/server_manager.py`** — MCP server lifecycle: connect, discover tools via `list_tools()`, disconnect. Graceful degradation.
-- **`src/workflows/definitions.py`** — DAG workflow engine with parallel dispatch via `asyncio.gather()`. `TaskGraphBuilder` fluent API.
-- **`src/dashboard/app.py`** — Flask REST API + HTML dashboard. Auth middleware (Firebase JWT + API keys). Tenant management endpoints.
-- **`src/bootstrap.py`** — Boot sequence: DB → MCP servers → tool executor → LLM client → hook chain → agent registry → knowledge base → workflow engine → executives → standing swarms → dashboard → main loop.
+### 1. Stack Adapters (`stacks/`)
 
-### SaaS Layer (`src/api/`, `src/billing/`)
+`AgentStackAdapter` ABC in `stacks/base.py`. Four implementations:
 
-- **`src/api/auth.py`** — Firebase Auth (JWT), API key auth, RBAC (Admin/Operator/Viewer).
-- **`src/api/tenants.py`** — Tenant CRUD, onboarding, plan management, user management.
-- **`src/billing/plans.py`** — 4 tiers (Trial/Starter/Growth/Enterprise), usage enforcement, overage rates.
-- **`src/billing/stripe_billing.py`** — Stripe subscriptions, metered billing, webhook handling, customer portal.
+| Adapter | File | Runtime | Fallback |
+|---------|------|---------|----------|
+| ForgeOS | `stacks/forgeos/adapter.py` | Native agentic loop | — |
+| CrewAI | `stacks/crewai/adapter.py` | CrewAI SDK (Crew.kickoff) | Platform loop |
+| ADK | `stacks/adk/adapter.py` | Google ADK Runner | Platform loop |
+| OpenClaw | `stacks/openclaw/adapter.py` | HTTP gateway subprocess | Platform loop |
 
-### Company Packages (`src/companies/<company_id>/`)
+Each provides: `create_agent()`, `invoke()`, `start_loop()`, `stop()`, `scaffold_files()`.
 
-Each company provides: `agent_configs.py`, `workflows.py`, `knowledge.py`, `config.yaml`, `demo.py`.
+### 2. Platform Layer (`src/platform/`)
 
-### Agent Hierarchy
+Stack-agnostic orchestration shared by all agents:
 
-Three-tier delegation model:
-- **Tier 1 (Executive):** CEO/COO/CFO — use Opus, can delegate to Tier 2
-- **Tier 2 (Department Leads):** use Opus, can delegate to Tier 3
-- **Tier 3 (Workers):** use Sonnet/Haiku, **cannot spawn sub-agents**
+- `registry.py` — Universal agent registry (query by stack/type/owner/department)
+- `executor.py` — Central dispatcher: deploy, invoke, wire execution lifecycle, recover
+- `scheduler.py` — Cron-based scheduling for scheduled agents
+- `event_bus.py` — Pub/sub for event-driven agents
+- `llm_router.py` — Routes to Anthropic/OpenAI, retry with backoff, failover, streaming
+- `agentic_loop.py` — LLM -> tool_use -> execute -> tool_result -> LLM loop (sync + streaming)
+- `audit.py` — Records all platform events
+- `alerts.py` — Multi-destination alerts (Slack, PagerDuty, log)
+- `metrics.py` — Prometheus metrics (14 families)
+
+### 3. Core + Companies (`src/core/`, `src/companies/`, `src/mcp/`)
+
+- `agent_invoker.py` — Legacy agent orchestration (3-tier hierarchy)
+- `claude_client.py` — Provider-agnostic agentic loop (pre-platform layer)
+- `model_client.py` — `LLMClient` protocol + Anthropic/OpenAI implementations
+- `hooks.py` — 7-check governance chain (budget, rate limit, auth, cost, compliance, Slack, audit)
+- `database.py` — Multi-tenant PostgreSQL with RLS, connection pooling
+- `session_store.py` — In-memory or PostgreSQL session persistence
+- `mcp/tool_executor.py` — Routes `mcp__*` to MCP servers, `company__*` to in-process handlers
+- `mcp/server_manager.py` — MCP server lifecycle (connect, discover tools, disconnect)
+- `mcp/client_mcp_manager.py` — Per-client MCP connections with LRU eviction
+- `companies/<id>/` — Each provides `agent_configs.py`, `workflows.py`, `knowledge.py`, `config.yaml`, `demo.py`
+
+### Dashboard
+
+Next.js 15 + React 19 + Tailwind CSS in `dashboard/`. Talks to FastAPI backend (61 endpoints). OpenAI-inspired dark theme.
 
 ### Infrastructure
 
-- `infrastructure/database/schema.sql` — Multi-tenant PostgreSQL schema with RLS. 12 tables including `tenants`, `tenant_users`, `usage_records`.
-- `infrastructure/terraform/gcp/main.tf` — Cloud SQL, Memorystore Redis, Cloud Run, VPC, Secret Manager, Cloud Storage, budget alerts.
-- `infrastructure/docker/Dockerfile` — Production container.
-- `infrastructure/docker/cloudbuild.yaml` — CI/CD: test → build → push → deploy to Cloud Run.
+- `infrastructure/docker/` — Dockerfile + docker-compose (Postgres + Redis + API)
+- `infrastructure/database/` — 5 SQL migrations (001-005)
+- `infrastructure/terraform/gcp/` — Cloud SQL, Redis, Cloud Run, VPC, Secret Manager
+- `deploy/k8s/` — Kubernetes manifests with Kustomize overlays (dev/staging/prod)
+- `.github/workflows/` — CI: test -> build -> push to GHCR
 
-### Key Conventions
+## Agent Model
 
-- **Multi-tenancy:** All tables have `tenant_id` + RLS policies. `DatabaseClient.tenant(id)` sets session variable.
-- **Graceful degradation:** No API key → simulation. No DB → in-memory. No Redis → in-memory rate limiting. No MCP servers → "not connected" errors.
-- **Multi-model:** Model name prefix determines provider: `claude-*` → Anthropic, `gpt-*`/`o3-*` → OpenAI.
-- **`asyncio_mode = "auto"`** in pytest config.
+- **5 execution types:** always_on, scheduled, event_driven, reflex, autonomous
+- **3 ownership types:** personal, shared, client
+- **3-tier hierarchy** (ForgeOS stack): Executives (Opus) -> Department Leads (Opus) -> Workers (Sonnet/Haiku)
+- **Multi-model:** `claude-*` -> Anthropic, `gpt-*`/`o3-*` -> OpenAI (auto-detected from model prefix)
+- **74 deployed agents:** 53 shared + 21 personal across sales, marketing, finance, HR, legal, operations
+
+## Key Conventions
+
+- **Multi-tenancy:** All DB tables have `tenant_id` + RLS. `DatabaseClient.tenant(id)` sets session context via `set_config('app.current_tenant', ...)`.
+- **Graceful degradation:** No API key -> simulation. No DB -> in-memory. No Redis -> in-memory. No MCP -> "not connected". No SDK -> platform fallback.
+- **`asyncio_mode = "auto"`** in pytest.
+- **`.env` for secrets** — never committed.
+- **`agents/` directory** is gitignored — personal/shared agent configs live there at runtime.
 
 ## Domain Context (LeadForge)
 
-- Lead scoring uses BANT framework; SQL threshold is score ≥70 with ≥2 qualification signals
+- Lead scoring: BANT framework, SQL threshold >= 70 with >= 2 signals
 - Maximum 50 outreach emails per SDR per day per client
 - CAN-SPAM and GDPR compliance required for all outreach
 - Financial thresholds: <$1K dept lead, $1K-$5K CFO, $5K-$10K CEO, >$10K human board
-- Strict per-client data isolation — no cross-client data sharing
+- Strict per-client data isolation
