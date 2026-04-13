@@ -1,0 +1,302 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 800" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+  <defs>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="0" dy="1" stdDeviation="3" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#0B1120"/>
+    </linearGradient>
+    <!-- Marker for fallback arrows -->
+    <marker id="arrowOrange" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="none" stroke="#FB923C" stroke-width="1.2"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1100" height="800" fill="url(#bgGrad)" rx="12"/>
+
+  <!-- Title -->
+  <text x="550" y="36" text-anchor="middle" fill="#F8FAFC" font-size="22" font-weight="700" letter-spacing="-0.5">ForgeOS Boot Sequence</text>
+  <text x="550" y="54" text-anchor="middle" fill="#94A3B8" font-size="11">15-step platform initialization &mdash; python -m src.bootstrap</text>
+
+  <!-- Legend -->
+  <g transform="translate(700, 22)">
+    <circle cx="0" cy="0" r="4" fill="#34D399"/><text x="8" y="4" fill="#94A3B8" font-size="9">Environment</text>
+    <circle cx="85" cy="0" r="4" fill="#06B6D4"/><text x="93" y="4" fill="#94A3B8" font-size="9">Database</text>
+    <circle cx="155" cy="0" r="4" fill="#60A5FA"/><text x="163" y="4" fill="#94A3B8" font-size="9">Subsystems</text>
+    <circle cx="240" cy="0" r="4" fill="#A78BFA"/><text x="248" y="4" fill="#94A3B8" font-size="9">Platform</text>
+    <circle cx="310" cy="0" r="4" fill="#FB923C"/><text x="318" y="4" fill="#94A3B8" font-size="9">Data</text>
+    <circle cx="360" cy="0" r="4" fill="#34D399"/><text x="368" y="4" fill="#94A3B8" font-size="9">Ready</text>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- TIMELINE VERTICAL LINE                                        -->
+  <!-- ============================================================ -->
+  <line x1="80" y1="72" x2="80" y2="720" stroke="#334155" stroke-width="2"/>
+
+  <!-- ============================================================ -->
+  <!-- STEP RENDERING HELPER PATTERN                                 -->
+  <!-- Each step: circle on timeline, box to the right               -->
+  <!-- Y positions: 80 + (i * 43) for 15 steps                      -->
+  <!-- ============================================================ -->
+
+  <!-- ==================== GROUP 1: ENVIRONMENT (green) ==================== -->
+
+  <!-- Step 1: Load .env -->
+  <g>
+    <circle cx="80" cy="88" r="12" fill="#34D399" filter="url(#shadow)"/>
+    <text x="80" y="92" text-anchor="middle" fill="#0F172A" font-size="10" font-weight="700">1</text>
+    <line x1="92" y1="88" x2="130" y2="88" stroke="#34D399" stroke-width="1.5"/>
+    <rect x="130" y="72" width="380" height="32" rx="6" fill="#1E293B" stroke="#34D399" stroke-width="1" filter="url(#shadow)"/>
+    <text x="145" y="86" fill="#F8FAFC" font-size="12" font-weight="600">Load .env</text>
+    <text x="145" y="98" fill="#94A3B8" font-size="9.5">API keys, DATABASE_URL, REDIS_URL from repo root</text>
+  </g>
+
+  <!-- Step 2: Init LLM Router -->
+  <g>
+    <circle cx="80" cy="131" r="12" fill="#34D399" filter="url(#shadow)"/>
+    <text x="80" y="135" text-anchor="middle" fill="#0F172A" font-size="10" font-weight="700">2</text>
+    <line x1="92" y1="131" x2="130" y2="131" stroke="#34D399" stroke-width="1.5"/>
+    <rect x="130" y="115" width="380" height="32" rx="6" fill="#1E293B" stroke="#34D399" stroke-width="1" filter="url(#shadow)"/>
+    <text x="145" y="129" fill="#F8FAFC" font-size="12" font-weight="600">Init LLM Router</text>
+    <text x="145" y="141" fill="#94A3B8" font-size="9.5">Detect providers: Anthropic, OpenAI</text>
+  </g>
+
+  <!-- ==================== GROUP 2: DATABASE (cyan) ==================== -->
+
+  <!-- Step 3: Connect Database -->
+  <g>
+    <circle cx="80" cy="174" r="12" fill="#06B6D4" filter="url(#shadow)"/>
+    <text x="80" y="178" text-anchor="middle" fill="#0F172A" font-size="10" font-weight="700">3</text>
+    <line x1="92" y1="174" x2="130" y2="174" stroke="#06B6D4" stroke-width="1.5"/>
+    <rect x="130" y="158" width="380" height="32" rx="6" fill="#1E293B" stroke="#06B6D4" stroke-width="1" filter="url(#shadow)"/>
+    <text x="145" y="172" fill="#F8FAFC" font-size="12" font-weight="600">Connect Database</text>
+    <text x="145" y="184" fill="#94A3B8" font-size="9.5">PostgreSQL via DATABASE_URL</text>
+    <!-- Fallback branch -->
+    <line x1="510" y1="174" x2="580" y2="174" stroke="#FB923C" stroke-width="1.2" stroke-dasharray="5,3" marker-end="url(#arrowOrange)"/>
+    <rect x="582" y="163" width="110" height="22" rx="5" fill="#1E293B" stroke="#FB923C" stroke-width="1" stroke-dasharray="4,3"/>
+    <text x="637" y="178" text-anchor="middle" fill="#FB923C" font-size="10" font-weight="500">In-memory mode</text>
+  </g>
+
+  <!-- Step 4: Run Migrations -->
+  <g>
+    <circle cx="80" cy="217" r="12" fill="#06B6D4" filter="url(#shadow)"/>
+    <text x="80" y="221" text-anchor="middle" fill="#0F172A" font-size="10" font-weight="700">4</text>
+    <line x1="92" y1="217" x2="130" y2="217" stroke="#06B6D4" stroke-width="1.5"/>
+    <rect x="130" y="201" width="380" height="32" rx="6" fill="#1E293B" stroke="#06B6D4" stroke-width="1" filter="url(#shadow)"/>
+    <text x="145" y="215" fill="#F8FAFC" font-size="12" font-weight="600">Run Migrations</text>
+    <text x="145" y="227" fill="#94A3B8" font-size="9.5">SQL files from infrastructure/database/</text>
+  </g>
+
+  <!-- ==================== GROUP 3: SUBSYSTEMS (blue) ==================== -->
+
+  <!-- Step 5: Init CompanySystem -->
+  <g>
+    <circle cx="80" cy="260" r="12" fill="#60A5FA" filter="url(#shadow)"/>
+    <text x="80" y="264" text-anchor="middle" fill="#0F172A" font-size="10" font-weight="700">5</text>
+    <line x1="92" y1="260" x2="130" y2="260" stroke="#60A5FA" stroke-width="1.5"/>
+    <rect x="130" y="244" width="380" height="32" rx="6" fill="#1E293B" stroke="#60A5FA" stroke-width="1" filter="url(#shadow)"/>
+    <text x="145" y="258" fill="#F8FAFC" font-size="12" font-weight="600">Init CompanySystem</text>
+    <text x="145" y="270" fill="#94A3B8" font-size="9.5">Event bus, HITL gateway, Knowledge base, Metrics</text>
+  </g>
+
+  <!-- Step 6: Connect MCP Servers -->
+  <g>
+    <circle cx="80" cy="303" r="12" fill="#60A5FA" filter="url(#shadow)"/>
+    <text x="80" y="307" text-anchor="middle" fill="#0F172A" font-size="10" font-weight="700">6</text>
+    <line x1="92" y1="303" x2="130" y2="303" stroke="#60A5FA" stroke-width="1.5"/>
+    <rect x="130" y="287" width="380" height="32" rx="6" fill="#1E293B" stroke="#60A5FA" stroke-width="1" filter="url(#shadow)"/>
+    <text x="145" y="301" fill="#F8FAFC" font-size="12" font-weight="600">Connect MCP Servers</text>
+    <text x="145" y="313" fill="#94A3B8" font-size="9.5">30s timeout, spawn stdio, list_tools()</text>
+    <!-- Fallback branch -->
+    <line x1="510" y1="303" x2="580" y2="303" stroke="#FB923C" stroke-width="1.2" stroke-dasharray="5,3" marker-end="url(#arrowOrange)"/>
+    <rect x="582" y="292" width="130" height="22" rx="5" fill="#1E293B" stroke="#FB923C" stroke-width="1" stroke-dasharray="4,3"/>
+    <text x="647" y="307" text-anchor="middle" fill="#FB923C" font-size="10" font-weight="500">Continue without</text>
+  </g>
+
+  <!-- Step 7: Create ToolExecutor -->
+  <g>
+    <circle cx="80" cy="346" r="12" fill="#60A5FA" filter="url(#shadow)"/>
+    <text x="80" y="350" text-anchor="middle" fill="#0F172A" font-size="10" font-weight="700">7</text>
+    <line x1="92" y1="346" x2="130" y2="346" stroke="#60A5FA" stroke-width="1.5"/>
+    <rect x="130" y="330" width="380" height="32" rx="6" fill="#1E293B" stroke="#60A5FA" stroke-width="1" filter="url(#shadow)"/>
+    <text x="145" y="344" fill="#F8FAFC" font-size="12" font-weight="600">Create ToolExecutor</text>
+    <text x="145" y="356" fill="#94A3B8" font-size="9.5">Register MCP + custom + platform tools</text>
+  </g>
+
+  <!-- Step 8: Wire UsageEnforcer -->
+  <g>
+    <circle cx="80" cy="389" r="12" fill="#60A5FA" filter="url(#shadow)"/>
+    <text x="80" y="393" text-anchor="middle" fill="#0F172A" font-size="10" font-weight="700">8</text>
+    <line x1="92" y1="389" x2="130" y2="389" stroke="#60A5FA" stroke-width="1.5"/>
+    <rect x="130" y="373" width="380" height="32" rx="6" fill="#1E293B" stroke="#60A5FA" stroke-width="1" filter="url(#shadow)"/>
+    <text x="145" y="387" fill="#F8FAFC" font-size="12" font-weight="600">Wire UsageEnforcer</text>
+    <text x="145" y="399" fill="#94A3B8" font-size="9.5">Token/cost tracking per tenant</text>
+  </g>
+
+  <!-- ==================== GROUP 4: PLATFORM (purple) ==================== -->
+
+  <!-- Step 9: Register Adapters -->
+  <g>
+    <circle cx="80" cy="432" r="12" fill="#A78BFA" filter="url(#shadow)"/>
+    <text x="80" y="436" text-anchor="middle" fill="#0F172A" font-size="10" font-weight="700">9</text>
+    <line x1="92" y1="432" x2="130" y2="432" stroke="#A78BFA" stroke-width="1.5"/>
+    <rect x="130" y="416" width="380" height="32" rx="6" fill="#1E293B" stroke="#A78BFA" stroke-width="1" filter="url(#shadow)"/>
+    <text x="145" y="430" fill="#F8FAFC" font-size="12" font-weight="600">Register Adapters</text>
+    <text x="145" y="442" fill="#94A3B8" font-size="9.5">ForgeOS, CrewAI, ADK, OpenClaw</text>
+  </g>
+
+  <!-- Step 10: Build PlatformExecutor -->
+  <g>
+    <circle cx="80" cy="475" r="12" fill="#A78BFA" filter="url(#shadow)"/>
+    <text x="80" y="479" text-anchor="middle" fill="#0F172A" font-size="10" font-weight="700">10</text>
+    <line x1="92" y1="475" x2="130" y2="475" stroke="#A78BFA" stroke-width="1.5"/>
+    <rect x="130" y="459" width="380" height="32" rx="6" fill="#1E293B" stroke="#A78BFA" stroke-width="1" filter="url(#shadow)"/>
+    <text x="145" y="473" fill="#F8FAFC" font-size="12" font-weight="600">Build PlatformExecutor</text>
+    <text x="145" y="485" fill="#94A3B8" font-size="9.5">Registry + Scheduler + EventBus</text>
+  </g>
+
+  <!-- Step 11: Recover Agents -->
+  <g>
+    <circle cx="80" cy="518" r="12" fill="#A78BFA" filter="url(#shadow)"/>
+    <text x="80" y="522" text-anchor="middle" fill="#0F172A" font-size="10" font-weight="700">11</text>
+    <line x1="92" y1="518" x2="130" y2="518" stroke="#A78BFA" stroke-width="1.5"/>
+    <rect x="130" y="502" width="380" height="32" rx="6" fill="#1E293B" stroke="#A78BFA" stroke-width="1" filter="url(#shadow)"/>
+    <text x="145" y="516" fill="#F8FAFC" font-size="12" font-weight="600">Recover Agents</text>
+    <text x="145" y="528" fill="#94A3B8" font-size="9.5">Load from DB, re-wire execution lifecycles</text>
+  </g>
+
+  <!-- Step 12: Create Tenant -->
+  <g>
+    <circle cx="80" cy="561" r="12" fill="#A78BFA" filter="url(#shadow)"/>
+    <text x="80" y="565" text-anchor="middle" fill="#0F172A" font-size="10" font-weight="700">12</text>
+    <line x1="92" y1="561" x2="130" y2="561" stroke="#A78BFA" stroke-width="1.5"/>
+    <rect x="130" y="545" width="380" height="32" rx="6" fill="#1E293B" stroke="#A78BFA" stroke-width="1" filter="url(#shadow)"/>
+    <text x="145" y="559" fill="#F8FAFC" font-size="12" font-weight="600">Create Tenant</text>
+    <text x="145" y="571" fill="#94A3B8" font-size="9.5">Ensure default tenant (FK constraints)</text>
+  </g>
+
+  <!-- ==================== GROUP 5: DATA (orange) ==================== -->
+
+  <!-- Step 13: Seed Data -->
+  <g>
+    <circle cx="80" cy="604" r="12" fill="#FB923C" filter="url(#shadow)"/>
+    <text x="80" y="608" text-anchor="middle" fill="#0F172A" font-size="10" font-weight="700">13</text>
+    <line x1="92" y1="604" x2="130" y2="604" stroke="#FB923C" stroke-width="1.5"/>
+    <rect x="130" y="588" width="380" height="32" rx="6" fill="#1E293B" stroke="#FB923C" stroke-width="1" filter="url(#shadow)"/>
+    <text x="145" y="602" fill="#F8FAFC" font-size="12" font-weight="600">Seed Data</text>
+    <text x="145" y="614" fill="#94A3B8" font-size="9.5">Knowledge base + sample HITL approvals</text>
+  </g>
+
+  <!-- Step 14: Start Scheduler -->
+  <g>
+    <circle cx="80" cy="647" r="12" fill="#FB923C" filter="url(#shadow)"/>
+    <text x="80" y="651" text-anchor="middle" fill="#0F172A" font-size="10" font-weight="700">14</text>
+    <line x1="92" y1="647" x2="130" y2="647" stroke="#FB923C" stroke-width="1.5"/>
+    <rect x="130" y="631" width="380" height="32" rx="6" fill="#1E293B" stroke="#FB923C" stroke-width="1" filter="url(#shadow)"/>
+    <text x="145" y="645" fill="#F8FAFC" font-size="12" font-weight="600">Start Scheduler</text>
+    <text x="145" y="657" fill="#94A3B8" font-size="9.5">Begin cron job execution</text>
+  </g>
+
+  <!-- ==================== GROUP 6: READY (bright green, larger) ==================== -->
+
+  <!-- Step 15: Start API Server -->
+  <g>
+    <circle cx="80" cy="693" r="14" fill="#34D399" filter="url(#shadow)"/>
+    <text x="80" y="697" text-anchor="middle" fill="#0F172A" font-size="10" font-weight="700">15</text>
+    <line x1="94" y1="693" x2="130" y2="693" stroke="#34D399" stroke-width="1.5"/>
+    <rect x="130" y="676" width="380" height="34" rx="6" fill="#1E293B" stroke="#34D399" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="145" y="691" fill="#F8FAFC" font-size="12" font-weight="600">Start API Server</text>
+    <text x="145" y="703" fill="#94A3B8" font-size="9.5">FastAPI on uvicorn (background thread)</text>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- BOTTOM: PLATFORM ONLINE BOX                                   -->
+  <!-- ============================================================ -->
+  <rect x="40" y="730" width="1020" height="50" rx="8" fill="#0F172A" stroke="#34D399" stroke-width="2" filter="url(#shadow)"/>
+  <text x="550" y="753" text-anchor="middle" fill="#34D399" font-size="16" font-weight="700" letter-spacing="2">FORGEOS PLATFORM ONLINE</text>
+  <text x="550" y="770" text-anchor="middle" fill="#64748B" font-size="10">Stacks registered | Platform agents loaded | API serving | Dashboard at :3000</text>
+
+  <!-- ============================================================ -->
+  <!-- GROUP LABELS (right side, vertically positioned)              -->
+  <!-- ============================================================ -->
+
+  <!-- Environment label -->
+  <g transform="translate(830, 88)">
+    <rect x="0" y="-10" width="105" height="20" rx="4" fill="#34D399" fill-opacity="0.12" stroke="#34D399" stroke-width="0.8"/>
+    <text x="52" y="4" text-anchor="middle" fill="#34D399" font-size="9" font-weight="600" letter-spacing="0.8">ENVIRONMENT</text>
+  </g>
+
+  <!-- Database label -->
+  <g transform="translate(830, 195)">
+    <rect x="0" y="-10" width="85" height="20" rx="4" fill="#06B6D4" fill-opacity="0.12" stroke="#06B6D4" stroke-width="0.8"/>
+    <text x="42" y="4" text-anchor="middle" fill="#06B6D4" font-size="9" font-weight="600" letter-spacing="0.8">DATABASE</text>
+  </g>
+
+  <!-- Subsystems label -->
+  <g transform="translate(830, 324)">
+    <rect x="0" y="-10" width="105" height="20" rx="4" fill="#60A5FA" fill-opacity="0.12" stroke="#60A5FA" stroke-width="0.8"/>
+    <text x="52" y="4" text-anchor="middle" fill="#60A5FA" font-size="9" font-weight="600" letter-spacing="0.8">SUBSYSTEMS</text>
+  </g>
+
+  <!-- Platform label -->
+  <g transform="translate(830, 496)">
+    <rect x="0" y="-10" width="85" height="20" rx="4" fill="#A78BFA" fill-opacity="0.12" stroke="#A78BFA" stroke-width="0.8"/>
+    <text x="42" y="4" text-anchor="middle" fill="#A78BFA" font-size="9" font-weight="600" letter-spacing="0.8">PLATFORM</text>
+  </g>
+
+  <!-- Data label -->
+  <g transform="translate(830, 625)">
+    <rect x="0" y="-10" width="55" height="20" rx="4" fill="#FB923C" fill-opacity="0.12" stroke="#FB923C" stroke-width="0.8"/>
+    <text x="27" y="4" text-anchor="middle" fill="#FB923C" font-size="9" font-weight="600" letter-spacing="0.8">DATA</text>
+  </g>
+
+  <!-- Ready label -->
+  <g transform="translate(830, 693)">
+    <rect x="0" y="-10" width="65" height="20" rx="4" fill="#34D399" fill-opacity="0.12" stroke="#34D399" stroke-width="0.8"/>
+    <text x="32" y="4" text-anchor="middle" fill="#34D399" font-size="9" font-weight="600" letter-spacing="0.8">READY</text>
+  </g>
+
+  <!-- Group bracket lines (subtle connecting lines from labels to step ranges) -->
+  <!-- Environment bracket -->
+  <line x1="825" y1="80" x2="825" y2="140" stroke="#34D399" stroke-width="0.6" stroke-opacity="0.4"/>
+  <line x1="825" y1="88" x2="830" y2="88" stroke="#34D399" stroke-width="0.6" stroke-opacity="0.4"/>
+
+  <!-- Database bracket -->
+  <line x1="825" y1="166" x2="825" y2="226" stroke="#06B6D4" stroke-width="0.6" stroke-opacity="0.4"/>
+  <line x1="825" y1="195" x2="830" y2="195" stroke="#06B6D4" stroke-width="0.6" stroke-opacity="0.4"/>
+
+  <!-- Subsystems bracket -->
+  <line x1="825" y1="252" x2="825" y2="397" stroke="#60A5FA" stroke-width="0.6" stroke-opacity="0.4"/>
+  <line x1="825" y1="324" x2="830" y2="324" stroke="#60A5FA" stroke-width="0.6" stroke-opacity="0.4"/>
+
+  <!-- Platform bracket -->
+  <line x1="825" y1="424" x2="825" y2="569" stroke="#A78BFA" stroke-width="0.6" stroke-opacity="0.4"/>
+  <line x1="825" y1="496" x2="830" y2="496" stroke="#A78BFA" stroke-width="0.6" stroke-opacity="0.4"/>
+
+  <!-- Data bracket -->
+  <line x1="825" y1="596" x2="825" y2="655" stroke="#FB923C" stroke-width="0.6" stroke-opacity="0.4"/>
+  <line x1="825" y1="625" x2="830" y2="625" stroke="#FB923C" stroke-width="0.6" stroke-opacity="0.4"/>
+
+  <!-- Ready bracket -->
+  <line x1="825" y1="685" x2="825" y2="701" stroke="#34D399" stroke-width="0.6" stroke-opacity="0.4"/>
+  <line x1="825" y1="693" x2="830" y2="693" stroke="#34D399" stroke-width="0.6" stroke-opacity="0.4"/>
+
+  <!-- ============================================================ -->
+  <!-- ERROR HANDLING NOTE                                           -->
+  <!-- ============================================================ -->
+  <g transform="translate(582, 415)">
+    <rect x="0" y="0" width="195" height="46" rx="5" fill="#1E293B" stroke="#EF4444" stroke-width="0.8" stroke-dasharray="4,3" fill-opacity="0.8"/>
+    <text x="12" y="16" fill="#EF4444" font-size="9" font-weight="600">Error Handling</text>
+    <text x="12" y="28" fill="#94A3B8" font-size="8.5">Wrapped in try/except with</text>
+    <text x="12" y="39" fill="#94A3B8" font-size="8.5">stage-tracked cleanup</text>
+  </g>
+
+  <!-- Phase annotations (subtle, along timeline) -->
+  <text x="27" y="88" text-anchor="middle" fill="#334155" font-size="8" font-weight="600" transform="rotate(-90, 27, 110)">Phase 1</text>
+  <text x="27" y="188" text-anchor="middle" fill="#334155" font-size="8" font-weight="600" transform="rotate(-90, 27, 210)">Phase 2</text>
+  <text x="27" y="420" text-anchor="middle" fill="#334155" font-size="8" font-weight="600" transform="rotate(-90, 27, 445)">Phase 3-4</text>
+  <text x="27" y="596" text-anchor="middle" fill="#334155" font-size="8" font-weight="600" transform="rotate(-90, 27, 625)">Phase 5-7</text>
+
+</svg>

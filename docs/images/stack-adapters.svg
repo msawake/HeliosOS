@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 740" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+  <defs>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <title>ForgeOS - Stack Adapter Comparison</title>
+
+  <!-- Background -->
+  <rect width="1200" height="740" fill="#0F172A" rx="16"/>
+
+  <!-- Title -->
+  <text x="600" y="44" text-anchor="middle" fill="#F8FAFC" font-size="24" font-weight="700">Stack Adapters</text>
+  <text x="600" y="66" text-anchor="middle" fill="#94A3B8" font-size="13">Four pluggable runtimes implementing the same AgentStackAdapter interface</text>
+
+  <!-- Column headers -->
+  <!-- ForgeOS -->
+  <rect x="40" y="90" width="270" height="120" rx="12" fill="#1E293B" stroke="#60A5FA" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="40" y="90" width="270" height="5" rx="2" fill="#60A5FA"/>
+  <text x="175" y="130" text-anchor="middle" fill="#60A5FA" font-size="20" font-weight="700">ForgeOS</text>
+  <text x="175" y="150" text-anchor="middle" fill="#94A3B8" font-size="12">Native agentic loop</text>
+  <rect x="135" y="162" width="80" height="20" rx="10" fill="#60A5FA20"/>
+  <text x="175" y="176" text-anchor="middle" fill="#60A5FA" font-size="10" font-weight="700">DEFAULT</text>
+
+  <!-- CrewAI -->
+  <rect x="330" y="90" width="270" height="120" rx="12" fill="#1E293B" stroke="#A78BFA" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="330" y="90" width="270" height="5" rx="2" fill="#A78BFA"/>
+  <text x="465" y="130" text-anchor="middle" fill="#A78BFA" font-size="20" font-weight="700">CrewAI</text>
+  <text x="465" y="150" text-anchor="middle" fill="#94A3B8" font-size="12">Role-based crews</text>
+  <rect x="420" y="162" width="90" height="20" rx="10" fill="#A78BFA20"/>
+  <text x="465" y="176" text-anchor="middle" fill="#A78BFA" font-size="10" font-weight="700">SDK: crewai</text>
+
+  <!-- ADK -->
+  <rect x="620" y="90" width="270" height="120" rx="12" fill="#1E293B" stroke="#FB923C" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="620" y="90" width="270" height="5" rx="2" fill="#FB923C"/>
+  <text x="755" y="130" text-anchor="middle" fill="#FB923C" font-size="20" font-weight="700">Google ADK</text>
+  <text x="755" y="150" text-anchor="middle" fill="#94A3B8" font-size="12">Enterprise agent kit</text>
+  <rect x="700" y="162" width="110" height="20" rx="10" fill="#FB923C20"/>
+  <text x="755" y="176" text-anchor="middle" fill="#FB923C" font-size="10" font-weight="700">SDK: google-adk</text>
+
+  <!-- OpenClaw -->
+  <rect x="910" y="90" width="250" height="120" rx="12" fill="#1E293B" stroke="#06B6D4" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="910" y="90" width="250" height="5" rx="2" fill="#06B6D4"/>
+  <text x="1035" y="130" text-anchor="middle" fill="#06B6D4" font-size="20" font-weight="700">OpenClaw</text>
+  <text x="1035" y="150" text-anchor="middle" fill="#94A3B8" font-size="12">HTTP gateway subprocess</text>
+  <rect x="990" y="162" width="90" height="20" rx="10" fill="#06B6D420"/>
+  <text x="1035" y="176" text-anchor="middle" fill="#06B6D4" font-size="10" font-weight="700">Node.js</text>
+
+  <!-- ================================================================ -->
+  <!-- Comparison rows -->
+  <!-- ================================================================ -->
+
+  <!-- Row labels -->
+  <!-- Runtime -->
+  <rect x="40" y="228" width="1120" height="48" rx="0" fill="#1E293B40"/>
+  <text x="55" y="257" fill="#F8FAFC" font-size="13" font-weight="600">Runtime</text>
+  <text x="175" y="257" text-anchor="middle" fill="#93C5FD" font-size="12">Platform agentic loop</text>
+  <text x="465" y="257" text-anchor="middle" fill="#C4B5FD" font-size="12">Crew.kickoff() in thread</text>
+  <text x="755" y="257" text-anchor="middle" fill="#FED7AA" font-size="12">Runner.run_async() stream</text>
+  <text x="1035" y="257" text-anchor="middle" fill="#A5F3FC" font-size="12">HTTP POST /v1/chat</text>
+
+  <!-- LLM Routing -->
+  <text x="55" y="302" fill="#F8FAFC" font-size="13" font-weight="600">LLM Routing</text>
+  <text x="175" y="302" text-anchor="middle" fill="#94A3B8" font-size="12">Via LLMRouter</text>
+  <text x="465" y="302" text-anchor="middle" fill="#94A3B8" font-size="12">Via LiteLLM (internal)</text>
+  <text x="755" y="302" text-anchor="middle" fill="#94A3B8" font-size="12">AnthropicLlm / LiteLlm</text>
+  <text x="1035" y="302" text-anchor="middle" fill="#94A3B8" font-size="12">Via gateway process</text>
+
+  <!-- Tool Bridging -->
+  <rect x="40" y="320" width="1120" height="48" rx="0" fill="#1E293B40"/>
+  <text x="55" y="349" fill="#F8FAFC" font-size="13" font-weight="600">Tool Bridging</text>
+  <text x="175" y="349" text-anchor="middle" fill="#93C5FD" font-size="12">Direct tool_executor</text>
+  <text x="465" y="349" text-anchor="middle" fill="#C4B5FD" font-size="12">BaseTool subclass</text>
+  <text x="755" y="349" text-anchor="middle" fill="#FED7AA" font-size="12">FunctionTool wrapper</text>
+  <text x="1035" y="349" text-anchor="middle" fill="#A5F3FC" font-size="12">Tools in AGENTS.md</text>
+
+  <!-- Multi-turn -->
+  <text x="55" y="394" fill="#F8FAFC" font-size="13" font-weight="600">Multi-turn</text>
+  <text x="175" y="394" text-anchor="middle" fill="#94A3B8" font-size="12">Full history param</text>
+  <text x="465" y="394" text-anchor="middle" fill="#94A3B8" font-size="12">In task description</text>
+  <text x="755" y="394" text-anchor="middle" fill="#94A3B8" font-size="12">ADK session service</text>
+  <text x="1035" y="394" text-anchor="middle" fill="#94A3B8" font-size="12">Platform fallback</text>
+
+  <!-- Fallback -->
+  <rect x="40" y="412" width="1120" height="48" rx="0" fill="#1E293B40"/>
+  <text x="55" y="441" fill="#F8FAFC" font-size="13" font-weight="600">Fallback</text>
+  <text x="175" y="441" text-anchor="middle" fill="#93C5FD" font-size="12">-- (IS the fallback)</text>
+  <text x="465" y="441" text-anchor="middle" fill="#C4B5FD" font-size="12">ForgeOS agentic loop</text>
+  <text x="755" y="441" text-anchor="middle" fill="#FED7AA" font-size="12">ForgeOS agentic loop</text>
+  <text x="1035" y="441" text-anchor="middle" fill="#A5F3FC" font-size="12">ForgeOS agentic loop</text>
+
+  <!-- Best For -->
+  <text x="55" y="486" fill="#F8FAFC" font-size="13" font-weight="600">Best For</text>
+  <text x="175" y="486" text-anchor="middle" fill="#93C5FD" font-size="12" font-weight="600">Default choice</text>
+  <text x="465" y="486" text-anchor="middle" fill="#C4B5FD" font-size="12" font-weight="600">Multi-role collab</text>
+  <text x="755" y="486" text-anchor="middle" fill="#FED7AA" font-size="12" font-weight="600">Google ecosystem</text>
+  <text x="1035" y="486" text-anchor="middle" fill="#A5F3FC" font-size="12" font-weight="600">Markdown-driven</text>
+
+  <!-- Column dividers -->
+  <line x1="320" y1="228" x2="320" y2="500" stroke="#334155" stroke-width="1" stroke-dasharray="2,4"/>
+  <line x1="610" y1="228" x2="610" y2="500" stroke="#334155" stroke-width="1" stroke-dasharray="2,4"/>
+  <line x1="900" y1="228" x2="900" y2="500" stroke="#334155" stroke-width="1" stroke-dasharray="2,4"/>
+
+  <!-- ================================================================ -->
+  <!-- Invocation Flow Diagrams -->
+  <!-- ================================================================ -->
+  <text x="600" y="540" text-anchor="middle" fill="#F8FAFC" font-size="18" font-weight="700">Invocation Flow</text>
+
+  <!-- ForgeOS flow -->
+  <rect x="55" y="558" width="240" height="140" rx="8" fill="#1E293B" stroke="#60A5FA" stroke-width="1"/>
+  <text x="175" y="578" text-anchor="middle" fill="#60A5FA" font-size="11" font-weight="700">ForgeOS Native</text>
+  <text x="70" y="600" fill="#94A3B8" font-size="11">invoke()</text>
+  <text x="80" y="616" fill="#94A3B8" font-size="10">  &rarr; build_tool_definitions()</text>
+  <text x="80" y="632" fill="#94A3B8" font-size="10">  &rarr; run_agentic_loop()</text>
+  <text x="80" y="648" fill="#93C5FD" font-size="10">     LLM &harr; tools &harr; LLM</text>
+  <text x="80" y="664" fill="#94A3B8" font-size="10">  &rarr; AgentResult</text>
+
+  <!-- CrewAI flow -->
+  <rect x="345" y="558" width="240" height="140" rx="8" fill="#1E293B" stroke="#A78BFA" stroke-width="1"/>
+  <text x="465" y="578" text-anchor="middle" fill="#A78BFA" font-size="11" font-weight="700">CrewAI</text>
+  <text x="360" y="600" fill="#94A3B8" font-size="11">invoke()</text>
+  <text x="370" y="616" fill="#94A3B8" font-size="10">  &rarr; Crew(agents, tasks)</text>
+  <text x="370" y="632" fill="#C4B5FD" font-size="10">  &rarr; run_in_executor(kickoff)</text>
+  <text x="370" y="648" fill="#94A3B8" font-size="10">     BaseTool._run() per tool</text>
+  <text x="370" y="664" fill="#94A3B8" font-size="10">  &rarr; str(result) &rarr; AgentResult</text>
+
+  <!-- ADK flow -->
+  <rect x="635" y="558" width="240" height="140" rx="8" fill="#1E293B" stroke="#FB923C" stroke-width="1"/>
+  <text x="755" y="578" text-anchor="middle" fill="#FB923C" font-size="11" font-weight="700">Google ADK</text>
+  <text x="650" y="600" fill="#94A3B8" font-size="11">invoke()</text>
+  <text x="660" y="616" fill="#94A3B8" font-size="10">  &rarr; Runner.run_async()</text>
+  <text x="660" y="632" fill="#FED7AA" font-size="10">  &rarr; async for event in stream</text>
+  <text x="660" y="648" fill="#94A3B8" font-size="10">     extract text, tools, tokens</text>
+  <text x="660" y="664" fill="#94A3B8" font-size="10">  &rarr; AgentResult</text>
+
+  <!-- OpenClaw flow -->
+  <rect x="925" y="558" width="225" height="140" rx="8" fill="#1E293B" stroke="#06B6D4" stroke-width="1"/>
+  <text x="1038" y="578" text-anchor="middle" fill="#06B6D4" font-size="11" font-weight="700">OpenClaw</text>
+  <text x="940" y="600" fill="#94A3B8" font-size="11">invoke()</text>
+  <text x="950" y="616" fill="#94A3B8" font-size="10">  &rarr; _ensure_gateway()</text>
+  <text x="950" y="632" fill="#A5F3FC" font-size="10">  &rarr; HTTP POST /v1/chat</text>
+  <text x="950" y="648" fill="#94A3B8" font-size="10">     parse OpenAI response</text>
+  <text x="950" y="664" fill="#94A3B8" font-size="10">  &rarr; AgentResult</text>
+
+  <!-- Fallback arrows -->
+  <text x="600" y="722" text-anchor="middle" fill="#475569" font-size="12" font-style="italic">When SDK is unavailable, CrewAI / ADK / OpenClaw all fall back to the ForgeOS native agentic loop</text>
+</svg>

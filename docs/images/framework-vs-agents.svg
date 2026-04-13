@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 520" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+  <defs>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+    <linearGradient id="fwGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1E3A5F"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+    <linearGradient id="agGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#134E4A"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+  </defs>
+
+  <title>ForgeOS - Framework vs Agents</title>
+
+  <!-- Background -->
+  <rect width="1100" height="520" fill="#0F172A" rx="16"/>
+
+  <!-- Title -->
+  <text x="550" y="40" text-anchor="middle" fill="#F8FAFC" font-size="22" font-weight="700">The Core Concept</text>
+  <text x="550" y="62" text-anchor="middle" fill="#94A3B8" font-size="13">ForgeOS is the operating system. Agents are the programs that run inside it.</text>
+
+  <!-- ================================================================ -->
+  <!-- LEFT: The Framework -->
+  <!-- ================================================================ -->
+  <rect x="40" y="86" width="490" height="340" rx="14" fill="url(#fwGrad)" stroke="#60A5FA" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="40" y="86" width="490" height="5" rx="2" fill="#60A5FA"/>
+
+  <text x="285" y="120" text-anchor="middle" fill="#60A5FA" font-size="20" font-weight="700">The ForgeOS Framework</text>
+  <text x="285" y="140" text-anchor="middle" fill="#94A3B8" font-size="12">The platform. Boots once. Runs forever. Provides services.</text>
+
+  <!-- Framework services as pills -->
+  <rect x="60" y="160" width="140" height="32" rx="8" fill="#1E293B" stroke="#3B82F6" stroke-width="1"/>
+  <text x="130" y="181" text-anchor="middle" fill="#93C5FD" font-size="12" font-weight="600">Agent Registry</text>
+
+  <rect x="210" y="160" width="150" height="32" rx="8" fill="#1E293B" stroke="#3B82F6" stroke-width="1"/>
+  <text x="285" y="181" text-anchor="middle" fill="#93C5FD" font-size="12" font-weight="600">Platform Executor</text>
+
+  <rect x="370" y="160" width="140" height="32" rx="8" fill="#1E293B" stroke="#3B82F6" stroke-width="1"/>
+  <text x="440" y="181" text-anchor="middle" fill="#93C5FD" font-size="12" font-weight="600">LLM Router</text>
+
+  <rect x="60" y="202" width="140" height="32" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="130" y="223" text-anchor="middle" fill="#94A3B8" font-size="12">Agentic Loop</text>
+
+  <rect x="210" y="202" width="110" height="32" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="265" y="223" text-anchor="middle" fill="#94A3B8" font-size="12">Scheduler</text>
+
+  <rect x="330" y="202" width="110" height="32" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="385" y="223" text-anchor="middle" fill="#94A3B8" font-size="12">Event Bus</text>
+
+  <rect x="60" y="244" width="130" height="32" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="125" y="265" text-anchor="middle" fill="#94A3B8" font-size="12">Tool Executor</text>
+
+  <rect x="200" y="244" width="100" height="32" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="250" y="265" text-anchor="middle" fill="#94A3B8" font-size="12">Audit Log</text>
+
+  <rect x="310" y="244" width="90" height="32" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="355" y="265" text-anchor="middle" fill="#94A3B8" font-size="12">Metrics</text>
+
+  <rect x="410" y="244" width="100" height="32" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="460" y="265" text-anchor="middle" fill="#94A3B8" font-size="12">Alerts</text>
+
+  <!-- Framework bottom text -->
+  <text x="285" y="302" text-anchor="middle" fill="#60A5FA" font-size="13" font-weight="600">Provides:</text>
+  <text x="285" y="320" text-anchor="middle" fill="#94A3B8" font-size="11">Scheduling, routing, tool execution,</text>
+  <text x="285" y="336" text-anchor="middle" fill="#94A3B8" font-size="11">persistence, monitoring, cost tracking</text>
+
+  <!-- Analogy -->
+  <rect x="80" y="354" width="380" height="56" rx="8" fill="#60A5FA10" stroke="#60A5FA30" stroke-width="1"/>
+  <text x="270" y="377" text-anchor="middle" fill="#93C5FD" font-size="12" font-weight="600">Analogy: Kubernetes</text>
+  <text x="270" y="395" text-anchor="middle" fill="#94A3B8" font-size="11">The cluster that manages pods (agents)</text>
+
+  <!-- ================================================================ -->
+  <!-- RIGHT: The Agents -->
+  <!-- ================================================================ -->
+  <rect x="570" y="86" width="490" height="340" rx="14" fill="url(#agGrad)" stroke="#34D399" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="570" y="86" width="490" height="5" rx="2" fill="#34D399"/>
+
+  <text x="815" y="120" text-anchor="middle" fill="#34D399" font-size="20" font-weight="700">The Agents</text>
+  <text x="815" y="140" text-anchor="middle" fill="#94A3B8" font-size="12">AI workloads. Deployed, invoked, managed by the framework.</text>
+
+  <!-- Agent definition visual -->
+  <rect x="590" y="160" width="450" height="140" rx="10" fill="#1E293B" stroke="#34D399" stroke-width="1.5"/>
+  <text x="610" y="182" fill="#6EE7B7" font-size="11" font-weight="700" letter-spacing="0.5">AGENT DEFINITION</text>
+
+  <text x="610" y="204" fill="#94A3B8" font-size="12"><tspan fill="#6EE7B7">name:</tspan> "daily-report"</text>
+  <text x="610" y="222" fill="#94A3B8" font-size="12"><tspan fill="#6EE7B7">stack:</tspan> "forgeos"</text>
+  <text x="610" y="240" fill="#94A3B8" font-size="12"><tspan fill="#6EE7B7">execution_type:</tspan> "scheduled"</text>
+  <text x="610" y="258" fill="#94A3B8" font-size="12"><tspan fill="#6EE7B7">tools:</tspan> ["mcp__google__*"]</text>
+  <text x="610" y="276" fill="#94A3B8" font-size="12"><tspan fill="#6EE7B7">system_prompt:</tspan> "Generate reports..."</text>
+
+  <!-- 5 execution type badges -->
+  <text x="815" y="325" text-anchor="middle" fill="#34D399" font-size="13" font-weight="600">5 Execution Types:</text>
+  <rect x="598" y="336" width="82" height="22" rx="11" fill="#F8717120"/>
+  <text x="639" y="351" text-anchor="middle" fill="#F87171" font-size="10" font-weight="600">always_on</text>
+  <rect x="688" y="336" width="80" height="22" rx="11" fill="#60A5FA20"/>
+  <text x="728" y="351" text-anchor="middle" fill="#60A5FA" font-size="10" font-weight="600">scheduled</text>
+  <rect x="776" y="336" width="90" height="22" rx="11" fill="#FB923C20"/>
+  <text x="821" y="351" text-anchor="middle" fill="#FB923C" font-size="10" font-weight="600">event_driven</text>
+  <rect x="874" y="336" width="56" height="22" rx="11" fill="#06B6D420"/>
+  <text x="902" y="351" text-anchor="middle" fill="#06B6D4" font-size="10" font-weight="600">reflex</text>
+  <rect x="938" y="336" width="86" height="22" rx="11" fill="#34D39920"/>
+  <text x="981" y="351" text-anchor="middle" fill="#34D399" font-size="10" font-weight="600">autonomous</text>
+
+  <!-- Agent count -->
+  <rect x="610" y="370" width="430" height="40" rx="8" fill="#34D39910" stroke="#34D39930" stroke-width="1"/>
+  <text x="815" y="395" text-anchor="middle" fill="#6EE7B7" font-size="13">74 deployed agents across sales, marketing, finance, ops, HR, legal</text>
+
+  <!-- ================================================================ -->
+  <!-- CENTER: Connection arrow -->
+  <!-- ================================================================ -->
+  <text x="550" y="456" text-anchor="middle" fill="#F8FAFC" font-size="14" font-weight="600">runs inside</text>
+  <path d="M740 440 L560 440" stroke="#475569" stroke-width="2" marker-end="url(#arrowGray)"/>
+  <defs>
+    <marker id="arrowGray" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <!-- Bottom bar -->
+  <rect x="40" y="466" width="1020" height="36" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="550" y="489" text-anchor="middle" fill="#94A3B8" font-size="12">The framework does not perform business tasks. It enables agents to perform them.</text>
+</svg>

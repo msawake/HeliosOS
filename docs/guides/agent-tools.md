@@ -1,5 +1,7 @@
 # Agent Tools & MCP
 
+![Tool Routing](../images/tool-routing.svg)
+
 Agents gain capabilities through **tools**. When an agent runs, the LLM can request tool calls, and ForgeOS executes them and returns the results. This page explains the three categories of tools and how to configure them.
 
 ## Tool Categories

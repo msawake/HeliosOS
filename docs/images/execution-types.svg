@@ -1,0 +1,175 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 680" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+  <defs>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <title>ForgeOS - 5 Agent Execution Types</title>
+
+  <!-- Background -->
+  <rect width="1200" height="680" fill="#0F172A" rx="16"/>
+
+  <!-- Title -->
+  <text x="600" y="44" text-anchor="middle" fill="#F8FAFC" font-size="24" font-weight="700">The 5 Execution Types</text>
+  <text x="600" y="66" text-anchor="middle" fill="#94A3B8" font-size="13">Every agent has one execution lifecycle that determines when and how it runs</text>
+
+  <!-- Time axis -->
+  <line x1="280" y1="100" x2="1160" y2="100" stroke="#334155" stroke-width="1"/>
+  <text x="280" y="95" fill="#94A3B8" font-size="10">TIME &rarr;</text>
+
+  <!-- ================================================================ -->
+  <!-- 1. ALWAYS_ON -->
+  <!-- ================================================================ -->
+  <rect x="40" y="116" width="220" height="80" rx="10" fill="#1E293B" stroke="#F87171" stroke-width="1.5" filter="url(#shadow)"/>
+  <circle cx="64" cy="140" r="12" fill="#F87171" opacity="0.2"/>
+  <text x="64" y="145" text-anchor="middle" fill="#F87171" font-size="14">&#8635;</text>
+  <text x="84" y="142" fill="#F87171" font-size="15" font-weight="700">always_on</text>
+  <text x="56" y="162" fill="#94A3B8" font-size="11">Runs continuously in a loop.</text>
+  <text x="56" y="178" fill="#64748B" font-size="10">Ex: system health monitor (60s)</text>
+
+  <!-- Timeline bar -->
+  <rect x="280" y="136" width="860" height="24" rx="4" fill="#F8717115" stroke="#F87171" stroke-width="1"/>
+  <!-- Loop indicators -->
+  <g fill="#F87171" opacity="0.6">
+    <rect x="290" y="142" width="80" height="12" rx="3"/>
+    <rect x="380" y="142" width="80" height="12" rx="3"/>
+    <rect x="470" y="142" width="80" height="12" rx="3"/>
+    <rect x="560" y="142" width="80" height="12" rx="3"/>
+    <rect x="650" y="142" width="80" height="12" rx="3"/>
+    <rect x="740" y="142" width="80" height="12" rx="3"/>
+    <rect x="830" y="142" width="80" height="12" rx="3"/>
+    <rect x="920" y="142" width="80" height="12" rx="3"/>
+    <rect x="1010" y="142" width="80" height="12" rx="3"/>
+    <rect x="1100" y="142" width="30" height="12" rx="3"/>
+  </g>
+  <text x="600" y="152" text-anchor="middle" fill="#FCA5A5" font-size="10" font-weight="600">invoke &rarr; sleep &rarr; invoke &rarr; sleep &rarr; invoke &rarr; sleep &rarr; ...</text>
+
+  <!-- ================================================================ -->
+  <!-- 2. SCHEDULED -->
+  <!-- ================================================================ -->
+  <rect x="40" y="216" width="220" height="80" rx="10" fill="#1E293B" stroke="#60A5FA" stroke-width="1.5" filter="url(#shadow)"/>
+  <circle cx="64" cy="240" r="12" fill="#60A5FA" opacity="0.2"/>
+  <text x="64" y="245" text-anchor="middle" fill="#60A5FA" font-size="14">&#9200;</text>
+  <text x="84" y="242" fill="#60A5FA" font-size="15" font-weight="700">scheduled</text>
+  <text x="56" y="262" fill="#94A3B8" font-size="11">Triggered by cron expression.</text>
+  <text x="56" y="278" fill="#64748B" font-size="10">Ex: daily report at 9 AM</text>
+
+  <!-- Timeline bar - cron triggers -->
+  <rect x="280" y="236" width="860" height="24" rx="4" fill="transparent" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+  <rect x="320" y="240" width="50" height="16" rx="3" fill="#60A5FA"/>
+  <rect x="530" y="240" width="50" height="16" rx="3" fill="#60A5FA"/>
+  <rect x="740" y="240" width="50" height="16" rx="3" fill="#60A5FA"/>
+  <rect x="950" y="240" width="50" height="16" rx="3" fill="#60A5FA"/>
+  <text x="345" y="252" text-anchor="middle" fill="#0F172A" font-size="9" font-weight="700">9AM</text>
+  <text x="555" y="252" text-anchor="middle" fill="#0F172A" font-size="9" font-weight="700">9AM</text>
+  <text x="765" y="252" text-anchor="middle" fill="#0F172A" font-size="9" font-weight="700">9AM</text>
+  <text x="975" y="252" text-anchor="middle" fill="#0F172A" font-size="9" font-weight="700">9AM</text>
+  <!-- Idle between -->
+  <text x="425" y="252" text-anchor="middle" fill="#475569" font-size="9">idle</text>
+  <text x="635" y="252" text-anchor="middle" fill="#475569" font-size="9">idle</text>
+  <text x="845" y="252" text-anchor="middle" fill="#475569" font-size="9">idle</text>
+
+  <!-- ================================================================ -->
+  <!-- 3. EVENT_DRIVEN -->
+  <!-- ================================================================ -->
+  <rect x="40" y="316" width="220" height="80" rx="10" fill="#1E293B" stroke="#FB923C" stroke-width="1.5" filter="url(#shadow)"/>
+  <circle cx="64" cy="340" r="12" fill="#FB923C" opacity="0.2"/>
+  <text x="64" y="345" text-anchor="middle" fill="#FB923C" font-size="14">&#9889;</text>
+  <text x="84" y="342" fill="#FB923C" font-size="15" font-weight="700">event_driven</text>
+  <text x="56" y="362" fill="#94A3B8" font-size="11">Triggered by event bus messages.</text>
+  <text x="56" y="378" fill="#64748B" font-size="10">Ex: alert on cost.exceeded</text>
+
+  <!-- Timeline bar - events -->
+  <rect x="280" y="336" width="860" height="24" rx="4" fill="transparent" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+  <!-- Event markers -->
+  <polygon points="370,336 378,348 362,348" fill="#FB923C"/>
+  <rect x="362" y="340" width="60" height="16" rx="3" fill="#FB923C"/>
+  <text x="392" y="352" text-anchor="middle" fill="#0F172A" font-size="9" font-weight="700">EVENT</text>
+
+  <polygon points="620,336 628,348 612,348" fill="#FB923C"/>
+  <rect x="612" y="340" width="60" height="16" rx="3" fill="#FB923C"/>
+  <text x="642" y="352" text-anchor="middle" fill="#0F172A" font-size="9" font-weight="700">EVENT</text>
+
+  <polygon points="1000,336 1008,348 992,348" fill="#FB923C"/>
+  <rect x="992" y="340" width="60" height="16" rx="3" fill="#FB923C"/>
+  <text x="1022" y="352" text-anchor="middle" fill="#0F172A" font-size="9" font-weight="700">EVENT</text>
+
+  <text x="490" y="352" text-anchor="middle" fill="#475569" font-size="9">listening...</text>
+  <text x="810" y="352" text-anchor="middle" fill="#475569" font-size="9">listening...</text>
+
+  <!-- ================================================================ -->
+  <!-- 4. REFLEX -->
+  <!-- ================================================================ -->
+  <rect x="40" y="416" width="220" height="80" rx="10" fill="#1E293B" stroke="#06B6D4" stroke-width="1.5" filter="url(#shadow)"/>
+  <circle cx="64" cy="440" r="12" fill="#06B6D4" opacity="0.2"/>
+  <text x="64" y="445" text-anchor="middle" fill="#06B6D4" font-size="14">&#8644;</text>
+  <text x="84" y="442" fill="#06B6D4" font-size="15" font-weight="700">reflex</text>
+  <text x="56" y="462" fill="#94A3B8" font-size="11">On-demand, responds to API calls.</text>
+  <text x="56" y="478" fill="#64748B" font-size="10">Ex: chat assistant, Q&amp;A agent</text>
+
+  <!-- Timeline bar - on demand -->
+  <rect x="280" y="436" width="860" height="24" rx="4" fill="transparent" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+  <!-- User requests -->
+  <rect x="300" y="440" width="100" height="16" rx="3" fill="#06B6D4"/>
+  <text x="350" y="452" text-anchor="middle" fill="#0F172A" font-size="9" font-weight="700">user request</text>
+  <text x="470" y="452" text-anchor="middle" fill="#475569" font-size="9">idle</text>
+  <rect x="550" y="440" width="100" height="16" rx="3" fill="#06B6D4"/>
+  <text x="600" y="452" text-anchor="middle" fill="#0F172A" font-size="9" font-weight="700">user request</text>
+  <text x="730" y="452" text-anchor="middle" fill="#475569" font-size="9">idle</text>
+  <rect x="830" y="440" width="100" height="16" rx="3" fill="#06B6D4"/>
+  <text x="880" y="452" text-anchor="middle" fill="#0F172A" font-size="9" font-weight="700">user request</text>
+  <text x="1010" y="452" text-anchor="middle" fill="#475569" font-size="9">idle</text>
+
+  <!-- ================================================================ -->
+  <!-- 5. AUTONOMOUS -->
+  <!-- ================================================================ -->
+  <rect x="40" y="516" width="220" height="80" rx="10" fill="#1E293B" stroke="#34D399" stroke-width="1.5" filter="url(#shadow)"/>
+  <circle cx="64" cy="540" r="12" fill="#34D399" opacity="0.2"/>
+  <text x="64" y="545" text-anchor="middle" fill="#34D399" font-size="14">&#9678;</text>
+  <text x="84" y="542" fill="#34D399" font-size="15" font-weight="700">autonomous</text>
+  <text x="56" y="562" fill="#94A3B8" font-size="11">Goal-directed, iterates until done.</text>
+  <text x="56" y="578" fill="#64748B" font-size="10">Ex: research agent toward objective</text>
+
+  <!-- Timeline bar - goal iterations -->
+  <rect x="280" y="536" width="600" height="24" rx="4" fill="#34D39910" stroke="#34D399" stroke-width="1"/>
+  <!-- Iteration blocks -->
+  <rect x="290" y="540" width="100" height="16" rx="3" fill="#34D399" opacity="0.4"/>
+  <text x="340" y="552" text-anchor="middle" fill="#D1FAE5" font-size="9" font-weight="600">iter 1</text>
+  <rect x="400" y="540" width="100" height="16" rx="3" fill="#34D399" opacity="0.5"/>
+  <text x="450" y="552" text-anchor="middle" fill="#D1FAE5" font-size="9" font-weight="600">iter 2</text>
+  <rect x="510" y="540" width="100" height="16" rx="3" fill="#34D399" opacity="0.6"/>
+  <text x="560" y="552" text-anchor="middle" fill="#D1FAE5" font-size="9" font-weight="600">iter 3</text>
+  <rect x="620" y="540" width="100" height="16" rx="3" fill="#34D399" opacity="0.8"/>
+  <text x="670" y="552" text-anchor="middle" fill="#D1FAE5" font-size="9" font-weight="600">iter 4</text>
+  <rect x="730" y="540" width="60" height="16" rx="3" fill="#34D399"/>
+  <text x="760" y="552" text-anchor="middle" fill="#0F172A" font-size="9" font-weight="700">GOAL MET</text>
+
+  <!-- Completed checkmark -->
+  <circle cx="820" cy="548" r="14" fill="#34D399" opacity="0.2"/>
+  <text x="820" y="554" text-anchor="middle" fill="#34D399" font-size="16">&#10003;</text>
+  <text x="850" y="552" fill="#34D399" font-size="11" font-weight="600">COMPLETED</text>
+
+  <!-- ================================================================ -->
+  <!-- Legend bar at bottom -->
+  <!-- ================================================================ -->
+  <rect x="40" y="620" width="1120" height="44" rx="10" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="60" y="646" fill="#94A3B8" font-size="12" font-weight="600">COMPARISON:</text>
+
+  <rect x="180" y="633" width="10" height="10" rx="2" fill="#F87171"/>
+  <text x="196" y="644" fill="#94A3B8" font-size="11">Continuous loop</text>
+
+  <rect x="320" y="633" width="10" height="10" rx="2" fill="#60A5FA"/>
+  <text x="336" y="644" fill="#94A3B8" font-size="11">Cron-triggered</text>
+
+  <rect x="460" y="633" width="10" height="10" rx="2" fill="#FB923C"/>
+  <text x="476" y="644" fill="#94A3B8" font-size="11">Event-triggered</text>
+
+  <rect x="620" y="633" width="10" height="10" rx="2" fill="#06B6D4"/>
+  <text x="636" y="644" fill="#94A3B8" font-size="11">On-demand (API call)</text>
+
+  <rect x="810" y="633" width="10" height="10" rx="2" fill="#34D399"/>
+  <text x="826" y="644" fill="#94A3B8" font-size="11">Goal-directed iterations</text>
+
+  <text x="1040" y="644" fill="#64748B" font-size="11">Each agent chooses one</text>
+</svg>
