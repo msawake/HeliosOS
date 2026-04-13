@@ -1,0 +1,230 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 820" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+  <defs>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#0B1120"/>
+    </linearGradient>
+    <linearGradient id="blueGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1E3A5F"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+    <linearGradient id="purpleGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2D1B69"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#134E4A"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+    <linearGradient id="cyanGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#164E63"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="820" fill="url(#bgGrad)" rx="16"/>
+
+  <!-- Title -->
+  <text x="600" y="48" text-anchor="middle" fill="#F8FAFC" font-size="26" font-weight="700" letter-spacing="-0.5">ForgeOS Architecture</text>
+  <text x="600" y="72" text-anchor="middle" fill="#94A3B8" font-size="14">Three-layer design: Stack Adapters &rarr; Platform Layer &rarr; Core + Companies</text>
+
+  <!-- ================================================================== -->
+  <!-- LAYER 1: Presentation (top) -->
+  <!-- ================================================================== -->
+  <rect x="40" y="96" width="1120" height="100" rx="12" fill="url(#cyanGrad)" stroke="#06B6D4" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="40" y="96" width="1120" height="4" rx="2" fill="#06B6D4"/>
+  <text x="60" y="125" fill="#06B6D4" font-size="11" font-weight="700" letter-spacing="1.5" text-transform="uppercase">PRESENTATION</text>
+
+  <!-- Dashboard box -->
+  <rect x="60" y="140" width="240" height="40" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="180" y="165" text-anchor="middle" fill="#F8FAFC" font-size="14" font-weight="600">Next.js Dashboard</text>
+
+  <!-- FastAPI box -->
+  <rect x="320" y="140" width="260" height="40" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="450" y="165" text-anchor="middle" fill="#F8FAFC" font-size="14" font-weight="600">FastAPI (61 endpoints)</text>
+
+  <!-- SSE box -->
+  <rect x="600" y="140" width="180" height="40" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="690" y="165" text-anchor="middle" fill="#F8FAFC" font-size="14" font-weight="600">SSE Streaming</text>
+
+  <!-- WebSocket box -->
+  <rect x="800" y="140" width="160" height="40" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="880" y="165" text-anchor="middle" fill="#F8FAFC" font-size="14" font-weight="600">WebSocket</text>
+
+  <!-- Auth box -->
+  <rect x="980" y="140" width="160" height="40" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="1060" y="165" text-anchor="middle" fill="#F8FAFC" font-size="14" font-weight="600">Auth (JWT/API)</text>
+
+  <!-- Arrow down -->
+  <path d="M600 200 L600 220" stroke="#475569" stroke-width="2" stroke-dasharray="4,4"/>
+  <polygon points="600,228 594,218 606,218" fill="#475569"/>
+
+  <!-- ================================================================== -->
+  <!-- LAYER 2: Platform Layer (middle) -->
+  <!-- ================================================================== -->
+  <rect x="40" y="232" width="1120" height="200" rx="12" fill="url(#blueGrad)" stroke="#60A5FA" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="40" y="232" width="1120" height="4" rx="2" fill="#60A5FA"/>
+  <text x="60" y="261" fill="#60A5FA" font-size="11" font-weight="700" letter-spacing="1.5">PLATFORM LAYER</text>
+  <text x="1140" y="261" text-anchor="end" fill="#94A3B8" font-size="11">src/platform/</text>
+
+  <!-- Row 1: Core services -->
+  <rect x="60" y="276" width="250" height="52" rx="8" fill="#1E293B" stroke="#3B82F6" stroke-width="1"/>
+  <text x="80" y="298" fill="#93C5FD" font-size="11" font-weight="600">REGISTRY</text>
+  <text x="80" y="316" fill="#94A3B8" font-size="12">Universal agent store + query</text>
+
+  <rect x="326" y="276" width="250" height="52" rx="8" fill="#1E293B" stroke="#3B82F6" stroke-width="1"/>
+  <text x="346" y="298" fill="#93C5FD" font-size="11" font-weight="600">EXECUTOR</text>
+  <text x="346" y="316" fill="#94A3B8" font-size="12">Deploy, invoke, recover agents</text>
+
+  <rect x="592" y="276" width="250" height="52" rx="8" fill="#1E293B" stroke="#3B82F6" stroke-width="1"/>
+  <text x="612" y="298" fill="#93C5FD" font-size="11" font-weight="600">LLM ROUTER</text>
+  <text x="612" y="316" fill="#94A3B8" font-size="12">Anthropic/OpenAI + retry + failover</text>
+
+  <rect x="858" y="276" width="282" height="52" rx="8" fill="#1E293B" stroke="#3B82F6" stroke-width="1"/>
+  <text x="878" y="298" fill="#93C5FD" font-size="11" font-weight="600">AGENTIC LOOP</text>
+  <text x="878" y="316" fill="#94A3B8" font-size="12">LLM &harr; tool_use &harr; execute &harr; result</text>
+
+  <!-- Row 2: Supporting services -->
+  <rect x="60" y="342" width="180" height="52" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="80" y="364" fill="#93C5FD" font-size="11" font-weight="600">SCHEDULER</text>
+  <text x="80" y="380" fill="#94A3B8" font-size="12">Cron-based jobs</text>
+
+  <rect x="256" y="342" width="180" height="52" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="276" y="364" fill="#93C5FD" font-size="11" font-weight="600">EVENT BUS</text>
+  <text x="276" y="380" fill="#94A3B8" font-size="12">Pub/sub messaging</text>
+
+  <rect x="452" y="342" width="180" height="52" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="472" y="364" fill="#93C5FD" font-size="11" font-weight="600">AUDIT LOG</text>
+  <text x="472" y="380" fill="#94A3B8" font-size="12">Event recording</text>
+
+  <rect x="648" y="342" width="180" height="52" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="668" y="364" fill="#93C5FD" font-size="11" font-weight="600">ALERTS</text>
+  <text x="668" y="380" fill="#94A3B8" font-size="12">Slack / PagerDuty / Log</text>
+
+  <rect x="844" y="342" width="180" height="52" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="864" y="364" fill="#93C5FD" font-size="11" font-weight="600">METRICS</text>
+  <text x="864" y="380" fill="#94A3B8" font-size="12">Prometheus (14 families)</text>
+
+  <rect x="1040" y="342" width="100" height="52" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="1060" y="364" fill="#93C5FD" font-size="11" font-weight="600">COST</text>
+  <text x="1060" y="380" fill="#94A3B8" font-size="12">Usage track</text>
+
+  <!-- Arrow down -->
+  <path d="M600 436 L600 456" stroke="#475569" stroke-width="2" stroke-dasharray="4,4"/>
+  <polygon points="600,464 594,454 606,454" fill="#475569"/>
+
+  <!-- ================================================================== -->
+  <!-- LAYER 3a: Stack Adapters (bottom left) -->
+  <!-- ================================================================== -->
+  <rect x="40" y="468" width="545" height="150" rx="12" fill="url(#purpleGrad)" stroke="#A78BFA" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="40" y="468" width="545" height="4" rx="2" fill="#A78BFA"/>
+  <text x="60" y="497" fill="#A78BFA" font-size="11" font-weight="700" letter-spacing="1.5">STACK ADAPTERS</text>
+  <text x="565" y="497" text-anchor="end" fill="#94A3B8" font-size="11">stacks/</text>
+
+  <!-- ForgeOS -->
+  <rect x="60" y="510" width="120" height="90" rx="8" fill="#1E293B" stroke="#60A5FA" stroke-width="1.5"/>
+  <text x="120" y="538" text-anchor="middle" fill="#60A5FA" font-size="13" font-weight="700">ForgeOS</text>
+  <text x="120" y="556" text-anchor="middle" fill="#94A3B8" font-size="11">Native loop</text>
+  <text x="120" y="572" text-anchor="middle" fill="#94A3B8" font-size="11">No SDK needed</text>
+  <rect x="82" y="583" width="76" height="12" rx="6" fill="#60A5FA20"/>
+  <text x="120" y="593" text-anchor="middle" fill="#60A5FA" font-size="9" font-weight="600">DEFAULT</text>
+
+  <!-- CrewAI -->
+  <rect x="196" y="510" width="120" height="90" rx="8" fill="#1E293B" stroke="#A78BFA" stroke-width="1.5"/>
+  <text x="256" y="538" text-anchor="middle" fill="#A78BFA" font-size="13" font-weight="700">CrewAI</text>
+  <text x="256" y="556" text-anchor="middle" fill="#94A3B8" font-size="11">Crew.kickoff()</text>
+  <text x="256" y="572" text-anchor="middle" fill="#94A3B8" font-size="11">Role-based crews</text>
+  <rect x="218" y="583" width="76" height="12" rx="6" fill="#A78BFA20"/>
+  <text x="256" y="593" text-anchor="middle" fill="#A78BFA" font-size="9" font-weight="600">SDK: crewai</text>
+
+  <!-- ADK -->
+  <rect x="332" y="510" width="120" height="90" rx="8" fill="#1E293B" stroke="#FB923C" stroke-width="1.5"/>
+  <text x="392" y="538" text-anchor="middle" fill="#FB923C" font-size="13" font-weight="700">Google ADK</text>
+  <text x="392" y="556" text-anchor="middle" fill="#94A3B8" font-size="11">Runner.run_async()</text>
+  <text x="392" y="572" text-anchor="middle" fill="#94A3B8" font-size="11">Google ecosystem</text>
+  <rect x="348" y="583" width="88" height="12" rx="6" fill="#FB923C20"/>
+  <text x="392" y="593" text-anchor="middle" fill="#FB923C" font-size="9" font-weight="600">SDK: google-adk</text>
+
+  <!-- OpenClaw -->
+  <rect x="468" y="510" width="100" height="90" rx="8" fill="#1E293B" stroke="#06B6D4" stroke-width="1.5"/>
+  <text x="518" y="538" text-anchor="middle" fill="#06B6D4" font-size="13" font-weight="700">OpenClaw</text>
+  <text x="518" y="556" text-anchor="middle" fill="#94A3B8" font-size="11">HTTP gateway</text>
+  <text x="518" y="572" text-anchor="middle" fill="#94A3B8" font-size="11">Markdown-first</text>
+  <rect x="478" y="583" width="80" height="12" rx="6" fill="#06B6D420"/>
+  <text x="518" y="593" text-anchor="middle" fill="#06B6D4" font-size="9" font-weight="600">Node.js</text>
+
+  <!-- ================================================================== -->
+  <!-- LAYER 3b: Core + Companies (bottom right) -->
+  <!-- ================================================================== -->
+  <rect x="615" y="468" width="545" height="150" rx="12" fill="url(#greenGrad)" stroke="#34D399" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="615" y="468" width="545" height="4" rx="2" fill="#34D399"/>
+  <text x="635" y="497" fill="#34D399" font-size="11" font-weight="700" letter-spacing="1.5">CORE + COMPANIES</text>
+  <text x="1140" y="497" text-anchor="end" fill="#94A3B8" font-size="11">src/core/ + src/mcp/ + src/companies/</text>
+
+  <!-- Row 1 -->
+  <rect x="635" y="510" width="152" height="38" rx="6" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="650" y="530" fill="#6EE7B7" font-size="11" font-weight="600">Database</text>
+  <text x="650" y="543" fill="#94A3B8" font-size="10">PostgreSQL + RLS</text>
+
+  <rect x="797" y="510" width="152" height="38" rx="6" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="812" y="530" fill="#6EE7B7" font-size="11" font-weight="600">MCP Tool Executor</text>
+  <text x="812" y="543" fill="#94A3B8" font-size="10">Route mcp__ / company__</text>
+
+  <rect x="959" y="510" width="182" height="38" rx="6" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="974" y="530" fill="#6EE7B7" font-size="11" font-weight="600">Session Store</text>
+  <text x="974" y="543" fill="#94A3B8" font-size="10">Multi-turn persistence</text>
+
+  <!-- Row 2 -->
+  <rect x="635" y="558" width="152" height="38" rx="6" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="650" y="578" fill="#6EE7B7" font-size="11" font-weight="600">Hook Chain</text>
+  <text x="650" y="591" fill="#94A3B8" font-size="10">7-check governance</text>
+
+  <rect x="797" y="558" width="152" height="38" rx="6" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="812" y="578" fill="#6EE7B7" font-size="11" font-weight="600">Knowledge Base</text>
+  <text x="812" y="591" fill="#94A3B8" font-size="10">Decisions + policies</text>
+
+  <rect x="959" y="558" width="182" height="38" rx="6" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="974" y="578" fill="#6EE7B7" font-size="11" font-weight="600">5 Company Packages</text>
+  <text x="974" y="591" fill="#94A3B8" font-size="10">LeadForge, DealForge, ...</text>
+
+  <!-- ================================================================== -->
+  <!-- Fallback arrows -->
+  <!-- ================================================================== -->
+  <text x="310" y="640" text-anchor="middle" fill="#94A3B8" font-size="11" font-style="italic">All adapters fall back to ForgeOS native when SDK is unavailable</text>
+  <path d="M256 600 Q256 630 170 630 L130 630" stroke="#A78BFA" stroke-width="1" stroke-dasharray="3,3" fill="none" marker-end="url(#arrowPurple)"/>
+  <path d="M392 600 Q392 625 200 625 L130 625" stroke="#FB923C" stroke-width="1" stroke-dasharray="3,3" fill="none"/>
+  <path d="M518 600 Q518 620 230 620 L130 620" stroke="#06B6D4" stroke-width="1" stroke-dasharray="3,3" fill="none"/>
+
+  <!-- ================================================================== -->
+  <!-- Legend -->
+  <!-- ================================================================== -->
+  <rect x="40" y="660" width="1120" height="140" rx="12" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="60" y="688" fill="#F8FAFC" font-size="14" font-weight="700">Key Concepts</text>
+
+  <!-- Framework vs Agents -->
+  <rect x="60" y="702" width="16" height="16" rx="4" fill="#60A5FA"/>
+  <text x="84" y="715" fill="#F8FAFC" font-size="13" font-weight="600">The Framework</text>
+  <text x="84" y="732" fill="#94A3B8" font-size="12">Platform layer + Core = the operating system. Boots once, runs forever.</text>
+
+  <rect x="60" y="748" width="16" height="16" rx="4" fill="#34D399"/>
+  <text x="84" y="761" fill="#F8FAFC" font-size="13" font-weight="600">The Agents</text>
+  <text x="84" y="778" fill="#94A3B8" font-size="12">AI workloads deployed into the framework. Each has name, stack, tools, system prompt.</text>
+
+  <!-- Stats -->
+  <text x="620" y="708" fill="#60A5FA" font-size="28" font-weight="700">112</text>
+  <text x="670" y="708" fill="#94A3B8" font-size="13">Python files</text>
+  <text x="800" y="708" fill="#34D399" font-size="28" font-weight="700">730</text>
+  <text x="846" y="708" fill="#94A3B8" font-size="13">tests</text>
+  <text x="930" y="708" fill="#A78BFA" font-size="28" font-weight="700">74</text>
+  <text x="964" y="708" fill="#94A3B8" font-size="13">agents</text>
+  <text x="1050" y="708" fill="#06B6D4" font-size="28" font-weight="700">61</text>
+  <text x="1084" y="708" fill="#94A3B8" font-size="13">endpoints</text>
+
+  <text x="620" y="745" fill="#94A3B8" font-size="12">4 stack adapters | 5 execution types | 3 ownership types</text>
+  <text x="620" y="765" fill="#94A3B8" font-size="12">Anthropic + OpenAI | PostgreSQL + RLS | MCP Protocol</text>
+  <text x="620" y="785" fill="#94A3B8" font-size="12">Next.js 15 | FastAPI | Docker | Kubernetes | Terraform (GCP)</text>
+</svg>

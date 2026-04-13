@@ -1,5 +1,7 @@
 # Architecture Overview
 
+![Framework vs Agents](../images/framework-vs-agents.svg)
+
 ## The Core Distinction: Framework vs Agents
 
 ForgeOS has two halves that must not be confused:
@@ -24,6 +26,8 @@ ForgeOS has two halves that must not be confused:
 Just as Kubernetes does not care whether a container runs nginx or PostgreSQL, ForgeOS does not care whether an agent scores leads or drafts emails. The framework provides the lifecycle; agents provide the behavior.
 
 ---
+
+![Architecture Layers](../images/architecture-layers.svg)
 
 ## Three-Layer Architecture
 
@@ -93,6 +97,8 @@ Every adapter implements this interface. The platform layer calls these methods 
 - Five implementations: LeadForge (B2B sales), DealForge (M&A), TravelForge (travel), InsureForge (insurance), HomeForge (real estate).
 
 ---
+
+![Agent Lifecycle](../images/agent-lifecycle.svg)
 
 ## How an Agent Runs (End to End)
 
@@ -183,6 +189,8 @@ Every agent is defined by `AgentDefinition` (from `stacks/base.py`):
 | `metadata` | dict | Arbitrary config (e.g., `restart_on_failure`, `max_iterations`) |
 
 ---
+
+![Boot Sequence](../images/boot-sequence.svg)
 
 ## Boot Sequence
 

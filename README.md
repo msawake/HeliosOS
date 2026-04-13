@@ -17,9 +17,17 @@ Agents (the workloads)
 
 Think of ForgeOS the way you think of Kubernetes: the framework handles scheduling, networking, storage, and monitoring. Agents are the pods -- you define what they do, and the framework runs them.
 
+<p align="center">
+  <img src="docs/images/framework-vs-agents.svg" alt="Framework vs Agents" width="900"/>
+</p>
+
 ---
 
 ## Architecture
+
+<p align="center">
+  <img src="docs/images/architecture-layers.svg" alt="ForgeOS Architecture" width="900"/>
+</p>
 
 ```
                            +-----------------------+
@@ -78,9 +86,17 @@ Think of ForgeOS the way you think of Kubernetes: the framework handles scheduli
 
 All four adapters fall back to the platform agentic loop when their SDK is not installed.
 
+<p align="center">
+  <img src="docs/images/stack-adapters.svg" alt="Stack Adapter Comparison" width="900"/>
+</p>
+
 ---
 
 ## Execution Types
+
+<p align="center">
+  <img src="docs/images/execution-types.svg" alt="5 Execution Types" width="900"/>
+</p>
 
 Agents have one of five execution lifecycles:
 
