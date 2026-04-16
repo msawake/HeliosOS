@@ -54,7 +54,7 @@ Each provides: `create_agent()`, `invoke()`, `start_loop()`, `stop()`, `scaffold
 
 Stack-agnostic orchestration shared by all agents:
 
-- `registry.py` — Universal agent registry (query by stack/type/owner/department)
+- `registry.py` — Universal agent registry (query by stack/type/owner/department/**namespace**)
 - `executor.py` — Central dispatcher: deploy, invoke, wire execution lifecycle, recover
 - `scheduler.py` — Cron-based scheduling for scheduled agents
 - `event_bus.py` — Pub/sub for event-driven agents
@@ -63,6 +63,18 @@ Stack-agnostic orchestration shared by all agents:
 - `audit.py` — Records all platform events
 - `alerts.py` — Multi-destination alerts (Slack, PagerDuty, log)
 - `metrics.py` — Prometheus metrics (14 families)
+- `kernel.py` — **AgentOS Kernel facade** (admission, permissions, budgets, policies, data boundaries)
+- `a2a.py` — **Agent-to-agent protocol** (addressed calls, ACL checks, cycle detection)
+
+### 2b. Python SDK (`src/forgeos_sdk/`)
+
+Public-facing Python package for declaring and managing agents:
+
+- `manifest.py` — Pydantic schema for `agent.yaml` (supports `forgeos/v1` flat + `agentos/v1` k8s-style)
+- `agent.py` — `Agent` class (declarative) + `AgentBuilder` (fluent) — both compile to `AgentManifest`
+- `client.py` — `ForgeOSClient` sync HTTP wrapper
+- `kernel.py` — `Kernel` accessor (in-process or remote) for permission checks from agent code
+- `cli.py` — `forgeos deploy/list/invoke/validate/undeploy/health` CLI
 
 ### 3. Core + Companies (`src/core/`, `src/companies/`, `src/mcp/`)
 
@@ -93,9 +105,43 @@ Next.js 15 + React 19 + Tailwind CSS in `dashboard/`. Talks to FastAPI backend (
 
 - **5 execution types:** always_on, scheduled, event_driven, reflex, autonomous
 - **3 ownership types:** personal, shared, client
+- **Namespaces** (AgentOS v2): k8s-style logical isolation (`sales-team`, `legal`, `operations`)
 - **3-tier hierarchy** (ForgeOS stack): Executives (Opus) -> Department Leads (Opus) -> Workers (Sonnet/Haiku)
 - **Multi-model:** `claude-*` -> Anthropic, `gpt-*`/`o3-*` -> OpenAI (auto-detected from model prefix)
 - **74 deployed agents:** 53 shared + 21 personal across sales, marketing, finance, HR, legal, operations
+
+### Declarative Agent Contracts
+
+Agents declared via `agent.yaml` manifests with k8s-style structure:
+
+```yaml
+apiVersion: agentos/v1
+kind: AgentContract
+metadata: { name, namespace, labels, annotations }
+spec:
+  runtime: { framework, image }
+  lifecycle: { type, replicas, restart_policy, schedule }
+  llm: { chat_model, provider }
+  capabilities:
+    tools: { allowed, denied }
+    a2a: { canCall, canBeCalledBy, max_depth }
+  boundaries:
+    budgets: { daily_usd, per_task_usd }
+    data: { allowed_namespaces, pii_policy }
+  governance: { human_in_loop, policies, audit_level }
+  dependencies: { agents, mcp_servers }
+```
+
+### A2A (Agent-to-Agent) Tool Family
+
+When the kernel is running, agents get four new tools:
+
+- `agent__call(namespace, name, task, context, timeout)` — sync call
+- `agent__async_call(...)` — returns `job_id`
+- `agent__await(job_id)` — wait for async result
+- `agent__list_available(namespace, department)` — discover callable peers
+
+ACLs enforced via callee's `spec.capabilities.a2a.canBeCalledBy` at every call.
 
 ## Key Conventions
 
