@@ -111,14 +111,24 @@ h1{font-size:28px}
 <div class="wrap">
 
 <h1>ForgeOS Documentation</h1>
-<p class="sub">Multi-Stack AI Agent Platform <span class="badge badge-blue">v3.0</span> <span class="badge badge-green">April 2026</span></p>
+<p class="sub">Agent Operating System &mdash; Multi-Stack AI Agent Platform <span class="badge badge-blue">v3.1</span> <span class="badge badge-green">April 2026</span> <span class="badge badge-purple">AgentOS Kernel</span></p>
 
 <!-- Stats -->
 <div class="stats">
-<div class="stat"><div class="num">112</div><div class="label">Python Files</div></div>
-<div class="stat"><div class="num">730</div><div class="label">Tests Passing</div></div>
+<div class="stat"><div class="num">118</div><div class="label">Python Files</div></div>
+<div class="stat"><div class="num">712</div><div class="label">Tests Passing</div></div>
 <div class="stat"><div class="num">74</div><div class="label">Deployed Agents</div></div>
-<div class="stat"><div class="num">61</div><div class="label">API Endpoints</div></div>
+<div class="stat"><div class="num">67</div><div class="label">API Endpoints</div></div>
+</div>
+
+<!-- What's new in v3.1 -->
+<div style="background:linear-gradient(135deg,rgba(96,165,250,.08),rgba(167,139,250,.08));border:1px solid rgba(96,165,250,.25);border-radius:var(--radius);padding:20px 24px;margin:24px 0">
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span class="badge badge-purple">NEW in v3.1</span><strong style="font-size:15px">AgentOS Kernel + A2A Protocol + Python SDK</strong></div>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;font-size:13.5px">
+<div><strong style="color:var(--accent)">&#128272; Kernel</strong><br><span style="color:var(--muted)">Unified policy decision point: admission, permissions, budgets, policies, data boundaries, audit.</span></div>
+<div><strong style="color:var(--purple)">&#128279; A2A Protocol</strong><br><span style="color:var(--muted)">First-class agent-to-agent calling across any stack with ACLs, depth limits, cycle detection.</span></div>
+<div><strong style="color:var(--green)">&#128230; Python SDK</strong><br><span style="color:var(--muted)">Declare agents in YAML/Python, deploy via CLI, check permissions from agent code.</span></div>
+</div>
 </div>
 
 <!-- Framework vs Agents -->
@@ -126,35 +136,37 @@ h1{font-size:28px}
 
 <div class="concept">
 <div class="concept-card framework">
-<h3>The ForgeOS Framework</h3>
-<p style="color:var(--muted);font-size:14px">The platform. The operating system. Boots once, runs forever.</p>
+<h3>The ForgeOS Framework (AgentOS Kernel)</h3>
+<p style="color:var(--muted);font-size:14px">The operating system. Boots once, runs forever. Enforces policy at every action.</p>
 <ul>
-<li>Agent Registry &mdash; stores and queries all agents</li>
+<li><strong>Kernel</strong> &mdash; admission, permissions, budgets, policies, audit</li>
+<li><strong>A2A Protocol</strong> &mdash; addressed agent-to-agent calls across frameworks</li>
+<li>Agent Registry &mdash; stores agents with namespace isolation</li>
 <li>Platform Executor &mdash; deploys, invokes, recovers agents</li>
-<li>LLM Router &mdash; routes to Anthropic/OpenAI with retry + failover</li>
-<li>Agentic Loop &mdash; LLM &harr; tool execution cycle</li>
+<li>LLM Router &mdash; Anthropic/OpenAI with retry + failover + streaming</li>
+<li>Agentic Loop &mdash; LLM &harr; tool execution (with goal detection)</li>
 <li>Scheduler &mdash; cron-based agent scheduling</li>
 <li>Event Bus &mdash; pub/sub for cross-agent messaging</li>
-<li>Tool Executor &mdash; MCP + custom tool routing</li>
-<li>Dashboard &mdash; Next.js admin console</li>
-<li>FastAPI &mdash; 61 REST endpoints</li>
-<li>Audit + Metrics + Alerts</li>
+<li>Tool Executor &mdash; MCP + custom + A2A tool routing</li>
+<li>Dashboard (Next.js) + FastAPI (67 endpoints)</li>
+<li>Audit + Metrics + Alerts (SOC2-ready)</li>
 </ul>
 </div>
 <div class="concept-card agents">
-<h3>The Agents</h3>
-<p style="color:var(--muted);font-size:14px">The workloads. The programs. Deployed, invoked, managed by the framework.</p>
+<h3>The Agents (Declarative Contracts)</h3>
+<p style="color:var(--muted);font-size:14px">Workloads declared in <code>agent.yaml</code>. Deployed, invoked, managed by the kernel.</p>
 <ul>
-<li>Defined by <code>AgentDefinition</code></li>
-<li>Name, stack, execution type, tools, system prompt</li>
+<li>Declared via <strong>AgentContract</strong> manifest (k8s-style, signed)</li>
+<li>Namespaces for logical isolation (<code>sales</code>, <code>legal</code>, ...)</li>
 <li>5 execution lifecycles (always-on, scheduled, event, reflex, autonomous)</li>
 <li>3 ownership types (personal, shared, client)</li>
 <li>4 stack adapters (ForgeOS, CrewAI, ADK, OpenClaw)</li>
-<li>Deploy via API, dashboard, or AI wizard</li>
-<li>Invoke via REST API or streaming chat</li>
+<li>Tool whitelist + explicit deny list with wildcards</li>
+<li>A2A ACLs: <code>canCall</code> / <code>canBeCalledBy</code></li>
+<li>Budgets: daily + per-task USD enforcement</li>
+<li>PII policy: detect / mask / redact / block</li>
+<li>Deploy via SDK, CLI, API, or AI wizard</li>
 <li>74 agents across sales, marketing, finance, ops, HR, legal</li>
-<li>Each has a system prompt, tool whitelist, and LLM config</li>
-<li>7 status states (idle, running, paused, stopped, completed, failed, quarantined)</li>
 </ul>
 </div>
 </div>
@@ -171,9 +183,21 @@ h1{font-size:28px}
 <span class="tag">Presentation</span>
 <div class="arch-grid">
 <div class="arch-box">Next.js Dashboard</div>
-<div class="arch-box">FastAPI (61 endpoints)</div>
+<div class="arch-box">FastAPI (67 endpoints)</div>
 <div class="arch-box">SSE Streaming</div>
 <div class="arch-box">WebSocket</div>
+</div>
+</div>
+<div class="arch-layer mid" style="border-color:#A78BFA">
+<span class="tag" style="color:#A78BFA">AgentOS Kernel</span>
+<div class="arch-grid">
+<div class="arch-box" style="border-left:3px solid #A78BFA">Admission</div>
+<div class="arch-box" style="border-left:3px solid #A78BFA">Permissions</div>
+<div class="arch-box" style="border-left:3px solid #A78BFA">Budget</div>
+<div class="arch-box" style="border-left:3px solid #A78BFA">Policy</div>
+<div class="arch-box" style="border-left:3px solid #A78BFA">Data Boundary</div>
+<div class="arch-box" style="border-left:3px solid #A78BFA">A2A Protocol</div>
+<div class="arch-box" style="border-left:3px solid #A78BFA">Audit Recorder</div>
 </div>
 </div>
 <div class="arch-layer mid">
@@ -185,7 +209,6 @@ h1{font-size:28px}
 <div class="arch-box">Event Bus</div>
 <div class="arch-box">LLM Router</div>
 <div class="arch-box">Agentic Loop</div>
-<div class="arch-box">Audit Log</div>
 <div class="arch-box">Metrics</div>
 <div class="arch-box">Alerts</div>
 </div>
@@ -237,7 +260,7 @@ h1{font-size:28px}
 
 <!-- Quick Start -->
 <h2 id="quickstart">Quick Start</h2>
-<pre><code><span style="color:var(--muted)"># 1. Install</span>
+<pre><code><span style="color:var(--muted)"># 1. Install (includes the Python SDK: forgeos_sdk)</span>
 pip install -e ".[dev]"
 
 <span style="color:var(--muted)"># 2. Configure</span>
@@ -249,11 +272,88 @@ PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
 <span style="color:var(--muted)"># 4. Dashboard (separate terminal)</span>
 cd dashboard && npm install && npm run dev
 
-<span style="color:var(--muted)"># 5. Deploy first agent</span>
-curl -s -X POST http://localhost:5000/api/platform/agents \
-  -H "Content-Type: application/json" \
-  -d '{"name":"hello-agent","stack":"forgeos","execution_type":"reflex",
-       "description":"Test agent","chat_model":"claude-sonnet-4-5-20250514"}'</code></pre>
+<span style="color:var(--muted)"># 5. Deploy via CLI (new)</span>
+forgeos validate ./examples/agents/email-checker.yaml
+forgeos deploy ./examples/agents/email-checker.yaml
+forgeos list</code></pre>
+
+<!-- AgentOS Kernel + A2A + SDK section -->
+<h2 id="kernel">AgentOS Kernel &amp; A2A Protocol</h2>
+<p style="color:var(--muted)">The kernel is the policy decision point for every agent action. Admission at deploy time, permissions/budgets/policies at runtime, audit everywhere.</p>
+
+<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:16px 0">
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px">
+<h3 style="margin-top:0;color:var(--accent)">&#128272; Kernel (6 subsystems)</h3>
+<ul style="list-style:none;padding:0;margin:0;font-size:13.5px;color:var(--muted)">
+<li>&bull; <strong style="color:var(--text)">AdmissionController</strong> &mdash; contract validation</li>
+<li>&bull; <strong style="color:var(--text)">PermissionManager</strong> &mdash; tool + A2A ACL checks</li>
+<li>&bull; <strong style="color:var(--text)">BudgetManager</strong> &mdash; USD + token limits</li>
+<li>&bull; <strong style="color:var(--text)">PolicyEngine</strong> &mdash; JSON-logic rules</li>
+<li>&bull; <strong style="color:var(--text)">DataBoundaryManager</strong> &mdash; namespaces + PII</li>
+<li>&bull; <strong style="color:var(--text)">AuditRecorder</strong> &mdash; immutable trail</li>
+</ul>
+</div>
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px">
+<h3 style="margin-top:0;color:var(--purple)">&#128279; A2A Protocol (4 tools)</h3>
+<ul style="list-style:none;padding:0;margin:0;font-size:13.5px;color:var(--muted)">
+<li>&bull; <code>agent__call</code> &mdash; sync delegation</li>
+<li>&bull; <code>agent__async_call</code> &mdash; returns job_id</li>
+<li>&bull; <code>agent__await</code> &mdash; wait for async result</li>
+<li>&bull; <code>agent__list_available</code> &mdash; discover peers</li>
+<li>&bull; ACL via <code>canCall</code> / <code>canBeCalledBy</code></li>
+<li>&bull; Depth limits + cycle detection</li>
+</ul>
+</div>
+</div>
+
+<h3>Python SDK</h3>
+<pre><code><span style="color:var(--cyan)">from</span> forgeos_sdk <span style="color:var(--cyan)">import</span> Agent, ForgeOSClient, Kernel
+
+<span style="color:var(--muted)"># 1. Declare an agent (class style)</span>
+<span style="color:var(--cyan)">class</span> <span style="color:var(--orange)">EmailChecker</span>(Agent):
+    name = <span style="color:var(--green)">"email-checker"</span>
+    stack = <span style="color:var(--green)">"forgeos"</span>
+    execution_type = <span style="color:var(--green)">"scheduled"</span>
+    schedule = <span style="color:var(--green)">"0 9 * * *"</span>
+    model = <span style="color:var(--green)">"gpt-4o"</span>
+    tools = [<span style="color:var(--green)">"mcp__filesystem__*"</span>]
+
+<span style="color:var(--muted)"># 2. Deploy</span>
+<span style="color:var(--cyan)">with</span> ForgeOSClient() <span style="color:var(--cyan)">as</span> client:
+    client.deploy(EmailChecker.manifest())
+
+<span style="color:var(--muted)"># 3. Check kernel permissions from agent code</span>
+kernel = Kernel.connect()   <span style="color:var(--muted)"># auto in-process or remote</span>
+decision = <span style="color:var(--cyan)">await</span> kernel.check_tool_call(<span style="color:var(--green)">"email-checker"</span>, <span style="color:var(--green)">"email.send"</span>)
+<span style="color:var(--cyan)">if</span> decision.denied:
+    <span style="color:var(--cyan)">raise</span> PermissionError(decision.reason)</code></pre>
+
+<h3>Declarative Agent Contract (<code>agent.yaml</code>)</h3>
+<pre><code><span style="color:var(--cyan)">apiVersion</span>: agentos/v1
+<span style="color:var(--cyan)">kind</span>: AgentContract
+<span style="color:var(--cyan)">metadata</span>:
+  <span style="color:var(--cyan)">name</span>: email-checker
+  <span style="color:var(--cyan)">namespace</span>: operations
+  <span style="color:var(--cyan)">version</span>: <span style="color:var(--green)">"1.0.0"</span>
+<span style="color:var(--cyan)">spec</span>:
+  <span style="color:var(--cyan)">runtime</span>: { framework: forgeos }
+  <span style="color:var(--cyan)">lifecycle</span>: { type: scheduled, schedule: <span style="color:var(--green)">"0 9 * * *"</span>, restart_policy: OnFailure }
+  <span style="color:var(--cyan)">llm</span>: { chat_model: gpt-4o, provider: openai }
+  <span style="color:var(--cyan)">capabilities</span>:
+    <span style="color:var(--cyan)">tools</span>:
+      <span style="color:var(--cyan)">allowed</span>: [mcp__filesystem__*, company__publish_event]
+      <span style="color:var(--cyan)">denied</span>: [shell.exec]
+    <span style="color:var(--cyan)">a2a</span>:
+      <span style="color:var(--cyan)">canBeCalledBy</span>:
+        - { namespace: operations, agents: [ops-manager] }
+  <span style="color:var(--cyan)">boundaries</span>:
+    <span style="color:var(--cyan)">budgets</span>: { daily_usd: 5.00, per_task_usd: 0.50 }
+    <span style="color:var(--cyan)">data</span>: { pii_policy: redact, allowed_namespaces: [ops, public] }
+  <span style="color:var(--cyan)">governance</span>:
+    <span style="color:var(--cyan)">human_in_loop</span>:
+      - { event: email.send, approvers: [team-lead] }
+    <span style="color:var(--cyan)">policies</span>:
+      - { name: no-pii-egress, ref: policies/pii-egress.rego }</code></pre>
 
 <!-- Navigation Cards -->
 <h2 id="explore">Explore the Documentation</h2>
