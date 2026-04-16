@@ -205,7 +205,7 @@ class TestFallbackPath:
         assert result.status == AgentStatus.COMPLETED
         # Expect simulated output unless SDK is available AND agent is in _adk_agents
         if not ADK_AVAILABLE:
-            assert "ADK simulated" in result.output
+            assert "SIMULATED" in result.output
 
     async def test_get_status_idle_after_create(self):
         adapter = ADKAdapter()

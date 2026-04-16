@@ -193,6 +193,26 @@ class PlatformBootstrap:
                 event_bus=self.event_bus,
             )
             self.executor._session_store = self._session_store
+            # AgentOS: bind executor to A2A handler so agents can call each other
+            if hasattr(self, "_a2a_handler") and self._a2a_handler:
+                self._a2a_handler.bind_executor(self.executor)
+                logger.info("  A2A handler: bound to platform executor")
+
+            # AgentOS: construct the Kernel facade + publish for in-process SDK use
+            from src.platform.kernel import Kernel as PlatformKernel
+            self._kernel = PlatformKernel(
+                registry=self.platform_registry,
+                tool_executor=self._tool_executor,
+                a2a_handler=getattr(self, '_a2a_handler', None),
+                usage_enforcer=getattr(self, '_usage_enforcer', None),
+                audit_log=None,  # wired by FastAPI layer which owns the AuditLog
+            )
+            try:
+                from src.forgeos_sdk.kernel import Kernel as SDKKernel
+                SDKKernel.register_local_instance(self._kernel)
+                logger.info("  Kernel: registered for in-process SDK access")
+            except Exception as e:
+                logger.debug("  SDK kernel registration skipped: %s", e)
             for name, adapter in self._adapters.items():
                 self.executor.register_adapter(adapter)
 
@@ -372,10 +392,15 @@ class PlatformBootstrap:
             db_client=self._db,
             tenant_id=self.tenant_id,
         )
+        # AgentOS A2A handler (bound to platform_executor later in boot sequence)
+        from src.platform.a2a import A2AHandler
+        self._a2a_handler = A2AHandler()
+
         tool_executor = ToolExecutor(
             company_system=self.system,
             mcp_clients=mcp_clients,
             client_mcp_manager=self._client_mcp_manager,
+            a2a_handler=self._a2a_handler,
         )
 
         # Attach UsageEnforcer so the agentic loop can record tokens/cost.
@@ -507,6 +532,7 @@ class PlatformBootstrap:
             admin_registry=self.legacy_registry,
             ontology=getattr(self, 'ontology', None),
             tenant_id=self.tenant_id,
+            kernel=getattr(self, '_kernel', None),
         )
 
     def start_api_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):

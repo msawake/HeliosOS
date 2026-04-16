@@ -70,6 +70,7 @@ class ForgeOSAdapter(AgentStackAdapter):
                 agent_context=build_agent_context(agent_def, agent_id),
                 context=context,
                 history=history,
+                goal=agent_def.goal,
             )
             result.agent_id = agent_id
             return result
@@ -77,7 +78,9 @@ class ForgeOSAdapter(AgentStackAdapter):
         return AgentResult(
             agent_id=agent_id,
             status=AgentStatus.COMPLETED,
-            output=f"[ForgeOS simulated] Agent '{agent_def.name}' processed: {prompt[:100]}",
+            output=f"[SIMULATED - No LLM API key configured] Agent '{agent_def.name}' received: {prompt[:100]}. "
+                   f"Configure ANTHROPIC_API_KEY or OPENAI_API_KEY in .env for real LLM execution.",
+            error="No LLM provider available. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.",
         )
 
     async def start_loop(self, agent_id: str) -> None:

@@ -12,6 +12,7 @@ interface InvokeResult {
   status: string;
   output: string;
   error: string | null;
+  warnings: string[] | null;
   tool_calls: unknown[];
   tokens_used: number;
   elapsed_ms: number;
@@ -169,7 +170,15 @@ export default function AgentDetailPage() {
                 <span className="text-gray-500">{invokeResult.elapsed_ms.toFixed(0)} ms</span>
               )}
             </div>
-            {invokeResult.error && (
+            {invokeResult.warnings && invokeResult.warnings.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-xs">
+                <p className="font-semibold mb-1">Warnings</p>
+                {invokeResult.warnings.map((w, i) => (
+                  <p key={i}>{w}</p>
+                ))}
+              </div>
+            )}
+            {invokeResult.error && !invokeResult.warnings?.length && (
               <pre className="bg-red-50 text-red-900 rounded-lg p-3 text-xs overflow-auto whitespace-pre-wrap">
                 {invokeResult.error}
               </pre>

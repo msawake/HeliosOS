@@ -300,7 +300,8 @@ class OpenClawAdapter(AgentStackAdapter):
         return AgentResult(
             agent_id=agent_id,
             status=AgentStatus.COMPLETED,
-            output=f"[OpenClaw simulated] Agent '{agent_def.name}' processed: {prompt[:100]}",
+            output=f"[SIMULATED - No LLM API key configured] Agent '{agent_def.name}' received: {prompt[:100]}. Configure ANTHROPIC_API_KEY or OPENAI_API_KEY.",
+            error="No LLM provider available. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.",
             elapsed_ms=(time.time() - start_time) * 1000,
         )
 
@@ -369,6 +370,7 @@ class OpenClawAdapter(AgentStackAdapter):
             agent_context=build_agent_context(agent_def, agent_id),
             context=context,
             history=history,
+            goal=agent_def.goal,
         )
         result.agent_id = agent_id
         result.elapsed_ms = (time.time() - start_time) * 1000

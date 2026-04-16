@@ -77,15 +77,20 @@ class AgentDefinition:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: dict[str, Any] = field(default_factory=dict)
     system_prompt: str = ""
+    namespace: str = "default"  # AgentOS kernel: logical isolation group (k8s-style)
 
     def __post_init__(self):
         if self.stack not in STACK_NAMES:
             raise ValueError(f"stack must be one of {STACK_NAMES}, got {self.stack!r}")
+        # Hydrate namespace from metadata if set there via v2 manifest
+        if self.namespace == "default" and self.metadata and "_namespace" in self.metadata:
+            self.namespace = self.metadata["_namespace"]
 
     def to_dict(self) -> dict:
         return {
             "agent_id": self.agent_id,
             "name": self.name,
+            "namespace": self.namespace,
             "stack": self.stack,
             "execution_type": self.execution_type.value,
             "ownership": self.ownership.value,
@@ -202,6 +207,8 @@ def build_agent_context(agent_def: AgentDefinition, agent_id: str) -> dict:
     metadata = agent_def.metadata or {}
     return {
         "agent_id": agent_id,
+        "agent_name": agent_def.name,
+        "namespace": agent_def.namespace,
         "department": agent_def.department,
         "client_id": agent_def.owner_id if agent_def.ownership == OwnershipType.CLIENT else None,
         "allowed_tools": agent_def.tools or None,

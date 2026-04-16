@@ -152,6 +152,7 @@ def create_fastapi_app(
     admin_registry=None,
     ontology=None,
     tenant_id: str = "default",
+    kernel=None,  # AgentOS kernel facade
 ) -> FastAPI:
 
     app = FastAPI(
@@ -486,11 +487,22 @@ def create_fastapi_app(
             if agent_def:
                 try:
                     result = await platform_executor.invoke(agent_id, req.prompt, req.context)
+                    # Build warnings for simulation or missing tools
+                    warnings = []
+                    output = result.output or ""
+                    if "[SIMULATED" in output:
+                        warnings.append("Agent is running in SIMULATED mode — no LLM API key configured.")
+                    if result.error and "No LLM provider" in (result.error or ""):
+                        warnings.append(result.error)
+                    missing_tools = (agent_def.metadata or {}).get("_missing_tools_at_deploy")
+                    if missing_tools:
+                        warnings.append(f"Tools unavailable at deploy time: {missing_tools}")
                     return {
                         "agent_id": agent_id,
                         "status": result.status.value if hasattr(result.status, "value") else str(result.status),
-                        "result": (result.output or "")[:2000],
+                        "result": output[:2000],
                         "error": result.error,
+                        "warnings": warnings or None,
                         "cost_usd": 0,
                         "duration": getattr(result, "elapsed_ms", 0) / 1000,
                         "tool_calls": len(result.tool_calls) if result.tool_calls else 0,
@@ -1864,6 +1876,83 @@ def create_fastapi_app(
             action=action,
             since=since,
         )
+
+    # ------------------------------------------------------------------
+    # AgentOS Kernel — policy decision endpoints
+    # ------------------------------------------------------------------
+
+    class ToolCheckRequest(BaseModel):
+        agent_id: str
+        tool_name: str
+        tool_input: dict = {}
+        estimated_cost_usd: float | None = None
+
+    class A2ACheckRequest(BaseModel):
+        caller_agent_id: str
+        target_namespace: str
+        target_name: str
+
+    class DataCheckRequest(BaseModel):
+        agent_id: str
+        target_namespace: str
+
+    class AuditRequest(BaseModel):
+        agent_id: str
+        event: str
+        details: dict = {}
+
+    def _require_kernel():
+        if kernel is None:
+            raise HTTPException(503, "Kernel not initialized")
+        return kernel
+
+    @app.post("/api/platform/kernel/check-tool", tags=["kernel"])
+    async def kernel_check_tool(req: ToolCheckRequest):
+        """Check if an agent is allowed to call a tool."""
+        k = _require_kernel()
+        decision = k.check_tool_call(
+            req.agent_id, req.tool_name, req.tool_input, req.estimated_cost_usd,
+        )
+        return decision.to_dict()
+
+    @app.post("/api/platform/kernel/check-a2a", tags=["kernel"])
+    async def kernel_check_a2a(req: A2ACheckRequest):
+        """Check if caller may invoke target agent."""
+        k = _require_kernel()
+        decision = k.check_a2a_call(
+            req.caller_agent_id, req.target_namespace, req.target_name,
+        )
+        return decision.to_dict()
+
+    @app.post("/api/platform/kernel/check-data", tags=["kernel"])
+    async def kernel_check_data(req: DataCheckRequest):
+        """Check if agent may access data in target namespace."""
+        k = _require_kernel()
+        decision = k.check_data_access(req.agent_id, req.target_namespace)
+        return decision.to_dict()
+
+    @app.get("/api/platform/kernel/contract/{agent_id}", tags=["kernel"])
+    async def kernel_get_contract(agent_id: str):
+        """Return the agent's full contract as a dict."""
+        k = _require_kernel()
+        contract = k.get_contract(agent_id)
+        if contract is None:
+            raise HTTPException(404, f"Agent {agent_id} not found")
+        return contract
+
+    @app.post("/api/platform/kernel/admit", tags=["kernel"])
+    async def kernel_admit(contract: dict):
+        """Validate a contract before deploy. Returns AdmissionResult."""
+        k = _require_kernel()
+        result = k.admit(contract)
+        return result.to_dict()
+
+    @app.post("/api/platform/kernel/audit", tags=["kernel"])
+    async def kernel_audit(req: AuditRequest):
+        """Record a custom audit event from an agent."""
+        k = _require_kernel()
+        k.audit(req.agent_id, req.event, req.details)
+        return {"ok": True}
 
     return app
 
