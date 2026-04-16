@@ -1270,6 +1270,108 @@ Exceeding the limit returns HTTP 429.
 
 ---
 
+## 19. AgentOS Kernel
+
+The kernel is the policy decision point for every agent action. These endpoints let SDK clients (in-process or remote) and external agents check permissions, inspect contracts, and record audit events.
+
+### POST /api/platform/kernel/check-tool
+
+Check if an agent is allowed to call a tool. Runs the composite flow: permissions -> budget -> policies.
+
+**Auth:** Not required (intended for SDK clients)
+**Request body:**
+```json
+{
+  "agent_id": "81ea3939-01c",
+  "tool_name": "mcp__filesystem__read_file",
+  "tool_input": { "path": "/tmp/data.txt" },
+  "estimated_cost_usd": 0.02
+}
+```
+**Response:**
+```json
+{
+  "action": "allow",
+  "reason": "tool call permitted",
+  "details": { "tool": "mcp__filesystem__read_file", "namespace": "default" },
+  "audit_id": "abc123",
+  "timestamp": "2026-04-16T10:00:00+00:00"
+}
+```
+
+`action` is one of `allow`, `deny`, `mask`, `ask_human`, `rate_limit`.
+
+### POST /api/platform/kernel/check-a2a
+
+Check if caller may invoke target agent.
+
+**Auth:** Not required
+**Request body:**
+```json
+{
+  "caller_agent_id": "81ea3939-01c",
+  "target_namespace": "sales",
+  "target_name": "cfo"
+}
+```
+**Response:** `KernelDecision` (same shape as check-tool).
+
+### POST /api/platform/kernel/check-data
+
+Check if agent may access data in the target namespace.
+
+**Auth:** Not required
+**Request body:**
+```json
+{
+  "agent_id": "81ea3939-01c",
+  "target_namespace": "finance-pii"
+}
+```
+**Response:** `KernelDecision`.
+
+### GET /api/platform/kernel/contract/{agent_id}
+
+Retrieve the agent's full contract for self-introspection.
+
+**Auth:** Not required
+**Response:** Full `AgentDefinition` as JSON, with `metadata._*` containing the v2 AgentOS fields (namespace, labels, boundaries, governance, etc.).
+
+### POST /api/platform/kernel/admit
+
+Validate a contract before deploy. Returns structured errors + warnings.
+
+**Auth:** Auth Required
+**Request body:** A full agent manifest dict (same shape as `POST /api/platform/agents` body).
+**Response:**
+```json
+{
+  "admitted": true,
+  "reason": "admitted",
+  "errors": [],
+  "warnings": ["Tools not currently available: ['mcp__foo__bar']"],
+  "agent_uid": "9ae3b7f1-8c0",
+  "generation": 1
+}
+```
+
+### POST /api/platform/kernel/audit
+
+Record a custom audit event from an agent.
+
+**Auth:** Not required
+**Request body:**
+```json
+{
+  "agent_id": "81ea3939-01c",
+  "event": "decision_made",
+  "details": { "choice": "approved", "confidence": 0.92 }
+}
+```
+**Response:** `{ "ok": true }`
+
+---
+
 ## Interactive Documentation
 
 When the server is running, auto-generated interactive docs are available at:
