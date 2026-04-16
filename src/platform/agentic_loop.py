@@ -47,6 +47,7 @@ async def run_agentic_loop(
     max_turns: int = MAX_TOOL_TURNS,
     context: dict | None = None,
     history: list[dict] | None = None,
+    goal: str | None = None,
 ) -> AgentResult:
     """Run an agentic tool-use loop.
 
@@ -69,9 +70,20 @@ async def run_agentic_loop(
     Returns an ``AgentResult`` with the final text output and aggregated
     token count.
     """
+    # For autonomous agents with a goal, inject goal-completion instructions
+    effective_system = system_prompt
+    if goal:
+        effective_system = (
+            f"{system_prompt}\n\n"
+            f"## Goal\n{goal}\n\n"
+            f"When you believe this goal is fully achieved, end your response with "
+            f"exactly [GOAL_COMPLETE] on its own line. If you need more iterations "
+            f"to reach the goal, do NOT include this marker."
+        )
+
     messages: list[dict[str, Any]] = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
+    if effective_system:
+        messages.append({"role": "system", "content": effective_system})
     # Inject conversation history (multi-turn support)
     # Copy dicts to avoid mutating the caller's history list
     if history:
@@ -184,9 +196,19 @@ async def run_agentic_loop(
         except Exception as e:
             logger.debug("Usage recording (final) failed: %s", e)
 
+    # Determine status: if goal is set, check for completion marker
+    if goal and "[GOAL_COMPLETE]" in final_text:
+        status = AgentStatus.COMPLETED
+        final_text = final_text.replace("[GOAL_COMPLETE]", "").strip()
+    elif goal:
+        # Goal set but not yet achieved — agent needs more iterations
+        status = AgentStatus.IDLE
+    else:
+        status = AgentStatus.COMPLETED
+
     return AgentResult(
         agent_id="",  # caller sets this
-        status=AgentStatus.COMPLETED,
+        status=status,
         output=final_text,
         tool_calls=all_tool_calls,
         tokens_used=total_tokens,

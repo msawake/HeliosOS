@@ -46,7 +46,7 @@ class TestForgeOSAdapter:
         await forgeos.create_agent(agent)
         result = await forgeos.invoke(agent.agent_id, "Hello")
         assert result.status == AgentStatus.COMPLETED
-        assert "ForgeOS simulated" in result.output
+        assert "SIMULATED" in result.output
 
     async def test_invoke_unknown(self, forgeos):
         result = await forgeos.invoke("nonexistent", "Hello")
@@ -71,7 +71,7 @@ class TestCrewAIAdapter:
         await crewai.create_agent(agent)
         result = await crewai.invoke(agent.agent_id, "Research leads")
         assert result.status == AgentStatus.COMPLETED
-        assert "CrewAI simulated" in result.output
+        assert "SIMULATED" in result.output
 
     async def test_scaffold(self, crewai):
         agent = _make_agent("crewai")
@@ -89,7 +89,7 @@ class TestADKAdapter:
         await adk.create_agent(agent)
         result = await adk.invoke(agent.agent_id, "Plan campaign")
         assert result.status == AgentStatus.COMPLETED
-        assert "ADK simulated" in result.output
+        assert "SIMULATED" in result.output
 
     async def test_scaffold(self, adk):
         agent = _make_agent("adk")
@@ -106,7 +106,7 @@ class TestOpenClawAdapter:
         await openclaw.create_agent(agent)
         result = await openclaw.invoke(agent.agent_id, "Check inbox")
         assert result.status == AgentStatus.COMPLETED
-        assert "OpenClaw simulated" in result.output
+        assert "SIMULATED" in result.output
 
     async def test_scaffold(self, openclaw):
         agent = _make_agent("openclaw")

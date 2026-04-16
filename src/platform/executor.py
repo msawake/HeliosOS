@@ -360,6 +360,9 @@ class PlatformExecutor:
                     logger.info("Agent %s reached goal after %d iterations", agent_id, i + 1)
                     completed = True
                     break
+                if result.status == AgentStatus.IDLE:
+                    # Turn completed but goal not yet met — continue to next iteration
+                    logger.debug("Agent %s iteration %d: goal not yet met, continuing", agent_id, i + 1)
                 if result.status == AgentStatus.FAILED:
                     logger.warning("Agent %s failed during iteration %d: %s",
                                    agent_id, i + 1, result.error)

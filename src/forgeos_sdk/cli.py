@@ -1,0 +1,179 @@
+"""
+ForgeOS CLI.
+
+Usage:
+    forgeos deploy ./agent.yaml
+    forgeos validate ./agent.yaml
+    forgeos list
+    forgeos invoke <agent_id> "your prompt"
+    forgeos undeploy <agent_id>
+    forgeos health
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from .client import ForgeOSClient, ForgeOSError
+from .manifest import AgentManifest
+
+
+def _print_ok(msg: str):
+    print(f"\033[32m✓\033[0m {msg}")
+
+
+def _print_err(msg: str):
+    print(f"\033[31m✗\033[0m {msg}", file=sys.stderr)
+
+
+def _print_warn(msg: str):
+    print(f"\033[33m!\033[0m {msg}")
+
+
+def cmd_validate(args) -> int:
+    """Validate an agent manifest without deploying."""
+    try:
+        path = Path(args.file)
+        if path.suffix in (".yaml", ".yml"):
+            manifest = AgentManifest.from_yaml(path)
+        elif path.suffix == ".json":
+            manifest = AgentManifest.from_json(path)
+        else:
+            _print_err(f"Unsupported file type: {path.suffix}")
+            return 1
+
+        # Also try to resolve system_prompt file references
+        deploy_body = manifest.to_deploy_request(base_path=path.parent)
+        _print_ok(f"Manifest valid: {manifest.metadata.name}")
+        print(f"  Stack:          {manifest.spec.stack}")
+        print(f"  Execution type: {manifest.spec.execution_type}")
+        print(f"  Ownership:      {manifest.spec.ownership}")
+        print(f"  Model:          {manifest.spec.llm.chat_model} ({manifest.spec.llm.provider})")
+        if manifest.spec.schedule:
+            print(f"  Schedule:       {manifest.spec.schedule}")
+        if manifest.spec.event_triggers:
+            print(f"  Events:         {manifest.spec.event_triggers}")
+        if manifest.spec.tools:
+            print(f"  Tools:          {len(manifest.spec.tools)} ({', '.join(manifest.spec.tools[:3])}...)")
+        print(f"  System prompt:  {len(deploy_body['system_prompt'])} chars")
+        return 0
+    except Exception as e:
+        _print_err(f"Validation failed: {e}")
+        return 1
+
+
+def cmd_deploy(args) -> int:
+    """Deploy an agent from a manifest file."""
+    path = Path(args.file)
+    try:
+        with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
+            agent_id = client.deploy(path)
+            _print_ok(f"Deployed agent: {agent_id}")
+            return 0
+    except (ForgeOSError, FileNotFoundError, ValueError) as e:
+        _print_err(f"Deploy failed: {e}")
+        return 1
+
+
+def cmd_list(args) -> int:
+    """List deployed agents."""
+    try:
+        with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
+            agents = client.list()
+            if not agents:
+                _print_warn("No agents deployed")
+                return 0
+            print(f"{'AGENT_ID':14}  {'NAME':30}  {'STACK':10}  {'TYPE':14}  {'STATUS':12}")
+            print(f"{'-'*14}  {'-'*30}  {'-'*10}  {'-'*14}  {'-'*12}")
+            for a in agents:
+                print(
+                    f"{a['agent_id']:14}  {a['name']:30}  {a.get('stack','?'):10}  "
+                    f"{a.get('execution_type','?'):14}  {a.get('status','?'):12}"
+                )
+            return 0
+    except ForgeOSError as e:
+        _print_err(str(e))
+        return 1
+
+
+def cmd_invoke(args) -> int:
+    """Invoke an agent with a prompt."""
+    try:
+        with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
+            result = client.invoke(args.agent_id, args.prompt)
+            print(json.dumps(result, indent=2, default=str))
+            if result.get("warnings"):
+                for w in result["warnings"]:
+                    _print_warn(w)
+            return 0
+    except ForgeOSError as e:
+        _print_err(str(e))
+        return 1
+
+
+def cmd_undeploy(args) -> int:
+    """Undeploy an agent."""
+    try:
+        with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
+            client.undeploy(args.agent_id)
+            _print_ok(f"Undeployed {args.agent_id}")
+            return 0
+    except ForgeOSError as e:
+        _print_err(str(e))
+        return 1
+
+
+def cmd_health(args) -> int:
+    """Check platform health."""
+    try:
+        with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
+            h = client.health()
+            print(json.dumps(h, indent=2))
+            return 0
+    except ForgeOSError as e:
+        _print_err(str(e))
+        return 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="forgeos",
+        description="ForgeOS CLI — declare and manage agents from the command line",
+    )
+    parser.add_argument("--url", help="API base URL (default: FORGEOS_API_URL or http://localhost:5000)")
+    parser.add_argument("--api-key", help="API key (default: FORGEOS_API_KEY)")
+
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_validate = sub.add_parser("validate", help="Validate a manifest without deploying")
+    p_validate.add_argument("file", help="Path to agent.yaml or agent.json")
+    p_validate.set_defaults(func=cmd_validate)
+
+    p_deploy = sub.add_parser("deploy", help="Deploy an agent from a manifest")
+    p_deploy.add_argument("file", help="Path to agent.yaml or agent.json")
+    p_deploy.set_defaults(func=cmd_deploy)
+
+    p_list = sub.add_parser("list", help="List deployed agents")
+    p_list.set_defaults(func=cmd_list)
+
+    p_invoke = sub.add_parser("invoke", help="Invoke an agent with a prompt")
+    p_invoke.add_argument("agent_id")
+    p_invoke.add_argument("prompt")
+    p_invoke.set_defaults(func=cmd_invoke)
+
+    p_undeploy = sub.add_parser("undeploy", help="Undeploy an agent")
+    p_undeploy.add_argument("agent_id")
+    p_undeploy.set_defaults(func=cmd_undeploy)
+
+    p_health = sub.add_parser("health", help="Platform health check")
+    p_health.set_defaults(func=cmd_health)
+
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -182,6 +182,7 @@ class CrewAIAdapter(AgentStackAdapter):
                 tool_executor=self._tool_executor,
                 agent_context=build_agent_context(agent_def, agent_id),
                 history=history,
+                goal=agent_def.goal,
             )
             result.agent_id = agent_id
             return result
@@ -189,7 +190,8 @@ class CrewAIAdapter(AgentStackAdapter):
         return AgentResult(
             agent_id=agent_id,
             status=AgentStatus.COMPLETED,
-            output=f"[CrewAI simulated] Crew member '{agent_def.name}' processed: {prompt[:100]}",
+            output=f"[SIMULATED - No LLM API key configured] Agent '{agent_def.name}' received: {prompt[:100]}. Configure ANTHROPIC_API_KEY or OPENAI_API_KEY.",
+            error="No LLM provider available. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.",
         )
 
     async def _invoke_real(
