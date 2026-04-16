@@ -180,7 +180,16 @@ class LLMRouter:
                 except ImportError:
                     logger.warning("openai package not installed")
             elif provider == "google" and key:
-                logger.info("Google ADK client placeholder registered")
+                try:
+                    from openai import OpenAI
+                    self._clients["google"] = OpenAI(
+                        api_key=key,
+                        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                    )
+                    logger.info("Initialized Google/Gemini client (OpenAI-compatible)")
+                except ImportError:
+                    logger.warning("openai package not installed (needed for Gemini)")
+
 
     async def chat(self, llm_config: LLMConfig, messages: list[dict], tools: list[dict] | None = None) -> LLMResponse:
         """Send a chat completion using the agent's chat model.
@@ -490,6 +499,11 @@ class LLMRouter:
                 lambda: self._call_openai(client, model, messages, tools),
                 provider=provider, model=model,
             )
+        if provider == "google" and client:
+            return await _with_retry(
+                lambda: self._call_google(client, model, messages, tools),
+                provider=provider, model=model,
+            )
 
         logger.debug(
             "Simulated LLM call: provider=%s model=%s messages=%d",
@@ -570,6 +584,35 @@ class LLMRouter:
             text=choice.message.content or "",
             model=model,
             provider="openai",
+            tokens_used=response.usage.total_tokens if response.usage else 0,
+            finish_reason=choice.finish_reason or "stop",
+            tool_calls=tool_calls,
+        )
+
+    async def _call_google(
+        self, client: Any, model: str, messages: list[dict], tools: list[dict] | None
+    ) -> LLMResponse:
+        """Call Google Gemini via OpenAI-compatible endpoint."""
+        kwargs: dict[str, Any] = {"model": model, "messages": messages}
+        if tools:
+            kwargs["tools"] = _to_openai_tools(tools)
+        response = client.chat.completions.create(**kwargs)
+        choice = response.choices[0]
+        tool_calls = None
+        if choice.message.tool_calls:
+            import json as _json
+            tool_calls = [
+                ToolCall(
+                    id=tc.id,
+                    name=tc.function.name,
+                    input=_json.loads(tc.function.arguments) if tc.function.arguments else {},
+                )
+                for tc in choice.message.tool_calls
+            ]
+        return LLMResponse(
+            text=choice.message.content or "",
+            model=model,
+            provider="google",
             tokens_used=response.usage.total_tokens if response.usage else 0,
             finish_reason=choice.finish_reason or "stop",
             tool_calls=tool_calls,

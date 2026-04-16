@@ -287,6 +287,9 @@ class PlatformBootstrap:
         openai_key = os.environ.get("OPENAI_API_KEY", "")
         if openai_key:
             api_keys["openai"] = openai_key
+        google_key = os.environ.get("GOOGLE_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
+        if google_key:
+            api_keys["google"] = google_key
 
         self.llm_router = LLMRouter(api_keys=api_keys)
         logger.info("  LLM Router: providers=%s", self.llm_router.available_providers())
