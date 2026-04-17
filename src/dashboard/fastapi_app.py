@@ -297,9 +297,19 @@ def create_fastapi_app(
 
     @app.get("/api/health", tags=["health"])
     async def health():
-        """System health check — always public."""
+        """System health check — tests actual DB connectivity, not just flags."""
+        # Test real DB connectivity (not just is_connected attribute)
+        db_ok = False
+        if db_client and hasattr(db_client, "is_connected") and db_client.is_connected:
+            try:
+                with db_client.admin() as conn:
+                    conn.execute("SELECT 1")
+                db_ok = True
+            except Exception:
+                db_ok = False
+
         components: dict[str, Any] = {
-            "database": bool(db_client and hasattr(db_client, "is_connected") and db_client.is_connected),
+            "database": db_ok,
             "llm_providers": llm_router.available_providers() if llm_router else [],
             "adapters": list(platform_executor._adapters.keys()) if platform_executor and hasattr(platform_executor, "_adapters") else [],
             "agents_registered": len(platform_registry.list_all()) if platform_registry else 0,
@@ -311,10 +321,33 @@ def create_fastapi_app(
 
     @app.get("/api/readiness", tags=["health"])
     async def readiness():
-        """Kubernetes readiness probe."""
-        if not _boot_complete:
-            raise HTTPException(503, "Not ready")
-        return {"ready": True}
+        """Kubernetes readiness probe — checks subsystems, not just boot flag."""
+        checks = {
+            "booted": _boot_complete,
+            "llm_available": bool(llm_router and llm_router.available_providers()),
+            "registry_loaded": bool(platform_registry),
+            "executor_ready": bool(platform_executor),
+        }
+        all_ready = all(checks.values())
+        if not all_ready:
+            raise HTTPException(503, {"ready": False, "checks": checks})
+        return {"ready": True, "checks": checks}
+
+    @app.get("/api/liveness", tags=["health"])
+    async def liveness():
+        """Kubernetes liveness probe — checks main loop is responsive."""
+        last_tick = getattr(app.state, "last_tick_at", None)
+        now = datetime.now(timezone.utc)
+        if last_tick:
+            elapsed = (now - last_tick).total_seconds()
+            if elapsed > 120:
+                raise HTTPException(503, {
+                    "alive": False,
+                    "reason": f"Main loop last ticked {elapsed:.0f}s ago (>120s)",
+                    "last_tick": last_tick.isoformat(),
+                })
+            return {"alive": True, "last_tick": last_tick.isoformat(), "elapsed_seconds": round(elapsed, 1)}
+        return {"alive": True, "last_tick": None, "note": "Main loop not started (dashboard-only mode)"}
 
     # ------------------------------------------------------------------
     # Approvals
