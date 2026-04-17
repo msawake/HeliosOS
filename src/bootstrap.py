@@ -475,11 +475,14 @@ class PlatformBootstrap:
             raise RuntimeError("Platform not booted yet")
         return await self.executor.deploy(agent_def)
 
-    async def run_main_loop(self, tick_interval: float = 30.0):
+    async def run_main_loop(self, tick_interval: float = 30.0, app=None):
         logger.info("Starting main loop (tick every %.0fs)...", tick_interval)
         tick_count = 0
         while self._running:
             tick_count += 1
+            # Update liveness timestamp (used by /api/liveness probe)
+            if app and hasattr(app, "state"):
+                app.state.last_tick_at = datetime.now(timezone.utc)
             try:
                 dispatches = await self.workflow_engine.tick()
                 if dispatches:
@@ -506,10 +509,46 @@ class PlatformBootstrap:
 
             await asyncio.sleep(tick_interval)
 
+    async def shutdown(self):
+        """Graceful async shutdown — cancel tasks, disconnect services, close DB."""
+        logger.info("Shutting down ForgeOS Platform (graceful)...")
+        self._running = False
+        # 1. Cancel autonomous agent tasks
+        if self.executor:
+            for tid, task in list(getattr(self.executor, '_autonomous_tasks', {}).items()):
+                task.cancel()
+                logger.info("  Cancelled autonomous task: %s", tid)
+        # 2. Stop scheduler
+        if self.scheduler:
+            self.scheduler.stop_all()
+            logger.info("  Scheduler stopped")
+        # 3. Disconnect MCP servers
+        if hasattr(self, '_mcp_manager') and self._mcp_manager:
+            try:
+                await self._mcp_manager.disconnect_all()
+                logger.info("  MCP servers disconnected")
+            except Exception as e:
+                logger.warning("  MCP disconnect error: %s", e)
+        if hasattr(self, '_client_mcp_manager') and self._client_mcp_manager:
+            try:
+                await self._client_mcp_manager.disconnect_all()
+            except Exception:
+                pass
+        # 4. Close database
+        if self._db:
+            try:
+                self._db.close()
+                logger.info("  Database closed")
+            except Exception:
+                pass
+        logger.info("Shutdown complete.")
+
     def stop(self):
+        """Synchronous stop — for backward compat and non-async contexts."""
         logger.info("Shutting down ForgeOS Platform...")
         self._running = False
-        self.scheduler.stop_all()
+        if self.scheduler:
+            self.scheduler.stop_all()
         if self._db:
             self._db.close()
 
@@ -567,6 +606,24 @@ def run_demo(company_id: str = "leadforge"):
     demo_mod.run_demo()
 
 
+def _validate_config(mode: str) -> list[str]:
+    """Validate required configuration before boot. Returns list of errors."""
+    errors = []
+    has_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    has_openai = bool(os.environ.get("OPENAI_API_KEY"))
+    has_db = bool(os.environ.get("DATABASE_URL"))
+
+    if mode == "autonomous":
+        if not has_anthropic and not has_openai:
+            errors.append("Autonomous mode requires ANTHROPIC_API_KEY or OPENAI_API_KEY (agents would run simulated)")
+        if not has_db:
+            errors.append("Autonomous mode requires DATABASE_URL (agents need persistence to survive restarts)")
+    elif mode == "supervised":
+        if not has_anthropic and not has_openai:
+            logger.warning("No LLM API key configured — agents will run in SIMULATED mode")
+    return errors
+
+
 async def main():
     _load_dotenv_from_repo_root()
     parser = argparse.ArgumentParser(description="Boot ForgeOS Multi-Stack Platform")
@@ -587,7 +644,24 @@ async def main():
         help="API listen port (default: env PORT or 5000). Use when 5000 is already in use.",
     )
     parser.add_argument("--no-auth", action="store_true", help="Disable API authentication (dev only)")
+    parser.add_argument("--validate-only", action="store_true", help="Validate config and exit")
     args = parser.parse_args()
+
+    # Config validation — fail fast on missing requirements
+    config_errors = _validate_config(args.mode)
+    if args.validate_only:
+        if config_errors:
+            for e in config_errors:
+                logger.error("CONFIG ERROR: %s", e)
+            sys.exit(1)
+        else:
+            logger.info("Configuration valid for mode=%s", args.mode)
+            sys.exit(0)
+    if config_errors and args.mode == "autonomous":
+        for e in config_errors:
+            logger.error("CONFIG ERROR: %s", e)
+        logger.error("Fix the above errors or use --mode supervised for dev.")
+        sys.exit(1)
 
     api_port = args.port if args.port is not None else int(os.environ.get("PORT", "5000"))
 
@@ -597,22 +671,44 @@ async def main():
     if args.demo:
         run_demo(company_id=args.company)
 
+    # Store app reference for liveness tick tracking
+    _api_app = None
     if args.dashboard:
+        _api_app = bootstrap.create_api_app(auth_enabled=not args.no_auth)
         bootstrap.start_api_server(port=api_port, auth_enabled=not args.no_auth)
+
+    # Register SIGTERM/SIGINT for graceful shutdown
+    loop = asyncio.get_running_loop()
+    import signal
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(_handle_signal(s, bootstrap)))
 
     if args.loop:
         try:
-            await bootstrap.run_main_loop()
-        except KeyboardInterrupt:
-            bootstrap.stop()
+            await bootstrap.run_main_loop(app=_api_app)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await bootstrap.shutdown()
     elif args.dashboard:
         logger.info("API server running on http://0.0.0.0:%d — Ctrl+C to stop.", api_port)
         try:
             await asyncio.Future()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, asyncio.CancelledError):
             pass
         finally:
-            bootstrap.stop()
+            await bootstrap.shutdown()
+
+
+async def _handle_signal(sig, bootstrap):
+    """Handle SIGTERM/SIGINT for graceful shutdown."""
+    logger.info("Received signal %s — initiating graceful shutdown...", sig.name)
+    await bootstrap.shutdown()
+    # Cancel remaining tasks
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    for t in tasks:
+        t.cancel()
+    logger.info("All tasks cancelled. Exiting.")
 
 
 if __name__ == "__main__":
