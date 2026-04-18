@@ -311,6 +311,9 @@ class PlatformBootstrap:
         openai_key = os.environ.get("OPENAI_API_KEY", "")
         if openai_key:
             api_keys["openai"] = openai_key
+        atlas_key = os.environ.get("ATLAS_GATEWAY_KEY", "")
+        if atlas_key:
+            api_keys["atlas"] = atlas_key
 
         self.llm_router = LLMRouter(api_keys=api_keys)
         logger.info("  LLM Router: providers=%s", self.llm_router.available_providers())

@@ -179,6 +179,14 @@ class LLMRouter:
                     logger.info("Initialized OpenAI client")
                 except ImportError:
                     logger.warning("openai package not installed")
+            elif provider == "atlas" and key:
+                try:
+                    from openai import OpenAI
+                    atlas_url = os.environ.get("ATLAS_GATEWAY_URL", "https://atlas-gateway-609114458603.europe-west1.run.app/v1")
+                    self._clients["atlas"] = OpenAI(api_key=key, base_url=atlas_url, timeout=120.0)
+                    logger.info("Initialized Atlas Gateway client (%s)", atlas_url)
+                except ImportError:
+                    logger.warning("openai package not installed (needed for Atlas Gateway)")
             elif provider == "google" and key:
                 logger.info("Google ADK client placeholder registered")
 
@@ -486,6 +494,12 @@ class LLMRouter:
                 provider=provider, model=model,
             )
         if provider == "openai" and client:
+            return await _with_retry(
+                lambda: self._call_openai(client, model, messages, tools),
+                provider=provider, model=model,
+            )
+        if provider == "atlas" and client:
+            # Atlas Gateway is OpenAI-compatible — reuse _call_openai
             return await _with_retry(
                 lambda: self._call_openai(client, model, messages, tools),
                 provider=provider, model=model,

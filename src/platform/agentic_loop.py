@@ -167,7 +167,7 @@ async def run_agentic_loop(
             break
 
         # Build assistant + tool result messages in the correct provider format
-        is_openai = llm_config.provider == "openai" or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-"))
+        is_openai = llm_config.provider in ("openai", "atlas") or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-", "gemini-", "deepseek-", "qwen-", "nemotron"))
 
         if is_openai:
             # OpenAI format: assistant message with tool_calls array
@@ -378,7 +378,7 @@ async def run_agentic_loop_with_events(
             break
 
         # Build assistant + tool result messages per provider format
-        is_openai = llm_config.provider == "openai" or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-"))
+        is_openai = llm_config.provider in ("openai", "atlas") or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-", "gemini-", "deepseek-", "qwen-", "nemotron"))
 
         if is_openai:
             # OpenAI format
