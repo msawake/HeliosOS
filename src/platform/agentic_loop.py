@@ -167,9 +167,45 @@ async def run_agentic_loop(
             break
 
         # Build assistant + tool result messages in the correct provider format
-        is_openai = llm_config.provider in ("openai", "atlas") or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-", "gemini-", "deepseek-", "qwen-", "nemotron"))
+        is_vertex = llm_config.provider == "vertex"
+        is_openai = (not is_vertex) and (llm_config.provider in ("openai", "atlas") or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-", "deepseek-", "qwen-", "nemotron")))
 
-        if is_openai:
+        if is_vertex:
+            # Vertex AI Gemini format: functionCall parts + functionResponse parts
+            assistant_parts = []
+            if response.text:
+                assistant_parts.append({"text": response.text})
+            for tc in response.tool_calls:
+                assistant_parts.append({
+                    "functionCall": {"name": tc.name, "args": tc.input},
+                })
+            messages.append({"role": "assistant", "content": [
+                {"type": "text", "text": response.text} if response.text else None,
+                *[{"type": "tool_use", "name": tc.name, "input": tc.input, "id": tc.id} for tc in response.tool_calls],
+            ]})
+            # Actually — Vertex needs the raw format. Let's use a special content list
+            # that _call_vertex can parse. Simpler: build Vertex-native parts directly.
+            messages[-1] = {"role": "model", "parts": assistant_parts} if assistant_parts else {"role": "model", "parts": [{"text": ""}]}
+
+            # Execute tools and build functionResponse parts
+            response_parts = []
+            for tc in response.tool_calls:
+                all_tool_calls.append({"name": tc.name, "input": tc.input})
+                tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
+                result_data = await _execute_tool(
+                    tc.name, tc.input, tool_executor, agent_context,
+                    timeout=tool_timeout,
+                )
+                content = json.dumps(result_data) if isinstance(result_data, dict) else str(result_data)
+                response_parts.append({
+                    "functionResponse": {
+                        "name": tc.name,
+                        "response": {"content": content},
+                    }
+                })
+            messages.append({"role": "user", "parts": response_parts})
+
+        elif is_openai:
             # OpenAI format: assistant message with tool_calls array
             assistant_msg: dict[str, Any] = {
                 "role": "assistant",
@@ -378,9 +414,39 @@ async def run_agentic_loop_with_events(
             break
 
         # Build assistant + tool result messages per provider format
-        is_openai = llm_config.provider in ("openai", "atlas") or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-", "gemini-", "deepseek-", "qwen-", "nemotron"))
+        is_vertex = llm_config.provider == "vertex"
+        is_openai = (not is_vertex) and (llm_config.provider in ("openai", "atlas") or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-", "deepseek-", "qwen-", "nemotron")))
 
-        if is_openai:
+        if is_vertex:
+            # Vertex format: functionCall + functionResponse parts
+            assistant_parts = []
+            if text_acc:
+                assistant_parts.append({"text": text_acc})
+            for tc in turn_tool_calls:
+                assistant_parts.append({"functionCall": {"name": tc["name"], "args": tc.get("input", {})}})
+            messages.append({"role": "model", "parts": assistant_parts})
+
+            response_parts = []
+            for tc in turn_tool_calls:
+                yield {"type": "tool_call", "name": tc["name"], "input": tc.get("input", {})}
+                timeout = _tool_timeout_for(tc["name"], tool_definitions)
+                result = await _execute_tool(
+                    tc["name"], tc.get("input", {}), tool_executor, agent_context, timeout=timeout,
+                )
+                yield {"type": "tool_result", "name": tc["name"], "result": result}
+                if tc["name"] == "company__request_approval":
+                    inner = result.get("result", result) if isinstance(result, dict) else {}
+                    if isinstance(inner, dict) and inner.get("request_id"):
+                        yield {"type": "hitl_request", "request_id": inner["request_id"],
+                               "title": tc.get("input", {}).get("title", ""),
+                               "description": tc.get("input", {}).get("description", ""),
+                               "risk": tc.get("input", {}).get("risk_assessment", "medium"),
+                               "category": tc.get("input", {}).get("category", "")}
+                content = json.dumps(result) if isinstance(result, dict) else str(result)
+                response_parts.append({"functionResponse": {"name": tc["name"], "response": {"content": content}}})
+            messages.append({"role": "user", "parts": response_parts})
+
+        elif is_openai:
             # OpenAI format
             assistant_msg: dict[str, Any] = {
                 "role": "assistant",
