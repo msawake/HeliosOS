@@ -216,7 +216,8 @@ class PermissionManager:
     ) -> KernelDecision:
         """Check if an agent is allowed to call a tool."""
         if not self._registry:
-            return KernelDecision.allow(reason="no registry; permissive default")
+            logger.warning("PermissionManager: no registry — allowing by default (wire registry for enforcement)")
+            return KernelDecision.allow(reason="no registry; wire registry for enforcement")
         agent = self._registry.get(agent_id)
         if not agent:
             return KernelDecision.deny(
@@ -392,7 +393,11 @@ class PolicyEngine:
             policy_name = ref.get("name")
             rule = self._policies.get(policy_name)
             if not rule:
-                continue  # unknown policy — skip (or could deny)
+                logger.warning("Policy '%s' referenced but not loaded — denying action", policy_name)
+                return KernelDecision.deny(
+                    reason=f"Policy '{policy_name}' not loaded (referenced but missing)",
+                    policy=policy_name,
+                )
             if self._evaluate_rule(rule, context):
                 return KernelDecision.deny(
                     reason=f"Policy '{policy_name}' denies action",

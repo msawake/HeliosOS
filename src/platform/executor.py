@@ -316,6 +316,7 @@ class PlatformExecutor:
                 name=f"autonomous-{agent_id}",
             )
             self._autonomous_tasks[agent_id] = task
+            task.add_done_callback(lambda t, aid=agent_id: self._autonomous_tasks.pop(aid, None))
             self.registry.set_status(agent_id, AgentStatus.RUNNING)
 
     async def _run_autonomous_loop(self, agent_def: AgentDefinition) -> None:
