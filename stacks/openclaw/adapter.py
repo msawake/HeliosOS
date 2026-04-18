@@ -142,22 +142,65 @@ class OpenClawGateway:
             self._process = None
             self._ready = False
 
-    async def chat(self, messages: list[dict], model: str = "claude-sonnet-4-5") -> dict:
-        """Send a chat completion request to the OpenClaw gateway."""
-        import httpx
-        url = f"{self.base_url}/v1/chat/completions"
-        payload = {
-            "model": model,
-            "messages": messages,
-            "stream": False,
-        }
+    async def chat(self, message: str, agent_id: str = "main", system_prompt: str | None = None) -> dict:
+        """Invoke an agent turn via the OpenClaw CLI (WebSocket RPC to gateway).
+
+        OpenClaw's gateway is WebSocket-based, not REST. The CLI command
+        ``node openclaw.mjs agent --agent {id} --message "..." --json``
+        sends a message through the gateway and returns the response as JSON.
+
+        When --local is used, the agent runs embedded with API keys from the
+        shell environment (no gateway needed).
+        """
+        import json as _json
+
+        args = [
+            "node", str(self.openclaw_dir / "openclaw.mjs"),
+            "agent",
+            "--agent", agent_id,
+            "--message", message,
+            "--json",
+        ]
+        # If gateway is running, route through it; otherwise run locally
+        if not self.running:
+            args.append("--local")
+
+        env = {**os.environ, "OPENCLAW_STATE_DIR": str(Path(OPENCLAW_STATE_DIR))}
+
         try:
-            async with httpx.AsyncClient(timeout=300) as client:
-                resp = await client.post(url, json=payload)
-                if resp.status_code == 200:
-                    return resp.json()
-                else:
-                    return {"error": f"HTTP {resp.status_code}: {resp.text}"}
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                cwd=str(self.openclaw_dir),
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
+            output_text = stdout.decode().strip()
+
+            # Parse JSON output from --json flag
+            try:
+                result = _json.loads(output_text)
+                payloads = result.get("payloads", [])
+                text = " ".join(p.get("text", "") for p in payloads if p.get("text"))
+                meta = result.get("meta", {})
+                agent_meta = meta.get("agentMeta", {})
+                usage = agent_meta.get("lastCallUsage", {})
+                tokens = usage.get("total", 0)
+                return {
+                    "text": text,
+                    "tokens": tokens,
+                    "model": agent_meta.get("model", ""),
+                    "duration_ms": meta.get("durationMs", 0),
+                    "session_id": agent_meta.get("sessionId", ""),
+                }
+            except _json.JSONDecodeError:
+                # Non-JSON output — return raw text
+                return {"text": output_text, "tokens": 0}
+        except asyncio.TimeoutError:
+            if proc and proc.returncode is None:
+                proc.kill()
+            return {"error": "OpenClaw agent timed out after 300s"}
         except Exception as e:
             return {"error": str(e)}
 
@@ -306,18 +349,11 @@ class OpenClawAdapter(AgentStackAdapter):
         )
 
     async def _invoke_via_gateway(self, agent_def: AgentDefinition, prompt: str) -> AgentResult:
-        """Invoke agent through the OpenClaw gateway HTTP API."""
-        system_msg = agent_def.system_prompt or (
-            f"You are {agent_def.name}. {agent_def.description or ''}\n"
-            f"Use ReAct loop. Log decisions to memory."
+        """Invoke agent through the OpenClaw CLI → gateway WebSocket RPC."""
+        response = await self._gateway.chat(
+            message=prompt,
+            agent_id=agent_def.name,
         )
-        messages = [
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": prompt},
-        ]
-
-        model = agent_def.llm_config.chat_model
-        response = await self._gateway.chat(messages, model=model)
 
         if "error" in response:
             return AgentResult(
@@ -326,25 +362,11 @@ class OpenClawAdapter(AgentStackAdapter):
                 error=f"OpenClaw gateway error: {response['error']}",
             )
 
-        # Parse OpenAI-compatible response
-        try:
-            choices = response.get("choices", [])
-            if not choices:
-                output = str(response)
-                tokens = 0
-            else:
-                choice = choices[0]
-                output = choice.get("message", {}).get("content", "")
-                tokens = response.get("usage", {}).get("total_tokens", 0)
-        except (IndexError, KeyError, TypeError, AttributeError):
-            output = str(response)
-            tokens = 0
-
         return AgentResult(
             agent_id="",
             status=AgentStatus.COMPLETED,
-            output=output,
-            tokens_used=tokens,
+            output=response.get("text", ""),
+            tokens_used=response.get("tokens", 0),
         )
 
     async def _invoke_via_platform(
