@@ -207,6 +207,10 @@ class PlatformBootstrap:
                 usage_enforcer=getattr(self, '_usage_enforcer', None),
                 audit_log=None,  # wired by FastAPI layer which owns the AuditLog
             )
+            # Wire kernel into tool executor for mandatory policy enforcement
+            self._tool_executor._kernel = self._kernel
+            logger.info("  Kernel: wired into ToolExecutor (policy enforcement active)")
+
             try:
                 from src.forgeos_sdk.kernel import Kernel as SDKKernel
                 SDKKernel.register_local_instance(self._kernel)

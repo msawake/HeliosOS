@@ -28,11 +28,12 @@ class ToolExecutor:
     Custom company tools are routed to the CompanySystem subsystems.
     """
 
-    def __init__(self, company_system=None, mcp_clients: dict | None = None, client_mcp_manager=None, a2a_handler=None):
+    def __init__(self, company_system=None, mcp_clients: dict | None = None, client_mcp_manager=None, a2a_handler=None, kernel=None):
         self._system = company_system
         self._mcp_clients = mcp_clients or {}
         self._client_mcp_manager = client_mcp_manager
-        self._a2a_handler = a2a_handler  # AgentOS: injected from bootstrap
+        self._a2a_handler = a2a_handler
+        self._kernel = kernel  # AgentOS kernel for policy enforcement
         self._custom_handlers = self._register_custom_tools()
         self._mcp_tool_definitions: dict[str, list[dict]] = {}
 
@@ -274,6 +275,18 @@ class ToolExecutor:
         agent_context: dict | None = None,
     ) -> dict:
         """Execute a tool call and return the result."""
+        # Kernel policy check (permissions + budget + policies)
+        if self._kernel and agent_context and agent_context.get("agent_id"):
+            decision = self._kernel.check_tool_call(
+                agent_id=agent_context["agent_id"],
+                tool_name=tool_name,
+                tool_input=tool_input,
+            )
+            if decision.denied:
+                logger.warning("Kernel denied tool %s for agent %s: %s",
+                               tool_name, agent_context["agent_id"], decision.reason)
+                return {"success": False, "error": f"Kernel denied: {decision.reason}"}
+
         # Enforce agent tool whitelist (supports exact match and wildcard prefixes)
         allowed_tools = (agent_context or {}).get("allowed_tools")
         if allowed_tools:
