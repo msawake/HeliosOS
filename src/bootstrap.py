@@ -314,6 +314,9 @@ class PlatformBootstrap:
         atlas_key = os.environ.get("ATLAS_GATEWAY_KEY", "")
         if atlas_key:
             api_keys["atlas"] = atlas_key
+        gcp_project = os.environ.get("GCP_PROJECT_ID", "")
+        if gcp_project:
+            api_keys["vertex"] = gcp_project
 
         self.llm_router = LLMRouter(api_keys=api_keys)
         logger.info("  LLM Router: providers=%s", self.llm_router.available_providers())

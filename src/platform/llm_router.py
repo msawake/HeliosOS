@@ -187,6 +187,13 @@ class LLMRouter:
                     logger.info("Initialized Atlas Gateway client (%s)", atlas_url)
                 except ImportError:
                     logger.warning("openai package not installed (needed for Atlas Gateway)")
+            elif provider == "vertex" and key:
+                self._clients["vertex"] = {
+                    "project_id": key,  # key=project_id for vertex
+                    "region": os.environ.get("GCP_REGION", "us-central1"),
+                }
+                logger.info("Initialized Vertex AI client (project=%s, region=%s)",
+                            key, self._clients["vertex"]["region"])
             elif provider == "google" and key:
                 logger.info("Google ADK client placeholder registered")
 
@@ -499,9 +506,13 @@ class LLMRouter:
                 provider=provider, model=model,
             )
         if provider == "atlas" and client:
-            # Atlas Gateway is OpenAI-compatible — reuse _call_openai
             return await _with_retry(
                 lambda: self._call_openai(client, model, messages, tools),
+                provider=provider, model=model,
+            )
+        if provider == "vertex" and client:
+            return await _with_retry(
+                lambda: self._call_vertex(client, model, messages),
                 provider=provider, model=model,
             )
 
@@ -587,6 +598,80 @@ class LLMRouter:
             tokens_used=response.usage.total_tokens if response.usage else 0,
             finish_reason=choice.finish_reason or "stop",
             tool_calls=tool_calls,
+        )
+
+    async def _call_vertex(
+        self, config: dict, model: str, messages: list[dict],
+    ) -> LLMResponse:
+        """Call Vertex AI Gemini directly using gcloud credentials."""
+        import subprocess
+        import httpx
+
+        project_id = config["project_id"]
+        region = config["region"]
+
+        # Get access token from gcloud
+        token_result = subprocess.run(
+            ["gcloud", "auth", "print-access-token"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if token_result.returncode != 0:
+            raise RuntimeError("Failed to get gcloud access token")
+        access_token = token_result.stdout.strip()
+
+        # Convert messages to Vertex AI format
+        contents = []
+        system_text = ""
+        for m in messages:
+            role = m.get("role", "user")
+            content = m.get("content", "")
+            if role == "system":
+                system_text += content + "\n"
+            else:
+                vertex_role = "model" if role == "assistant" else "user"
+                contents.append({"role": vertex_role, "parts": [{"text": content}]})
+
+        url = (
+            f"https://{region}-aiplatform.googleapis.com/v1/"
+            f"projects/{project_id}/locations/{region}/"
+            f"publishers/google/models/{model}:generateContent"
+        )
+        payload: dict[str, Any] = {"contents": contents}
+        if system_text:
+            payload["systemInstruction"] = {"parts": [{"text": system_text.strip()}]}
+
+        async with httpx.AsyncClient(timeout=60.0) as http:
+            resp = await http.post(
+                url,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        candidates = data.get("candidates", [])
+        text = ""
+        if candidates:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            text = "".join(p.get("text", "") for p in parts)
+
+        usage = data.get("usageMetadata", {})
+        input_tokens = usage.get("promptTokenCount", 0)
+        output_tokens = usage.get("candidatesTokenCount", 0)
+
+        return LLMResponse(
+            text=text,
+            model=model,
+            provider="vertex",
+            tokens_used=input_tokens + output_tokens,
+            finish_reason=candidates[0].get("finishReason", "STOP") if candidates else "STOP",
+            raw={
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            },
         )
 
     def available_providers(self) -> list[str]:
