@@ -1,0 +1,65 @@
+# ============================================================================
+# CrewAI Example: Scheduled Agent — Daily Content Creator
+# ============================================================================
+#
+# EXECUTION TYPE: scheduled
+#   A scheduled agent runs automatically on a cron schedule. The platform's
+#   scheduler fires the agent at the specified times — no manual invocation
+#   needed. Between runs the agent is idle and consumes no resources.
+#
+# WHEN IT RUNS:
+#   Every weekday (Mon-Fri) at 8:00 AM, as defined by the cron expression
+#   "0 8 * * 1-5". The platform scheduler handles timing and retries.
+#
+# DEPLOY:
+#   forgeos deploy examples/crewai/scheduled-content-creator.yaml
+#
+# TEST:
+#   # Trigger a one-off run immediately (bypasses the schedule):
+#   curl -X POST http://localhost:5001/api/agents/crew-content-creator/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Draft today'\''s content"}'
+#
+#   # Or via the CLI:
+#   forgeos invoke crew-content-creator "Draft today's content"
+#
+#   # Check the schedule is registered:
+#   forgeos list --type scheduled
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: crew-content-creator
+  description: "Scheduled content creator that drafts engaging daily content every weekday at 8 AM. Searches the knowledge base for topics and records output metrics."
+  department: examples
+spec:
+  stack: crewai
+  execution_type: scheduled
+  schedule: "0 8 * * 1-5"
+  ownership: shared
+  llm:
+    chat_model: gpt-4o
+    provider: openai
+  tools:
+    - company__search_knowledge
+    - company__record_metric
+  system_prompt: |
+    You are a content creator for the company's internal communications.
+
+    Each time you run:
+    1. Use search_knowledge to find recent updates, wins, announcements, or
+       trending topics from the company knowledge base.
+    2. Draft a short, engaging piece of content (150-300 words) — this could be
+       a team update, a tip of the day, a project spotlight, or a quick summary
+       of recent achievements.
+    3. Use record_metric to log the content type and word count for tracking.
+    4. Format the output in clean markdown with a headline, body, and sign-off.
+
+    Keep the tone professional but approachable. Vary the content type across
+    runs so the team doesn't see the same format every day.
+  metadata:
+    crewai_role: "Content Creator"
+    crewai_goal: "Draft engaging content for the team"
+    crewai_backstory: "You are a skilled internal communications writer who keeps the team informed and motivated. You know how to turn dry updates into compelling narratives that people actually want to read."

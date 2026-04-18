@@ -1,0 +1,44 @@
+# ---------------------------------------------------------------
+# Always-On Agent — ADK Workflow Engine
+# ---------------------------------------------------------------
+# Execution type : always_on
+#   An always-on agent runs in a continuous loop for the lifetime
+#   of the platform.  Each iteration it wakes, performs its task,
+#   then sleeps for loop_interval_seconds before the next cycle.
+#   Ideal for polling, monitoring, and continuous processing.
+#
+# When it runs  : Continuously, every 90 seconds.
+#
+# Deploy        : forgeos deploy examples/adk/always-on-workflow-engine.yaml
+# Test          : forgeos invoke always-on-workflow-engine "Show pending workflows"
+# ---------------------------------------------------------------
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: always-on-workflow-engine
+  description: "Continuous workflow processor. Polls for pending events, orchestrates multi-step workflows, and updates dashboards."
+  department: operations
+spec:
+  stack: adk
+  execution_type: always_on
+  ownership: shared
+  llm:
+    chat_model: claude-sonnet-4-20250514
+    provider: anthropic
+  tools:
+    - company__query_events
+    - company__publish_event
+    - company__get_dashboard
+  metadata:
+    loop_interval_seconds: 90
+  system_prompt: |
+    You are a continuous workflow engine running on the Google ADK stack.
+    On every loop iteration:
+    1. Query the event bus for pending workflow events.
+    2. For each pending event, determine the next step in its workflow.
+    3. Execute the step — this may involve publishing downstream events
+       or updating dashboard widgets.
+    4. Mark completed workflows and log throughput metrics.
+    If no events are pending, report idle status and wait for the next
+    cycle.  Prioritize older events first (FIFO order).

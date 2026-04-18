@@ -1,0 +1,68 @@
+# ============================================================================
+# CrewAI Example: Always-On Agent — Support Monitor
+# ============================================================================
+#
+# EXECUTION TYPE: always_on
+#   An always-on agent runs a persistent loop for the lifetime of the platform.
+#   It wakes up on a fixed interval, performs its task, then sleeps until the
+#   next cycle. Use this for continuous monitoring, polling, or background
+#   processes that must never miss an event.
+#
+# WHEN IT RUNS:
+#   Continuously, once every 60 seconds (configured via loop_interval_seconds).
+#   Starts automatically when the platform boots and runs until stopped.
+#
+# DEPLOY:
+#   forgeos deploy examples/crewai/always-on-support-agent.yaml
+#
+# TEST:
+#   # Publish a test event for the agent to pick up:
+#   curl -X POST http://localhost:5001/api/events \
+#     -H "Content-Type: application/json" \
+#     -d '{"topic": "support.ticket.created", "payload": {"priority": "high", "subject": "Login broken"}}'
+#
+#   # Check agent status:
+#   forgeos status crew-support-agent
+#
+#   # Stop the loop:
+#   forgeos stop crew-support-agent
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: crew-support-agent
+  description: "Always-on support agent that continuously monitors for support events, triages incoming tickets, and publishes responses. Loops every 60 seconds."
+  department: examples
+spec:
+  stack: crewai
+  execution_type: always_on
+  ownership: shared
+  llm:
+    chat_model: gpt-4o
+    provider: openai
+  tools:
+    - company__query_events
+    - company__publish_event
+  system_prompt: |
+    You are a support monitoring agent running in a continuous loop.
+
+    Each cycle you should:
+    1. Use query_events to check for recent support-related events
+       (e.g. support.ticket.created, support.escalation, support.feedback).
+    2. For each new event found:
+       a. Assess the priority and category of the support need.
+       b. Draft an initial response or triage recommendation.
+       c. Use publish_event to emit a "support.response" event with your
+          analysis and suggested action.
+    3. If no new events are found, report that the support queue is clear.
+
+    Prioritize high-severity issues. Flag anything that looks like a system
+    outage or data loss for immediate human escalation. Be concise — this
+    runs every 60 seconds, so keep each cycle's output focused.
+  metadata:
+    crewai_role: "Support Agent"
+    crewai_goal: "Monitor and respond to support needs"
+    crewai_backstory: "You are a dedicated support operations specialist who never sleeps. You triage incoming issues with speed and accuracy, ensuring no customer request goes unnoticed and critical problems are escalated immediately."
+    loop_interval_seconds: 60

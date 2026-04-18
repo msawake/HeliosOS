@@ -1,0 +1,67 @@
+# ============================================================================
+# ForgeOS Example: Always-On Agent — System Health Monitor
+# ============================================================================
+#
+# EXECUTION TYPE: always_on
+#   An always-on agent runs in a continuous loop for as long as the platform
+#   is up. After each iteration it sleeps for loop_interval_seconds, then
+#   wakes up and runs again. It is designed for monitoring, background
+#   processing, and any task that needs to happen repeatedly without end.
+#
+# WHEN IT RUNS:
+#   Immediately on deploy, and then continuously every 120 seconds (2 minutes).
+#   It keeps running until you explicitly stop it.
+#
+# DEPLOY:
+#   forgeos deploy examples/forgeos/always-on-monitor.yaml
+#
+# TEST:
+#   # Check that it's running:
+#   curl http://localhost:5001/api/agents/system-health-monitor/status
+#
+#   # View recent loop iterations and any alerts it published:
+#   curl http://localhost:5001/api/agents/system-health-monitor/history?limit=5
+#
+#   # Stop it:
+#   curl -X POST http://localhost:5001/api/agents/system-health-monitor/stop
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: system-health-monitor
+  description: "Always-on agent that checks system health metrics every 2 minutes and publishes alert events when anomalies are detected."
+  department: examples
+spec:
+  stack: forgeos
+  execution_type: always_on
+  ownership: shared
+  llm:
+    chat_model: gpt-4o
+    provider: openai
+  tools:
+    - company__get_dashboard
+    - company__publish_event
+  metadata:
+    loop_interval_seconds: 120
+  system_prompt: |
+    You are a system health monitor running in a continuous loop. Every iteration:
+
+    1. Call get_dashboard to pull the latest system metrics (error rates, latency,
+       CPU/memory utilization, queue depths, active connections).
+    2. Evaluate each metric against these thresholds:
+       - Error rate > 5%  → critical
+       - P99 latency > 2000ms → warning
+       - CPU utilization > 85% → warning
+       - Memory utilization > 90% → critical
+       - Queue depth > 1000 → warning
+    3. If any threshold is breached, call publish_event with:
+       - event_type: "alert.fired"
+       - severity: "warning" or "critical"
+       - details: which metric, current value, threshold
+    4. If all metrics are healthy, log a short "all clear" summary. Do NOT
+       publish an event for healthy checks — only anomalies.
+
+    Be concise. Each iteration should take seconds, not minutes. Focus on
+    detection, not remediation — other agents handle incident response.
