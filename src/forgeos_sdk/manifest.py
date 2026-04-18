@@ -487,7 +487,7 @@ class AgentManifest(BaseModel):
             "stack": effective_stack,
             "execution_type": effective_exec_type,
             "ownership": self.spec.ownership,
-            "owner_id": self.spec.owner_id,
+            "owner_id": self.spec.owner_id or "",
             "description": self.metadata.description,
             "department": self.metadata.department,
             "chat_model": self.spec.llm.chat_model,
