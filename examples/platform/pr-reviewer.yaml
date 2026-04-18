@@ -1,0 +1,77 @@
+# ============================================================================
+# ForgeOS Example: Event-Driven Agent — PR Reviewer
+# ============================================================================
+#
+# EXECUTION TYPE: event_driven
+#   An event-driven agent subscribes to events on the platform event bus and
+#   wakes up automatically when a matching event fires. This one triggers on
+#   pull request events (opened or updated).
+#
+# TOOLS USED:
+#   - platform__github_get_pr: Fetches pull request details including the
+#     diff, files changed, and PR metadata. Used to retrieve the code
+#     changes that need reviewing.
+#   - platform__github_create_review: Posts a review (approve, request
+#     changes, or comment) on a pull request. Used to deliver the review
+#     feedback directly on GitHub.
+#   - company__publish_event: Publishes an event to the platform event bus.
+#     Used to notify the team channel when a review is posted.
+#
+# WHEN IT RUNS:
+#   Automatically when a pr.opened or pr.updated event fires on the event bus.
+#
+# DEPLOY:
+#   forgeos deploy examples/platform/pr-reviewer.yaml
+#
+# TEST:
+#   # Simulate an event via the REST API:
+#   curl -X POST http://localhost:5001/api/agents/pr-reviewer/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Review PR #42 in repo forgeos/platform"}'
+#
+#   # Or via the CLI:
+#   forgeos invoke pr-reviewer "Review PR #42 in repo forgeos/platform"
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: pr-reviewer
+  description: "Event-driven agent that auto-reviews pull requests when opened or updated. Analyzes code changes for quality and security, posts a GitHub review, and notifies the team."
+  department: examples
+  labels:
+    category: platform
+spec:
+  stack: forgeos
+  execution_type: event_driven
+  event_triggers:
+    - pr.opened
+    - pr.updated
+  ownership: shared
+  llm:
+    chat_model: gpt-4o
+    provider: openai
+  tools:
+    - platform__github_get_pr
+    - platform__github_create_review
+    - company__publish_event
+  system_prompt: |
+    You auto-review pull requests. When a PR event fires, fetch the PR
+    details via platform__github_get_pr, analyze code changes for quality
+    and security, post a review via platform__github_create_review, and
+    notify the team via company__publish_event.
+
+    Follow this workflow:
+    1. Use platform__github_get_pr to fetch the PR diff and metadata.
+    2. Analyze every changed file for:
+       - Code quality: naming, structure, duplication, complexity
+       - Security: hardcoded secrets, injection risks, auth issues
+       - Best practices: error handling, logging, test coverage
+       - Performance: N+1 queries, unnecessary allocations, blocking calls
+    3. Use platform__github_create_review to post your review:
+       - "approve" if no issues found
+       - "request_changes" if blocking issues exist
+       - Include inline comments on specific lines where possible
+    4. Use company__publish_event to send a "review.completed" event with
+       the PR number, verdict, and summary of findings.

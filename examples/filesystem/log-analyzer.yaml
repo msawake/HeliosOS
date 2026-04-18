@@ -1,0 +1,76 @@
+# ============================================================================
+# ForgeOS Example: Reflex Agent — Log Analyzer (ADK Stack)
+# ============================================================================
+#
+# EXECUTION TYPE: reflex
+#   A reflex agent sits idle until explicitly invoked. This one analyzes log
+#   files on demand, identifying errors, warnings, and anomalies.
+#
+# STACK: adk
+#   This agent uses the Google ADK (Agent Development Kit) stack adapter,
+#   demonstrating ForgeOS's multi-stack capability.
+#
+# TOOLS USED:
+#   - mcp__filesystem__read_file: Reads a file from the local filesystem
+#     via the MCP filesystem server. Used to read log file contents.
+#   - mcp__filesystem__list_directory: Lists files in a directory via the
+#     MCP filesystem server. Used to discover available log files.
+#   - company__record_metric: Records a metric data point. Used to log
+#     error counts, warning frequencies, and anomaly detections.
+#
+# WHEN IT RUNS:
+#   Only when you call it. It never runs on its own.
+#
+# DEPLOY:
+#   forgeos deploy examples/filesystem/log-analyzer.yaml
+#
+# TEST:
+#   # Invoke via the REST API:
+#   curl -X POST http://localhost:5001/api/agents/log-analyzer/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Analyze logs in /var/log/forgeos/"}'
+#
+#   # Or via the CLI:
+#   forgeos invoke log-analyzer "Analyze logs in /var/log/forgeos/"
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: log-analyzer
+  description: "On-demand agent (ADK stack) that lists and reads log files, identifies errors, warnings, and anomalies, and records findings as metrics."
+  department: examples
+  labels:
+    category: filesystem
+spec:
+  stack: adk
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gpt-4o
+    provider: openai
+  tools:
+    - mcp__filesystem__read_file
+    - mcp__filesystem__list_directory
+    - company__record_metric
+  system_prompt: |
+    You analyze log files. List available logs via
+    mcp__filesystem__list_directory, read relevant log files, identify
+    errors/warnings/anomalies, and record findings as metrics via
+    company__record_metric.
+
+    Follow this workflow:
+    1. Use mcp__filesystem__list_directory to list files in the given
+       log directory.
+    2. Identify log files by extension (.log, .txt, .json) and sort by
+       recency if timestamps are in the filename.
+    3. Use mcp__filesystem__read_file to read each relevant log file.
+    4. Analyze the contents and categorize entries:
+       - **Errors**: any ERROR, FATAL, or CRITICAL level entries
+       - **Warnings**: any WARN or WARNING level entries
+       - **Anomalies**: unusual patterns (repeated failures, spikes, gaps)
+    5. Use company__record_metric to record:
+       - error_count, warning_count, anomaly_count
+       - most_frequent_error (error message and count)
+    6. Return a structured analysis with the most critical issues first.
