@@ -154,35 +154,70 @@ async def run_agentic_loop(
             final_text = response.text
             break
 
-        # Build assistant message with tool_use content blocks (Anthropic format)
-        assistant_content = []
-        if response.text:
-            assistant_content.append({"type": "text", "text": response.text})
-        for tc in response.tool_calls:
-            assistant_content.append({
-                "type": "tool_use",
-                "id": tc.id,
-                "name": tc.name,
-                "input": tc.input,
-            })
-        messages.append({"role": "assistant", "content": assistant_content})
+        # Build assistant + tool result messages in the correct provider format
+        is_openai = llm_config.provider == "openai" or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-"))
 
-        # Execute each tool and collect results
-        tool_results = []
-        for tc in response.tool_calls:
-            all_tool_calls.append({"name": tc.name, "input": tc.input})
-            tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
-            result_data = await _execute_tool(
-                tc.name, tc.input, tool_executor, agent_context,
-                timeout=tool_timeout,
-            )
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": tc.id,
-                "content": json.dumps(result_data) if isinstance(result_data, dict) else str(result_data),
-            })
+        if is_openai:
+            # OpenAI format: assistant message with tool_calls array
+            assistant_msg: dict[str, Any] = {
+                "role": "assistant",
+                "content": response.text or None,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": json.dumps(tc.input),
+                        },
+                    }
+                    for tc in response.tool_calls
+                ],
+            }
+            messages.append(assistant_msg)
 
-        messages.append({"role": "user", "content": tool_results})
+            # Execute tools and append each result as a separate "tool" role message
+            for tc in response.tool_calls:
+                all_tool_calls.append({"name": tc.name, "input": tc.input})
+                tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
+                result_data = await _execute_tool(
+                    tc.name, tc.input, tool_executor, agent_context,
+                    timeout=tool_timeout,
+                )
+                content = json.dumps(result_data) if isinstance(result_data, dict) else str(result_data)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": content,
+                })
+        else:
+            # Anthropic format: content blocks with tool_use + tool_result
+            assistant_content = []
+            if response.text:
+                assistant_content.append({"type": "text", "text": response.text})
+            for tc in response.tool_calls:
+                assistant_content.append({
+                    "type": "tool_use",
+                    "id": tc.id,
+                    "name": tc.name,
+                    "input": tc.input,
+                })
+            messages.append({"role": "assistant", "content": assistant_content})
+
+            tool_results = []
+            for tc in response.tool_calls:
+                all_tool_calls.append({"name": tc.name, "input": tc.input})
+                tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
+                result_data = await _execute_tool(
+                    tc.name, tc.input, tool_executor, agent_context,
+                    timeout=tool_timeout,
+                )
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tc.id,
+                    "content": json.dumps(result_data) if isinstance(result_data, dict) else str(result_data),
+                })
+            messages.append({"role": "user", "content": tool_results})
     else:
         # Exhausted max turns
         final_text = response.text if response else "[Max tool turns reached]"
