@@ -38,8 +38,8 @@ spec:
   ownership: shared
   schedule: "0 9 * * *"
   llm:
-    chat_model: gpt-4o
-    provider: openai
+    chat_model: gemini-2.5-flash
+    provider: vertex
   tools:
     - company__get_dashboard
     - company__record_metric

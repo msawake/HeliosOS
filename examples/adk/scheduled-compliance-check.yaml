@@ -24,8 +24,8 @@ spec:
   ownership: shared
   schedule: "0 6 * * *"
   llm:
-    chat_model: claude-sonnet-4-20250514
-    provider: anthropic
+    chat_model: gemini-2.5-flash
+    provider: vertex
   tools:
     - company__search_knowledge
     - company__record_metric

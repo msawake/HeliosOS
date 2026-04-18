@@ -49,8 +49,8 @@ spec:
   event_triggers:
     - draft.submitted
   llm:
-    chat_model: gpt-4o
-    provider: openai
+    chat_model: gemini-2.5-flash
+    provider: vertex
   tools:
     - agent__call
     - company__request_approval

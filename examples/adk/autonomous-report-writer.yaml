@@ -27,8 +27,8 @@ spec:
   ownership: shared
   goal: "Compile a quarterly business review covering revenue, costs, and growth metrics"
   llm:
-    chat_model: claude-sonnet-4-20250514
-    provider: anthropic
+    chat_model: gemini-2.5-flash
+    provider: vertex
   tools:
     - company__get_dashboard
     - company__search_knowledge

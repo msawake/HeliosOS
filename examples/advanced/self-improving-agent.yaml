@@ -55,8 +55,8 @@ spec:
   ownership: shared
   goal: "Analyze your own past performance metrics, identify improvement areas, test a new strategy, and record what works best"
   llm:
-    chat_model: gpt-4o
-    provider: openai
+    chat_model: gemini-2.5-flash
+    provider: vertex
   tools:
     - company__search_knowledge
     - company__add_decision
