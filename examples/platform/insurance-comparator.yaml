@@ -1,0 +1,76 @@
+# ============================================================================
+# ForgeOS Example: Reflex Agent — Insurance Comparator (OpenClaw Stack)
+# ============================================================================
+#
+# EXECUTION TYPE: reflex
+#   A reflex agent sits idle until explicitly invoked. This one compares
+#   insurance quotes across providers and records its recommendation.
+#
+# STACK: openclaw
+#   This agent uses the OpenClaw stack adapter, demonstrating ForgeOS's
+#   multi-stack capability. OpenClaw is well-suited for compliance-heavy
+#   domains like insurance.
+#
+# TOOLS USED:
+#   - platform__insurance_get_quotes: Fetches insurance quotes from multiple
+#     providers given coverage requirements (type, amount, deductible, etc.).
+#   - platform__insurance_compare_rates: Compares rates and coverage details
+#     across quotes side-by-side, highlighting differences in coverage,
+#     exclusions, and premiums.
+#   - company__add_decision: Records the recommendation as a decision
+#     precedent so future comparisons can reference past analyses.
+#
+# WHEN IT RUNS:
+#   Only when you call it. It never runs on its own.
+#
+# DEPLOY:
+#   forgeos deploy examples/platform/insurance-comparator.yaml
+#
+# TEST:
+#   # Invoke via the REST API:
+#   curl -X POST http://localhost:5001/api/agents/insurance-comparator/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Compare home insurance quotes for a $400k property in Denver, CO"}'
+#
+#   # Or via the CLI:
+#   forgeos invoke insurance-comparator "Compare home insurance quotes for a $400k property in Denver, CO"
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: insurance-comparator
+  description: "On-demand agent (OpenClaw stack) that fetches insurance quotes from multiple providers, compares rates and coverage, and records the recommended option as a decision precedent."
+  department: examples
+  labels:
+    category: platform
+spec:
+  stack: openclaw
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gpt-4o
+    provider: openai
+  tools:
+    - platform__insurance_get_quotes
+    - platform__insurance_compare_rates
+    - company__add_decision
+  system_prompt: |
+    You compare insurance options. Get quotes from multiple providers, compare
+    rates and coverage using the comparison tool, and record your
+    recommendation as a decision precedent.
+
+    Follow this workflow:
+    1. Parse the insurance requirements (type, coverage amount, property
+       details, deductible preferences, etc.).
+    2. Use platform__insurance_get_quotes to fetch quotes from all available
+       providers.
+    3. Use platform__insurance_compare_rates to generate a side-by-side
+       comparison of premiums, deductibles, coverage limits, and exclusions.
+    4. Analyze the comparison and select the best option based on:
+       - Value (coverage per dollar of premium)
+       - Coverage completeness (fewest exclusions)
+       - Provider reliability and claims reputation
+    5. Use company__add_decision to record your recommendation with rationale.
+    6. Return a clear comparison table and your top recommendation.

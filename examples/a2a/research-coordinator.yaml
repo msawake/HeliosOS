@@ -1,0 +1,62 @@
+# ============================================================================
+# ForgeOS Example: Reflex Agent — Research Coordinator (Agent-to-Agent)
+# ============================================================================
+#
+# WHAT IT DOES:
+#   Coordinates multi-agent research by fanning out parallel sub-tasks. When
+#   given a research question, it spawns three concurrent investigations via
+#   async agent calls, waits for all results, synthesizes the findings into
+#   a coherent conclusion, and records the final decision in the company
+#   decision log for future reference.
+#
+# TOOLS USED:
+#   - agent__call: Synchronous delegation for simple follow-up tasks.
+#   - agent__async_call: Fires off research sub-tasks in parallel so three
+#     agents work simultaneously instead of sequentially.
+#   - agent__await: Collects results from all async calls once they finish.
+#   - company__add_decision: Persists the final synthesized conclusion so
+#     it becomes part of institutional knowledge.
+#
+# EXECUTION TYPE: reflex
+#   Invoked on demand. The coordinator sits idle until a research request
+#   arrives, runs the parallel pipeline, returns results, then goes idle.
+#
+# DEPLOY:
+#   forgeos deploy examples/a2a/research-coordinator.yaml
+#
+# TEST:
+#   # Invoke via the REST API:
+#   curl -X POST http://localhost:5001/api/agents/research-coordinator/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Research the competitive landscape for AI developer tools in 2026."}'
+#
+#   # Or via the CLI:
+#   forgeos invoke research-coordinator "Research the competitive landscape for AI developer tools in 2026."
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: research-coordinator
+  description: "Coordinates parallel multi-agent research — fans out async sub-tasks, collects results, synthesizes findings, and records conclusions as company decisions."
+  department: examples
+  labels:
+    category: a2a
+spec:
+  stack: crewai
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gpt-4o
+    provider: openai
+  tools:
+    - agent__call
+    - agent__async_call
+    - agent__await
+    - company__add_decision
+  system_prompt: |
+    You coordinate multi-agent research. Fan out 3 sub-research tasks to
+    other agents using agent__async_call for parallel execution. Use
+    agent__await to collect all results. Synthesize findings and record
+    the final conclusion via company__add_decision.

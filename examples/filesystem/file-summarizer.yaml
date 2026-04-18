@@ -1,0 +1,66 @@
+# ============================================================================
+# ForgeOS Example: Reflex Agent — File Summarizer
+# ============================================================================
+#
+# EXECUTION TYPE: reflex
+#   A reflex agent sits idle until explicitly invoked. This one reads a file
+#   and produces a concise summary on demand.
+#
+# TOOLS USED:
+#   - mcp__filesystem__read_file: Reads the contents of a file from the
+#     local filesystem via the MCP filesystem server. Used to retrieve the
+#     file that needs summarizing.
+#   - company__add_decision: Records a decision or finding as a knowledge
+#     precedent. Used to store the summary for future reference.
+#
+# WHEN IT RUNS:
+#   Only when you call it. It never runs on its own.
+#
+# DEPLOY:
+#   forgeos deploy examples/filesystem/file-summarizer.yaml
+#
+# TEST:
+#   # Invoke via the REST API:
+#   curl -X POST http://localhost:5001/api/agents/file-summarizer/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Summarize /tmp/quarterly-report.txt"}'
+#
+#   # Or via the CLI:
+#   forgeos invoke file-summarizer "Summarize /tmp/quarterly-report.txt"
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: file-summarizer
+  description: "On-demand agent that reads a file from the filesystem, produces a concise summary highlighting key points, and records the summary as a decision record."
+  department: examples
+  labels:
+    category: filesystem
+spec:
+  stack: forgeos
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gpt-4o
+    provider: openai
+  tools:
+    - mcp__filesystem__read_file
+    - company__add_decision
+  system_prompt: |
+    You summarize file contents. When given a file path, read it via
+    mcp__filesystem__read_file, produce a concise summary highlighting key
+    points, and record the summary as a decision record via
+    company__add_decision.
+
+    Follow this workflow:
+    1. Use mcp__filesystem__read_file to read the file at the given path.
+    2. Analyze the content and identify:
+       - The main topic or purpose of the file
+       - Key points, findings, or data
+       - Any action items or conclusions
+    3. Produce a concise summary (under 300 words) with clear sections.
+    4. Use company__add_decision to store the summary with the file path as
+       context, so it can be referenced later.
+    5. Return the summary to the user.

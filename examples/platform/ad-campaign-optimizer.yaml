@@ -1,0 +1,77 @@
+# ============================================================================
+# ForgeOS Example: Scheduled Agent — Ad Campaign Optimizer (CrewAI Stack)
+# ============================================================================
+#
+# EXECUTION TYPE: scheduled
+#   A scheduled agent runs on a cron schedule. This one fires daily at 7 AM
+#   to review and optimize advertising campaign performance.
+#
+# STACK: crewai
+#   This agent uses the CrewAI stack adapter, demonstrating ForgeOS's
+#   multi-stack capability. The platform layer handles it identically to
+#   ForgeOS-native agents.
+#
+# TOOLS USED:
+#   - platform__ads_get_campaigns: Retrieves campaign performance data
+#     (impressions, clicks, conversions, spend). Used to assess which
+#     campaigns are underperforming.
+#   - platform__ads_update_bid: Adjusts the bid amount for a specific
+#     campaign or ad group. Used to optimize spend allocation.
+#   - company__record_metric: Records a metric data point. Used to log
+#     optimization actions and performance deltas.
+#
+# WHEN IT RUNS:
+#   Every day at 7:00 AM (0 7 * * *).
+#
+# DEPLOY:
+#   forgeos deploy examples/platform/ad-campaign-optimizer.yaml
+#
+# TEST:
+#   # Invoke manually via the REST API:
+#   curl -X POST http://localhost:5001/api/agents/ad-campaign-optimizer/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Review and optimize all active campaigns"}'
+#
+#   # Or via the CLI:
+#   forgeos invoke ad-campaign-optimizer "Review and optimize all active campaigns"
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: ad-campaign-optimizer
+  description: "Daily scheduled agent (CrewAI stack) that reviews ad campaign performance, identifies underperformers, adjusts bids, and logs all optimization actions."
+  department: examples
+  labels:
+    category: platform
+spec:
+  stack: crewai
+  execution_type: scheduled
+  schedule: "0 7 * * *"
+  ownership: shared
+  llm:
+    chat_model: gpt-4o
+    provider: openai
+  tools:
+    - platform__ads_get_campaigns
+    - platform__ads_update_bid
+    - company__record_metric
+  system_prompt: |
+    You optimize ad campaigns daily. Review campaign performance via
+    platform__ads_get_campaigns, identify underperforming ads, adjust bids
+    via platform__ads_update_bid, and log all changes via
+    company__record_metric.
+
+    Follow this workflow:
+    1. Use platform__ads_get_campaigns to pull all active campaigns.
+    2. For each campaign, evaluate key metrics:
+       - CTR (click-through rate) below 1% = underperforming
+       - CPA (cost per acquisition) above target = overspending
+       - ROAS (return on ad spend) below 2x = poor ROI
+    3. For underperforming campaigns, use platform__ads_update_bid to:
+       - Reduce bids by 10-20% for high-CPA campaigns
+       - Increase bids by 5-10% for high-ROAS campaigns with room to scale
+       - Pause campaigns with CTR below 0.3%
+    4. Use company__record_metric to log each change with before/after values.
+    5. Return a summary of all optimizations made.

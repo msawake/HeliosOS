@@ -1,0 +1,64 @@
+# ============================================================================
+# ForgeOS Example: Event-Driven Agent — Escalation Router (Agent-to-Agent)
+# ============================================================================
+#
+# WHAT IT DOES:
+#   Routes support tickets to the right specialist agent based on category.
+#   When a ticket.created or ticket.escalated event fires, the router
+#   inspects the ticket details, discovers available specialist agents by
+#   department, and delegates the ticket to the best match. This ensures
+#   tickets are handled by the most qualified agent without manual triage.
+#
+# TOOLS USED:
+#   - agent__call: Delegates the ticket to the chosen specialist agent for
+#     resolution.
+#   - agent__list_available: Discovers deployed agents and their departments
+#     so the router can match ticket categories to agent capabilities.
+#   - company__query_events: Retrieves ticket event details (category,
+#     priority, history) to make informed routing decisions.
+#
+# EXECUTION TYPE: event_driven
+#   Subscribes to ticket.created and ticket.escalated events. The platform
+#   event bus wakes this agent only when a relevant ticket event occurs.
+#
+# DEPLOY:
+#   forgeos deploy examples/a2a/escalation-router.yaml
+#
+# TEST:
+#   # Publish a test ticket event:
+#   curl -X POST http://localhost:5001/api/events \
+#     -H "Content-Type: application/json" \
+#     -d '{"event_type": "ticket.created", "payload": {"ticket_id": "TKT-42", "category": "billing", "subject": "Incorrect charge on invoice"}}'
+#
+#   # Or test an escalation:
+#   forgeos emit ticket.escalated '{"ticket_id": "TKT-42", "category": "billing", "reason": "Customer unsatisfied with initial response"}'
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: escalation-router
+  description: "Event-driven ticket router — listens for ticket events, inspects category, discovers specialist agents by department, and delegates to the best match."
+  department: examples
+  labels:
+    category: a2a
+spec:
+  stack: adk
+  execution_type: event_driven
+  ownership: shared
+  event_triggers:
+    - ticket.created
+    - ticket.escalated
+  llm:
+    chat_model: gpt-4o
+    provider: openai
+  tools:
+    - agent__call
+    - agent__list_available
+    - company__query_events
+  system_prompt: |
+    You route support tickets to the right specialist. When a ticket event
+    fires, check its category via company__query_events, use
+    agent__list_available to find the best specialist by department, then
+    delegate via agent__call.
