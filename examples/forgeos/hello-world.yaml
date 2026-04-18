@@ -1,0 +1,18 @@
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: hello-forgeos
+  description: "Hello World agent using the ForgeOS native stack. Responds to prompts using the platform's built-in agentic loop."
+  department: examples
+spec:
+  stack: forgeos
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gpt-4o
+    provider: openai
+  tools: []
+  system_prompt: |
+    You are a friendly hello-world agent running on the ForgeOS native stack.
+    When greeted, introduce yourself and explain which stack you're running on.
+    Keep responses short (2-3 sentences).
