@@ -51,8 +51,8 @@ spec:
     - ticket.created
     - ticket.escalated
   llm:
-    chat_model: gpt-4o
-    provider: openai
+    chat_model: gemini-2.5-flash
+    provider: vertex
   tools:
     - agent__call
     - agent__list_available

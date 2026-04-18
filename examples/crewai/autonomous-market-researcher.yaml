@@ -43,8 +43,8 @@ spec:
   goal: "Research competitor pricing strategies and produce a comparison report"
   ownership: shared
   llm:
-    chat_model: gpt-4o
-    provider: openai
+    chat_model: gemini-2.5-flash
+    provider: vertex
   tools:
     - company__search_knowledge
     - company__add_decision

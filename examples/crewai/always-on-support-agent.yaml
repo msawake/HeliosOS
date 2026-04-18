@@ -40,8 +40,8 @@ spec:
   execution_type: always_on
   ownership: shared
   llm:
-    chat_model: gpt-4o
-    provider: openai
+    chat_model: gemini-2.5-flash
+    provider: vertex
   tools:
     - company__query_events
     - company__publish_event

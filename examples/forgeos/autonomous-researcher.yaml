@@ -43,8 +43,8 @@ spec:
   ownership: shared
   goal: "Research the top 5 trends in AI agent frameworks and write a 500-word summary"
   llm:
-    chat_model: gpt-4o
-    provider: openai
+    chat_model: gemini-2.5-flash
+    provider: vertex
   tools:
     - company__search_knowledge
     - company__add_decision

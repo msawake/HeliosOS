@@ -28,8 +28,8 @@ spec:
     - invoice.received
     - payment.failed
   llm:
-    chat_model: claude-sonnet-4-20250514
-    provider: anthropic
+    chat_model: gemini-2.5-flash
+    provider: vertex
   tools:
     - company__record_metric
     - company__request_approval

@@ -51,8 +51,8 @@ spec:
   schedule: "0 7 * * *"
   ownership: shared
   llm:
-    chat_model: gpt-4o
-    provider: openai
+    chat_model: gemini-2.5-flash
+    provider: vertex
   tools:
     - platform__ads_get_campaigns
     - platform__ads_update_bid

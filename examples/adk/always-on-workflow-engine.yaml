@@ -24,8 +24,8 @@ spec:
   execution_type: always_on
   ownership: shared
   llm:
-    chat_model: claude-sonnet-4-20250514
-    provider: anthropic
+    chat_model: gemini-2.5-flash
+    provider: vertex
   tools:
     - company__query_events
     - company__publish_event

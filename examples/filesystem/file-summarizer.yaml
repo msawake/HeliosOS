@@ -43,8 +43,8 @@ spec:
   execution_type: reflex
   ownership: shared
   llm:
-    chat_model: gpt-4o
-    provider: openai
+    chat_model: gemini-2.5-flash
+    provider: vertex
   tools:
     - mcp__filesystem__read_file
     - company__add_decision
