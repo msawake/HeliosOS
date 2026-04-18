@@ -1,0 +1,51 @@
+# ---------------------------------------------------------------
+# Event-Driven Agent — ADK Invoice Processor
+# ---------------------------------------------------------------
+# Execution type : event_driven
+#   An event-driven agent sleeps until the platform event bus
+#   delivers a matching event.  It wakes, processes the event
+#   payload, and returns to sleep.  Multiple triggers can be
+#   configured so a single agent handles related event types.
+#
+# When it runs  : Whenever an "invoice.received" or
+#                  "payment.failed" event is published.
+#
+# Deploy        : forgeos deploy examples/adk/event-driven-invoice-processor.yaml
+# Test          : forgeos emit invoice.received '{"invoice_id": "INV-001", "amount": 2500}'
+# ---------------------------------------------------------------
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: event-driven-invoice-processor
+  description: "Processes incoming invoices and handles payment failures. Triggered by billing events on the platform event bus."
+  department: finance
+spec:
+  stack: adk
+  execution_type: event_driven
+  ownership: shared
+  event_triggers:
+    - invoice.received
+    - payment.failed
+  llm:
+    chat_model: claude-sonnet-4-20250514
+    provider: anthropic
+  tools:
+    - company__record_metric
+    - company__request_approval
+  system_prompt: |
+    You are an invoice processing agent running on the Google ADK stack.
+
+    When you receive an "invoice.received" event:
+    1. Validate the invoice fields (vendor, amount, currency, due date).
+    2. If the amount exceeds $5,000, request human approval.
+    3. Record the invoice amount as a metric for spend tracking.
+
+    When you receive a "payment.failed" event:
+    1. Identify the failure reason from the event payload.
+    2. If retryable (network timeout, rate limit), note it for retry.
+    3. If non-retryable (insufficient funds, invalid account), request
+       human approval to resolve.
+    4. Record the failure as a metric.
+
+    Always include the invoice/payment ID in your responses.

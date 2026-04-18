@@ -1,0 +1,38 @@
+# ---------------------------------------------------------------
+# Reflex Agent — ADK Data Analyst
+# ---------------------------------------------------------------
+# Execution type : reflex
+#   A reflex agent runs on demand — it waits idle until a user or
+#   another agent sends it a prompt, executes a single turn, and
+#   returns the result.  No schedule, no event triggers, no loop.
+#
+# When it runs  : Only when explicitly invoked (API call, CLI, or
+#                  dashboard chat).
+#
+# Deploy        : forgeos deploy examples/adk/reflex-data-analyst.yaml
+# Test          : forgeos invoke reflex-data-analyst "Summarize last week's revenue"
+# ---------------------------------------------------------------
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: reflex-data-analyst
+  description: "On-demand enterprise data analyst. Queries dashboards and knowledge bases to answer data questions in real time."
+  department: analytics
+spec:
+  stack: adk
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: claude-sonnet-4-20250514
+    provider: anthropic
+  tools:
+    - company__get_dashboard
+    - company__search_knowledge
+  system_prompt: |
+    You are an enterprise data analyst running on the Google ADK stack.
+    When a user asks a data question, pull the relevant metrics from the
+    dashboard and cross-reference with the knowledge base.
+    Present findings in clear, concise bullet points with supporting
+    numbers.  If the data is ambiguous, state assumptions explicitly.
+    Always cite the source (dashboard widget or knowledge-base article).

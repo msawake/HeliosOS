@@ -1,0 +1,75 @@
+# ============================================================================
+# ForgeOS Example: Event-Driven Agent — Alert Responder
+# ============================================================================
+#
+# EXECUTION TYPE: event_driven
+#   An event-driven agent subscribes to specific events on the platform's
+#   event bus. It sits idle consuming no resources until one of its trigger
+#   events is published. When that happens, the platform invokes the agent
+#   with the event payload as context. Once the agent finishes processing,
+#   it goes back to waiting.
+#
+# WHEN IT RUNS:
+#   Whenever an "alert.fired" or "cost.exceeded" event is published to the
+#   event bus — for example, by the always-on-monitor agent above, or by
+#   any external system that posts events via the API.
+#
+# DEPLOY:
+#   forgeos deploy examples/forgeos/event-driven-responder.yaml
+#
+# TEST:
+#   # Publish a test event to trigger this agent:
+#   curl -X POST http://localhost:5001/api/events \
+#     -H "Content-Type: application/json" \
+#     -d '{
+#       "event_type": "alert.fired",
+#       "severity": "critical",
+#       "details": "Error rate at 12% on payments service"
+#     }'
+#
+#   # Then check the agent's response:
+#   curl http://localhost:5001/api/agents/alert-responder/history?limit=1
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: alert-responder
+  description: "Event-driven agent that wakes up when alert.fired or cost.exceeded events occur, investigates the issue, and resolves or escalates."
+  department: examples
+spec:
+  stack: forgeos
+  execution_type: event_driven
+  ownership: shared
+  event_triggers:
+    - "alert.fired"
+    - "cost.exceeded"
+  llm:
+    chat_model: gpt-4o
+    provider: openai
+  tools:
+    - company__query_events
+    - company__resolve_event
+    - company__request_approval
+  system_prompt: |
+    You are an incident responder agent. You are invoked automatically when an
+    alert or cost event fires. Follow this runbook:
+
+    1. Read the incoming event payload to understand what triggered the alert.
+    2. Call query_events to pull the last 10 related events for context — look
+       for patterns (is this a recurring issue? did it just start?).
+    3. Assess severity:
+       - If the event is "cost.exceeded": summarize the overage and call
+         request_approval to notify a human for budget sign-off.
+       - If the event is "alert.fired" with severity "warning": attempt to
+         resolve it by calling resolve_event with a remediation note.
+       - If the event is "alert.fired" with severity "critical": call
+         request_approval to escalate to the on-call team with a summary
+         of findings and recommended next steps.
+    4. Always include in your response:
+       - What happened (1 sentence)
+       - Root cause hypothesis (1 sentence)
+       - Action taken (resolved / escalated)
+
+    Be fast and precise. Incident response is time-sensitive.

@@ -1,0 +1,41 @@
+# ---------------------------------------------------------------
+# Scheduled Agent — ADK Compliance Checker
+# ---------------------------------------------------------------
+# Execution type : scheduled
+#   A scheduled agent runs automatically on a cron schedule.  The
+#   platform scheduler fires the agent at the configured time,
+#   the agent performs its task, and then exits until the next run.
+#
+# When it runs  : Every day at 06:00 UTC (cron: "0 6 * * *").
+#
+# Deploy        : forgeos deploy examples/adk/scheduled-compliance-check.yaml
+# Test          : forgeos invoke scheduled-compliance-check --trigger-now
+# ---------------------------------------------------------------
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: scheduled-compliance-check
+  description: "Daily compliance verification agent. Scans knowledge base for policy violations and records audit metrics."
+  department: compliance
+spec:
+  stack: adk
+  execution_type: scheduled
+  ownership: shared
+  schedule: "0 6 * * *"
+  llm:
+    chat_model: claude-sonnet-4-20250514
+    provider: anthropic
+  tools:
+    - company__search_knowledge
+    - company__record_metric
+  system_prompt: |
+    You are a compliance verification agent running on the Google ADK stack.
+    Every morning you perform the following checks:
+    1. Search the knowledge base for recently added or modified policies.
+    2. Verify that each policy has proper approval metadata.
+    3. Flag any documents missing required fields (owner, review date,
+       classification level).
+    4. Record a compliance score metric for the day.
+    Produce a structured summary: total policies checked, passed, failed,
+    and a list of items requiring human review.

@@ -1,0 +1,84 @@
+# ============================================================================
+# CrewAI Example: Autonomous Agent — Market Researcher
+# ============================================================================
+#
+# EXECUTION TYPE: autonomous
+#   An autonomous agent is given a high-level goal and works toward it
+#   independently over multiple iterations. It plans its own steps, executes
+#   them, evaluates progress, and decides when the goal is met. Unlike reflex
+#   agents, it maintains state across iterations and can course-correct.
+#   A max_iterations cap prevents runaway execution.
+#
+# WHEN IT RUNS:
+#   Once started, it loops autonomously (every 5 seconds between iterations)
+#   until the goal is achieved or max_iterations (8) is reached. It must be
+#   explicitly started via deploy or invoke.
+#
+# DEPLOY:
+#   forgeos deploy examples/crewai/autonomous-market-researcher.yaml
+#
+# TEST:
+#   # Start the autonomous run:
+#   curl -X POST http://localhost:5001/api/agents/crew-market-researcher/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Begin your research"}'
+#
+#   # Monitor progress:
+#   forgeos logs crew-market-researcher --follow
+#
+#   # Stop early if needed:
+#   forgeos stop crew-market-researcher
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: crew-market-researcher
+  description: "Autonomous market researcher that independently investigates competitor pricing strategies and produces a comparison report over multiple iterations."
+  department: examples
+spec:
+  stack: crewai
+  execution_type: autonomous
+  goal: "Research competitor pricing strategies and produce a comparison report"
+  ownership: shared
+  llm:
+    chat_model: gpt-4o
+    provider: openai
+  tools:
+    - company__search_knowledge
+    - company__add_decision
+  system_prompt: |
+    You are an autonomous market researcher. Your goal is to research competitor
+    pricing strategies and produce a comprehensive comparison report.
+
+    Work through these phases across your iterations:
+
+    Phase 1 — Discovery (iterations 1-2):
+      Use search_knowledge to gather all available data on competitors, their
+      products, pricing models, and recent changes.
+
+    Phase 2 — Analysis (iterations 3-5):
+      Compare pricing structures: freemium vs. paid, per-seat vs. usage-based,
+      annual vs. monthly. Identify patterns, outliers, and gaps in our own
+      pricing relative to competitors.
+
+    Phase 3 — Synthesis (iterations 6-7):
+      Compile findings into a structured comparison report with:
+      - Executive summary
+      - Competitor-by-competitor breakdown
+      - Pricing model comparison table
+      - Key takeaways and recommendations
+
+    Phase 4 — Decision (iteration 8):
+      Use add_decision to record your final recommendation on pricing
+      adjustments, with supporting evidence.
+
+    At each iteration, state which phase you are in and what you accomplished.
+    If you achieve the goal before max iterations, declare completion early.
+  metadata:
+    crewai_role: "Market Researcher"
+    crewai_goal: "Research competitor pricing strategies and produce a comparison report"
+    crewai_backstory: "You are a meticulous market researcher with deep expertise in competitive intelligence and pricing strategy. You know how to synthesize scattered data points into actionable insights that drive business decisions."
+    max_iterations: 8
+    loop_interval_seconds: 5
