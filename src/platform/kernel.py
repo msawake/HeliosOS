@@ -29,6 +29,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Literal
 
+from src.forgeos_sdk.manifest import read_v2_section
+
 logger = logging.getLogger(__name__)
 
 
@@ -124,8 +126,7 @@ class AdmissionController:
             errors.append(f"Unknown stack: {stack!r}")
 
         # 2. Namespace validation
-        metadata = contract.get("metadata") or {}
-        namespace = metadata.get("_namespace", "default")
+        namespace = read_v2_section(contract, "namespace", "default")
         if not re.match(r"^[a-zA-Z][a-zA-Z0-9_-]{1,63}$", namespace):
             errors.append(f"Invalid namespace: {namespace!r}")
 
@@ -169,7 +170,7 @@ class AdmissionController:
             warnings.append("autonomous agents should set a 'goal' for completion detection")
 
         # 6. Dependencies — verify declared agent deps exist
-        deps = (metadata.get("_dependencies") or {}).get("agents", [])
+        deps = (read_v2_section(contract, "dependencies", {}) or {}).get("agents", [])
         if deps and self._registry:
             for dep in deps:
                 dep_ns = dep.get("namespace", "default")
@@ -228,8 +229,8 @@ class PermissionManager:
         # Check wildcard whitelist
         allowed = agent.tools or []
         # Check explicit deny list from capabilities
-        capabilities = (agent.metadata or {}).get("_capabilities", {})
-        tool_acl = capabilities.get("tools", {})
+        capabilities = read_v2_section(agent, "capabilities", {}) or {}
+        tool_acl = capabilities.get("tools", {}) or {}
         denied_list = tool_acl.get("denied", [])
         if any(self._matches(tool_name, d) for d in denied_list):
             return KernelDecision.deny(
@@ -316,6 +317,13 @@ class BudgetManager:
     def __init__(self, usage_enforcer=None, registry=None):
         self._usage_enforcer = usage_enforcer
         self._registry = registry
+        # Phase 1 #3 — two-phase reservation.
+        # Each ticket records the estimated cost/tokens held against an
+        # agent's daily budget. ``commit`` trues up to actual; ``release``
+        # gives the reservation back. Reservations are in-process state
+        # today; durable accounting comes with the Store[T] work in Phase 2.
+        self._reservations: dict[str, dict] = {}   # ticket -> {...}
+        self._reserved_by_agent: dict[str, float] = {}  # agent_id -> total reserved USD
 
     def check_budget(
         self,
@@ -323,16 +331,21 @@ class BudgetManager:
         estimated_cost_usd: float | None = None,
         estimated_tokens: int | None = None,
     ) -> KernelDecision:
-        """Check if the proposed action fits within budget."""
+        """Check if the proposed action fits within budget.
+
+        Counts outstanding reservations against the agent's daily cap so a
+        burst of concurrent tool calls cannot all pass the check
+        independently.
+        """
         if not self._registry:
             return KernelDecision.allow(reason="no registry; permissive default")
         agent = self._registry.get(agent_id)
         if not agent:
             return KernelDecision.deny(reason=f"Agent {agent_id} not found")
 
-        # Pull budget config from metadata (AgentOS v2 boundaries)
-        boundaries = (agent.metadata or {}).get("_boundaries", {})
-        budgets = boundaries.get("budgets", {})
+        # Pull budget config (v2 boundaries, read from first-class or legacy bag)
+        boundaries = read_v2_section(agent, "boundaries", {}) or {}
+        budgets = boundaries.get("budgets", {}) or {}
         daily_usd = budgets.get("daily_usd")
         per_task_usd = budgets.get("per_task_usd")
 
@@ -345,24 +358,143 @@ class BudgetManager:
                 estimated_cost_usd=estimated_cost_usd,
                 per_task_usd=per_task_usd,
             )
-        # Daily cost check (best-effort via usage enforcer)
-        if daily_usd and self._usage_enforcer:
-            try:
-                summary = self._usage_enforcer.get_monthly_summary(
-                    (agent.metadata or {}).get("tenant_id", "default")
-                )
-                today_cost = summary.get("today_cost_usd", 0.0)
-                if today_cost + (estimated_cost_usd or 0) > daily_usd:
-                    return KernelDecision.deny(
-                        reason=(
-                            f"Daily budget exceeded: ${today_cost:.2f} "
-                            f"+ ${estimated_cost_usd or 0:.2f} > ${daily_usd:.2f}"
-                        ),
+        # Daily cost check (best-effort via usage enforcer + outstanding reservations)
+        if daily_usd:
+            today_cost = 0.0
+            if self._usage_enforcer:
+                try:
+                    summary = self._usage_enforcer.get_monthly_summary(
+                        (agent.metadata or {}).get("tenant_id", "default")
                     )
-            except Exception as e:
-                logger.debug("Budget check skipped: %s", e)
+                    today_cost = float(summary.get("today_cost_usd", 0.0))
+                except Exception as e:
+                    logger.debug("Budget check skipped: %s", e)
+            reserved = self._reserved_by_agent.get(agent_id, 0.0)
+            projected = today_cost + reserved + (estimated_cost_usd or 0)
+            if projected > daily_usd:
+                return KernelDecision(
+                    action="rate_limit",
+                    reason=(
+                        f"Daily budget exceeded: spent ${today_cost:.2f} + "
+                        f"reserved ${reserved:.2f} + estimated "
+                        f"${estimated_cost_usd or 0:.2f} > ${daily_usd:.2f}"
+                    ),
+                    details={
+                        "today_cost_usd": today_cost,
+                        "reserved_usd": reserved,
+                        "estimated_cost_usd": estimated_cost_usd or 0,
+                        "daily_usd": daily_usd,
+                    },
+                )
 
         return KernelDecision.allow(reason="within budget")
+
+    # ---- Two-phase reservation (Phase 1 #3) ------------------------------
+
+    def reserve(
+        self,
+        agent_id: str,
+        estimated_cost_usd: float | None = None,
+        estimated_tokens: int | None = None,
+    ) -> tuple[str | None, KernelDecision]:
+        """Reserve an estimated cost against the agent's daily budget.
+
+        Returns ``(ticket, decision)``. When ``decision.allowed`` is True,
+        ``ticket`` is a handle the caller passes to :meth:`commit` (with
+        the true cost) or :meth:`release` (to undo the reservation). When
+        the decision is denied or ``rate_limit``, ``ticket`` is ``None``.
+
+        This closes the race where concurrent tool calls all pass
+        ``check_budget`` independently: each reservation is deducted up
+        front and released only after commit.
+        """
+        # Check first (counts prior reservations against the cap).
+        decision = self.check_budget(
+            agent_id,
+            estimated_cost_usd=estimated_cost_usd,
+            estimated_tokens=estimated_tokens,
+        )
+        if decision.action != "allow":
+            return None, decision
+
+        ticket = uuid.uuid4().hex[:12]
+        reserved_usd = float(estimated_cost_usd or 0.0)
+        self._reservations[ticket] = {
+            "agent_id": agent_id,
+            "reserved_usd": reserved_usd,
+            "reserved_tokens": int(estimated_tokens or 0),
+            "issued_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._reserved_by_agent[agent_id] = (
+            self._reserved_by_agent.get(agent_id, 0.0) + reserved_usd
+        )
+        return ticket, KernelDecision.allow(
+            reason="reserved",
+            ticket=ticket,
+            reserved_usd=reserved_usd,
+        )
+
+    def commit(
+        self,
+        ticket: str,
+        actual_cost_usd: float | None = None,
+        actual_tokens: int | None = None,
+    ) -> KernelDecision:
+        """Finalize a reservation with the observed actual cost.
+
+        Releases the reserved amount and records the actual spend via the
+        underlying usage enforcer when one is wired. Idempotent: a missing
+        or already-committed ticket returns ``allow`` with a note.
+        """
+        record = self._reservations.pop(ticket, None)
+        if record is None:
+            return KernelDecision.allow(reason="ticket unknown or already settled", ticket=ticket)
+
+        agent_id = record["agent_id"]
+        reserved = record["reserved_usd"]
+        self._reserved_by_agent[agent_id] = max(
+            0.0, self._reserved_by_agent.get(agent_id, 0.0) - reserved
+        )
+
+        # Record actual usage against the usage enforcer if one is wired.
+        if self._usage_enforcer and actual_cost_usd is not None:
+            try:
+                if hasattr(self._usage_enforcer, "record_cost"):
+                    agent = self._registry.get(agent_id) if self._registry else None
+                    tenant = (
+                        (agent.metadata or {}).get("tenant_id", "default") if agent else "default"
+                    )
+                    self._usage_enforcer.record_cost(
+                        tenant_id=tenant,
+                        agent_id=agent_id,
+                        cost_usd=float(actual_cost_usd),
+                        tokens=int(actual_tokens or 0),
+                    )
+            except Exception:
+                logger.debug("usage_enforcer.record_cost raised — commit continues")
+
+        return KernelDecision.allow(
+            reason="committed",
+            ticket=ticket,
+            reserved_usd=reserved,
+            actual_cost_usd=actual_cost_usd or 0.0,
+        )
+
+    def release(self, ticket: str) -> KernelDecision:
+        """Release an un-consumed reservation (error paths, early aborts)."""
+        record = self._reservations.pop(ticket, None)
+        if record is None:
+            return KernelDecision.allow(reason="ticket unknown or already settled", ticket=ticket)
+        agent_id = record["agent_id"]
+        reserved = record["reserved_usd"]
+        self._reserved_by_agent[agent_id] = max(
+            0.0, self._reserved_by_agent.get(agent_id, 0.0) - reserved
+        )
+        return KernelDecision.allow(reason="released", ticket=ticket, reserved_usd=reserved)
+
+    def reserved_for(self, agent_id: str) -> float:
+        """Total outstanding reservations (USD) for an agent."""
+        return self._reserved_by_agent.get(agent_id, 0.0)
 
 
 class PolicyEngine:
@@ -457,8 +589,8 @@ class DataBoundaryManager:
         if not agent:
             return KernelDecision.deny(reason=f"Agent {agent_id} not found")
 
-        boundaries = (agent.metadata or {}).get("_boundaries", {})
-        data = boundaries.get("data", {})
+        boundaries = read_v2_section(agent, "boundaries", {}) or {}
+        data = boundaries.get("data", {}) or {}
         allowed = data.get("allowed_namespaces") or []
         blocked = data.get("blocked_namespaces") or []
 
@@ -481,7 +613,7 @@ class DataBoundaryManager:
         agent = self._registry.get(agent_id)
         if not agent:
             return "detect"
-        boundaries = (agent.metadata or {}).get("_boundaries", {})
+        boundaries = read_v2_section(agent, "boundaries", {}) or {}
         return (boundaries.get("data") or {}).get("pii_policy", "detect")
 
 
@@ -504,6 +636,7 @@ class Kernel:
         a2a_handler=None,
         usage_enforcer=None,
         audit_log=None,
+        capability_store=None,
     ):
         self._registry = registry
         self._audit_log = audit_log
@@ -522,6 +655,78 @@ class Kernel:
         )
         self.policies = PolicyEngine()
         self.data = DataBoundaryManager(registry=registry)
+        # Phase 2 #2 — capability tokens. Runtime grants that short-circuit
+        # the ACL path when a valid token is presented.
+        from src.platform.capabilities import CapabilityManager
+        self.capabilities_mgr = CapabilityManager(store=capability_store)
+        self._pipeline = None  # lazy-built on first syscall() call
+
+    # ---- Capability token convenience (Phase 2 #2) ----------------------
+
+    def issue_capability(self, **kwargs):
+        """Delegate to :class:`CapabilityManager.issue`. See its docstring."""
+        return self.capabilities_mgr.issue(**kwargs)
+
+    def revoke_capability(self, token_id: str) -> bool:
+        return self.capabilities_mgr.revoke(token_id)
+
+    def authorize_capability(self, **kwargs) -> bool:
+        return self.capabilities_mgr.authorize(**kwargs)
+
+    # ---- Syscall pipeline (Phase 1 #2) ----------------------------------
+
+    def _build_pipeline(self):
+        """Wire the default syscall pipeline against existing subsystems."""
+        from src.platform.syscall import (
+            SyscallPipeline,
+            make_audit_stage,
+            make_boundary_stage,
+            make_capability_stage,
+            make_policy_stage,
+            make_quota_stage,
+        )
+
+        return SyscallPipeline(
+            stages={
+                "capability": make_capability_stage(self.permissions),
+                "quota": make_quota_stage(self.budgets),
+                "policy": make_policy_stage(self.policies),
+                "boundary": make_boundary_stage(self.data),
+                # `dispatch` is caller-supplied per syscall — wired below.
+                # `audit` delegates to whatever audit object the caller gave us.
+                "audit": make_audit_stage(self._audit_log) if self._audit_log else None,
+            }
+        )
+
+    def syscall(
+        self,
+        verb: str,
+        subject: str,
+        object: str = "",
+        args: dict | None = None,
+        dispatcher=None,
+    ):
+        """Run a single syscall through the admission pipeline.
+
+        This is the unified entry point called out in the plan. Existing
+        ``check_tool_call`` / ``check_a2a`` / ``check_data_access`` methods
+        still work and continue to be the back-compat path for
+        pre-syscall callers; new code should prefer :meth:`syscall`.
+
+        Parameters mirror the :class:`Syscall` dataclass. Returns a
+        :class:`KernelDecision`. Callers are responsible for consulting
+        ``decision.allowed`` / ``decision.denied`` before acting.
+        """
+        from src.platform.syscall import Syscall, make_dispatch_stage
+
+        if self._pipeline is None:
+            self._pipeline = self._build_pipeline()
+
+        # Inject (or replace) the per-call dispatcher stage.
+        self._pipeline.set_stage("dispatch", make_dispatch_stage(dispatcher))
+
+        call = Syscall(verb=verb, subject=subject, object=object, args=args or {})
+        return self._pipeline.run(call)
 
     # ---- High-level composite checks ------------------------------------
 
@@ -549,7 +754,7 @@ class Kernel:
         # 3. Policy evaluation
         agent = self._registry.get(agent_id) if self._registry else None
         if agent:
-            policy_refs = (agent.metadata or {}).get("_governance", {}).get("policies", [])
+            policy_refs = (read_v2_section(agent, "governance", {}) or {}).get("policies", [])
             if policy_refs:
                 context = {
                     "tool_name": tool_name,

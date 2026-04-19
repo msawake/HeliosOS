@@ -24,6 +24,13 @@ from stacks.base import (
     ExecutionType,
     OwnershipType,
 )
+from src.platform.checkpoint import (
+    Checkpoint,
+    CheckpointStore,
+    LoopProgress,
+    MemoryCheckpointStore,
+)
+from src.platform.process import AgentIdentity, Phase, ProcessTable
 from src.platform.registry import AgentRegistry
 from src.platform.scheduler import SchedulerEngine
 from src.platform.event_bus import Event, EventBus
@@ -45,14 +52,92 @@ class PlatformExecutor:
         scheduler: SchedulerEngine,
         event_bus: EventBus,
         agents_root: Path | str = AGENTS_ROOT,
+        process_table: ProcessTable | None = None,
+        checkpoint_store: CheckpointStore | None = None,
     ):
         self.registry = registry
         self.scheduler = scheduler
         self.event_bus = event_bus
         self.agents_root = Path(agents_root)
+        self.process_table = process_table or ProcessTable(registry=registry)
+        # Late-bind registry so the table can mirror phase -> legacy status.
+        if self.process_table._registry is None:
+            self.process_table.attach_registry(registry)
+        self.checkpoint_store: CheckpointStore = checkpoint_store or MemoryCheckpointStore()
         self._adapters: dict[str, AgentStackAdapter] = {}
         self._autonomous_tasks: dict[str, asyncio.Task] = {}
         self._session_locks: dict[str, asyncio.Lock] = {}  # per-session_id locks
+
+    def _register_process(self, agent_def: AgentDefinition) -> None:
+        """Create a process-table entry for a freshly-registered agent."""
+        identity = AgentIdentity(
+            pid=agent_def.agent_id,
+            name=agent_def.name,
+            namespace=agent_def.namespace,
+            owner_id=agent_def.owner_id,
+            tenant_id=(agent_def.metadata or {}).get("tenant_id", "default"),
+            parent_pid=(agent_def.metadata or {}).get("parent_pid"),
+        )
+        try:
+            self.process_table.register(identity, spec_ref=agent_def.agent_id, phase=Phase.ADMITTED)
+        except ValueError:
+            # Already registered (e.g. recover() after boot). Ensure phase at least reflects ADMITTED.
+            self.process_table.transition(agent_def.agent_id, Phase.ADMITTED, force=True)
+
+    def _save_checkpoint(
+        self,
+        agent_id: str,
+        *,
+        step_index: int,
+        max_iterations: int | None = None,
+        crash_count: int = 0,
+        goal: str | None = None,
+        last_output_summary: str | None = None,
+    ) -> None:
+        """Snapshot the process at a stable loop boundary."""
+        proc = self.process_table.get(agent_id)
+        if proc is None:
+            return
+        progress = LoopProgress(
+            step_index=step_index,
+            max_iterations=max_iterations,
+            crash_count=crash_count,
+            goal=goal,
+            last_output_summary=last_output_summary,
+        )
+        checkpoint = Checkpoint.from_process(proc, loop_progress=progress)
+        try:
+            self.checkpoint_store.save(checkpoint)
+        except Exception:
+            # Checkpoint failures must not kill the agent — they only degrade recovery.
+            logger.exception("Failed to save checkpoint for %s", agent_id)
+
+    def _resume_point(self, agent_id: str) -> dict[str, int]:
+        """Load the saved resume point (step/crash) for an autonomous loop.
+
+        Returns zeroed defaults if no checkpoint exists. Silently discards
+        any checkpoint whose generation no longer matches the live process,
+        since that indicates a spec change that invalidates the snapshot.
+        """
+        try:
+            checkpoint = self.checkpoint_store.load(agent_id)
+        except Exception:
+            logger.exception("Failed to load checkpoint for %s", agent_id)
+            return {"step_index": 0, "crash_count": 0}
+        if not checkpoint:
+            return {"step_index": 0, "crash_count": 0}
+        proc = self.process_table.get(agent_id)
+        if proc is not None and checkpoint.generation != proc.identity.generation:
+            logger.info(
+                "Discarding stale checkpoint for %s (gen=%d vs proc=%d)",
+                agent_id, checkpoint.generation, proc.identity.generation,
+            )
+            self.checkpoint_store.delete(agent_id)
+            return {"step_index": 0, "crash_count": 0}
+        return {
+            "step_index": checkpoint.loop_progress.step_index,
+            "crash_count": checkpoint.loop_progress.crash_count,
+        }
 
     def register_adapter(self, adapter: AgentStackAdapter) -> None:
         self._adapters[adapter.stack_name] = adapter
@@ -98,6 +183,7 @@ class PlatformExecutor:
         agent_dir = self._resolve_agent_dir(agent_def)
         agent_def.config_path = str(agent_dir)
         agent_id = self.registry.register(agent_def)
+        self._register_process(agent_def)
 
         try:
             # Step 2: Scaffold files
@@ -109,13 +195,19 @@ class PlatformExecutor:
                 file_path.write_text(content)
 
             # Step 3: Initialize in adapter
+            self.process_table.transition(agent_id, Phase.STARTING)
             await adapter.create_agent(agent_def)
 
             # Step 4: Wire execution lifecycle
             await self._wire_execution(agent_def)
+            self.process_table.transition(agent_id, Phase.RUNNING)
 
-        except Exception:
+        except Exception as exc:
             # Rollback: unregister from DB
+            self.process_table.transition(
+                agent_id, Phase.FAILED, reason=f"deploy failed: {exc}", force=True
+            )
+            self.process_table.unregister(agent_id)
             self.registry.unregister(agent_id)
             # Cleanup files if written
             if agent_dir.exists():
@@ -196,9 +288,21 @@ class PlatformExecutor:
                     history = session.messages
 
             self.registry.set_status(agent_id, AgentStatus.RUNNING)
+            self.process_table.heartbeat(agent_id)
             try:
                 result = await adapter.invoke(agent_id, prompt, context, history=history)
                 self.registry.set_status(agent_id, result.status)
+
+                # Record runtime accounting on the process. Invoke-level
+                # IDLE/COMPLETED/FAILED does not change the process phase —
+                # only start/stop/wire_execution do.
+                self.process_table.record_usage(
+                    agent_id,
+                    tokens_out=result.tokens_used or 0,
+                    tool_calls=len(result.tool_calls or []),
+                    wallclock_ms=result.elapsed_ms or 0.0,
+                )
+                self.process_table.heartbeat(agent_id)
 
                 # Save updated conversation to session store
                 if session_id and hasattr(self, '_session_store') and self._session_store:
@@ -247,7 +351,15 @@ class PlatformExecutor:
 
         self.scheduler.remove_job(agent_id)
         self.event_bus.unsubscribe(agent_id)
+        # DRAINING lets sideband logic (FAILED, evicted) win over a normal stop.
+        self.process_table.transition(agent_id, Phase.DRAINING)
         self.registry.set_status(agent_id, AgentStatus.STOPPED)
+        self.process_table.transition(agent_id, Phase.STOPPED)
+        # Stop is a clean termination — drop any saved checkpoint.
+        try:
+            self.checkpoint_store.delete(agent_id)
+        except Exception:
+            logger.debug("checkpoint delete on stop failed for %s", agent_id)
         logger.info("Stopped agent %s", agent_id)
         return True
 
@@ -258,6 +370,11 @@ class PlatformExecutor:
             agent_dir = Path(agent_def.config_path)
             if agent_dir.exists():
                 shutil.rmtree(agent_dir)
+        self.process_table.unregister(agent_id)
+        try:
+            self.checkpoint_store.delete(agent_id)
+        except Exception:
+            logger.debug("checkpoint delete on undeploy failed for %s", agent_id)
         self.registry.unregister(agent_id)
         logger.info("Undeployed agent %s", agent_id)
         return True
@@ -266,7 +383,8 @@ class PlatformExecutor:
         agent_def = self.registry.get(agent_id)
         if not agent_def:
             return {"agent_id": agent_id, "error": "not found"}
-        return {
+        proc = self.process_table.get(agent_id)
+        out = {
             "agent_id": agent_id,
             "name": agent_def.name,
             "stack": agent_def.stack,
@@ -274,13 +392,36 @@ class PlatformExecutor:
             "ownership": agent_def.ownership.value,
             "status": self.registry.get_status(agent_id).value,
         }
+        if proc is not None:
+            out["phase"] = proc.phase.value
+            out["resource_usage"] = proc.resource_usage.to_dict()
+            out["last_error"] = proc.last_error
+        return out
 
     def list_agents(self, **filters) -> list[dict]:
         agents = self.registry.query(**filters) if filters else self.registry.list_all()
-        return [
-            {**a.to_dict(), "status": self.registry.get_status(a.agent_id).value}
-            for a in agents
-        ]
+        out = []
+        for a in agents:
+            entry: dict = {**a.to_dict(), "status": self.registry.get_status(a.agent_id).value}
+            proc = self.process_table.get(a.agent_id)
+            if proc is not None:
+                entry["phase"] = proc.phase.value
+                entry["resource_usage"] = proc.resource_usage.to_dict()
+            out.append(entry)
+        return out
+
+    def ps(self) -> list[dict]:
+        """Return a ``ps(1)``-style view of the process table.
+
+        One row per agent process with stable PID, phase, tenant, parent,
+        cumulative tokens/dollars/tool-calls/wallclock, heartbeat, and last
+        error. Intended for CLI (``forgeos ps``) and dashboard consumption.
+        """
+        return self.process_table.ps()
+
+    def process_summary(self) -> dict:
+        """Return a histogram of process phases (``{phase: count, total: N}``)."""
+        return self.process_table.summary()
 
     async def _wire_execution(self, agent_def: AgentDefinition) -> None:
         """Set up the execution lifecycle based on execution type."""
@@ -341,12 +482,24 @@ class PlatformExecutor:
         sleep_between = agent_def.metadata.get("loop_interval_seconds", 30)
         restart_on_failure = bool(agent_def.metadata.get("restart_on_failure", False))
         max_crashes = int(agent_def.metadata.get("max_crashes_before_give_up", 3))
-        crash_count = 0
+
+        # Resume from checkpoint if one exists for this PID — this is how
+        # autonomous agents survive a platform restart. Step index is the
+        # iteration we will *begin* on after restore.
+        resume_point = self._resume_point(agent_id)
+        start_iter = resume_point["step_index"]
+        crash_count = resume_point["crash_count"]
         completed = False
 
-        logger.info("Starting autonomous loop for %s: goal=%s", agent_id, goal)
+        if start_iter > 0:
+            logger.info(
+                "Resuming autonomous loop for %s from checkpoint: step=%d crash=%d",
+                agent_id, start_iter, crash_count,
+            )
+        else:
+            logger.info("Starting autonomous loop for %s: goal=%s", agent_id, goal)
 
-        for i in range(max_iterations):
+        for i in range(start_iter, max_iterations):
             # Check for external stop (e.g., via executor.stop_agent)
             if self.registry.get_status(agent_id) == AgentStatus.STOPPED:
                 logger.info("Autonomous loop for %s stopped externally", agent_id)
@@ -356,6 +509,17 @@ class PlatformExecutor:
             try:
                 result = await self.invoke(agent_id, prompt)
                 crash_count = 0  # reset on successful invoke
+
+                # Persist progress at the iteration boundary so a restart
+                # after this point resumes at i+1 rather than replaying.
+                self._save_checkpoint(
+                    agent_id,
+                    step_index=i + 1,
+                    max_iterations=max_iterations,
+                    crash_count=crash_count,
+                    goal=goal,
+                    last_output_summary=(result.output or "")[:256] or None,
+                )
 
                 if result.status == AgentStatus.COMPLETED:
                     logger.info("Agent %s reached goal after %d iterations", agent_id, i + 1)
@@ -380,10 +544,25 @@ class PlatformExecutor:
                     "Autonomous loop crash (%d/%d) for agent %s",
                     crash_count, max_crashes, agent_id,
                 )
+                # Record the crash in the checkpoint so a restart doesn't
+                # reset the counter and mask a misbehaving agent.
+                self._save_checkpoint(
+                    agent_id,
+                    step_index=i,
+                    max_iterations=max_iterations,
+                    crash_count=crash_count,
+                    goal=goal,
+                )
                 if crash_count >= max_crashes:
                     logger.error(
                         "Agent %s quarantined after %d consecutive crashes",
                         agent_id, crash_count,
+                    )
+                    self.process_table.transition(
+                        agent_id,
+                        Phase.QUARANTINED,
+                        reason=f"{crash_count} consecutive crashes",
+                        force=True,
                     )
                     self.registry.set_status(agent_id, AgentStatus.QUARANTINED)
                     return
@@ -396,6 +575,8 @@ class PlatformExecutor:
 
         if completed:
             self.registry.set_status(agent_id, AgentStatus.COMPLETED)
+            # Terminal success — drop the checkpoint.
+            self.checkpoint_store.delete(agent_id)
         else:
             # Iterations exhausted without a terminal state — mark IDLE so
             # the agent can be re-invoked via the regular API.
@@ -448,11 +629,20 @@ class PlatformExecutor:
                     continue
 
             try:
+                self._register_process(agent_def)
+                self.process_table.transition(agent_def.agent_id, Phase.STARTING)
                 await adapter.create_agent(agent_def)
                 await self._wire_execution(agent_def)
+                self.process_table.transition(agent_def.agent_id, Phase.RUNNING)
                 recovered += 1
-            except Exception:
+            except Exception as exc:
                 logger.exception("Failed to recover agent %s", agent_def.agent_id)
+                self.process_table.transition(
+                    agent_def.agent_id,
+                    Phase.FAILED,
+                    reason=f"recover failed: {exc}",
+                    force=True,
+                )
         if recovered or skipped or stranded:
             logger.info(
                 "Recovered %d agents, skipped %d (terminal), stranded %d (no adapter) from persistent store",

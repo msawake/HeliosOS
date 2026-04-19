@@ -417,6 +417,113 @@ class AgentManifest(BaseModel):
 
     # ---- Wire-format converters ------------------------------------------
 
+    # ---- Canonical structured representation ----------------------------
+    #
+    # The plan calls for deleting the ``_memory`` / ``_guardrails`` / etc.
+    # metadata-bag keys entirely. Doing so in one shot would break every
+    # consumer that reads those keys (dashboard, kernel admission, A2A
+    # handler, persistence — 16 files today). The consolidation is done
+    # in two steps:
+    #
+    #   1. Introduce ``canonical_dict()`` — a structured output where v2
+    #      sections are first-class top-level keys (no ``_memory`` bag,
+    #      etc.). New consumers read from this shape.
+    #   2. Follow-up: migrate the 16 readers off the bag, then delete
+    #      ``to_deploy_request()``'s bag-packing.
+    #
+    # ``to_deploy_request()`` below keeps the bag for backward compatibility
+    # until step 2 lands.
+
+    def canonical_dict(self, base_path: Path | None = None) -> dict:
+        """Return a structured, lossless representation of the manifest.
+
+        Shape (top-level keys):
+
+            apiVersion, kind, metadata, spec
+
+        Where ``spec`` contains v2 sections as first-class nested dicts
+        (``memory``, ``guardrails``, ``runtime``, ``lifecycle``,
+        ``capabilities``, ``boundaries``, ``triggers``, ``governance``,
+        ``dependencies``, ``observability``) rather than being smuggled
+        through ``_memory``/``_guardrails``/... bag keys.
+
+        This is the new reader-facing representation. ``to_deploy_request``
+        remains wire-compatible with existing consumers during migration.
+        """
+        prompt_text = ""
+        if isinstance(self.spec.system_prompt, str):
+            prompt_text = self.spec.system_prompt
+        elif isinstance(self.spec.system_prompt, SystemPrompt):
+            prompt_text = self.spec.system_prompt.resolve(base_path)
+
+        effective_stack = self.spec.runtime.framework if self.spec.runtime else self.spec.stack
+        effective_exec_type = (
+            self.spec.lifecycle.type if self.spec.lifecycle else self.spec.execution_type
+        )
+        effective_schedule = (
+            self.spec.lifecycle.schedule
+            if self.spec.lifecycle and self.spec.lifecycle.schedule
+            else self.spec.schedule
+        )
+        effective_event_triggers = (
+            self.spec.lifecycle.event_triggers
+            if self.spec.lifecycle and self.spec.lifecycle.event_triggers
+            else self.spec.event_triggers
+        )
+        effective_goal = (
+            self.spec.lifecycle.goal
+            if self.spec.lifecycle and self.spec.lifecycle.goal
+            else self.spec.goal
+        )
+        if self.spec.capabilities and self.spec.capabilities.tools:
+            effective_tools = list(self.spec.capabilities.tools.allowed)
+        else:
+            effective_tools = list(self.spec.tools)
+
+        spec_out: dict[str, Any] = {
+            "stack": effective_stack,
+            "execution_type": effective_exec_type,
+            "ownership": self.spec.ownership,
+            "owner_id": self.spec.owner_id or None,
+            "llm": self.spec.llm.model_dump(),
+            "tools": effective_tools,
+            "schedule": effective_schedule,
+            "event_triggers": list(effective_event_triggers),
+            "goal": effective_goal,
+            "system_prompt": prompt_text,
+            # Optional user-defined metadata dict (NOT the legacy bag).
+            "metadata": dict(self.spec.metadata),
+        }
+
+        # v2 sections as first-class keys — no ``_memory`` smuggling.
+        if self.spec.memory:
+            spec_out["memory"] = self.spec.memory.model_dump()
+        if self.spec.guardrails:
+            spec_out["guardrails"] = self.spec.guardrails.model_dump()
+        if self.spec.observability:
+            spec_out["observability"] = self.spec.observability.model_dump()
+        if self.spec.runtime:
+            spec_out["runtime"] = self.spec.runtime.model_dump()
+        if self.spec.lifecycle:
+            spec_out["lifecycle"] = self.spec.lifecycle.model_dump()
+        if self.spec.capabilities:
+            spec_out["capabilities"] = self.spec.capabilities.model_dump()
+        if self.spec.boundaries:
+            spec_out["boundaries"] = self.spec.boundaries.model_dump()
+        if self.spec.triggers:
+            spec_out["triggers"] = [t.model_dump() for t in self.spec.triggers]
+        if self.spec.governance:
+            spec_out["governance"] = self.spec.governance.model_dump()
+        if self.spec.dependencies:
+            spec_out["dependencies"] = self.spec.dependencies.model_dump()
+
+        return {
+            "apiVersion": self.apiVersion,
+            "kind": self.kind,
+            "metadata": self.metadata.model_dump(),
+            "spec": spec_out,
+        }
+
     def to_deploy_request(self, base_path: Path | None = None) -> dict:
         """
         Convert to the POST /api/platform/agents request body.
@@ -424,6 +531,11 @@ class AgentManifest(BaseModel):
         Bridges rich manifests (v2 AgentOS) to the flat API the platform accepts.
         V2 fields (lifecycle, capabilities, boundaries, etc.) are flattened into
         the corresponding v1 fields and archived in metadata for round-trip.
+
+        DEPRECATED DIRECTION: the ``_memory`` / ``_guardrails`` / etc. bag
+        keys below are read by 16 files today. New readers should consume
+        :meth:`canonical_dict` instead. This method stays wire-compatible
+        until those readers migrate.
         """
         # Resolve system prompt to plain text
         prompt_text = ""
@@ -499,3 +611,78 @@ class AgentManifest(BaseModel):
             "system_prompt": prompt_text,
             "metadata": extra_metadata,
         }
+
+
+# ---------------------------------------------------------------------------
+# V2-section reader — transparent access to v2 fields during migration
+# ---------------------------------------------------------------------------
+
+# Mapping from v2 section name to the legacy metadata-bag key.
+_V2_BAG_KEYS: dict[str, str] = {
+    "memory": "_memory",
+    "guardrails": "_guardrails",
+    "observability": "_observability",
+    "runtime": "_runtime",
+    "lifecycle": "_lifecycle",
+    "capabilities": "_capabilities",
+    "boundaries": "_boundaries",
+    "triggers": "_triggers",
+    "governance": "_governance",
+    "dependencies": "_dependencies",
+    "namespace": "_namespace",
+    "agent_version": "_agent_version",
+    "labels": "_labels",
+    "annotations": "_annotations",
+}
+
+
+def read_v2_section(
+    source: dict | Any,
+    section: str,
+    default: Any = None,
+) -> Any:
+    """Read a v2 section from either the canonical shape or the legacy bag.
+
+    Accepts:
+      * a dict (raw deploy-request dict or manifest.spec dict)
+      * any object with a ``metadata`` attribute (e.g. ``AgentDefinition``)
+
+    The reader checks, in order:
+      1. ``source[section]`` or ``source.section`` (canonical first-class)
+      2. ``source["metadata"][_bag_key]`` or ``source.metadata[_bag_key]``
+
+    Returns ``default`` if neither is present.
+
+    This is the single chokepoint for v2 reads during the bag→canonical
+    migration. Consumers that call this helper become automatically
+    compatible with both shapes, and the helper gives us a single place
+    to emit a deprecation warning once the bag is ready to be deleted.
+    """
+    if section not in _V2_BAG_KEYS:
+        raise KeyError(f"unknown v2 section: {section!r}")
+
+    bag_key = _V2_BAG_KEYS[section]
+
+    # Source is a plain dict — try first-class at this level.
+    if isinstance(source, dict):
+        if section in source and source[section] is not None:
+            return source[section]
+        metadata = source.get("metadata") or {}
+        if isinstance(metadata, dict) and bag_key in metadata:
+            return metadata[bag_key]
+        # Nested under spec (canonical manifest dict)
+        spec = source.get("spec")
+        if isinstance(spec, dict):
+            if section in spec and spec[section] is not None:
+                return spec[section]
+        return default
+
+    # Source is an object (e.g. AgentDefinition).
+    if hasattr(source, section):
+        value = getattr(source, section)
+        if value is not None:
+            return value
+    metadata = getattr(source, "metadata", None) or {}
+    if isinstance(metadata, dict) and bag_key in metadata:
+        return metadata[bag_key]
+    return default
