@@ -335,3 +335,78 @@ class TestAutonomousCrashRecovery:
         await executor.recover()
         # After recovery, REFLEX agent should be back to IDLE
         assert executor.registry.get_status(aid) == AgentStatus.IDLE
+
+
+def _make_named_agent(name: str, **kwargs) -> AgentDefinition:
+    """Variant of _make_agent that allows overriding the agent name."""
+    defaults = {
+        "stack": "forgeos",
+        "execution_type": ExecutionType.REFLEX,
+        "ownership": OwnershipType.SHARED,
+        "description": "Test agent",
+    }
+    defaults.update(kwargs)
+    return AgentDefinition(name=name, **defaults)
+
+
+class TestProcessTableWiring:
+    """Verify the process table tracks lifecycle phases, resource accounting, and ps()."""
+
+    async def test_deploy_registers_process_at_running(self, executor):
+        from src.platform.process import Phase
+        agent = _make_named_agent("proc-alpha")
+        aid = await executor.deploy(agent)
+        proc = executor.process_table.get(aid)
+        assert proc is not None
+        assert proc.phase is Phase.RUNNING
+        assert proc.identity.pid == aid
+        assert proc.identity.name == "proc-alpha"
+
+    async def test_invoke_accumulates_resource_usage(self, executor):
+        agent = _make_named_agent("proc-invoke")
+        aid = await executor.deploy(agent)
+        before = executor.process_table.get(aid).resource_usage
+        assert before.wallclock_ms == 0.0
+        await executor.invoke(aid, "hello")
+        after = executor.process_table.get(aid).resource_usage
+        # elapsed_ms may be tiny in simulation but must be recorded, and heartbeat set
+        assert after.wallclock_ms >= before.wallclock_ms
+        assert after.last_heartbeat_at is not None
+
+    async def test_stop_transitions_to_stopped(self, executor):
+        from src.platform.process import Phase
+        agent = _make_named_agent("proc-stop")
+        aid = await executor.deploy(agent)
+        await executor.stop_agent(aid)
+        proc = executor.process_table.get(aid)
+        assert proc is not None and proc.phase is Phase.STOPPED
+        # legacy status also mirrors STOPPED per the terminal-only mirror policy
+        assert executor.registry.get_status(aid) == AgentStatus.STOPPED
+
+    async def test_undeploy_unregisters_process(self, executor):
+        agent = _make_named_agent("proc-undeploy")
+        aid = await executor.deploy(agent)
+        await executor.undeploy(aid)
+        assert executor.process_table.get(aid) is None
+
+    async def test_ps_lists_deployed_processes(self, executor):
+        agent = _make_named_agent("proc-ps-1")
+        agent2 = _make_named_agent("proc-ps-2")
+        await executor.deploy(agent)
+        await executor.deploy(agent2)
+        rows = executor.ps()
+        names = {r["name"] for r in rows}
+        assert "default/proc-ps-1" in names
+        assert "default/proc-ps-2" in names
+        # every row exposes the canonical fields
+        for r in rows:
+            assert {"pid", "phase", "tenant", "tokens", "dollars", "tool_calls"}.issubset(r.keys())
+
+    async def test_process_summary_counts_running(self, executor):
+        agent = _make_named_agent("proc-summary")
+        await executor.deploy(agent)
+        summary = executor.process_table.summary()
+        # deployed REFLEX agent is RUNNING in the process model even though
+        # its legacy status is IDLE
+        assert summary["running"] >= 1
+        assert summary["total"] == 1
