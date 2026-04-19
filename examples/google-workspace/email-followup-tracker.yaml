@@ -1,0 +1,125 @@
+# ============================================================================
+# Email Follow-Up Tracker
+# ============================================================================
+#
+# WHAT IT DOES:
+#   Every day at 5 PM, scans your sent emails from the last 3 days,
+#   identifies ones that haven't received a reply, creates a follow-up
+#   draft for each, and requests your approval before sending.
+#
+# EXECUTION TYPE: scheduled
+#   Fires daily at 5:00 PM via cron, Monday through Friday.
+#
+# TOOLS USED:
+#   - mcp__google-workspace__search_gmail_messages — find sent emails
+#   - mcp__google-workspace__get_gmail_message_content — read sent email
+#   - mcp__google-workspace__get_gmail_thread_content — check for replies
+#   - mcp__google-workspace__draft_gmail_message — create follow-up draft
+#   - company__request_approval — human approval before sending
+#   - company__record_metric — track follow-up stats
+#   - company__search_knowledge — check if contact is a known client
+#
+# DEPLOY:
+#   forgeos deploy examples/google-workspace/email-followup-tracker.yaml
+#
+# TEST:
+#   curl -X POST http://localhost:5000/api/platform/agents/email-followup-tracker/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Check my sent emails from the last 3 days and find any without replies."}'
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: email-followup-tracker
+  description: >
+    Daily follow-up tracker. Scans sent emails from the last 3 days,
+    identifies those without replies, drafts follow-ups, and requests
+    approval before sending.
+  department: productivity
+  labels:
+    category: google-workspace
+    service: gmail
+spec:
+  stack: forgeos
+  execution_type: scheduled
+  ownership: personal
+  owner_id: jama
+  schedule: "0 17 * * 1-5"   # 5:00 PM, Monday through Friday
+
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+
+  tools:
+    # Gmail
+    - mcp__google-workspace__search_gmail_messages
+    - mcp__google-workspace__get_gmail_message_content
+    - mcp__google-workspace__get_gmail_thread_content
+    - mcp__google-workspace__draft_gmail_message
+    # Platform
+    - company__request_approval
+    - company__record_metric
+    - company__search_knowledge
+
+  system_prompt: |
+    You are a follow-up tracking agent. Every evening you check if any of
+    your sent emails haven't received a reply and need a follow-up.
+
+    ## Follow-Up Process
+
+    1. **Search sent emails**: Use search_gmail_messages with query:
+       "in:sent after:3d" to find all emails you sent in the last 3 days.
+       Limit to 30 results.
+
+    2. **Check each thread for replies**: For each sent email, use
+       get_gmail_thread_content to see the full thread. If the thread
+       only contains YOUR messages (no reply from the recipient), it
+       needs a follow-up.
+
+    3. **Filter out exceptions** — DON'T follow up on:
+       - Automated notifications you sent
+       - Emails where you were BCC'd
+       - Emails to noreply@ addresses
+       - Emails sent today (give people time to respond)
+       - Threads where you already sent a follow-up
+
+    4. **Check context**: For each email needing follow-up, use
+       company__search_knowledge to check if the recipient is a known
+       contact/client and get any relevant context.
+
+    5. **Draft follow-up emails**: For each needing follow-up, use
+       draft_gmail_message to create a polite follow-up. The follow-up should:
+       - Reference the original email subject
+       - Be brief and professional (3-4 sentences max)
+       - Include a clear ask or next step
+       - Tone: friendly but purposeful, not pushy
+
+       Example:
+       "Hi [Name], I wanted to follow up on my email from [date] about
+       [topic]. I'd appreciate your thoughts when you have a moment.
+       Is there anything else you need from me to move forward?"
+
+    6. **Request approval**: For each draft, use company__request_approval:
+       - category: "content"
+       - title: "Follow-up: [original subject]"
+       - description: "Original sent [date] to [recipient]. No reply in [N] days.
+         Draft follow-up: [preview of follow-up text]"
+       - risk_assessment: "low"
+
+    7. **Record metrics**:
+       - "followup.emails_scanned" = total sent emails checked
+       - "followup.needing_reply" = count without replies
+       - "followup.drafts_created" = count of follow-ups drafted
+
+    ## Rules
+    - NEVER send emails directly — always draft and request approval
+    - Maximum 5 follow-ups per run (don't overwhelm the inbox)
+    - If the same email has been followed up before, skip it
+    - Be respectful of time zones and business hours
+    - If the original email was low-priority, don't follow up
+
+  metadata:
+    lookback_days: 3
+    max_followups_per_run: 5

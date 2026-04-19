@@ -1,0 +1,128 @@
+# ============================================================================
+# Email Triage Agent
+# ============================================================================
+#
+# WHAT IT DOES:
+#   Every 30 minutes, reads your unread Gmail messages, categorizes each as
+#   urgent/follow-up/informational/spam, drafts reply suggestions for urgent
+#   ones, and requests human approval before any email is sent.
+#
+# EXECUTION TYPE: scheduled
+#   Runs on a cron schedule. The platform's SchedulerEngine fires this agent
+#   every 30 minutes during business hours (8 AM - 8 PM, Mon-Fri).
+#
+# TOOLS USED:
+#   - mcp__google-workspace__search_gmail_messages — find unread emails
+#   - mcp__google-workspace__get_gmail_message_content — read full email body
+#   - mcp__google-workspace__draft_gmail_message — create reply drafts
+#   - mcp__google-workspace__modify_gmail_message_labels — mark as read/label
+#   - company__request_approval — human sign-off before sending anything
+#   - company__record_metric — track email volume, response time
+#   - company__publish_event — notify other agents of urgent items
+#
+# PREREQUISITES:
+#   1. Google Workspace MCP server enabled in config.yaml
+#   2. OAuth credentials in .env (GOOGLE_WORKSPACE_CLIENT_ID, SECRET, REFRESH_TOKEN)
+#   3. Grant Gmail read/write scopes during OAuth
+#
+# DEPLOY:
+#   forgeos deploy examples/google-workspace/email-triage.yaml
+#
+# TEST (manual invoke):
+#   curl -X POST http://localhost:5000/api/platform/agents/email-triage/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Check my inbox now and triage all unread emails."}'
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: email-triage
+  description: >
+    Scheduled email triage agent. Reads unread Gmail every 30 minutes,
+    categorizes by urgency, drafts replies for urgent messages, and
+    requests human approval before sending anything.
+  department: productivity
+  labels:
+    category: google-workspace
+    service: gmail
+spec:
+  stack: forgeos
+  execution_type: scheduled
+  ownership: personal
+  owner_id: jama
+  schedule: "*/30 8-20 * * 1-5"   # Every 30 min, 8am-8pm, Mon-Fri
+
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+
+  tools:
+    # Gmail
+    - mcp__google-workspace__search_gmail_messages
+    - mcp__google-workspace__get_gmail_message_content
+    - mcp__google-workspace__get_gmail_messages_content_batch
+    - mcp__google-workspace__draft_gmail_message
+    - mcp__google-workspace__modify_gmail_message_labels
+    - mcp__google-workspace__list_gmail_labels
+    # Platform
+    - company__request_approval
+    - company__record_metric
+    - company__publish_event
+    - company__search_knowledge
+
+  system_prompt: |
+    You are an email triage agent. Every 30 minutes you check for unread emails
+    and process them systematically.
+
+    ## Triage Process
+
+    1. **Fetch unread emails**: Use search_gmail_messages with query "is:unread"
+       to find all unread messages. Limit to 20 most recent.
+
+    2. **Read each email**: Use get_gmail_message_content to read the full body
+       of each unread message.
+
+    3. **Categorize each email** into one of four categories:
+       - URGENT: Requires immediate response (client requests, boss messages,
+         time-sensitive items, anything mentioning "asap", "deadline", "urgent")
+       - FOLLOW_UP: Needs a response but not immediately (questions, requests
+         for info, meeting confirmations)
+       - INFORMATIONAL: No response needed (newsletters, notifications, FYIs,
+         automated reports)
+       - SPAM: Unsolicited, promotional, or irrelevant
+
+    4. **For URGENT emails**: Draft a professional reply using draft_gmail_message.
+       The draft should acknowledge receipt and provide a helpful response.
+       Then request human approval via company__request_approval with:
+       - category: "content"
+       - title: "Reply to: [subject]"
+       - description: Include the original email summary and your drafted reply
+       - risk_assessment: "medium"
+
+    5. **Label emails**: Use modify_gmail_message_labels to apply labels:
+       - URGENT → add "URGENT" label
+       - FOLLOW_UP → add "FOLLOW_UP" label
+       - INFORMATIONAL → mark as read
+       - SPAM → mark as read
+
+    6. **Record metrics**: Use company__record_metric to track:
+       - "email.unread_count" = total unread found
+       - "email.urgent_count" = number of urgent emails
+       - "email.triage_completed" = 1 (marks this run as complete)
+
+    7. **Publish events for urgent items**: For each URGENT email, use
+       company__publish_event with event_type="NOTIFICATION" to alert
+       other agents or the dashboard.
+
+    ## Rules
+    - NEVER send an email directly — always draft and request approval
+    - Be concise in categorization explanations
+    - If unsure about urgency, categorize as FOLLOW_UP (err on the side of caution)
+    - Search the knowledge base for context about known contacts/clients
+    - Track your performance metrics every run
+
+  metadata:
+    max_emails_per_run: 20
+    auto_label: true

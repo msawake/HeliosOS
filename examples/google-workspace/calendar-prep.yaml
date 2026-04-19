@@ -1,0 +1,148 @@
+# ============================================================================
+# Calendar Prep Agent
+# ============================================================================
+#
+# WHAT IT DOES:
+#   Every morning at 7 AM, checks today's calendar events, searches the
+#   knowledge base for relevant context per meeting, reads any attached
+#   documents from Drive, and writes a comprehensive meeting prep briefing
+#   to your Desktop.
+#
+# EXECUTION TYPE: scheduled
+#   Fires once daily at 7:00 AM via cron.
+#
+# TOOLS USED:
+#   - mcp__google-workspace__get_events — fetch today's calendar events
+#   - mcp__google-workspace__list_calendars — discover available calendars
+#   - mcp__google-workspace__search_drive_files — find related docs
+#   - mcp__google-workspace__get_drive_file_content — read document content
+#   - company__search_knowledge — find relevant context from knowledge base
+#   - company__record_metric — track briefing generation
+#   - mcp__filesystem__write_file — save briefing to Desktop
+#
+# OUTPUT:
+#   Creates ~/Desktop/daily-briefing-YYYY-MM-DD.md with:
+#   - Today's schedule overview
+#   - Per-meeting context (attendees, agenda, relevant docs, talking points)
+#   - Preparation recommendations
+#   - Open action items from knowledge base
+#
+# DEPLOY:
+#   forgeos deploy examples/google-workspace/calendar-prep.yaml
+#
+# TEST:
+#   curl -X POST http://localhost:5000/api/platform/agents/calendar-prep/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Prepare my briefing for today."}'
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: calendar-prep
+  description: >
+    Daily morning briefing agent. Checks calendar, searches for meeting
+    context in knowledge base and Drive, writes a prep document to Desktop.
+  department: productivity
+  labels:
+    category: google-workspace
+    service: calendar
+spec:
+  stack: forgeos
+  execution_type: scheduled
+  ownership: personal
+  owner_id: jama
+  schedule: "0 7 * * 1-5"   # 7:00 AM, Monday through Friday
+
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+
+  tools:
+    # Calendar
+    - mcp__google-workspace__get_events
+    - mcp__google-workspace__list_calendars
+    - mcp__google-workspace__query_freebusy
+    # Drive
+    - mcp__google-workspace__search_drive_files
+    - mcp__google-workspace__get_drive_file_content
+    - mcp__google-workspace__list_drive_items
+    # Knowledge + Metrics
+    - company__search_knowledge
+    - company__record_metric
+    # Filesystem (to save briefing)
+    - mcp__filesystem__write_file
+
+  system_prompt: |
+    You are a calendar preparation agent. Every morning you create a
+    comprehensive briefing for the day's meetings.
+
+    ## Preparation Process
+
+    1. **Get today's events**: Use get_events to fetch all events for today.
+       Include the time range from now until end of day.
+
+    2. **For each meeting**, gather context:
+       a. Note: title, time, duration, attendees, location/link
+       b. Search the knowledge base for context about:
+          - Each attendee's name or company
+          - The meeting topic or project
+          - Any previous decisions related to this topic
+       c. Search Google Drive for relevant documents:
+          - Search by meeting title keywords
+          - Search by attendee names
+          - Look for recent shared documents
+       d. If relevant docs found, read their content for key points
+
+    3. **Write the briefing** as a markdown document:
+
+       ```markdown
+       # Daily Briefing — [Today's Date]
+
+       ## Schedule Overview
+       | Time | Meeting | Duration | Attendees |
+       |------|---------|----------|-----------|
+       | ...  | ...     | ...      | ...       |
+
+       ## Meeting Details
+
+       ### [Time] — [Meeting Title]
+       **Attendees:** [names]
+       **Location:** [link/room]
+
+       **Context:**
+       - [What you found in knowledge base]
+       - [Relevant documents from Drive]
+
+       **Talking Points:**
+       1. [Suggested topic based on context]
+       2. [Open questions or action items]
+
+       **Preparation:**
+       - [What to review before this meeting]
+       - [Key numbers or facts to have ready]
+
+       ---
+       [Repeat for each meeting]
+
+       ## Action Items from Knowledge Base
+       - [Any pending decisions or follow-ups found]
+       ```
+
+    4. **Save the briefing**: Write to Desktop using mcp__filesystem__write_file
+       at path: /Users/jama/Desktop/daily-briefing-[YYYY-MM-DD].md
+
+    5. **Record metrics**: Log "briefing.generated" = 1 and
+       "briefing.meetings_count" = number of meetings found.
+
+    ## Rules
+    - If no meetings today, write a short "No meetings today" briefing
+    - Focus on actionable preparation, not just listing events
+    - If you can't find context for a meeting, say so and suggest preparation
+    - Always include the full attendee list for each meeting
+    - Keep individual meeting sections concise (5-10 lines max)
+
+  metadata:
+    output_dir: /Users/jama/Desktop
+    include_past_events: false
