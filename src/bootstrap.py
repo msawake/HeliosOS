@@ -19,7 +19,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from stacks.base import AgentDefinition, ExecutionType, LLMConfig, OwnershipType
+from stacks.base import AgentDefinition
 from stacks.forgeos.adapter import ForgeOSAdapter
 from stacks.crewai.adapter import CrewAIAdapter
 from stacks.adk.adapter import ADKAdapter
@@ -177,7 +177,36 @@ class PlatformBootstrap:
 
             self.platform_registry = AgentRegistry(store=agent_store)
             self.scheduler = SchedulerEngine(job_store=job_store)
-            self.event_bus = EventBus(subscription_store=sub_store, message_store=msg_store)
+
+            # Phase A #6 — durable event store. When FORGEOS_STATE_DIR is set,
+            # the EventBus appends every fired event to a SQLite log so recent_events
+            # survives restarts and multi-worker deploys stop silently fragmenting
+            # history. Falls back to in-memory when the env var is absent.
+            event_store = None
+            state_dir = os.environ.get("FORGEOS_STATE_DIR")
+            if state_dir:
+                try:
+                    from pathlib import Path
+                    from src.platform.durable_event_store import SqliteEventStore
+                    Path(state_dir).mkdir(parents=True, exist_ok=True)
+                    event_store = SqliteEventStore(Path(state_dir) / "events.db")
+                    logger.info("  Event bus: durable (SQLite at %s/events.db)", state_dir)
+                except Exception as exc:
+                    logger.warning(
+                        "  Event bus durable store failed (%s) — falling back to in-memory", exc
+                    )
+            self.event_bus = EventBus(
+                subscription_store=sub_store,
+                message_store=msg_store,
+                event_store=event_store,
+            )
+
+            # Phase A #5 — audit-aware secrets manager. Every secret read
+            # (cache hit, secret-manager fetch, env fallback) now records
+            # an audit row via the platform audit log when the FastAPI
+            # layer wires it (via self._kernel.audit_log setter below).
+            from src.core.secrets import SecretsManager
+            self.secrets = SecretsManager(audit_recorder=None)  # recorder bound after kernel
 
             logger.info("[Phase 3] Registering stack adapters...")
             self._register_adapters()
@@ -597,7 +626,8 @@ class PlatformBootstrap:
             logger.warning("API server not available")
             return
         logger.info("API server starting on http://%s:%d (FastAPI + Uvicorn)", host, port)
-        import threading, uvicorn
+        import threading
+        import uvicorn
         config = uvicorn.Config(app, host=host, port=port, log_level="warning")
         server = uvicorn.Server(config)
         thread = threading.Thread(target=server.run, daemon=True)

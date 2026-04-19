@@ -160,11 +160,12 @@ class SyscallPipeline:
                     self._run_audit_on_deny(syscall, decision)
                 return decision
         # All stages allowed — fall through to a permissive result.
-        return KernelDecision.allow(
-            reason="syscall allowed",
-            verb=syscall.verb,
-            subject=syscall.subject,
-        )
+        # Propagate any budget ticket the quota stage attached to the syscall
+        # so the caller can commit/release after the real cost is known.
+        details: dict[str, Any] = {"verb": syscall.verb, "subject": syscall.subject}
+        if syscall.budget_ticket is not None:
+            details["ticket"] = syscall.budget_ticket
+        return KernelDecision.allow(reason="syscall allowed", **details)
 
     def _run_audit_on_deny(self, syscall: Syscall, decision: KernelDecision) -> None:
         audit = self._stages.get("audit")
