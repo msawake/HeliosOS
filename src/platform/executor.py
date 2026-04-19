@@ -175,6 +175,12 @@ class PlatformExecutor:
         if existing:
             raise ValueError(f"Agent '{agent_def.name}' already exists. Use a different name.")
 
+        # Tier-based routing: untrusted agents (tier >= 3) run in sandbox
+        tier = (agent_def.metadata or {}).get("_tier", 1)
+        if tier >= 3 and "sandbox" in self._adapters and agent_def.stack != "sandbox":
+            logger.info("Tier %d agent '%s' routed to sandbox (was %s)", tier, agent_def.name, agent_def.stack)
+            agent_def.stack = "sandbox"
+
         adapter = self._adapters.get(agent_def.stack)
         if not adapter:
             raise ValueError(f"No adapter registered for stack '{agent_def.stack}'")

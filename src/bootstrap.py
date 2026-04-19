@@ -24,6 +24,7 @@ from stacks.forgeos.adapter import ForgeOSAdapter
 from stacks.crewai.adapter import CrewAIAdapter
 from stacks.adk.adapter import ADKAdapter
 from stacks.openclaw.adapter import OpenClawAdapter
+from stacks.sandbox.adapter import SandboxAdapter
 
 from src.platform.registry import AgentRegistry
 from src.platform.executor import PlatformExecutor
@@ -474,6 +475,11 @@ class PlatformBootstrap:
                 llm_router=self.llm_router,
                 tool_executor=te,
                 openclaw_dir=os.environ.get("OPENCLAW_DIR", str(Path(__file__).resolve().parents[1] / "openclaw2")),
+            ),
+            "sandbox": SandboxAdapter(
+                llm_router=self.llm_router,
+                tool_executor=te,
+                api_url=f"http://localhost:{os.environ.get('PORT', '5000')}",
             ),
         }
         for name, adapter in self._adapters.items():

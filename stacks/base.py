@@ -39,7 +39,7 @@ class AgentStatus(Enum):
     QUARANTINED = "quarantined"
 
 
-STACK_NAMES = ("forgeos", "crewai", "adk", "openclaw")
+STACK_NAMES = ("forgeos", "crewai", "adk", "openclaw", "sandbox")
 
 
 @dataclass
