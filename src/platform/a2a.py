@@ -25,7 +25,6 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -72,15 +71,39 @@ class A2AHandler:
     Holds a reference to the PlatformExecutor so it can invoke target agents.
     """
 
-    def __init__(self, executor=None, max_depth: int = DEFAULT_MAX_DEPTH):
+    def __init__(
+        self,
+        executor=None,
+        max_depth: int = DEFAULT_MAX_DEPTH,
+        capability_manager=None,
+        contract_registry=None,
+    ):
         self._executor = executor
         self._max_depth = max_depth
+        # Phase A #2 — optional capability manager. When a caller presents a
+        # capability_token via caller_context, we consult it first; a
+        # positive authorization short-circuits the ACL check. Absent a
+        # token, the ACL path still applies so the existing surface keeps
+        # working.
+        self._capability_manager = capability_manager
+        # Phase A #3 — optional contract registry for runtime validation.
+        # When wired, every call validates its args against the callee's
+        # declared A2A method schema.
+        self._contract_registry = contract_registry
         # Async jobs for agent__async_call / agent__await
         self._jobs: dict[str, asyncio.Task] = {}
 
     def bind_executor(self, executor) -> None:
         """Attach a PlatformExecutor (set post-construction from bootstrap)."""
         self._executor = executor
+
+    def bind_capability_manager(self, manager) -> None:
+        """Attach a CapabilityManager post-construction (from the kernel)."""
+        self._capability_manager = manager
+
+    def bind_contract_registry(self, registry) -> None:
+        """Attach a ContractRegistry post-construction (from the kernel)."""
+        self._contract_registry = registry
 
     async def call(
         self,
@@ -113,10 +136,27 @@ class A2AHandler:
                 "error": f"Delegation cycle detected — {callee_def.agent_id} already in call path",
             }
 
-        # 4. Check A2A permission
+        # 4. Check A2A permission.
         caller_namespace = (caller_context or {}).get("namespace", "default")
         caller_agent_name = (caller_context or {}).get("agent_name", "")
-        if not self._check_permission(callee_def, caller_namespace, caller_agent_name):
+        caller_pid = (caller_context or {}).get("agent_id", "")
+
+        # Phase A #2 — capability token short-circuit. A valid token for the
+        # (caller, target, "a2a.invoke") triple bypasses the ACL check.
+        token_authorized = False
+        token_id = (caller_context or {}).get("capability_token")
+        if token_id and self._capability_manager is not None and caller_pid:
+            target_qname = f"{target_namespace}/{target_name}"
+            token_authorized = self._capability_manager.authorize(
+                token_id=token_id,
+                subject=caller_pid,
+                target=target_qname,
+                verb="a2a.invoke",
+            )
+
+        if not token_authorized and not self._check_permission(
+            callee_def, caller_namespace, caller_agent_name
+        ):
             return {
                 "success": False,
                 "error": (
@@ -124,6 +164,29 @@ class A2AHandler:
                     f"may not call {target_namespace}/{target_name}"
                 ),
             }
+
+        # Phase A #3 — typed contract validation. When the callee declares an
+        # A2A surface, validate the incoming task/context against the
+        # method's input schema. An explicit method name can be passed via
+        # context["a2a_method"]; otherwise we try the conventional "invoke"
+        # and only enforce validation if a contract + method combination
+        # exists (fail-closed per method-name).
+        if self._contract_registry is not None:
+            method_name = (context or {}).get("a2a_method") or "invoke"
+            contract = self._contract_registry.get(f"{target_namespace}/{target_name}")
+            if contract is not None and contract.method(method_name) is not None:
+                try:
+                    self._contract_registry.validate_call(
+                        callee_namespace=target_namespace,
+                        callee_name=target_name,
+                        method=method_name,
+                        args={"task": task, "context": dict(context or {})},
+                    )
+                except Exception as exc:  # SchemaMismatch / MethodNotFound
+                    return {
+                        "success": False,
+                        "error": f"A2A contract validation failed: {exc}",
+                    }
 
         # 5. Build child delegation context
         child_delegation = (
@@ -251,11 +314,14 @@ class A2AHandler:
     def _check_permission(self, callee_def, caller_namespace: str, caller_name: str) -> bool:
         """Check if caller is allowed to invoke callee based on callee's A2A ACL.
 
-        ACL is stored in callee's metadata under '_capabilities.a2a.canBeCalledBy'.
-        If no ACL is set, default permits: same-namespace calls.
+        Reads the ACL via ``read_v2_section`` so both the new first-class
+        ``capabilities.a2a.canBeCalledBy`` and the legacy
+        ``metadata["_capabilities"]`` bag are honored during the
+        Phase-1-#5 migration window.
         """
-        capabilities = (callee_def.metadata or {}).get("_capabilities", {})
-        a2a_cfg = capabilities.get("a2a", {})
+        from src.forgeos_sdk.manifest import read_v2_section
+        capabilities = read_v2_section(callee_def, "capabilities", {}) or {}
+        a2a_cfg = capabilities.get("a2a", {}) or {}
         acl = a2a_cfg.get("canBeCalledBy") or []
 
         # No ACL declared -> default permit same-namespace

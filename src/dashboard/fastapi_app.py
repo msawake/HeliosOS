@@ -19,13 +19,13 @@ import time
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import FastAPI, WebSocket, Request, Depends, Header, HTTPException, Query, Security
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -499,12 +499,69 @@ def create_fastapi_app(
                 system_prompt=req.system_prompt,
             )
             agent_id = await platform_executor.deploy(defn)
+
+            # Phase A #4 — push the resolved manifest to the content-addressed
+            # package registry. Returns a sha256 digest that gets recorded on
+            # the agent so A2A callers and rollbacks can pin to this exact
+            # version. Best-effort: registry failures never block a successful
+            # deploy, but they are logged and the response still includes
+            # any digest we did compute.
+            digest: str | None = None
+            try:
+                from src.forgeos_sdk.manifest import read_v2_section
+                from src.platform.package_registry import (
+                    FilesystemPackageRegistry,
+                    Package,
+                )
+                version = req.metadata.get("version") if req.metadata else None
+                if not version:
+                    version = "0.0.0"
+                manifest_view = {
+                    "apiVersion": "agentos/v1",
+                    "kind": "AgentContract",
+                    "metadata": {
+                        "name": req.name,
+                        "namespace": read_v2_section(
+                            {"metadata": req.metadata or {}}, "namespace", "default"
+                        ),
+                        "version": version,
+                        "description": req.description,
+                        "department": req.department or "",
+                    },
+                    "spec": {
+                        "stack": req.stack,
+                        "execution_type": req.execution_type,
+                        "ownership": ownership.value,
+                        "llm": {"chat_model": req.chat_model, "provider": req.provider},
+                        "tools": req.tools,
+                        "schedule": req.schedule,
+                        "event_triggers": req.event_triggers,
+                        "goal": req.goal,
+                        "system_prompt": req.system_prompt,
+                    },
+                }
+                registry = FilesystemPackageRegistry()
+                package = Package(manifest=manifest_view)
+                digest = registry.push(package, pushed_by="platform-api")
+                # Stash the digest on the live agent definition so A2A /
+                # rollback can later pin by sha.
+                defn.metadata["_digest"] = digest
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "package registry push failed for %s: %s", req.name, exc
+                )
+
             _audit("agent.deploy", resource_type="agent", resource_id=agent_id,
                    details={"name": req.name, "stack": req.stack,
                             "execution_type": req.execution_type,
                             "ownership": ownership.value,
-                            "client_id": req.client_id})
-            return {"agent_id": agent_id, "name": req.name, "stack": req.stack}
+                            "client_id": req.client_id,
+                            "digest": digest})
+            response: dict = {"agent_id": agent_id, "name": req.name, "stack": req.stack}
+            if digest is not None:
+                response["digest"] = digest
+            return response
         except Exception as e:
             _audit("agent.deploy", outcome="failure", resource_type="agent",
                    resource_id=req.name, details={"error": str(e)})
@@ -1393,7 +1450,6 @@ def create_fastapi_app(
             return []
         # Use event bus mailbox if available
         try:
-            from src.platform.event_bus import EventBus
             if hasattr(company_system.event_bus, "get_messages"):
                 return company_system.event_bus.get_messages(agent_id, unread_only=unread)
         except Exception:

@@ -1,7 +1,23 @@
 """
 Governance hook chain for the AI company agent system.
 
-Six hooks form the defense-in-depth governance layer:
+DEPRECATED — SUPERSEDED BY ``src/platform/syscall.py``.
+
+New code MUST NOT import from this module. The syscall pipeline
+(``kernel.syscall("tool.call", ...)``) is the single admission path for
+tool calls, A2A invocations, secret fetches, and budget reservations.
+Enable it with ``FORGEOS_SYSCALL_PIPELINE=1`` (Phase A #1).
+
+Blockers on full deletion (need migration first):
+    * ``src/core/claude_client.py`` — imports ``HookDecision``.
+    * ``src/core/redis_rate_limiter.py`` — reuses ``AgentContext`` /
+      ``HookDecision`` / ``HookResult`` as its interface types.
+    * ``src/core/agent_invoker.py`` — legacy 3-tier orchestrator.
+    * ``src/bootstrap.py`` — ``create_hook_chain`` at boot.
+
+Until those move to syscall types (``KernelDecision`` + syscall context),
+this module keeps the six hooks:
+
 1. audit_logger    - Immutable record of every agent action
 2. rate_limiter    - Prevents runaway loops and API abuse
 3. auth_check      - Enforces tool-level permissions per agent role
@@ -18,10 +34,19 @@ import logging
 import re
 import threading
 import time
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
+
+warnings.warn(
+    "src.core.hooks is deprecated; use src.platform.syscall (set "
+    "FORGEOS_SYSCALL_PIPELINE=1). Tracked for deletion after migration of "
+    "claude_client, redis_rate_limiter, agent_invoker, bootstrap.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 logger = logging.getLogger(__name__)
 

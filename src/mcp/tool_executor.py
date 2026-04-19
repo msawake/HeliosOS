@@ -10,7 +10,6 @@ Routes tool calls to the appropriate backend:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from typing import Any
 
@@ -274,9 +273,57 @@ class ToolExecutor:
         tool_input: dict,
         agent_context: dict | None = None,
     ) -> dict:
-        """Execute a tool call and return the result."""
-        # Kernel policy check (permissions + budget + policies)
-        if self._kernel and agent_context and agent_context.get("agent_id"):
+        """Execute a tool call and return the result.
+
+        Admission is performed via ``kernel.syscall("tool.call", ...)`` when
+        ``FORGEOS_SYSCALL_PIPELINE`` is enabled (Phase A #1). That path
+        funnels capability / quota / policy / boundary / audit through the
+        single chokepoint. Otherwise, the legacy per-call ``check_tool_call``
+        path is used so pre-migration callers keep working.
+        """
+        from src.platform.syscall import syscall_pipeline_enabled
+
+        use_pipeline = (
+            syscall_pipeline_enabled()
+            and self._kernel is not None
+            and agent_context is not None
+            and agent_context.get("agent_id")
+        )
+
+        if use_pipeline:
+            decision = self._kernel.syscall(
+                verb="tool.call",
+                subject=agent_context["agent_id"],
+                object=tool_name,
+                args={
+                    "tool_input": tool_input,
+                    "estimated_cost_usd": agent_context.get("estimated_cost_usd", 0.0),
+                    "estimated_tokens": agent_context.get("estimated_tokens"),
+                },
+            )
+            if decision.action != "allow":
+                logger.warning(
+                    "Syscall %s %s for tool %s: %s",
+                    decision.action, agent_context["agent_id"], tool_name, decision.reason,
+                )
+                # rate_limit / deny / mask / ask_human all map to failure for
+                # the tool-call interface. The callsite can inspect the returned
+                # decision_action for more nuanced handling later.
+                return {
+                    "success": False,
+                    "error": f"Kernel {decision.action}: {decision.reason}",
+                    "decision_action": decision.action,
+                }
+            # Park the budget ticket on the context so callers can commit/release
+            # after they know the real cost. The syscall pipeline already ran
+            # capability + quota, so the legacy whitelist check below is
+            # skipped.
+            if agent_context is not None and hasattr(decision, "details"):
+                ticket = (decision.details or {}).get("ticket")
+                if ticket:
+                    agent_context["budget_ticket"] = ticket
+        elif self._kernel and agent_context and agent_context.get("agent_id"):
+            # Legacy path — pre-syscall-pipeline adoption.
             decision = self._kernel.check_tool_call(
                 agent_id=agent_context["agent_id"],
                 tool_name=tool_name,
@@ -287,16 +334,18 @@ class ToolExecutor:
                                tool_name, agent_context["agent_id"], decision.reason)
                 return {"success": False, "error": f"Kernel denied: {decision.reason}"}
 
-        # Enforce agent tool whitelist (supports exact match and wildcard prefixes)
-        allowed_tools = (agent_context or {}).get("allowed_tools")
-        if allowed_tools:
-            is_allowed = tool_name in allowed_tools or any(
-                tool_name.startswith(prefix.rstrip("*"))
-                for prefix in allowed_tools
-                if prefix.endswith("*")
-            )
-            if not is_allowed:
-                return {"success": False, "error": f"Tool '{tool_name}' not in agent's allowed tools"}
+        if not use_pipeline:
+            # Legacy whitelist check — the syscall pipeline's capability stage
+            # already enforces this when enabled.
+            allowed_tools = (agent_context or {}).get("allowed_tools")
+            if allowed_tools:
+                is_allowed = tool_name in allowed_tools or any(
+                    tool_name.startswith(prefix.rstrip("*"))
+                    for prefix in allowed_tools
+                    if prefix.endswith("*")
+                )
+                if not is_allowed:
+                    return {"success": False, "error": f"Tool '{tool_name}' not in agent's allowed tools"}
 
         # Custom company tools + platform tools (both in _custom_handlers)
         if tool_name in self._custom_handlers:

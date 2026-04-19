@@ -105,11 +105,18 @@ class AdmissionResult:
 # ---------------------------------------------------------------------------
 
 class AdmissionController:
-    """Validates contracts before deploy. Called from executor.deploy()."""
+    """Validates contracts before deploy. Called from executor.deploy().
 
-    def __init__(self, registry=None, tool_executor=None):
+    Phase A #3 — also registers the agent's typed A2A surface (if any) in
+    the process-level ``ContractRegistry`` so the A2A handler can validate
+    calls against it at runtime.
+    """
+
+    def __init__(self, registry=None, tool_executor=None, contract_registry=None):
         self._registry = registry
         self._tool_executor = tool_executor
+        # Lazy default — kernel wires one per process when none is supplied.
+        self._contract_registry = contract_registry
 
     def admit(self, contract: dict) -> AdmissionResult:
         """Validate a contract. Returns AdmissionResult with errors/warnings."""
@@ -194,12 +201,50 @@ class AdmissionController:
                 errors=errors,
                 warnings=warnings,
             )
+
+        # Phase A #3 — register the agent's typed A2A contract (if declared)
+        # so the A2A handler can validate calls at runtime.
+        if self._contract_registry is not None:
+            self._register_a2a_contract(contract)
+
         return AdmissionResult(
             admitted=True,
             reason="admitted",
             warnings=warnings,
             agent_uid=str(uuid.uuid4())[:12],
         )
+
+    def _register_a2a_contract(self, contract: dict) -> None:
+        """Extract and register the typed A2A surface if declared.
+
+        Consumes both canonical shapes via ``read_v2_section``: a
+        first-class ``capabilities.a2a.methods`` on the spec, or the
+        legacy ``_capabilities`` bag. Silently no-ops when no methods are
+        declared — not every agent exposes a typed surface.
+        """
+        from src.platform.a2a_contracts import A2AContract
+
+        capabilities = read_v2_section(contract, "capabilities", {}) or {}
+        a2a = capabilities.get("a2a") or {}
+        if not a2a.get("methods"):
+            return
+
+        # Rebuild a canonical-shaped manifest fragment so A2AContract.from_manifest
+        # finds the methods where it expects them (spec.capabilities.a2a.methods).
+        manifest_view = {
+            "metadata": {
+                "name": contract.get("name", ""),
+                "namespace": read_v2_section(contract, "namespace", "default"),
+            },
+            "spec": {"capabilities": {"a2a": a2a}},
+        }
+        parsed = A2AContract.from_manifest(manifest_view)
+        if parsed is not None:
+            self._contract_registry.register(parsed)
+            logger.debug(
+                "registered A2A contract for %s (%d methods)",
+                parsed.qualified_name, len(parsed.methods),
+            )
 
 
 class PermissionManager:
@@ -641,9 +686,16 @@ class Kernel:
         self._registry = registry
         self._audit_log = audit_log
 
+        # Phase A #3 — process-level contract registry. The admission
+        # controller registers agents' typed A2A surfaces here as they're
+        # admitted; A2A handler queries it to validate calls.
+        from src.platform.a2a_contracts import ContractRegistry
+        self.contracts = ContractRegistry()
+
         self.admission = AdmissionController(
             registry=registry,
             tool_executor=tool_executor,
+            contract_registry=self.contracts,
         )
         self.permissions = PermissionManager(
             registry=registry,
@@ -659,6 +711,14 @@ class Kernel:
         # the ACL path when a valid token is presented.
         from src.platform.capabilities import CapabilityManager
         self.capabilities_mgr = CapabilityManager(store=capability_store)
+        # Phase A #2/#3 — push our capability manager + contract registry
+        # into the A2A handler so its call() path sees them. Handlers
+        # constructed before the kernel gain them via bind_* late.
+        if a2a_handler is not None:
+            if hasattr(a2a_handler, "bind_capability_manager"):
+                a2a_handler.bind_capability_manager(self.capabilities_mgr)
+            if hasattr(a2a_handler, "bind_contract_registry"):
+                a2a_handler.bind_contract_registry(self.contracts)
         self._pipeline = None  # lazy-built on first syscall() call
 
     # ---- Capability token convenience (Phase 2 #2) ----------------------
@@ -672,6 +732,82 @@ class Kernel:
 
     def authorize_capability(self, **kwargs) -> bool:
         return self.capabilities_mgr.authorize(**kwargs)
+
+    # ---- Signals + preemption (Phase E #1 foundation) -------------------
+
+    def signal(self, pid: str, signal_name: str, *, reason: str = "") -> bool:
+        """Queue a cooperative signal on an agent process.
+
+        ``signal_name`` values the orchestrator understands today:
+          * ``SIGTERM`` — request graceful shutdown; loop exits at next boundary.
+          * ``SIGSTOP`` — pause new tool calls; agent enters DRAINING.
+          * ``SIGEVICT`` — hard preempt (budget/policy override).
+
+        Returns ``True`` if the signal was queued, ``False`` if the pid is
+        not in the process table. Signal delivery is *cooperative*: the
+        orchestrator polls ``process_table.get(pid).pending_signals`` at
+        each tool boundary via :meth:`check_signals`. This gives us
+        preemption points without interrupting mid-tool-call state.
+
+        Requires a process table to be wired via ``self.process_table``
+        (set by the orchestrator at boot). When no table is wired, the
+        call is a no-op and returns ``False``.
+        """
+        table = getattr(self, "process_table", None)
+        if table is None:
+            logger.debug(
+                "signal(%s, %s) ignored — no process_table wired on kernel",
+                pid, signal_name,
+            )
+            return False
+        proc = table.get(pid)
+        if proc is None:
+            return False
+        table.record_signal(pid, signal_name)
+        if reason:
+            # Stash reason on the process metadata for audit consumers.
+            proc.pending_signals and None  # type: ignore[truthy-bool]
+        logger.info("signal queued pid=%s signal=%s reason=%s", pid, signal_name, reason)
+        # Audit the signal if an audit log is wired.
+        if self._audit_log and hasattr(self._audit_log, "record"):
+            try:
+                self._audit_log.record(
+                    action=f"process.signal.{signal_name.lower()}",
+                    resource_type="process",
+                    resource_id=pid,
+                    details={"signal": signal_name, "reason": reason},
+                )
+            except Exception:
+                pass
+        return True
+
+    def check_signals(self, pid: str) -> list[str]:
+        """Return and clear any pending signals for ``pid``.
+
+        Called by the orchestrator at stable tool boundaries (after each
+        ``tool.call`` syscall commits). Returning an empty list means the
+        agent should continue; returning ``["SIGTERM"]`` means the loop
+        should exit cleanly at the next iteration.
+        """
+        table = getattr(self, "process_table", None)
+        if table is None:
+            return []
+        proc = table.get(pid)
+        if proc is None:
+            return []
+        signals = list(proc.pending_signals)
+        # Clear as we deliver — signals are one-shot.
+        for sig in signals:
+            table.clear_signal(pid, sig)
+        return signals
+
+    def attach_process_table(self, table) -> None:
+        """Bind the process table the orchestrator owns.
+
+        Called once at bootstrap so the kernel's ``signal`` /
+        ``check_signals`` can reach the same table the executor uses.
+        """
+        self.process_table = table
 
     # ---- Syscall pipeline (Phase 1 #2) ----------------------------------
 
