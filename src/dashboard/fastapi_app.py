@@ -21,7 +21,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import FastAPI, WebSocket, Request, Depends, HTTPException, Query, Security
+from fastapi import FastAPI, WebSocket, Request, Depends, Header, HTTPException, Query, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.security import APIKeyHeader
@@ -87,6 +87,10 @@ class ApprovalAction(BaseModel):
     reason: str = ""
     approved_by: str = ""
     rejected_by: str = ""
+
+class SandboxToolRequest(BaseModel):
+    tool_name: str
+    tool_input: dict = {}
 
 class KnowledgeAddRequest(BaseModel):
     title: str
@@ -1986,6 +1990,67 @@ def create_fastapi_app(
         k = _require_kernel()
         k.audit(req.agent_id, req.event, req.details)
         return {"ok": True}
+
+    # ------------------------------------------------------------------
+    # Sandbox Tool Proxy
+    # ------------------------------------------------------------------
+
+    @app.post("/api/sandbox/tool", tags=["sandbox"])
+    async def sandbox_tool_call(req: SandboxToolRequest, x_agent_token: str = Header(default="")):
+        """Proxy tool calls from sandboxed agents. Every call validated by Kernel."""
+        from stacks.sandbox.adapter import get_token_store
+        claims = get_token_store().verify(x_agent_token)
+        if not claims:
+            raise HTTPException(status_code=401, detail="Invalid or expired sandbox token")
+
+        agent_id = claims["agent_id"]
+        allowed = claims.get("tools", [])
+
+        # Check tool whitelist (wildcard-aware)
+        tool_ok = not allowed or any(
+            req.tool_name == t or (t.endswith("*") and req.tool_name.startswith(t[:-1]))
+            for t in allowed
+        )
+        if not tool_ok:
+            raise HTTPException(status_code=403, detail=f"Tool '{req.tool_name}' not permitted")
+
+        if platform_kernel:
+            decision = platform_kernel.check_tool_call(agent_id, req.tool_name, req.tool_input)
+            if hasattr(decision, "denied") and decision.denied:
+                raise HTTPException(status_code=403, detail=decision.reason)
+
+        if not tool_executor:
+            raise HTTPException(status_code=503, detail="Tool executor unavailable")
+
+        ctx = {"agent_id": agent_id, "namespace": claims.get("namespace", "default"), "tier": claims.get("tier", 3)}
+        result = await tool_executor.execute(req.tool_name, req.tool_input, ctx)
+        return result
+
+    @app.post("/api/sandbox/result", tags=["sandbox"])
+    async def sandbox_result(request: Request, x_agent_token: str = Header(default="")):
+        """Receive final result from sandboxed agent."""
+        from stacks.sandbox.adapter import get_token_store
+        claims = get_token_store().verify(x_agent_token)
+        if not claims:
+            raise HTTPException(status_code=401, detail="Invalid sandbox token")
+        body = await request.json()
+        logger.info("Sandbox result: agent=%s status=%s", body.get("agent_id"), body.get("status"))
+        return {"ok": True}
+
+    @app.get("/api/platform/tools", tags=["platform"])
+    async def list_platform_tools():
+        """List all tool schemas (for sandbox agent discovery)."""
+        if not tool_executor:
+            return []
+        defs = []
+        try:
+            from src.mcp.platform_tools import PLATFORM_TOOL_DEFINITIONS
+            defs.extend(PLATFORM_TOOL_DEFINITIONS)
+        except Exception:
+            pass
+        if hasattr(tool_executor, 'get_mcp_tool_definitions'):
+            defs.extend(tool_executor.get_mcp_tool_definitions())
+        return defs
 
     return app
 
