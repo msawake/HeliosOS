@@ -156,6 +156,16 @@ def _build_adk_tools(tool_executor, agent_def: AgentDefinition, agent_context: d
 
             async def _wrapper(**kwargs):
                 """Run the ForgeOS tool and return the raw result dict."""
+                # Kernel gate: check permissions before executing
+                try:
+                    from src.forgeos_sdk.runtime import runtime as _rt
+                    if _rt.is_registered and _rt.is_bound:
+                        decision = await _rt.check_tool(name_captured, kwargs)
+                        if decision.denied:
+                            return {"success": False, "error": f"Kernel denied: {decision.reason}"}
+                except Exception:
+                    pass
+
                 try:
                     result = await tool_executor.execute(
                         name_captured, kwargs, agent_context,
