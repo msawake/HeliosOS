@@ -171,24 +171,24 @@ class RateLimiter:
         return self._agent_counts
 
     def check(self, context: AgentContext) -> HookResult:
-        key = context.agent_id  # Use agent_id, NOT session_id
+        key = context.session_id or context.agent_id
 
         # Cleanup when dict grows too large (prevents unbounded memory growth)
         self._check_count += 1
         if len(self._agent_counts) > 10000 or self._check_count % 100 == 0:
             self._cleanup_stale_agents()
 
-        # Per-agent total count
+        # Per-session total count
         self._agent_counts.setdefault(key, 0)
         self._agent_counts[key] += 1
         if self._agent_counts[key] > self.max_per_session:
             return HookResult(
                 decision=HookDecision.BLOCK,
-                reason=f"Agent {key} exceeded {self.max_per_session} tool calls",
+                reason=f"Session {key} exceeded {self.max_per_session} tool calls",
                 metadata={"count": self._agent_counts[key]},
             )
 
-        # Per-minute sliding window (also by agent_id)
+        # Per-minute sliding window
         now = time.time()
         self._minute_windows.setdefault(key, [])
         window = self._minute_windows[key]

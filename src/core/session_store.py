@@ -55,6 +55,7 @@ class SessionStore(Protocol):
     def save(self, session: AgentSession) -> None: ...
     def get(self, session_id: str) -> AgentSession | None: ...
     def update(self, session: AgentSession) -> None: ...
+    def append_messages(self, session_id: str, messages: list[dict]) -> None: ...
     def list_active(self, agent_id: str | None = None) -> list[AgentSession]: ...
     def list_by_workflow(self, workflow_id: str) -> list[AgentSession]: ...
 
@@ -73,6 +74,11 @@ class InMemorySessionStore:
 
     def update(self, session: AgentSession) -> None:
         self._sessions[session.session_id] = session
+
+    def append_messages(self, session_id: str, messages: list[dict]) -> None:
+        session = self._sessions.get(session_id)
+        if session:
+            session.messages.extend(messages)
 
     def list_active(self, agent_id: str | None = None) -> list[AgentSession]:
         results = []
@@ -156,6 +162,30 @@ class PostgresSessionStore:
                 ),
             )
             conn.commit()
+
+    def append_messages(self, session_id: str, messages: list[dict]) -> None:
+        """Append messages incrementally without rewriting the full blob.
+
+        Uses PostgreSQL ``jsonb_set`` + ``||`` to append to the messages
+        array in-place.  Falls back to a full rewrite if the column is not
+        jsonb or the query fails.
+        """
+        with self._db.tenant(self._tenant_id) as conn:
+            try:
+                conn.execute(
+                    "UPDATE agent_sessions "
+                    "SET metadata = jsonb_set("
+                    "  metadata::jsonb, '{messages}',"
+                    "  (metadata::jsonb->'messages') || %s::jsonb"
+                    ") WHERE session_id = %s",
+                    (json.dumps(messages), session_id),
+                )
+                conn.commit()
+            except Exception:
+                session = self.get(session_id)
+                if session:
+                    session.messages.extend(messages)
+                    self.update(session)
 
     def list_active(self, agent_id: str | None = None) -> list[AgentSession]:
         with self._db.tenant(self._tenant_id) as conn:
