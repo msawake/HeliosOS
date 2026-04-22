@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ForgeOS Architecture Guide — For Framework Developers</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.6; }
+  a { color: #58a6ff; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; background: #161b22; padding: 2px 6px; border-radius: 4px; font-size: 13px; color: #f0883e; }
+  pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; overflow-x: auto; font-size: 13px; line-height: 1.5; color: #c9d1d9; margin: 12px 0; }
+  pre code { background: none; padding: 0; }
+
+  /* Layout */
+  .container { max-width: 1200px; margin: 0 auto; padding: 40px 24px; }
+  .hero { text-align: center; padding: 60px 0 40px; border-bottom: 1px solid #21262d; margin-bottom: 40px; }
+  .hero h1 { font-size: 36px; color: #f0f6fc; margin-bottom: 8px; }
+  .hero .sub { color: #8b949e; font-size: 16px; }
+
+  /* Nav */
+  .nav { position: sticky; top: 0; background: #0d1117ee; backdrop-filter: blur(12px); border-bottom: 1px solid #21262d; z-index: 100; padding: 10px 0; }
+  .nav-inner { max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .nav a { padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #8b949e; transition: all 0.15s; white-space: nowrap; }
+  .nav a:hover { background: #21262d; color: #f0f6fc; text-decoration: none; }
+
+  /* Sections */
+  section { margin-bottom: 56px; scroll-margin-top: 60px; }
+  section h2 { font-size: 24px; color: #f0f6fc; margin-bottom: 6px; padding-bottom: 12px; border-bottom: 1px solid #21262d; }
+  section h2 .num { color: #484f58; font-weight: 400; margin-right: 8px; }
+  section h3 { font-size: 17px; color: #58a6ff; margin: 20px 0 10px; }
+  section p, section li { color: #c9d1d9; font-size: 14px; }
+  section ul { padding-left: 20px; margin: 8px 0; }
+
+  /* Diagram boxes */
+  .diagram { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 16px 0; overflow-x: auto; }
+  .diagram-title { font-size: 13px; color: #484f58; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; font-weight: 600; }
+
+  /* Flow diagrams */
+  .flow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+  .flow-box { padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .flow-arrow { color: #484f58; font-size: 16px; flex-shrink: 0; }
+  .fb-agent    { background: #1c2941; color: #58a6ff; border: 1px solid #1f6feb; }
+  .fb-runtime  { background: #2a1f33; color: #bc8cff; border: 1px solid #8957e5; }
+  .fb-kernel   { background: #2a2517; color: #e3b341; border: 1px solid #d29922; }
+  .fb-syscall  { background: #1f2a22; color: #56d364; border: 1px solid #3fb950; }
+  .fb-executor { background: #17272a; color: #56d4c4; border: 1px solid #39d2c0; }
+  .fb-adapter  { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+  .fb-proxy    { background: #2a1f22; color: #ff7b72; border: 1px solid #f85149; }
+  .fb-allow    { background: #1a3a2a; color: #3fb950; border: 1px solid #238636; }
+  .fb-deny     { background: #3a1a1a; color: #f85149; border: 1px solid #da3633; }
+  .fb-tool     { background: #1c2230; color: #8b949e; border: 1px solid #484f58; }
+
+  /* Cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin: 16px 0; }
+  .card { background: #21262d; border: 1px solid #30363d; border-radius: 10px; padding: 16px; transition: border-color 0.15s; }
+  .card:hover { border-color: #58a6ff; }
+  .card .card-title { color: #f0883e; font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+  .card .card-body { color: #8b949e; font-size: 12px; line-height: 1.5; }
+  .card code { font-size: 11px; }
+
+  /* Framework panels */
+  .fw-panel { background: linear-gradient(135deg, #161b22, #1c2333); border: 2px solid #30363d; border-radius: 16px; padding: 24px; margin: 20px 0; position: relative; }
+  .fw-panel.openclaw { border-color: #f85149; }
+  .fw-panel.adk { border-color: #1f6feb; }
+  .fw-panel.crewai { border-color: #8957e5; }
+  .fw-panel::before { position: absolute; top: -14px; left: 24px; background: #0d1117; padding: 0 12px; font-weight: 700; font-size: 15px; }
+  .fw-panel.openclaw::before { content: 'OpenClaw Developer View'; color: #f85149; }
+  .fw-panel.adk::before { content: 'Google ADK Developer View'; color: #1f6feb; }
+  .fw-panel.crewai::before { content: 'CrewAI Developer View'; color: #8957e5; }
+  .fw-desc { color: #8b949e; font-size: 13px; margin-bottom: 16px; }
+
+  /* Split: You control / Platform controls */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+  .split-col { background: #21262d; border-radius: 10px; padding: 16px; border: 1px solid #30363d; }
+  .split-col h4 { font-size: 13px; margin-bottom: 8px; }
+  .split-col.dev h4 { color: #3fb950; }
+  .split-col.platform h4 { color: #f0883e; }
+  .split-col ul { font-size: 12px; color: #8b949e; }
+
+  /* Enforcement matrix */
+  .matrix { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+  .matrix th { background: #161b22; color: #8b949e; padding: 10px 14px; text-align: left; border-bottom: 2px solid #30363d; font-weight: 600; }
+  .matrix td { padding: 10px 14px; border-bottom: 1px solid #21262d; }
+  .matrix tr:hover td { background: #161b22; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .badge-yes { background: #1a3a2a; color: #3fb950; }
+  .badge-no { background: #3a1a1a; color: #f85149; }
+  .badge-method { background: #1c2230; color: #8b949e; font-weight: 400; }
+
+  /* Pipeline stage row */
+  .pipeline { display: flex; gap: 0; margin: 16px 0; overflow-x: auto; }
+  .stage { flex: 1; min-width: 110px; text-align: center; }
+  .stage-box { border-radius: 8px; padding: 12px 8px; min-height: 90px; display: flex; flex-direction: column; justify-content: flex-start; margin: 0 3px; }
+  .stage .num { font-size: 10px; color: #484f58; font-weight: 700; }
+  .stage .label { font-weight: 700; font-size: 13px; margin: 4px 0; }
+  .stage .detail { font-size: 10px; line-height: 1.3; }
+  .stage .outcome { font-size: 10px; font-weight: 600; margin-top: auto; padding-top: 6px; }
+  .stage-arrow { display: flex; align-items: center; color: #484f58; font-size: 16px; }
+  .s-identity .stage-box   { background: #1c2941; border: 1px solid #1f6feb; }
+  .s-identity .label       { color: #58a6ff; }
+  .s-identity .detail      { color: #79a8d9; }
+  .s-capability .stage-box { background: #2a1f33; border: 1px solid #8957e5; }
+  .s-capability .label     { color: #bc8cff; }
+  .s-capability .detail    { color: #a689c9; }
+  .s-capability .outcome   { color: #d63384; }
+  .s-quota .stage-box      { background: #2a2517; border: 1px solid #d29922; }
+  .s-quota .label          { color: #e3b341; }
+  .s-quota .detail         { color: #c9a85a; }
+  .s-quota .outcome        { color: #f0883e; }
+  .s-policy .stage-box     { background: #1f2a22; border: 1px solid #3fb950; }
+  .s-policy .label         { color: #56d364; }
+  .s-policy .detail        { color: #7ec98a; }
+  .s-policy .outcome       { color: #d63384; }
+  .s-boundary .stage-box   { background: #2a1f22; border: 1px solid #f85149; }
+  .s-boundary .label       { color: #ff7b72; }
+  .s-boundary .detail      { color: #d4766d; }
+  .s-boundary .outcome     { color: #f0883e; }
+  .s-dispatch .stage-box   { background: #17272a; border: 1px solid #39d2c0; }
+  .s-dispatch .label       { color: #56d4c4; }
+  .s-dispatch .detail      { color: #6dafa6; }
+  .s-dispatch .outcome     { color: #39d2c0; }
+  .s-audit .stage-box      { background: #1c2230; border: 1px solid #484f58; }
+  .s-audit .label          { color: #8b949e; }
+  .s-audit .detail         { color: #6e7681; }
+
+  /* API card groups */
+  .api-group { margin: 20px 0; }
+  .api-group-title { font-size: 13px; color: #484f58; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; font-weight: 600; }
+  .api-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+  .api-card { background: #21262d; border: 1px solid #30363d; border-radius: 8px; padding: 10px 12px; }
+  .api-card .method { font-family: 'SF Mono', monospace; font-size: 12px; color: #bc8cff; font-weight: 600; }
+  .api-card .ret { font-size: 11px; color: #484f58; margin-top: 2px; }
+  .api-card .desc { font-size: 11px; color: #8b949e; margin-top: 4px; }
+
+  @media (max-width: 768px) {
+    .split { grid-template-columns: 1fr; }
+    .pipeline { flex-wrap: wrap; justify-content: center; }
+    .stage-arrow { display: none; }
+    .nav-inner { gap: 2px; }
+    .nav a { padding: 4px 8px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#overview">Overview</a>
+    <a href="#runtime-kernel">Runtime & Kernel</a>
+    <a href="#openclaw">OpenClaw</a>
+    <a href="#adk">Google ADK</a>
+    <a href="#crewai">CrewAI</a>
+    <a href="#api-ref">SDK API</a>
+    <a href="#matrix">Enforcement Matrix</a>
+  </div>
+</nav>
+
+<div class="container">
+
+<div class="hero">
+  <h1>ForgeOS Architecture Guide</h1>
+  <p class="sub">How the Runtime, Kernel, and Syscall Pipeline enforce governance across all 5 adapters</p>
+</div>
+
+<!-- ================================================================ -->
+<!-- SECTION 1: SYSTEM OVERVIEW                                       -->
+<!-- ================================================================ -->
+<section id="overview">
+  <h2><span class="num">1.</span> System Overview</h2>
+  <p>ForgeOS boots in a single sequence. Every agent invocation flows through the same governance stack regardless of which framework runs it.</p>
+
+  <div class="diagram">
+    <div class="diagram-title">Boot &amp; Wiring Sequence</div>
+    <div class="flow">
+      <span class="flow-box fb-executor">bootstrap.py</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-box fb-kernel">Kernel(registry, audit)</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-box fb-executor">PlatformExecutor(registry, process_table, checkpoint_store)</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-box fb-runtime">runtime.register_platform(kernel, process_table, checkpoint_store)</span>
+    </div>
+    <div class="flow" style="margin-top: 12px;">
+      <span class="flow-box fb-adapter">ForgeOS Adapter</span>
+      <span class="flow-box fb-adapter">CrewAI Adapter</span>
+      <span class="flow-box fb-adapter">ADK Adapter</span>
+      <span class="flow-box fb-adapter">OpenClaw Adapter</span>
+      <span class="flow-box fb-adapter">Sandbox Adapter</span>
+      <span class="flow-arrow">&larr;</span>
+      <span class="flow-box fb-executor">executor.register_adapter()</span>
+    </div>
+  </div>
+
+  <div class="diagram">
+    <div class="diagram-title">Every Agent Invocation</div>
+    <div class="flow">
+      <span class="flow-box fb-agent">API / Dashboard / CLI</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-box fb-executor">executor.invoke(agent_id, prompt)</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-box fb-runtime">runtime.bind(agent_id, namespace)</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-box fb-adapter">adapter.invoke()</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-box fb-kernel">Kernel gates every tool call</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-box fb-allow">AgentResult</span>
+    </div>
+    <p style="margin-top: 8px; font-size: 12px; color: #8b949e;">The executor binds the runtime <em>before</em> delegating to the adapter and unbinds <em>after</em> — so every tool call inside any adapter has access to the kernel.</p>
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- SECTION 2: RUNTIME → KERNEL → SYSCALL                           -->
+<!-- ================================================================ -->
+<section id="runtime-kernel">
+  <h2><span class="num">2.</span> Runtime &rarr; Kernel &rarr; Syscall Pipeline</h2>
+  <p>The SDK <code>runtime</code> is the agent's interface. It talks to the <code>Kernel</code> facade, which composes 6 subsystems. For unified admission, the <code>SyscallPipeline</code> runs 7 ordered stages.</p>
+
+  <div class="diagram">
+    <div class="diagram-title">Three Layers</div>
+    <div class="flow">
+      <span class="flow-box fb-agent" style="min-width: 180px;">Agent Code<br><code style="color:#bc8cff">from forgeos_sdk import runtime</code></span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-box fb-runtime" style="min-width: 180px;">SDK Runtime<br><code>runtime.check_tool()</code></span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-box fb-kernel" style="min-width: 220px;">Kernel Facade<br><code>kernel.check_tool_call()</code><br>6 subsystems</span>
+      <span class="flow-arrow">&rarr;</span>
+      <span class="flow-box fb-syscall" style="min-width: 180px;">Syscall Pipeline<br><code>kernel.syscall()</code><br>7 ordered stages</span>
+    </div>
+  </div>
+
+  <h3>Kernel Subsystems</h3>
+  <div class="cards">
+    <div class="card"><div class="card-title">AdmissionController</div><div class="card-body">Validates agent contracts before deploy. Name format, namespace uniqueness, tool availability, lifecycle consistency, dependency resolution. Also registers typed A2A surfaces.</div></div>
+    <div class="card"><div class="card-title">PermissionManager</div><div class="card-body">Runtime allow/deny for tool calls (wildcard whitelist + explicit deny list), A2A calls (ACL or same-namespace default), and data access.</div></div>
+    <div class="card"><div class="card-title">BudgetManager</div><div class="card-body">Per-task + daily USD caps. Two-phase reservation: <code>reserve()</code> &rarr; <code>commit(actual)</code> or <code>release()</code>. Prevents concurrent burst bypass.</div></div>
+    <div class="card"><div class="card-title">PolicyEngine</div><div class="card-body">Declarative JSON-logic rules from agent manifests. Operators: <code>equals</code>, <code>contains</code>, <code>gt</code>, <code>in</code>. Evaluates against a context dict.</div></div>
+    <div class="card"><div class="card-title">DataBoundaryManager</div><div class="card-body">Namespace isolation + PII policy. Checks <code>allowed_namespaces</code> / <code>blocked_namespaces</code>. Returns PII policy (allow/detect/mask/redact/block).</div></div>
+    <div class="card"><div class="card-title">CapabilityManager</div><div class="card-body">Opaque 128-bit tokens: <code>issue(subject, target, verb, ttl)</code>. Positive authority that bypasses ACLs. Revocable, expiring.</div></div>
+  </div>
+
+  <h3>Syscall Pipeline Stages</h3>
+  <p>Fixed order. Each stage returns <code>None</code> (continue) or a <code>KernelDecision</code> (short-circuit on non-allow).</p>
+  <div class="pipeline">
+    <div class="stage s-identity"><div class="stage-box"><div class="num">1</div><div class="label">identity</div><div class="detail">Resolve caller PID</div><div class="outcome">&rarr; continue</div></div></div>
+    <div class="stage-arrow">&rarr;</div>
+    <div class="stage s-capability"><div class="stage-box"><div class="num">2</div><div class="label">capability</div><div class="detail">Tool / A2A / data ACLs</div><div class="outcome">deny</div></div></div>
+    <div class="stage-arrow">&rarr;</div>
+    <div class="stage s-quota"><div class="stage-box"><div class="num">3</div><div class="label">quota</div><div class="detail">Budget reservation</div><div class="outcome">rate_limit</div></div></div>
+    <div class="stage-arrow">&rarr;</div>
+    <div class="stage s-policy"><div class="stage-box"><div class="num">4</div><div class="label">policy</div><div class="detail">JSON-logic rules</div><div class="outcome">deny</div></div></div>
+    <div class="stage-arrow">&rarr;</div>
+    <div class="stage s-boundary"><div class="stage-box"><div class="num">5</div><div class="label">boundary</div><div class="detail">Namespace + PII</div><div class="outcome">mask</div></div></div>
+    <div class="stage-arrow">&rarr;</div>
+    <div class="stage s-dispatch"><div class="stage-box"><div class="num">6</div><div class="label">dispatch</div><div class="detail">Execute operation</div><div class="outcome">result</div></div></div>
+    <div class="stage-arrow">&rarr;</div>
+    <div class="stage s-audit"><div class="stage-box"><div class="num">7</div><div class="label">audit</div><div class="detail">Hash-chain append</div><div class="outcome">always runs</div></div></div>
+  </div>
+
+  <h3>5 Possible Outcomes (KernelDecision)</h3>
+  <div class="flow" style="gap: 10px;">
+    <span class="flow-box" style="background:#1a3a2a;color:#3fb950;border:1px solid #238636"><strong>allow</strong> &mdash; proceed</span>
+    <span class="flow-box" style="background:#3a1a1a;color:#f85149;border:1px solid #da3633"><strong>deny</strong> &mdash; blocked by ACL/policy</span>
+    <span class="flow-box" style="background:#2a1f17;color:#f0883e;border:1px solid #d29922"><strong>rate_limit</strong> &mdash; budget exceeded</span>
+    <span class="flow-box" style="background:#2a2517;color:#e3b341;border:1px solid #d29922"><strong>mask</strong> &mdash; data redacted</span>
+    <span class="flow-box" style="background:#2a1f33;color:#bc8cff;border:1px solid #8957e5"><strong>ask_human</strong> &mdash; HITL required</span>
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- SECTION 3: OPENCLAW                                              -->
+<!-- ================================================================ -->
+<section id="openclaw">
+  <h2><span class="num">3.</span> OpenClaw Developer View</h2>
+
+  <div class="fw-panel openclaw">
+    <p class="fw-desc">OpenClaw agents run inside a Node.js gateway subprocess. Tool calls are proxied through a local HTTP server (<code>ToolProxyServer</code>) that validates tokens and checks kernel permissions before execution.</p>
+
+    <div class="diagram">
+      <div class="diagram-title">Tool Call Flow (Gateway Path)</div>
+      <div class="flow">
+        <span class="flow-box fb-agent">SOUL.md<br>(LLM decides to call tool)</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-adapter">OpenClaw Gateway<br>(Node.js)</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-proxy">POST /tool<br>X-Agent-Token: sbx_...</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-proxy">ToolProxyServer<br>:18790</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-kernel">Token verify &rarr;<br>runtime.check_tool()</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-tool">tool_executor<br>.execute()</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-allow">JSON result</span>
+      </div>
+    </div>
+
+    <div class="diagram">
+      <div class="diagram-title">What Happens on Denial</div>
+      <div class="flow">
+        <span class="flow-box fb-agent">Agent calls shell.exec</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-proxy">POST /tool</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-kernel">check_tool("shell.exec")</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-deny">{"error": "Kernel denied: not in allowed tools"}</span>
+      </div>
+      <p style="font-size:11px;color:#8b949e;margin-top:8px;">The tool_executor is never reached. The proxy returns the error to the OpenClaw gateway, which passes it back to the LLM as a tool result.</p>
+    </div>
+
+    <h3>Your Workspace Files</h3>
+    <pre><code>~/.openclaw-forgeos/workspaces/my-agent/
+  SOUL.md              # Your agent's personality + tool proxy instructions
+  AGENTS.md            # Metadata: department, tools, execution type
+  HEARTBEAT.md         # Schedule / event triggers
+  SKILLS/default.yaml  # Tool endpoints pointing to ToolProxyServer
+  MEMORY/long-term.md  # Persistent memory across sessions</code></pre>
+
+    <h3>SKILLS/default.yaml (auto-generated)</h3>
+    <pre><code>- name: company__search_knowledge
+  trigger: "use company__search_knowledge"
+  description: "Calls company__search_knowledge via ForgeOS kernel proxy"
+  method: POST
+  endpoint: "http://127.0.0.1:18790/tool"
+  headers:
+    X-Agent-Token: "sbx_abc123..."
+  body:
+    tool_name: "company__search_knowledge"
+    tool_input: "{{params}}"</code></pre>
+
+    <div class="split">
+      <div class="split-col dev">
+        <h4>You Control</h4>
+        <ul>
+          <li><code>SOUL.md</code> &mdash; system prompt / personality</li>
+          <li><code>AGENTS.md</code> &mdash; metadata</li>
+          <li><code>HEARTBEAT.md</code> &mdash; schedule config</li>
+          <li><code>MEMORY/</code> &mdash; persistent memory</li>
+          <li>Which tools to list in manifest</li>
+          <li>Agent logic (ReAct patterns in SOUL)</li>
+        </ul>
+      </div>
+      <div class="split-col platform">
+        <h4>Platform Controls</h4>
+        <ul>
+          <li>Token minting + validation</li>
+          <li><code>SKILLS/</code> proxy endpoints (auto-generated)</li>
+          <li>Kernel permission checks per tool call</li>
+          <li>Budget enforcement + reservations</li>
+          <li>Audit trail of every tool invocation</li>
+          <li>Process table (PID, phase, resource usage)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- SECTION 4: ADK                                                   -->
+<!-- ================================================================ -->
+<section id="adk">
+  <h2><span class="num">4.</span> Google ADK Developer View</h2>
+
+  <div class="fw-panel adk">
+    <p class="fw-desc">ADK agents run via <code>Runner.run_async()</code>. Each ForgeOS tool is wrapped as an ADK <code>FunctionTool</code> with a kernel gate inside the async wrapper. The gate checks permissions before executing.</p>
+
+    <div class="diagram">
+      <div class="diagram-title">Tool Call Flow (Real ADK Path)</div>
+      <div class="flow">
+        <span class="flow-box fb-agent">LlmAgent<br>(Gemini/Claude)</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-adapter">Runner.run_async()<br>event stream</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-adapter">FunctionTool<br>async _wrapper()</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-runtime">runtime.check_tool()<br>(kernel gate)</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-kernel">PermissionManager<br>+ BudgetManager</span>
+      </div>
+      <div class="flow" style="margin-top: 8px;">
+        <span class="flow-arrow" style="visibility:hidden">&rarr;</span>
+        <span class="flow-arrow" style="visibility:hidden">&rarr;</span>
+        <span class="flow-arrow" style="visibility:hidden">&rarr;</span>
+        <span class="flow-arrow" style="visibility:hidden">&rarr;</span>
+        <span class="flow-arrow" style="visibility:hidden">&rarr;</span>
+        <span class="flow-box fb-kernel">If allowed &darr;</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-tool">tool_executor.execute()</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-allow">result dict &rarr; ADK</span>
+      </div>
+    </div>
+
+    <h3>The Kernel Gate (inside your FunctionTool wrapper)</h3>
+    <pre><code># stacks/adk/adapter.py — _build_adk_tools()
+
+async def _wrapper(**kwargs):
+    # 1. Kernel gate: check permissions
+    from src.forgeos_sdk.runtime import runtime as _rt
+    if _rt.is_registered and _rt.is_bound:
+        decision = await _rt.check_tool(tool_name, kwargs)
+        if decision.denied:
+            return {"success": False, "error": f"Kernel denied: {decision.reason}"}
+
+    # 2. Execute tool (only if kernel allows)
+    result = await tool_executor.execute(tool_name, kwargs, agent_context)
+    return result</code></pre>
+
+    <h3>Your Agent Files</h3>
+    <pre><code>my-adk-agent/
+  agent.py       # LlmAgent(name, model, instruction, tools)
+  workflow.py    # SequentialAgent / ParallelAgent (optional)
+  tools.py       # FORGEOS_TOOL_WRAPPERS (injected at runtime)
+  prompts/       # system_prompt.txt
+  config.yaml    # checkpoints, workflow type, LLM config</code></pre>
+
+    <div class="split">
+      <div class="split-col dev">
+        <h4>You Control</h4>
+        <ul>
+          <li><code>agent.py</code> &mdash; LlmAgent definition</li>
+          <li><code>workflow.py</code> &mdash; multi-agent orchestration</li>
+          <li>System prompt / instruction</li>
+          <li>Which tools to declare in manifest</li>
+          <li>Model selection (Gemini, Claude, GPT)</li>
+          <li>Sub-agent composition</li>
+        </ul>
+      </div>
+      <div class="split-col platform">
+        <h4>Platform Controls</h4>
+        <ul>
+          <li>Kernel gate inside every FunctionTool wrapper</li>
+          <li>Permission checks (whitelist + deny list)</li>
+          <li>Budget enforcement per tool call</li>
+          <li>Process table tracking (tokens, dollars, tool calls)</li>
+          <li>InMemorySessionService (volatile; persistent planned)</li>
+          <li>Audit trail via kernel</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- SECTION 5: CREWAI                                                -->
+<!-- ================================================================ -->
+<section id="crewai">
+  <h2><span class="num">5.</span> CrewAI Developer View</h2>
+
+  <div class="fw-panel crewai">
+    <p class="fw-desc">CrewAI agents run via <code>Crew.kickoff()</code> in a worker thread. Each ForgeOS tool is wrapped as a CrewAI <code>BaseTool</code> subclass with a kernel gate inside <code>_run()</code>. Because CrewAI runs synchronously in a thread, the gate creates its own event loop for the async kernel check.</p>
+
+    <div class="diagram">
+      <div class="diagram-title">Tool Call Flow (Real CrewAI Path)</div>
+      <div class="flow">
+        <span class="flow-box fb-agent">Crew.kickoff()<br>(worker thread)</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-adapter">CrewAgent<br>(role, goal, backstory)</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-adapter">BaseTool._run()<br>(ForgeOSTool)</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-runtime">runtime.check_tool()<br>(new event loop)</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-kernel">Kernel</span>
+      </div>
+      <div class="flow" style="margin-top: 8px;">
+        <span class="flow-arrow" style="visibility:hidden">&rarr;</span>
+        <span class="flow-arrow" style="visibility:hidden">&rarr;</span>
+        <span class="flow-arrow" style="visibility:hidden">&rarr;</span>
+        <span class="flow-arrow" style="visibility:hidden">&rarr;</span>
+        <span class="flow-box fb-kernel">If allowed &darr;</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-tool">tool_executor.execute()</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-box fb-allow">str result &rarr; CrewAI</span>
+      </div>
+    </div>
+
+    <h3>The Kernel Gate (inside BaseTool._run)</h3>
+    <pre><code># stacks/crewai/adapter.py — _build_crewai_tools()
+
+class ForgeOSTool(CrewBaseTool):
+    name: str = "email.send"
+    description: str = "Send email"
+
+    def _run(self, **kwargs) -> str:
+        loop = asyncio.new_event_loop()
+        try:
+            # 1. Kernel gate
+            from src.forgeos_sdk.runtime import runtime as _rt
+            if _rt.is_registered and _rt.is_bound:
+                decision = loop.run_until_complete(
+                    _rt.check_tool(self.name, kwargs)
+                )
+                if decision.denied:
+                    return f"Error: Kernel denied: {decision.reason}"
+
+            # 2. Execute tool
+            result = loop.run_until_complete(
+                tool_executor.execute(self.name, kwargs, agent_context)
+            )
+        finally:
+            loop.close()
+        return str(result)</code></pre>
+
+    <h3>Your Agent Files</h3>
+    <pre><code>my-crew-agent/
+  agents.py    # Agent(role, goal, backstory, tools)
+  tasks.py     # Task(description, agent, expected_output)
+  crew.py      # Crew(agents, tasks, process='sequential', memory=True)
+  tools.py     # Tool registry (auto-wrapped as BaseTool)
+  config.yaml  # Crew process type, LLM config</code></pre>
+
+    <div class="split">
+      <div class="split-col dev">
+        <h4>You Control</h4>
+        <ul>
+          <li>Role, goal, backstory for each crew member</li>
+          <li>Task definitions + expected outputs</li>
+          <li>Crew process type (sequential, hierarchical)</li>
+          <li>Which tools to declare in manifest</li>
+          <li>Model selection</li>
+          <li>Memory configuration</li>
+        </ul>
+      </div>
+      <div class="split-col platform">
+        <h4>Platform Controls</h4>
+        <ul>
+          <li>Kernel gate inside every BaseTool._run()</li>
+          <li>Permission checks before tool execution</li>
+          <li>Budget enforcement per tool call</li>
+          <li>Process table tracking</li>
+          <li>Audit trail</li>
+          <li><code>allow_delegation=False</code> by default (configurable)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- SECTION 6: SDK RUNTIME API                                       -->
+<!-- ================================================================ -->
+<section id="api-ref">
+  <h2><span class="num">6.</span> SDK Runtime API Reference</h2>
+  <p>All methods are <code>async</code>. Import: <code>from forgeos_sdk import runtime</code></p>
+
+  <div class="api-group">
+    <div class="api-group-title">Identity (set by executor, read-only)</div>
+    <div class="api-cards">
+      <div class="api-card"><div class="method">runtime.agent_id</div><div class="ret">&rarr; str</div><div class="desc">The bound agent's ID (auto-set per invocation)</div></div>
+      <div class="api-card"><div class="method">runtime.namespace</div><div class="ret">&rarr; str</div><div class="desc">The bound agent's namespace ("sales", "finance", ...)</div></div>
+      <div class="api-card"><div class="method">runtime.is_bound</div><div class="ret">&rarr; bool</div><div class="desc">True when an agent context is active</div></div>
+    </div>
+  </div>
+
+  <div class="api-group">
+    <div class="api-group-title">Policy Checks</div>
+    <div class="api-cards">
+      <div class="api-card"><div class="method">check_tool(name, input?, cost?)</div><div class="ret">&rarr; KernelDecision</div><div class="desc">Check if a tool call is permitted</div></div>
+      <div class="api-card"><div class="method">check_a2a(namespace, name)</div><div class="ret">&rarr; KernelDecision</div><div class="desc">Check if an A2A call is permitted</div></div>
+      <div class="api-card"><div class="method">check_data(namespace)</div><div class="ret">&rarr; KernelDecision</div><div class="desc">Check data access to a namespace</div></div>
+    </div>
+  </div>
+
+  <div class="api-group">
+    <div class="api-group-title">Budget</div>
+    <div class="api-cards">
+      <div class="api-card"><div class="method">budget()</div><div class="ret">&rarr; BudgetSnapshot</div><div class="desc">Daily limit, per-task limit, spent, reserved, remaining</div></div>
+      <div class="api-card"><div class="method">reserve(usd, tokens?)</div><div class="ret">&rarr; str | None</div><div class="desc">Reserve budget, returns ticket ID (None if denied)</div></div>
+      <div class="api-card"><div class="method">commit(ticket, usd?, tokens?)</div><div class="ret">&rarr; KernelDecision</div><div class="desc">Finalize reservation with actual cost</div></div>
+      <div class="api-card"><div class="method">release(ticket)</div><div class="ret">&rarr; KernelDecision</div><div class="desc">Release unused reservation</div></div>
+    </div>
+  </div>
+
+  <div class="api-group">
+    <div class="api-group-title">Checkpoints</div>
+    <div class="api-cards">
+      <div class="api-card"><div class="method">checkpoint(state_dict)</div><div class="ret">&rarr; None</div><div class="desc">Save agent state at a logical boundary</div></div>
+      <div class="api-card"><div class="method">last_checkpoint()</div><div class="ret">&rarr; CheckpointData | None</div><div class="desc">Load most recent checkpoint</div></div>
+    </div>
+  </div>
+
+  <div class="api-group">
+    <div class="api-group-title">Capability Tokens</div>
+    <div class="api-cards">
+      <div class="api-card"><div class="method">request_capability(target, verb, ttl?)</div><div class="ret">&rarr; CapabilityToken</div><div class="desc">Mint a scoped runtime grant</div></div>
+      <div class="api-card"><div class="method">revoke_capability(token_id)</div><div class="ret">&rarr; bool</div><div class="desc">Revoke a previously issued token</div></div>
+      <div class="api-card"><div class="method">list_capabilities()</div><div class="ret">&rarr; list[CapabilityToken]</div><div class="desc">All active tokens for this agent</div></div>
+    </div>
+  </div>
+
+  <div class="api-group">
+    <div class="api-group-title">Signals</div>
+    <div class="api-cards">
+      <div class="api-card"><div class="method">pending_signals()</div><div class="ret">&rarr; list[str]</div><div class="desc">Return + clear pending signals (SIGTERM, SIGSTOP, ...)</div></div>
+      <div class="api-card"><div class="method">signal(target_pid, name, reason?)</div><div class="ret">&rarr; bool</div><div class="desc">Send a signal to another agent</div></div>
+    </div>
+  </div>
+
+  <div class="api-group">
+    <div class="api-group-title">Introspection</div>
+    <div class="api-cards">
+      <div class="api-card"><div class="method">contract()</div><div class="ret">&rarr; dict | None</div><div class="desc">Full agent contract (tools, budgets, boundaries, ...)</div></div>
+      <div class="api-card"><div class="method">process()</div><div class="ret">&rarr; ProcessSnapshot | None</div><div class="desc">PID, phase, tokens, dollars, tool calls, signals</div></div>
+      <div class="api-card"><div class="method">audit(event, details?)</div><div class="ret">&rarr; None</div><div class="desc">Record a custom audit event</div></div>
+      <div class="api-card"><div class="method">syscall(verb, target, args?)</div><div class="ret">&rarr; KernelDecision</div><div class="desc">Run through the full 7-stage pipeline</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<!-- SECTION 7: ENFORCEMENT MATRIX                                    -->
+<!-- ================================================================ -->
+<section id="matrix">
+  <h2><span class="num">7.</span> Enforcement Matrix</h2>
+  <p>Kernel enforcement on every adapter, both real SDK and fallback paths.</p>
+
+  <table class="matrix">
+    <thead>
+      <tr>
+        <th>Adapter</th>
+        <th>Real SDK Path</th>
+        <th>Kernel Enforced?</th>
+        <th>Method</th>
+        <th>Fallback Path</th>
+        <th>Kernel Enforced?</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>ForgeOS</strong></td>
+        <td>agentic_loop &rarr; _execute_tool</td>
+        <td><span class="badge badge-yes">Yes</span></td>
+        <td><span class="badge badge-method">runtime.check_tool() in _execute_tool</span></td>
+        <td>&mdash;</td>
+        <td>&mdash;</td>
+      </tr>
+      <tr>
+        <td><strong>CrewAI</strong></td>
+        <td>Crew.kickoff() &rarr; BaseTool._run()</td>
+        <td><span class="badge badge-yes">Yes</span></td>
+        <td><span class="badge badge-method">runtime.check_tool() in _run()</span></td>
+        <td>run_agentic_loop</td>
+        <td><span class="badge badge-yes">Yes</span></td>
+      </tr>
+      <tr>
+        <td><strong>ADK</strong></td>
+        <td>Runner.run_async() &rarr; FunctionTool</td>
+        <td><span class="badge badge-yes">Yes</span></td>
+        <td><span class="badge badge-method">runtime.check_tool() in _wrapper()</span></td>
+        <td>run_agentic_loop</td>
+        <td><span class="badge badge-yes">Yes</span></td>
+      </tr>
+      <tr>
+        <td><strong>OpenClaw</strong></td>
+        <td>Node.js gateway &rarr; POST /tool</td>
+        <td><span class="badge badge-yes">Yes</span></td>
+        <td><span class="badge badge-method">ToolProxyServer + token validation</span></td>
+        <td>run_agentic_loop</td>
+        <td><span class="badge badge-yes">Yes</span></td>
+      </tr>
+      <tr>
+        <td><strong>Sandbox</strong></td>
+        <td>Docker container &rarr; POST /api/sandbox/tool</td>
+        <td><span class="badge badge-yes">Yes</span></td>
+        <td><span class="badge badge-method">/api/sandbox/tool + token validation</span></td>
+        <td>run_agentic_loop</td>
+        <td><span class="badge badge-yes">Yes</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="diagram" style="margin-top: 24px;">
+    <div class="diagram-title">What Gets Checked on Every Tool Call</div>
+    <div class="cards">
+      <div class="card"><div class="card-title">1. Is the tool in the allowed list?</div><div class="card-body">Wildcard matching: <code>mcp__fs__*</code> matches <code>mcp__fs__read</code></div></div>
+      <div class="card"><div class="card-title">2. Is the tool in the deny list?</div><div class="card-body">Explicit deny overrides allow</div></div>
+      <div class="card"><div class="card-title">3. Is there budget remaining?</div><div class="card-body">Per-task USD limit checked if cost estimate provided</div></div>
+      <div class="card"><div class="card-title">4. Do policies permit it?</div><div class="card-body">JSON-logic rules evaluated against tool name + input</div></div>
+      <div class="card"><div class="card-title">5. Is the audit trail updated?</div><div class="card-body">Every allow + deny recorded with context</div></div>
+    </div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>
