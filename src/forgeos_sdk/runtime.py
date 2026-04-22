@@ -310,9 +310,15 @@ class Runtime:
         k = self._require_kernel()
         agent_id = self.agent_id
 
-        # Read limits from contract
+        # Read limits from contract — check both canonical and metadata bag
         contract = k.get_contract(agent_id) or {}
-        boundaries = (contract.get("_boundaries") or contract.get("boundaries") or {})
+        metadata = contract.get("metadata") or {}
+        boundaries = (
+            contract.get("boundaries")
+            or contract.get("_boundaries")
+            or metadata.get("_boundaries")
+            or {}
+        )
         budgets_cfg = boundaries.get("budgets") or {}
         daily = budgets_cfg.get("daily_usd")
         per_task = budgets_cfg.get("per_task_usd")
