@@ -684,8 +684,9 @@ async def main():
     # Store app reference for liveness tick tracking
     _api_app = None
     if args.dashboard:
-        _api_app = bootstrap.create_api_app(auth_enabled=not args.no_auth)
-        bootstrap.start_api_server(port=api_port, auth_enabled=not args.no_auth)
+        auth_on = not args.no_auth and not os.environ.get("FORGEOS_AUTH_DISABLED")
+        _api_app = bootstrap.create_api_app(auth_enabled=auth_on)
+        bootstrap.start_api_server(port=api_port, auth_enabled=auth_on)
 
     # Register SIGTERM/SIGINT for graceful shutdown
     loop = asyncio.get_running_loop()
