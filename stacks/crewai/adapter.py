@@ -86,6 +86,18 @@ def _build_crewai_tools(tool_executor, agent_def, agent_context: dict) -> list:
                     try:
                         loop = _asyncio.new_event_loop()
                         try:
+                            # Kernel gate: check permissions before executing
+                            try:
+                                from src.forgeos_sdk.runtime import runtime as _rt
+                                if _rt.is_registered and _rt.is_bound:
+                                    decision = loop.run_until_complete(
+                                        _rt.check_tool(name_captured, kwargs)
+                                    )
+                                    if decision.denied:
+                                        return f"Error: Kernel denied: {decision.reason}"
+                            except Exception:
+                                pass
+
                             result = loop.run_until_complete(
                                 tool_executor.execute(name_captured, kwargs, agent_context)
                             )
