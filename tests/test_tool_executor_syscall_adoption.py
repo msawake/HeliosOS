@@ -111,7 +111,7 @@ class TestPipelineAdoptionWhenFlagOn:
 
 class TestLegacyPathWhenFlagOff:
     async def test_flag_off_uses_check_tool_call(self, monkeypatch):
-        monkeypatch.delenv("FORGEOS_SYSCALL_PIPELINE", raising=False)
+        monkeypatch.setenv("FORGEOS_SYSCALL_PIPELINE", "0")
         registry = _registry_with_agent(allowed=["mcp__safe__*"])
         kernel = Kernel(registry=registry)
 

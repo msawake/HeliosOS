@@ -326,20 +326,30 @@ class PlatformExecutor:
 
                 # Save updated conversation to session store
                 if session_id and hasattr(self, '_session_store') and self._session_store:
+                    new_msgs = [
+                        {"role": "user", "content": prompt},
+                        {"role": "assistant", "content": result.output or ""},
+                    ]
                     if session is None:
                         from src.core.session_store import AgentSession
                         session = AgentSession(
                             session_id=session_id,
                             agent_id=agent_id,
                             tenant_id=(context or {}).get("tenant_id", "default"),
-                            messages=[],
+                            messages=new_msgs,
                             system_prompt=agent_def.system_prompt or agent_def.description or "",
                         )
-                    session.messages.append({"role": "user", "content": prompt})
-                    session.messages.append({"role": "assistant", "content": result.output or ""})
-                    session.turns_completed += 1
-                    session.output_tokens += result.tokens_used
-                    self._session_store.save(session)
+                        session.turns_completed = 1
+                        session.output_tokens = result.tokens_used
+                        self._session_store.save(session)
+                    else:
+                        session.messages.extend(new_msgs)
+                        session.turns_completed += 1
+                        session.output_tokens += result.tokens_used
+                        if hasattr(self._session_store, "append_messages"):
+                            self._session_store.append_messages(session_id, new_msgs)
+                        else:
+                            self._session_store.save(session)
 
                 return result
             except Exception as e:

@@ -346,11 +346,14 @@ FEATURE_FLAG_ENV = "FORGEOS_SYSCALL_PIPELINE"
 
 
 def syscall_pipeline_enabled() -> bool:
-    """Return True when the syscall pipeline is active for new adoption
-    sites. Controlled by ``FORGEOS_SYSCALL_PIPELINE`` (``1``/``true``/``yes``)
-    so existing callers keep the legacy hooks.py path by default.
+    """Return True when the syscall pipeline is active.
+
+    The pipeline is **on by default**. Set ``FORGEOS_SYSCALL_PIPELINE=0``
+    (or ``false`` / ``off``) to fall back to the legacy ``hooks.py`` chain
+    during the migration period.
     """
-    return os.environ.get(FEATURE_FLAG_ENV, "").lower() in ("1", "true", "yes", "on")
+    val = os.environ.get(FEATURE_FLAG_ENV, "1").lower()
+    return val not in ("0", "false", "no", "off")
 
 
 __all__ = [

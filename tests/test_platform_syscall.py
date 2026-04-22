@@ -351,16 +351,16 @@ class TestKernelSyscallIntegration:
 
 
 class TestFeatureFlag:
-    def test_default_off(self, monkeypatch):
+    def test_default_on(self, monkeypatch):
         monkeypatch.delenv("FORGEOS_SYSCALL_PIPELINE", raising=False)
-        assert syscall_pipeline_enabled() is False
+        assert syscall_pipeline_enabled() is True
 
     @pytest.mark.parametrize("val", ["1", "true", "TRUE", "yes", "on"])
     def test_on_values(self, monkeypatch, val):
         monkeypatch.setenv("FORGEOS_SYSCALL_PIPELINE", val)
         assert syscall_pipeline_enabled() is True
 
-    @pytest.mark.parametrize("val", ["0", "false", "no", "", "something-else"])
+    @pytest.mark.parametrize("val", ["0", "false", "no", "off"])
     def test_off_values(self, monkeypatch, val):
         monkeypatch.setenv("FORGEOS_SYSCALL_PIPELINE", val)
         assert syscall_pipeline_enabled() is False

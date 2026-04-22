@@ -314,11 +314,26 @@ async def _execute_tool(
     *raised* exception. Does NOT retry when the executor returns an
     explicit `{"error": ...}` dict — that's considered a deliberate
     failure from the tool itself.
+
+    When the SDK runtime is bound, every tool call passes through the
+    kernel's permission + budget checks before execution.
     """
     if not tool_executor:
         return {"error": f"No tool executor available for tool '{tool_name}'"}
     if not hasattr(tool_executor, "execute"):
         return {"error": "Tool executor has no execute method"}
+
+    # Kernel gate: check permissions + budget before executing the tool.
+    try:
+        from src.forgeos_sdk.runtime import runtime as _rt
+        if _rt.is_registered and _rt.is_bound:
+            decision = await _rt.check_tool(tool_name, tool_input)
+            if decision.denied:
+                return {"error": f"Kernel denied: {decision.reason}"}
+            if hasattr(decision, "action") and decision.action == "rate_limit":
+                return {"error": f"Rate limited: {decision.reason}"}
+    except Exception:
+        pass
 
     effective_timeout = timeout if timeout is not None else TOOL_DEFAULT_TIMEOUT_SECONDS
     last_error: Exception | None = None
