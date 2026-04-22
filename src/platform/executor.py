@@ -295,6 +295,20 @@ class PlatformExecutor:
 
             self.registry.set_status(agent_id, AgentStatus.RUNNING)
             self.process_table.heartbeat(agent_id)
+
+            # Bind the SDK runtime so agent code can use
+            # ``from forgeos_sdk import runtime`` without passing agent_id.
+            _rt_token = None
+            try:
+                from src.forgeos_sdk.runtime import runtime as _sdk_runtime
+                if _sdk_runtime.is_registered:
+                    _rt_token = _sdk_runtime.bind(
+                        agent_id,
+                        namespace=getattr(agent_def, "namespace", "default"),
+                    )
+            except Exception:
+                pass
+
             try:
                 result = await adapter.invoke(agent_id, prompt, context, history=history)
                 self.registry.set_status(agent_id, result.status)
@@ -336,6 +350,12 @@ class PlatformExecutor:
                     status=AgentStatus.FAILED,
                     error=str(e),
                 )
+            finally:
+                if _rt_token is not None:
+                    try:
+                        _sdk_runtime.unbind(_rt_token)
+                    except Exception:
+                        pass
 
         if session_lock:
             async with session_lock:

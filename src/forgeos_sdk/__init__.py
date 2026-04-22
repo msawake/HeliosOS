@@ -24,6 +24,7 @@ Quickstart:
 from .agent import Agent, AgentBuilder
 from .client import ForgeOSClient, ForgeOSError
 from .kernel import Kernel, KernelDecision
+from .runtime import runtime, Runtime, BudgetSnapshot, ProcessSnapshot, CheckpointData, CapabilityToken
 from .manifest import (
     # v1 primitives
     AgentManifest,
@@ -65,6 +66,12 @@ __all__ = [
     "ForgeOSError",
     "Kernel",
     "KernelDecision",
+    "runtime",
+    "Runtime",
+    "BudgetSnapshot",
+    "ProcessSnapshot",
+    "CheckpointData",
+    "CapabilityToken",
     "Guardrails",
     "LLMConfig",
     "MemoryBlock",

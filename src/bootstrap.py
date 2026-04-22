@@ -247,6 +247,18 @@ class PlatformBootstrap:
                 logger.info("  Kernel: registered for in-process SDK access")
             except Exception as e:
                 logger.debug("  SDK kernel registration skipped: %s", e)
+
+            try:
+                from src.forgeos_sdk.runtime import runtime as sdk_runtime
+                sdk_runtime.register_platform(
+                    kernel=self._kernel,
+                    process_table=self.executor.process_table,
+                    checkpoint_store=self.executor.checkpoint_store,
+                )
+                logger.info("  Runtime: registered for in-process SDK access")
+            except Exception as e:
+                logger.debug("  SDK runtime registration skipped: %s", e)
+
             for name, adapter in self._adapters.items():
                 self.executor.register_adapter(adapter)
 
