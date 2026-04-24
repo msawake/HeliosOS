@@ -1,0 +1,52 @@
+# ============================================================================
+# ForgeOS Example: Reflex Agent — Q&A Knowledge Assistant
+# ============================================================================
+#
+# EXECUTION TYPE: reflex
+#   A reflex agent is the simplest type — it has no loop, no schedule, and no
+#   event subscriptions. It sits idle until explicitly invoked via the API or
+#   CLI, processes the request, returns a response, and goes back to idle.
+#   Think of it as a stateless function: prompt in, answer out.
+#
+# WHEN IT RUNS:
+#   Only when you call it. It never runs on its own.
+#
+# DEPLOY:
+#   forgeos deploy examples/forgeos/reflex-qa-assistant.yaml
+#
+# TEST:
+#   # Invoke via the REST API:
+#   curl -X POST http://localhost:5001/api/agents/qa-knowledge-assistant/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "What is our refund policy?"}'
+#
+#   # Or via the CLI:
+#   forgeos invoke qa-knowledge-assistant "What is our refund policy?"
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: qa-knowledge-assistant
+  description: "On-demand Q&A assistant that searches the company knowledge base to answer questions. Invoked via API — no schedule or event triggers."
+  department: examples
+spec:
+  stack: forgeos
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - company__search_knowledge
+  system_prompt: |
+    You are a knowledge-base Q&A assistant for the company.
+
+    When a user asks a question:
+    1. Use the search_knowledge tool to find relevant documents and passages.
+    2. Synthesize the results into a clear, concise answer.
+    3. If no relevant information is found, say so honestly — never fabricate answers.
+    4. Always cite which knowledge base article(s) your answer came from.
+
+    Keep answers focused and under 200 words unless the question requires more detail.

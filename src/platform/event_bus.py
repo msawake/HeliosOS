@@ -68,9 +68,14 @@ class EventBus:
     ``PostgresAgentMessageStore`` for durable messaging.
     """
 
-    def __init__(self, subscription_store=None, message_store=None):
+    def __init__(self, subscription_store=None, message_store=None, event_store=None):
         self._subscription_store = subscription_store
         self._message_store = message_store
+        # Phase 2 #3 — durable event store. When wired, every fired event
+        # is appended; recent_events reads the durable log in preference
+        # to the in-memory ring so a restart / multi-worker deployment
+        # does not lose history.
+        self._event_store = event_store
         self._subscribers: dict[str, list[tuple[str, EventCallback]]] = defaultdict(list)
         self._history: list[Event] = []
         self._max_history = 1000
@@ -183,12 +188,29 @@ class EventBus:
         return result
 
     def recent_events(self, limit: int = 50) -> list[dict]:
+        # Prefer the durable log when wired: it survives restarts and is
+        # authoritative under multi-worker deployments where each worker
+        # has its own in-memory ring.
+        if self._event_store is not None:
+            try:
+                events = self._event_store.recent(limit=limit)
+                return [e.to_dict() for e in events]
+            except Exception:
+                logger.exception("durable event store read failed — falling back to memory")
         return [e.to_dict() for e in self._history[-limit:]]
 
     def _record(self, event: Event) -> None:
         self._history.append(event)
         if len(self._history) > self._max_history:
             self._history = self._history[-self._max_history:]
+        # Append to the durable store if wired. Failures must not block
+        # the fire path — the plan explicitly wants the durable path to
+        # be best-effort-plus-loud rather than a new hard dependency.
+        if self._event_store is not None:
+            try:
+                self._event_store.append(event)
+            except Exception:
+                logger.exception("durable event store append failed — event only in memory")
 
     @staticmethod
     async def _safe_call(agent_id: str, event: Event, callback: EventCallback) -> None:

@@ -86,6 +86,18 @@ def _build_crewai_tools(tool_executor, agent_def, agent_context: dict) -> list:
                     try:
                         loop = _asyncio.new_event_loop()
                         try:
+                            # Kernel gate: check permissions before executing
+                            try:
+                                from src.forgeos_sdk.runtime import runtime as _rt
+                                if _rt.is_registered and _rt.is_bound:
+                                    decision = loop.run_until_complete(
+                                        _rt.check_tool(name_captured, kwargs)
+                                    )
+                                    if decision.denied:
+                                        return f"Error: Kernel denied: {decision.reason}"
+                            except Exception:
+                                pass
+
                             result = loop.run_until_complete(
                                 tool_executor.execute(name_captured, kwargs, agent_context)
                             )
@@ -182,6 +194,7 @@ class CrewAIAdapter(AgentStackAdapter):
                 tool_executor=self._tool_executor,
                 agent_context=build_agent_context(agent_def, agent_id),
                 history=history,
+                goal=agent_def.goal,
             )
             result.agent_id = agent_id
             return result
@@ -189,7 +202,8 @@ class CrewAIAdapter(AgentStackAdapter):
         return AgentResult(
             agent_id=agent_id,
             status=AgentStatus.COMPLETED,
-            output=f"[CrewAI simulated] Crew member '{agent_def.name}' processed: {prompt[:100]}",
+            output=f"[SIMULATED - No LLM API key configured] Agent '{agent_def.name}' received: {prompt[:100]}. Configure ANTHROPIC_API_KEY or OPENAI_API_KEY.",
+            error="No LLM provider available. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.",
         )
 
     async def _invoke_real(

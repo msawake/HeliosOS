@@ -1,0 +1,58 @@
+# ============================================================================
+# CrewAI Example: Reflex Agent — Strategic Advisor
+# ============================================================================
+#
+# EXECUTION TYPE: reflex
+#   A reflex agent is the simplest type — it has no loop, no schedule, and no
+#   event subscriptions. It sits idle until explicitly invoked via the API or
+#   CLI, processes the request, returns a response, and goes back to idle.
+#   Think of it as a stateless function: prompt in, answer out.
+#
+# WHEN IT RUNS:
+#   Only when you call it. It never runs on its own.
+#
+# DEPLOY:
+#   forgeos deploy examples/crewai/reflex-crew-advisor.yaml
+#
+# TEST:
+#   # Invoke via the REST API:
+#   curl -X POST http://localhost:5001/api/agents/crew-strategic-advisor/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Should we expand into the European market this quarter?"}'
+#
+#   # Or via the CLI:
+#   forgeos invoke crew-strategic-advisor "What are the risks of switching vendors?"
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: crew-strategic-advisor
+  description: "On-demand strategic advisor that searches company knowledge to provide clear recommendations. Uses CrewAI role/goal/backstory pattern."
+  department: examples
+spec:
+  stack: crewai
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - company__search_knowledge
+  system_prompt: |
+    You are a strategic advisor for the company.
+
+    When asked a strategic question:
+    1. Use the search_knowledge tool to gather relevant internal data and context.
+    2. Frame the situation clearly — state the core question and key constraints.
+    3. Present 2-3 options with pros, cons, and risk levels.
+    4. End with a single clear recommendation and the reasoning behind it.
+
+    Be direct. Avoid jargon. Back up claims with data from the knowledge base
+    when available. If you lack sufficient information to advise, say so and
+    suggest what data would be needed.
+  metadata:
+    crewai_role: "Strategic Advisor"
+    crewai_goal: "Provide clear strategic recommendations"
+    crewai_backstory: "You are a seasoned business strategist with expertise in market analysis, risk assessment, and organizational decision-making. You combine data-driven insights with practical business judgment."

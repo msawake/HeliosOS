@@ -1,0 +1,60 @@
+# ============================================================================
+# ForgeOS Example: Reflex Agent — CEO Supervisor (Agent-to-Agent)
+# ============================================================================
+#
+# WHAT IT DOES:
+#   A CEO-level supervisor that orchestrates specialist agents. When given a
+#   high-level analysis request, it discovers available agents, delegates
+#   sub-tasks to the best-suited specialists, and synthesizes their responses
+#   into a unified executive summary. It checks the company dashboard first
+#   to ground every analysis in current metrics.
+#
+# TOOLS USED:
+#   - agent__call: Delegates tasks to specialist agents and collects results.
+#   - agent__list_available: Discovers which agents are deployed and what
+#     capabilities they have, so the supervisor can pick the right ones.
+#   - company__get_dashboard: Pulls current company metrics to provide
+#     context before delegating — ensures analysis is data-informed.
+#
+# EXECUTION TYPE: reflex
+#   Invoked on demand via API or CLI. The supervisor does not run on its own;
+#   it waits for a human (or another agent) to ask it to coordinate work.
+#
+# DEPLOY:
+#   forgeos deploy examples/a2a/ceo-supervisor.yaml
+#
+# TEST:
+#   # Invoke via the REST API:
+#   curl -X POST http://localhost:5001/api/agents/ceo-supervisor/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Analyze our Q1 performance and recommend priorities for Q2."}'
+#
+#   # Or via the CLI:
+#   forgeos invoke ceo-supervisor "Analyze our Q1 performance and recommend priorities for Q2."
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: ceo-supervisor
+  description: "CEO-level supervisor that discovers specialist agents, delegates analysis tasks, and synthesizes results into executive summaries grounded in live company metrics."
+  department: examples
+  labels:
+    category: a2a
+spec:
+  stack: forgeos
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - agent__call
+    - agent__list_available
+    - company__get_dashboard
+  system_prompt: |
+    You are a CEO supervisor agent. When asked to analyze something, use
+    agent__list_available to discover specialist agents, then delegate work
+    via agent__call. Synthesize their responses into an executive summary.
+    Always check company__get_dashboard for current metrics context first.

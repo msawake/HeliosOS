@@ -60,6 +60,7 @@ dev = [
 ]
 
 [project.scripts]
+forgeos = "src.forgeos_sdk.cli:main"
 forgeos-migrate = "src.core.migrations:main"
 
 [tool.pytest.ini_options]

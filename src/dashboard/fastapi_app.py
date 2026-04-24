@@ -19,13 +19,13 @@ import time
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
-from fastapi import FastAPI, WebSocket, Request, Depends, HTTPException, Query, Security
+from fastapi import FastAPI, WebSocket, Request, Depends, Header, HTTPException, Query, Security
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +87,10 @@ class ApprovalAction(BaseModel):
     reason: str = ""
     approved_by: str = ""
     rejected_by: str = ""
+
+class SandboxToolRequest(BaseModel):
+    tool_name: str
+    tool_input: dict = {}
 
 class KnowledgeAddRequest(BaseModel):
     title: str
@@ -152,6 +156,7 @@ def create_fastapi_app(
     admin_registry=None,
     ontology=None,
     tenant_id: str = "default",
+    kernel=None,  # AgentOS kernel facade
 ) -> FastAPI:
 
     app = FastAPI(
@@ -296,9 +301,19 @@ def create_fastapi_app(
 
     @app.get("/api/health", tags=["health"])
     async def health():
-        """System health check — always public."""
+        """System health check — tests actual DB connectivity, not just flags."""
+        # Test real DB connectivity (not just is_connected attribute)
+        db_ok = False
+        if db_client and hasattr(db_client, "is_connected") and db_client.is_connected:
+            try:
+                with db_client.admin() as conn:
+                    conn.execute("SELECT 1")
+                db_ok = True
+            except Exception:
+                db_ok = False
+
         components: dict[str, Any] = {
-            "database": bool(db_client and hasattr(db_client, "is_connected") and db_client.is_connected),
+            "database": db_ok,
             "llm_providers": llm_router.available_providers() if llm_router else [],
             "adapters": list(platform_executor._adapters.keys()) if platform_executor and hasattr(platform_executor, "_adapters") else [],
             "agents_registered": len(platform_registry.list_all()) if platform_registry else 0,
@@ -310,10 +325,33 @@ def create_fastapi_app(
 
     @app.get("/api/readiness", tags=["health"])
     async def readiness():
-        """Kubernetes readiness probe."""
-        if not _boot_complete:
-            raise HTTPException(503, "Not ready")
-        return {"ready": True}
+        """Kubernetes readiness probe — checks subsystems, not just boot flag."""
+        checks = {
+            "booted": _boot_complete,
+            "llm_available": bool(llm_router and llm_router.available_providers()),
+            "registry_loaded": bool(platform_registry),
+            "executor_ready": bool(platform_executor),
+        }
+        all_ready = all(checks.values())
+        if not all_ready:
+            raise HTTPException(503, {"ready": False, "checks": checks})
+        return {"ready": True, "checks": checks}
+
+    @app.get("/api/liveness", tags=["health"])
+    async def liveness():
+        """Kubernetes liveness probe — checks main loop is responsive."""
+        last_tick = getattr(app.state, "last_tick_at", None)
+        now = datetime.now(timezone.utc)
+        if last_tick:
+            elapsed = (now - last_tick).total_seconds()
+            if elapsed > 120:
+                raise HTTPException(503, {
+                    "alive": False,
+                    "reason": f"Main loop last ticked {elapsed:.0f}s ago (>120s)",
+                    "last_tick": last_tick.isoformat(),
+                })
+            return {"alive": True, "last_tick": last_tick.isoformat(), "elapsed_seconds": round(elapsed, 1)}
+        return {"alive": True, "last_tick": None, "note": "Main loop not started (dashboard-only mode)"}
 
     # ------------------------------------------------------------------
     # Approvals
@@ -461,12 +499,69 @@ def create_fastapi_app(
                 system_prompt=req.system_prompt,
             )
             agent_id = await platform_executor.deploy(defn)
+
+            # Phase A #4 — push the resolved manifest to the content-addressed
+            # package registry. Returns a sha256 digest that gets recorded on
+            # the agent so A2A callers and rollbacks can pin to this exact
+            # version. Best-effort: registry failures never block a successful
+            # deploy, but they are logged and the response still includes
+            # any digest we did compute.
+            digest: str | None = None
+            try:
+                from src.forgeos_sdk.manifest import read_v2_section
+                from src.platform.package_registry import (
+                    FilesystemPackageRegistry,
+                    Package,
+                )
+                version = req.metadata.get("version") if req.metadata else None
+                if not version:
+                    version = "0.0.0"
+                manifest_view = {
+                    "apiVersion": "agentos/v1",
+                    "kind": "AgentContract",
+                    "metadata": {
+                        "name": req.name,
+                        "namespace": read_v2_section(
+                            {"metadata": req.metadata or {}}, "namespace", "default"
+                        ),
+                        "version": version,
+                        "description": req.description,
+                        "department": req.department or "",
+                    },
+                    "spec": {
+                        "stack": req.stack,
+                        "execution_type": req.execution_type,
+                        "ownership": ownership.value,
+                        "llm": {"chat_model": req.chat_model, "provider": req.provider},
+                        "tools": req.tools,
+                        "schedule": req.schedule,
+                        "event_triggers": req.event_triggers,
+                        "goal": req.goal,
+                        "system_prompt": req.system_prompt,
+                    },
+                }
+                registry = FilesystemPackageRegistry()
+                package = Package(manifest=manifest_view)
+                digest = registry.push(package, pushed_by="platform-api")
+                # Stash the digest on the live agent definition so A2A /
+                # rollback can later pin by sha.
+                defn.metadata["_digest"] = digest
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "package registry push failed for %s: %s", req.name, exc
+                )
+
             _audit("agent.deploy", resource_type="agent", resource_id=agent_id,
                    details={"name": req.name, "stack": req.stack,
                             "execution_type": req.execution_type,
                             "ownership": ownership.value,
-                            "client_id": req.client_id})
-            return {"agent_id": agent_id, "name": req.name, "stack": req.stack}
+                            "client_id": req.client_id,
+                            "digest": digest})
+            response: dict = {"agent_id": agent_id, "name": req.name, "stack": req.stack}
+            if digest is not None:
+                response["digest"] = digest
+            return response
         except Exception as e:
             _audit("agent.deploy", outcome="failure", resource_type="agent",
                    resource_id=req.name, details={"error": str(e)})
@@ -486,11 +581,22 @@ def create_fastapi_app(
             if agent_def:
                 try:
                     result = await platform_executor.invoke(agent_id, req.prompt, req.context)
+                    # Build warnings for simulation or missing tools
+                    warnings = []
+                    output = result.output or ""
+                    if "[SIMULATED" in output:
+                        warnings.append("Agent is running in SIMULATED mode — no LLM API key configured.")
+                    if result.error and "No LLM provider" in (result.error or ""):
+                        warnings.append(result.error)
+                    missing_tools = (agent_def.metadata or {}).get("_missing_tools_at_deploy")
+                    if missing_tools:
+                        warnings.append(f"Tools unavailable at deploy time: {missing_tools}")
                     return {
                         "agent_id": agent_id,
                         "status": result.status.value if hasattr(result.status, "value") else str(result.status),
-                        "result": (result.output or "")[:2000],
+                        "result": output[:2000],
                         "error": result.error,
+                        "warnings": warnings or None,
                         "cost_usd": 0,
                         "duration": getattr(result, "elapsed_ms", 0) / 1000,
                         "tool_calls": len(result.tool_calls) if result.tool_calls else 0,
@@ -1344,7 +1450,6 @@ def create_fastapi_app(
             return []
         # Use event bus mailbox if available
         try:
-            from src.platform.event_bus import EventBus
             if hasattr(company_system.event_bus, "get_messages"):
                 return company_system.event_bus.get_messages(agent_id, unread_only=unread)
         except Exception:
@@ -1864,6 +1969,144 @@ def create_fastapi_app(
             action=action,
             since=since,
         )
+
+    # ------------------------------------------------------------------
+    # AgentOS Kernel — policy decision endpoints
+    # ------------------------------------------------------------------
+
+    class ToolCheckRequest(BaseModel):
+        agent_id: str
+        tool_name: str
+        tool_input: dict = {}
+        estimated_cost_usd: float | None = None
+
+    class A2ACheckRequest(BaseModel):
+        caller_agent_id: str
+        target_namespace: str
+        target_name: str
+
+    class DataCheckRequest(BaseModel):
+        agent_id: str
+        target_namespace: str
+
+    class AuditRequest(BaseModel):
+        agent_id: str
+        event: str
+        details: dict = {}
+
+    def _require_kernel():
+        if kernel is None:
+            raise HTTPException(503, "Kernel not initialized")
+        return kernel
+
+    @app.post("/api/platform/kernel/check-tool", tags=["kernel"])
+    async def kernel_check_tool(req: ToolCheckRequest):
+        """Check if an agent is allowed to call a tool."""
+        k = _require_kernel()
+        decision = k.check_tool_call(
+            req.agent_id, req.tool_name, req.tool_input, req.estimated_cost_usd,
+        )
+        return decision.to_dict()
+
+    @app.post("/api/platform/kernel/check-a2a", tags=["kernel"])
+    async def kernel_check_a2a(req: A2ACheckRequest):
+        """Check if caller may invoke target agent."""
+        k = _require_kernel()
+        decision = k.check_a2a_call(
+            req.caller_agent_id, req.target_namespace, req.target_name,
+        )
+        return decision.to_dict()
+
+    @app.post("/api/platform/kernel/check-data", tags=["kernel"])
+    async def kernel_check_data(req: DataCheckRequest):
+        """Check if agent may access data in target namespace."""
+        k = _require_kernel()
+        decision = k.check_data_access(req.agent_id, req.target_namespace)
+        return decision.to_dict()
+
+    @app.get("/api/platform/kernel/contract/{agent_id}", tags=["kernel"])
+    async def kernel_get_contract(agent_id: str):
+        """Return the agent's full contract as a dict."""
+        k = _require_kernel()
+        contract = k.get_contract(agent_id)
+        if contract is None:
+            raise HTTPException(404, f"Agent {agent_id} not found")
+        return contract
+
+    @app.post("/api/platform/kernel/admit", tags=["kernel"])
+    async def kernel_admit(contract: dict):
+        """Validate a contract before deploy. Returns AdmissionResult."""
+        k = _require_kernel()
+        result = k.admit(contract)
+        return result.to_dict()
+
+    @app.post("/api/platform/kernel/audit", tags=["kernel"])
+    async def kernel_audit(req: AuditRequest):
+        """Record a custom audit event from an agent."""
+        k = _require_kernel()
+        k.audit(req.agent_id, req.event, req.details)
+        return {"ok": True}
+
+    # ------------------------------------------------------------------
+    # Sandbox Tool Proxy
+    # ------------------------------------------------------------------
+
+    @app.post("/api/sandbox/tool", tags=["sandbox"])
+    async def sandbox_tool_call(req: SandboxToolRequest, x_agent_token: str = Header(default="")):
+        """Proxy tool calls from sandboxed agents. Every call validated by Kernel."""
+        from stacks.sandbox.adapter import get_token_store
+        claims = get_token_store().verify(x_agent_token)
+        if not claims:
+            raise HTTPException(status_code=401, detail="Invalid or expired sandbox token")
+
+        agent_id = claims["agent_id"]
+        allowed = claims.get("tools", [])
+
+        # Check tool whitelist (wildcard-aware)
+        tool_ok = not allowed or any(
+            req.tool_name == t or (t.endswith("*") and req.tool_name.startswith(t[:-1]))
+            for t in allowed
+        )
+        if not tool_ok:
+            raise HTTPException(status_code=403, detail=f"Tool '{req.tool_name}' not permitted")
+
+        if platform_kernel:
+            decision = platform_kernel.check_tool_call(agent_id, req.tool_name, req.tool_input)
+            if hasattr(decision, "denied") and decision.denied:
+                raise HTTPException(status_code=403, detail=decision.reason)
+
+        if not tool_executor:
+            raise HTTPException(status_code=503, detail="Tool executor unavailable")
+
+        ctx = {"agent_id": agent_id, "namespace": claims.get("namespace", "default"), "tier": claims.get("tier", 3)}
+        result = await tool_executor.execute(req.tool_name, req.tool_input, ctx)
+        return result
+
+    @app.post("/api/sandbox/result", tags=["sandbox"])
+    async def sandbox_result(request: Request, x_agent_token: str = Header(default="")):
+        """Receive final result from sandboxed agent."""
+        from stacks.sandbox.adapter import get_token_store
+        claims = get_token_store().verify(x_agent_token)
+        if not claims:
+            raise HTTPException(status_code=401, detail="Invalid sandbox token")
+        body = await request.json()
+        logger.info("Sandbox result: agent=%s status=%s", body.get("agent_id"), body.get("status"))
+        return {"ok": True}
+
+    @app.get("/api/platform/tools", tags=["platform"])
+    async def list_platform_tools():
+        """List all tool schemas (for sandbox agent discovery)."""
+        if not tool_executor:
+            return []
+        defs = []
+        try:
+            from src.mcp.platform_tools import PLATFORM_TOOL_DEFINITIONS
+            defs.extend(PLATFORM_TOOL_DEFINITIONS)
+        except Exception:
+            pass
+        if hasattr(tool_executor, 'get_mcp_tool_definitions'):
+            defs.extend(tool_executor.get_mcp_tool_definitions())
+        return defs
 
     return app
 

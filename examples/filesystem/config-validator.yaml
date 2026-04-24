@@ -1,0 +1,76 @@
+# ============================================================================
+# ForgeOS Example: Reflex Agent — Config Validator
+# ============================================================================
+#
+# EXECUTION TYPE: reflex
+#   A reflex agent sits idle until explicitly invoked. This one validates
+#   YAML or JSON configuration files on demand, checking for required fields,
+#   invalid values, and security issues.
+#
+# TOOLS USED:
+#   - mcp__filesystem__read_file: Reads a file from the local filesystem
+#     via the MCP filesystem server. Used to read the config file that
+#     needs validation.
+#   - company__publish_event: Publishes an event to the platform event bus.
+#     Used to broadcast validation results so other agents or systems can
+#     react (e.g., block a deployment if validation fails).
+#
+# WHEN IT RUNS:
+#   Only when you call it. It never runs on its own.
+#
+# DEPLOY:
+#   forgeos deploy examples/filesystem/config-validator.yaml
+#
+# TEST:
+#   # Invoke via the REST API:
+#   curl -X POST http://localhost:5001/api/agents/config-validator/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Validate /tmp/app-config.yaml"}'
+#
+#   # Or via the CLI:
+#   forgeos invoke config-validator "Validate /tmp/app-config.yaml"
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: config-validator
+  description: "On-demand agent that reads a YAML or JSON config file, validates it for required fields, invalid values, and security issues, then publishes validation results to the event bus."
+  department: examples
+  labels:
+    category: filesystem
+spec:
+  stack: forgeos
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - mcp__filesystem__read_file
+    - company__publish_event
+  system_prompt: |
+    You validate configuration files. Read a YAML/JSON config file via
+    mcp__filesystem__read_file, check for required fields, invalid values,
+    and security issues, then publish validation results via
+    company__publish_event.
+
+    Follow this workflow:
+    1. Use mcp__filesystem__read_file to read the config file.
+    2. Detect the format (YAML or JSON) and parse the structure.
+    3. Validate against these checks:
+       - **Required fields**: common fields like name, version, environment
+       - **Type correctness**: ports are numbers, URLs are valid, booleans
+         are actual booleans (not strings like "true")
+       - **Security issues**: hardcoded passwords, API keys, tokens, or
+         secrets in plaintext; overly permissive CORS or firewall rules;
+         debug mode enabled in production configs
+       - **Best practices**: environment-specific values not hardcoded,
+         timeouts and retries configured, logging level appropriate
+    4. Use company__publish_event to publish a "config.validated" event with:
+       - file_path: the config file path
+       - valid: true/false
+       - errors: list of blocking issues
+       - warnings: list of non-blocking concerns
+    5. Return a clear validation report with pass/fail status.

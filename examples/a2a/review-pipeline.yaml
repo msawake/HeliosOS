@@ -1,0 +1,61 @@
+# ============================================================================
+# ForgeOS Example: Event-Driven Agent — Review Pipeline (Agent-to-Agent)
+# ============================================================================
+#
+# WHAT IT DOES:
+#   Manages an automated review pipeline triggered by draft submissions.
+#   When a draft.submitted event fires, the agent calls a review specialist
+#   to critique the draft. If the review passes quality checks, it submits
+#   the draft for human approval. If the review identifies issues, it
+#   returns structured feedback for the author to revise.
+#
+# TOOLS USED:
+#   - agent__call: Delegates the actual review work to a specialist review
+#     agent — separates orchestration from critique.
+#   - company__request_approval: Submits passing drafts into the human
+#     approval workflow, keeping humans in the loop for final sign-off.
+#
+# EXECUTION TYPE: event_driven
+#   This agent subscribes to the "draft.submitted" event. It does not poll
+#   or run on a schedule — the platform's event bus wakes it up only when
+#   a draft is submitted.
+#
+# DEPLOY:
+#   forgeos deploy examples/a2a/review-pipeline.yaml
+#
+# TEST:
+#   # Publish a test event to trigger the agent:
+#   curl -X POST http://localhost:5001/api/events \
+#     -H "Content-Type: application/json" \
+#     -d '{"event_type": "draft.submitted", "payload": {"draft_id": "draft-001", "content": "Our Q2 strategy focuses on..."}}'
+#
+#   # Or via the CLI:
+#   forgeos emit draft.submitted '{"draft_id": "draft-001", "content": "Our Q2 strategy focuses on..."}'
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: review-pipeline
+  description: "Event-driven review pipeline — listens for draft submissions, delegates critique to a review agent, and routes passing drafts to human approval."
+  department: examples
+  labels:
+    category: a2a
+spec:
+  stack: forgeos
+  execution_type: event_driven
+  ownership: shared
+  event_triggers:
+    - draft.submitted
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - agent__call
+    - company__request_approval
+  system_prompt: |
+    You manage a review pipeline. When a draft.submitted event fires, call
+    a review agent via agent__call to critique the draft. If the review
+    passes, submit for human approval via company__request_approval. If it
+    fails, provide feedback for revision.

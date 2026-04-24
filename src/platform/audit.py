@@ -4,10 +4,17 @@ Audit log writer for the ForgeOS platform.
 Writes immutable action records to the `audit_log` table with tenant
 isolation (RLS). When no database is available, falls back to a bounded
 in-memory ring buffer so tests and dev mode still work.
+
+Phase 3 #3 — hash-chained entries. Each record carries the SHA-256 of
+the previous record's canonical body. Tampering with any row (edit,
+delete, reorder) causes the chain to fail verification. No signing
+keys: we treat the kernel as the trust root for now. Signed audit is
+a later step when compliance customers ask.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from collections import deque
@@ -17,6 +24,75 @@ from typing import Any
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
+
+
+GENESIS_HASH = "0" * 64
+
+
+def _canonical_audit_body(
+    *,
+    entry_id: str,
+    tenant_id: str,
+    actor: str,
+    action: str,
+    resource_type: str,
+    resource_id: str,
+    outcome: str,
+    details: dict,
+    created_at: str,
+    prev_hash: str,
+) -> bytes:
+    """Stable byte representation of an entry's hashable body.
+
+    Matches the columns stored on disk 1:1 (sorted key order, UTF-8,
+    canonical JSON for ``details``). Any deviation here would invalidate
+    existing chains, so change with care.
+    """
+    payload = {
+        "id": entry_id,
+        "tenant_id": tenant_id,
+        "actor": actor,
+        "action": action,
+        "resource_type": resource_type,
+        "resource_id": resource_id,
+        "outcome": outcome,
+        "details": details,
+        "created_at": created_at,
+        "prev_hash": prev_hash,
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode(
+        "utf-8"
+    )
+
+
+def compute_entry_hash(
+    *,
+    entry_id: str,
+    tenant_id: str,
+    actor: str,
+    action: str,
+    resource_type: str,
+    resource_id: str,
+    outcome: str,
+    details: dict,
+    created_at: str,
+    prev_hash: str,
+) -> str:
+    """Hex-encoded SHA-256 of the canonical audit body (with prev_hash)."""
+    return hashlib.sha256(
+        _canonical_audit_body(
+            entry_id=entry_id,
+            tenant_id=tenant_id,
+            actor=actor,
+            action=action,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            outcome=outcome,
+            details=details,
+            created_at=created_at,
+            prev_hash=prev_hash,
+        )
+    ).hexdigest()
 
 
 @dataclass
@@ -30,6 +106,24 @@ class AuditEntry:
     outcome: str = "success"
     details: dict = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    prev_hash: str = GENESIS_HASH
+    entry_hash: str = ""
+
+    def finalize_hash(self) -> str:
+        """Compute and set ``entry_hash`` from the entry's current fields."""
+        self.entry_hash = compute_entry_hash(
+            entry_id=self.id,
+            tenant_id=self.tenant_id,
+            actor=self.actor,
+            action=self.action,
+            resource_type=self.resource_type,
+            resource_id=self.resource_id,
+            outcome=self.outcome,
+            details=self.details,
+            created_at=self.created_at,
+            prev_hash=self.prev_hash,
+        )
+        return self.entry_hash
 
     def to_dict(self) -> dict:
         return {
@@ -42,6 +136,8 @@ class AuditEntry:
             "outcome": self.outcome,
             "details": self.details,
             "created_at": self.created_at,
+            "prev_hash": self.prev_hash,
+            "entry_hash": self.entry_hash,
         }
 
 
@@ -61,10 +157,21 @@ class AuditLog:
         self._db = db_client
         self._tenant_id = tenant_id
         self._memory: deque[AuditEntry] = deque(maxlen=self.MAX_IN_MEMORY)
+        # Phase 3 #3 — hash-chain state. ``_last_hash`` is the
+        # ``entry_hash`` of the most recent record appended on this
+        # process. On boot we start from genesis; a future step can
+        # rehydrate from the durable store so the chain continues across
+        # restarts.
+        self._last_hash: str = GENESIS_HASH
 
     @property
     def _has_db(self) -> bool:
         return bool(self._db and getattr(self._db, "is_connected", False))
+
+    @property
+    def last_hash(self) -> str:
+        """Most recent entry_hash observed on this process — chain tip."""
+        return self._last_hash
 
     def record(
         self,
@@ -85,7 +192,10 @@ class AuditLog:
             resource_id=resource_id,
             outcome=outcome,
             details=details or {},
+            prev_hash=self._last_hash,
         )
+        entry.finalize_hash()
+        self._last_hash = entry.entry_hash
         self._memory.append(entry)
 
         if self._has_db:
@@ -189,3 +299,37 @@ class AuditLog:
             except Exception:
                 pass
         return len(self._memory)
+
+    def verify_chain(self) -> tuple[bool, int, str | None]:
+        """Verify the hash-chain over the in-memory buffer.
+
+        Returns ``(ok, checked_count, error)``.
+
+        An empty log is valid. Any mismatch — modified field, dropped
+        entry, reordered entry — causes verification to fail with the
+        ``entry_hash`` of the first bad record. Because this reads the
+        current buffer, it proves integrity *now*: entries that fell out
+        of the ring were not verifiable even before tampering.
+        """
+        prev_hash = GENESIS_HASH
+        checked = 0
+        for entry in self._memory:
+            if entry.prev_hash != prev_hash:
+                return False, checked, entry.entry_hash or None
+            expected = compute_entry_hash(
+                entry_id=entry.id,
+                tenant_id=entry.tenant_id,
+                actor=entry.actor,
+                action=entry.action,
+                resource_type=entry.resource_type,
+                resource_id=entry.resource_id,
+                outcome=entry.outcome,
+                details=entry.details,
+                created_at=entry.created_at,
+                prev_hash=entry.prev_hash,
+            )
+            if expected != entry.entry_hash:
+                return False, checked, entry.entry_hash or None
+            prev_hash = entry.entry_hash
+            checked += 1
+        return True, checked, None

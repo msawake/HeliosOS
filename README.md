@@ -227,6 +227,70 @@ AgentDefinition(
 
 ---
 
+## AgentOS Kernel
+
+ForgeOS is not just a platform -- it is an **operating system for agents**. The kernel is the policy decision point for every meaningful action, composed of 6 subsystems:
+
+| Subsystem | Responsibility |
+|-----------|---------------|
+| AdmissionController | Validates contracts before deploy |
+| PermissionManager | Runtime tool + A2A ACL checks |
+| BudgetManager | Per-task + daily USD enforcement |
+| PolicyEngine | Declarative rule evaluation |
+| DataBoundaryManager | Namespace + PII policy |
+| AuditRecorder | Immutable decision trail |
+
+Every check returns a uniform `KernelDecision`. See [docs/architecture/kernel.md](docs/architecture/kernel.md).
+
+## Agent-to-Agent (A2A) Protocol
+
+First-class primitive for agents to call other agents across any stack:
+
+```python
+# From any agent's toolkit:
+agent__call(namespace="sales", name="cfo", task="Analyze Q4 numbers")
+agent__async_call(namespace="legal", name="reviewer", task="...")
+agent__await(job_id, timeout=120)
+agent__list_available(department="finance")
+```
+
+ACLs declared in manifest (`spec.capabilities.a2a`). Cycle detection, depth limits, and permission checks enforced by the kernel. See [docs/architecture/a2a-protocol.md](docs/architecture/a2a-protocol.md).
+
+## Python SDK
+
+```bash
+pip install -e ".[dev]"
+```
+
+```python
+from forgeos_sdk import Agent, ForgeOSClient, Kernel
+
+# Declarative agent
+class EmailChecker(Agent):
+    name = "email-checker"
+    stack = "forgeos"
+    execution_type = "scheduled"
+    schedule = "0 9 * * *"
+    model = "gpt-4o"
+    tools = ["mcp__filesystem__*"]
+
+# Deploy
+with ForgeOSClient() as client:
+    client.deploy(EmailChecker.manifest())
+
+# Check permissions from agent code
+kernel = Kernel.connect()
+decision = await kernel.check_tool_call("email-checker", "email.send")
+if decision.denied:
+    raise PermissionError(decision.reason)
+```
+
+CLI: `forgeos deploy ./agent.yaml`, `forgeos list`, `forgeos invoke <id> "prompt"`.
+
+See [docs/guides/sdk.md](docs/guides/sdk.md) and [docs/reference/agent-manifest.md](docs/reference/agent-manifest.md).
+
+---
+
 ## Graceful Degradation
 
 ForgeOS runs with whatever is available:
@@ -246,12 +310,16 @@ ForgeOS runs with whatever is available:
 | Guide | Description |
 |-------|-------------|
 | [Architecture Overview](docs/architecture/overview.md) | Framework vs agents, 3-layer design |
+| [AgentOS Kernel](docs/architecture/kernel.md) | Policy decision point: admission, permissions, budgets, policies |
+| [A2A Protocol](docs/architecture/a2a-protocol.md) | Agent-to-agent calling primitive across frameworks |
 | [Platform Layer](docs/architecture/platform-layer.md) | Registry, executor, scheduler, event bus, LLM router |
 | [Stack Adapters](docs/architecture/stack-adapters.md) | ForgeOS, CrewAI, ADK, OpenClaw comparison |
 | [Quick Start](docs/guides/quickstart.md) | Install, configure, boot, deploy first agent |
+| [Python SDK](docs/guides/sdk.md) | Declarative agents, HTTP client, Kernel accessor, CLI |
 | [Creating Agents](docs/guides/creating-agents.md) | 5 execution types, 3 ownership types, tools |
 | [Agent Tools & MCP](docs/guides/agent-tools.md) | MCP servers, custom tools, tool executor |
-| [API Reference](docs/reference/api-endpoints.md) | All 61 FastAPI endpoints |
+| [Agent Manifest Reference](docs/reference/agent-manifest.md) | Full `agent.yaml` schema (AgentOS v2) |
+| [API Reference](docs/reference/api-endpoints.md) | All FastAPI endpoints including `/api/platform/kernel/*` |
 | [Configuration](docs/reference/configuration.md) | Environment variables, YAML config, LLM config |
 | [Deployment](docs/operations/deployment.md) | Docker, Kubernetes, GCP |
 | [Monitoring](docs/operations/monitoring.md) | Prometheus metrics, Grafana, alerts |

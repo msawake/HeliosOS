@@ -179,6 +179,21 @@ class LLMRouter:
                     logger.info("Initialized OpenAI client")
                 except ImportError:
                     logger.warning("openai package not installed")
+            elif provider == "atlas" and key:
+                try:
+                    from openai import OpenAI
+                    atlas_url = os.environ.get("ATLAS_GATEWAY_URL", "https://atlas-gateway-609114458603.europe-west1.run.app/v1")
+                    self._clients["atlas"] = OpenAI(api_key=key, base_url=atlas_url, timeout=120.0)
+                    logger.info("Initialized Atlas Gateway client (%s)", atlas_url)
+                except ImportError:
+                    logger.warning("openai package not installed (needed for Atlas Gateway)")
+            elif provider == "vertex" and key:
+                self._clients["vertex"] = {
+                    "project_id": key,  # key=project_id for vertex
+                    "region": os.environ.get("GCP_REGION", "us-central1"),
+                }
+                logger.info("Initialized Vertex AI client (project=%s, region=%s)",
+                            key, self._clients["vertex"]["region"])
             elif provider == "google" and key:
                 try:
                     from openai import OpenAI
@@ -504,6 +519,16 @@ class LLMRouter:
                 lambda: self._call_google(client, model, messages, tools),
                 provider=provider, model=model,
             )
+        if provider == "atlas" and client:
+            return await _with_retry(
+                lambda: self._call_openai(client, model, messages, tools),
+                provider=provider, model=model,
+            )
+        if provider == "vertex" and client:
+            return await _with_retry(
+                lambda: self._call_vertex(client, model, messages, tools),
+                provider=provider, model=model,
+            )
 
         logger.debug(
             "Simulated LLM call: provider=%s model=%s messages=%d",
@@ -616,6 +641,132 @@ class LLMRouter:
             tokens_used=response.usage.total_tokens if response.usage else 0,
             finish_reason=choice.finish_reason or "stop",
             tool_calls=tool_calls,
+        )
+
+    async def _call_vertex(
+        self, config: dict, model: str, messages: list[dict],
+        tools: list[dict] | None = None,
+    ) -> LLMResponse:
+        """Call Vertex AI Gemini with tool calling support."""
+        import subprocess
+        import httpx
+
+        project_id = config["project_id"]
+        region = config["region"]
+
+        token_result = subprocess.run(
+            ["gcloud", "auth", "print-access-token"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if token_result.returncode != 0:
+            raise RuntimeError("Failed to get gcloud access token")
+        access_token = token_result.stdout.strip()
+
+        contents = []
+        system_text = ""
+        for m in messages:
+            role = m.get("role", "user")
+
+            if role == "system":
+                content = m.get("content", "")
+                if isinstance(content, str):
+                    system_text += content + "\n"
+                continue
+
+            if "parts" in m and role in ("model", "user"):
+                contents.append(m)
+                continue
+
+            content = m.get("content", "")
+            vertex_role = "model" if role == "assistant" else "user"
+
+            if isinstance(content, str) and content:
+                contents.append({"role": vertex_role, "parts": [{"text": content}]})
+            elif isinstance(content, list):
+                parts = []
+                for block in content:
+                    if isinstance(block, dict):
+                        if block.get("type") == "text":
+                            parts.append({"text": block["text"]})
+                        elif block.get("type") == "tool_use":
+                            parts.append({"functionCall": {"name": block["name"], "args": block.get("input", {})}})
+                if parts:
+                    contents.append({"role": vertex_role, "parts": parts})
+
+        url = (
+            f"https://{region}-aiplatform.googleapis.com/v1/"
+            f"projects/{project_id}/locations/{region}/"
+            f"publishers/google/models/{model}:generateContent"
+        )
+        payload: dict[str, Any] = {"contents": contents}
+        if system_text:
+            payload["systemInstruction"] = {"parts": [{"text": system_text.strip()}]}
+
+        if tools:
+            function_declarations = []
+            for t in tools:
+                name = t.get("name", "")
+                if not name:
+                    continue
+                schema = t.get("input_schema", {"type": "object", "properties": {}})
+                clean_schema = {
+                    "type": schema.get("type", "object"),
+                    "properties": schema.get("properties", {}),
+                }
+                if schema.get("required"):
+                    clean_schema["required"] = schema["required"]
+                function_declarations.append({
+                    "name": name,
+                    "description": t.get("description", ""),
+                    "parameters": clean_schema,
+                })
+            if function_declarations:
+                payload["tools"] = [{"functionDeclarations": function_declarations}]
+
+        async with httpx.AsyncClient(timeout=90.0) as http:
+            resp = await http.post(
+                url,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        candidates = data.get("candidates", [])
+        text = ""
+        tool_calls_out = []
+
+        if candidates:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            for part in parts:
+                if "text" in part:
+                    text += part["text"]
+                elif "functionCall" in part:
+                    fc = part["functionCall"]
+                    tool_calls_out.append(ToolCall(
+                        id=f"vertex_{fc['name']}_{len(tool_calls_out)}",
+                        name=fc["name"],
+                        input=fc.get("args", {}),
+                    ))
+
+        usage = data.get("usageMetadata", {})
+        input_tokens = usage.get("promptTokenCount", 0)
+        output_tokens = usage.get("candidatesTokenCount", 0)
+
+        return LLMResponse(
+            text=text,
+            model=model,
+            provider="vertex",
+            tokens_used=input_tokens + output_tokens,
+            finish_reason=candidates[0].get("finishReason", "STOP") if candidates else "STOP",
+            tool_calls=tool_calls_out or None,
+            raw={
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            },
         )
 
     def available_providers(self) -> list[str]:

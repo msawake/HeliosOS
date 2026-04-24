@@ -156,6 +156,16 @@ def _build_adk_tools(tool_executor, agent_def: AgentDefinition, agent_context: d
 
             async def _wrapper(**kwargs):
                 """Run the ForgeOS tool and return the raw result dict."""
+                # Kernel gate: check permissions before executing
+                try:
+                    from src.forgeos_sdk.runtime import runtime as _rt
+                    if _rt.is_registered and _rt.is_bound:
+                        decision = await _rt.check_tool(name_captured, kwargs)
+                        if decision.denied:
+                            return {"success": False, "error": f"Kernel denied: {decision.reason}"}
+                except Exception:
+                    pass
+
                 try:
                     result = await tool_executor.execute(
                         name_captured, kwargs, agent_context,
@@ -269,7 +279,8 @@ class ADKAdapter(AgentStackAdapter):
         return AgentResult(
             agent_id=agent_id,
             status=AgentStatus.COMPLETED,
-            output=f"[ADK simulated] Agent '{agent_def.name}' processed: {prompt[:100]}",
+            output=f"[SIMULATED - No LLM API key configured] Agent '{agent_def.name}' received: {prompt[:100]}. Configure ANTHROPIC_API_KEY or OPENAI_API_KEY.",
+            error="No LLM provider available. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.",
         )
 
     async def _invoke_via_runner(
@@ -379,6 +390,7 @@ class ADKAdapter(AgentStackAdapter):
             agent_context=build_agent_context(agent_def, agent_id),
             context=context,
             history=history,
+            goal=agent_def.goal,
         )
         result.agent_id = agent_id
         return result

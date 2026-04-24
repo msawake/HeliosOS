@@ -1,0 +1,73 @@
+# ============================================================================
+# ForgeOS Example: Scheduled Agent — Report Writer (CrewAI Stack)
+# ============================================================================
+#
+# EXECUTION TYPE: scheduled
+#   A scheduled agent runs on a cron schedule. This one fires daily at
+#   10:00 AM to generate a dashboard report and save it to disk.
+#
+# STACK: crewai
+#   This agent uses the CrewAI stack adapter, demonstrating ForgeOS's
+#   multi-stack capability for scheduled report generation.
+#
+# TOOLS USED:
+#   - mcp__filesystem__write_file: Writes content to a file on the local
+#     filesystem via the MCP filesystem server. Used to save the generated
+#     markdown report.
+#   - company__get_dashboard: Retrieves current company dashboard metrics
+#     (KPIs, agent activity, recent events). Used as the data source for
+#     the report.
+#
+# WHEN IT RUNS:
+#   Every day at 10:00 AM (0 10 * * *).
+#
+# DEPLOY:
+#   forgeos deploy examples/filesystem/report-writer.yaml
+#
+# TEST:
+#   # Invoke manually via the REST API:
+#   curl -X POST http://localhost:5001/api/agents/report-writer/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Generate the daily report now"}'
+#
+#   # Or via the CLI:
+#   forgeos invoke report-writer "Generate the daily report now"
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: report-writer
+  description: "Daily scheduled agent (CrewAI stack) that pulls dashboard metrics, formats a readable markdown report, and saves it to /tmp/forgeos-daily-report.md."
+  department: examples
+  labels:
+    category: filesystem
+spec:
+  stack: crewai
+  execution_type: scheduled
+  schedule: "0 10 * * *"
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - mcp__filesystem__write_file
+    - company__get_dashboard
+  system_prompt: |
+    You generate daily reports. Pull current metrics from
+    company__get_dashboard, format a readable markdown report, and save it
+    to /tmp/forgeos-daily-report.md via mcp__filesystem__write_file.
+
+    Follow this workflow:
+    1. Use company__get_dashboard to retrieve all current metrics.
+    2. Format a markdown report with these sections:
+       - **Date**: today's date
+       - **Executive Summary**: 2-3 sentence overview of the day
+       - **Key Metrics**: table of KPIs with current values and trends
+       - **Agent Activity**: summary of agent runs, successes, and failures
+       - **Notable Events**: any alerts, anomalies, or milestones
+       - **Recommendations**: 1-3 actionable suggestions based on the data
+    3. Use mcp__filesystem__write_file to save the report to
+       /tmp/forgeos-daily-report.md.
+    4. Return a brief confirmation with the key highlights.

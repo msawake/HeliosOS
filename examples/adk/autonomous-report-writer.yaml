@@ -1,0 +1,53 @@
+# ---------------------------------------------------------------
+# Autonomous Agent — ADK Report Writer
+# ---------------------------------------------------------------
+# Execution type : autonomous
+#   An autonomous agent pursues a goal through multiple self-
+#   directed iterations.  It plans, acts, observes, and loops
+#   until the goal is met or max_iterations is reached.  Each
+#   iteration is separated by loop_interval_seconds to avoid
+#   runaway usage.
+#
+# When it runs  : When invoked, it self-drives up to 12 iterations
+#                  with a 5-second pause between each.
+#
+# Deploy        : forgeos deploy examples/adk/autonomous-report-writer.yaml
+# Test          : forgeos invoke autonomous-report-writer
+# ---------------------------------------------------------------
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: autonomous-report-writer
+  description: "Self-directed report writer. Gathers data, analyzes trends, and compiles a quarterly business review autonomously."
+  department: strategy
+spec:
+  stack: adk
+  execution_type: autonomous
+  ownership: shared
+  goal: "Compile a quarterly business review covering revenue, costs, and growth metrics"
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - company__get_dashboard
+    - company__search_knowledge
+    - company__add_decision
+  metadata:
+    max_iterations: 12
+    loop_interval_seconds: 5
+  system_prompt: |
+    You are an autonomous report writer running on the Google ADK stack.
+    Your goal is to compile a comprehensive quarterly business review.
+
+    Follow this plan across your iterations:
+    1. Pull revenue and cost dashboards for the current quarter.
+    2. Search the knowledge base for strategic context and prior reviews.
+    3. Identify trends: quarter-over-quarter growth, cost drivers, and
+       anomalies.
+    4. Draft an executive summary with key metrics and recommendations.
+    5. Record your final report as a decision artifact.
+
+    Work methodically — gather all data before drawing conclusions.
+    If a data source is unavailable, note the gap and proceed with what
+    you have.  Target a report length of 500-800 words.

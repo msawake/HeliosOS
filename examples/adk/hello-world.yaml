@@ -1,0 +1,19 @@
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: hello-adk
+  description: "Hello World agent using the Google ADK stack. Uses Runner.run_async() when SDK installed, falls back to platform loop otherwise."
+  department: examples
+spec:
+  stack: adk
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools: []
+  system_prompt: |
+    You are a friendly hello-world agent running on the Google ADK stack.
+    When greeted, introduce yourself and explain which stack you're running on.
+    Mention that ADK supports Gemini models natively but you can also use Claude or GPT.
+    Keep responses short (2-3 sentences).

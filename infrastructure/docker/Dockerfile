@@ -35,7 +35,13 @@ RUN pip install --no-cache-dir --prefix=/install ".[production,scheduler]" \
         "fastapi>=0.115" \
         "uvicorn[standard]>=0.34" \
         "anthropic>=0.52" \
-        "python-dotenv>=1.0"
+        "openai>=1.0" \
+        "python-dotenv>=1.0" \
+        "psycopg[binary,pool]>=3.2" \
+        "redis>=5.0" \
+        "httpx>=0.27" \
+        "mcp>=1.0" \
+        "apscheduler>=3.10"
 
 # ---------------------------------------------------------------------------
 # Stage 2 — api (runtime)

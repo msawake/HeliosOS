@@ -47,6 +47,7 @@ async def run_agentic_loop(
     max_turns: int = MAX_TOOL_TURNS,
     context: dict | None = None,
     history: list[dict] | None = None,
+    goal: str | None = None,
 ) -> AgentResult:
     """Run an agentic tool-use loop.
 
@@ -69,9 +70,20 @@ async def run_agentic_loop(
     Returns an ``AgentResult`` with the final text output and aggregated
     token count.
     """
+    # For autonomous agents with a goal, inject goal-completion instructions
+    effective_system = system_prompt
+    if goal:
+        effective_system = (
+            f"{system_prompt}\n\n"
+            f"## Goal\n{goal}\n\n"
+            f"When you believe this goal is fully achieved, end your response with "
+            f"exactly [GOAL_COMPLETE] on its own line. If you need more iterations "
+            f"to reach the goal, do NOT include this marker."
+        )
+
     messages: list[dict[str, Any]] = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
+    if effective_system:
+        messages.append({"role": "system", "content": effective_system})
     # Inject conversation history (multi-turn support)
     # Copy dicts to avoid mutating the caller's history list
     if history:
@@ -120,6 +132,18 @@ async def run_agentic_loop(
 
     for turn in range(max_turns):
         response: LLMResponse = await llm_router.chat(llm_config, messages, tools=tools)
+
+        # C4 fix: if both providers failed, return FAILED immediately
+        if response.error:
+            logger.error("LLM call failed: %s", response.error)
+            return AgentResult(
+                agent_id="",
+                status=AgentStatus.FAILED,
+                output="",
+                error=response.error,
+                tokens_used=total_tokens,
+            )
+
         total_tokens += response.tokens_used
 
         # Record tokens + cost per turn
@@ -142,35 +166,106 @@ async def run_agentic_loop(
             final_text = response.text
             break
 
-        # Build assistant message with tool_use content blocks (Anthropic format)
-        assistant_content = []
-        if response.text:
-            assistant_content.append({"type": "text", "text": response.text})
-        for tc in response.tool_calls:
-            assistant_content.append({
-                "type": "tool_use",
-                "id": tc.id,
-                "name": tc.name,
-                "input": tc.input,
-            })
-        messages.append({"role": "assistant", "content": assistant_content})
+        # Build assistant + tool result messages in the correct provider format
+        is_vertex = llm_config.provider == "vertex"
+        is_openai = (not is_vertex) and (llm_config.provider in ("openai", "atlas") or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-", "deepseek-", "qwen-", "nemotron")))
 
-        # Execute each tool and collect results
-        tool_results = []
-        for tc in response.tool_calls:
-            all_tool_calls.append({"name": tc.name, "input": tc.input})
-            tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
-            result_data = await _execute_tool(
-                tc.name, tc.input, tool_executor, agent_context,
-                timeout=tool_timeout,
-            )
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": tc.id,
-                "content": json.dumps(result_data) if isinstance(result_data, dict) else str(result_data),
-            })
+        if is_vertex:
+            # Vertex AI Gemini format: functionCall parts + functionResponse parts
+            assistant_parts = []
+            if response.text:
+                assistant_parts.append({"text": response.text})
+            for tc in response.tool_calls:
+                assistant_parts.append({
+                    "functionCall": {"name": tc.name, "args": tc.input},
+                })
+            messages.append({"role": "assistant", "content": [
+                {"type": "text", "text": response.text} if response.text else None,
+                *[{"type": "tool_use", "name": tc.name, "input": tc.input, "id": tc.id} for tc in response.tool_calls],
+            ]})
+            # Actually — Vertex needs the raw format. Let's use a special content list
+            # that _call_vertex can parse. Simpler: build Vertex-native parts directly.
+            messages[-1] = {"role": "model", "parts": assistant_parts} if assistant_parts else {"role": "model", "parts": [{"text": ""}]}
 
-        messages.append({"role": "user", "content": tool_results})
+            # Execute tools and build functionResponse parts
+            response_parts = []
+            for tc in response.tool_calls:
+                all_tool_calls.append({"name": tc.name, "input": tc.input})
+                tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
+                result_data = await _execute_tool(
+                    tc.name, tc.input, tool_executor, agent_context,
+                    timeout=tool_timeout,
+                )
+                content = json.dumps(result_data) if isinstance(result_data, dict) else str(result_data)
+                response_parts.append({
+                    "functionResponse": {
+                        "name": tc.name,
+                        "response": {"content": content},
+                    }
+                })
+            messages.append({"role": "user", "parts": response_parts})
+
+        elif is_openai:
+            # OpenAI format: assistant message with tool_calls array
+            assistant_msg: dict[str, Any] = {
+                "role": "assistant",
+                "content": response.text or None,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": json.dumps(tc.input),
+                        },
+                    }
+                    for tc in response.tool_calls
+                ],
+            }
+            messages.append(assistant_msg)
+
+            # Execute tools and append each result as a separate "tool" role message
+            for tc in response.tool_calls:
+                all_tool_calls.append({"name": tc.name, "input": tc.input})
+                tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
+                result_data = await _execute_tool(
+                    tc.name, tc.input, tool_executor, agent_context,
+                    timeout=tool_timeout,
+                )
+                content = json.dumps(result_data) if isinstance(result_data, dict) else str(result_data)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": content,
+                })
+        else:
+            # Anthropic format: content blocks with tool_use + tool_result
+            assistant_content = []
+            if response.text:
+                assistant_content.append({"type": "text", "text": response.text})
+            for tc in response.tool_calls:
+                assistant_content.append({
+                    "type": "tool_use",
+                    "id": tc.id,
+                    "name": tc.name,
+                    "input": tc.input,
+                })
+            messages.append({"role": "assistant", "content": assistant_content})
+
+            tool_results = []
+            for tc in response.tool_calls:
+                all_tool_calls.append({"name": tc.name, "input": tc.input})
+                tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
+                result_data = await _execute_tool(
+                    tc.name, tc.input, tool_executor, agent_context,
+                    timeout=tool_timeout,
+                )
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tc.id,
+                    "content": json.dumps(result_data) if isinstance(result_data, dict) else str(result_data),
+                })
+            messages.append({"role": "user", "content": tool_results})
     else:
         # Exhausted max turns
         final_text = response.text if response else "[Max tool turns reached]"
@@ -184,9 +279,20 @@ async def run_agentic_loop(
         except Exception as e:
             logger.debug("Usage recording (final) failed: %s", e)
 
+    # Determine status: if goal is set, check for completion marker
+    import re as _re
+    if goal and _re.search(r'^\[GOAL_COMPLETE\]$', final_text, _re.MULTILINE):
+        status = AgentStatus.COMPLETED
+        final_text = _re.sub(r'\n?\[GOAL_COMPLETE\]\n?', '', final_text).strip()
+    elif goal:
+        # Goal set but not yet achieved — agent needs more iterations
+        status = AgentStatus.IDLE
+    else:
+        status = AgentStatus.COMPLETED
+
     return AgentResult(
         agent_id="",  # caller sets this
-        status=AgentStatus.COMPLETED,
+        status=status,
         output=final_text,
         tool_calls=all_tool_calls,
         tokens_used=total_tokens,
@@ -208,11 +314,26 @@ async def _execute_tool(
     *raised* exception. Does NOT retry when the executor returns an
     explicit `{"error": ...}` dict — that's considered a deliberate
     failure from the tool itself.
+
+    When the SDK runtime is bound, every tool call passes through the
+    kernel's permission + budget checks before execution.
     """
     if not tool_executor:
         return {"error": f"No tool executor available for tool '{tool_name}'"}
     if not hasattr(tool_executor, "execute"):
         return {"error": "Tool executor has no execute method"}
+
+    # Kernel gate: check permissions + budget before executing the tool.
+    try:
+        from src.forgeos_sdk.runtime import runtime as _rt
+        if _rt.is_registered and _rt.is_bound:
+            decision = await _rt.check_tool(tool_name, tool_input)
+            if decision.denied:
+                return {"error": f"Kernel denied: {decision.reason}"}
+            if hasattr(decision, "action") and decision.action == "rate_limit":
+                return {"error": f"Rate limited: {decision.reason}"}
+    except Exception:
+        pass
 
     effective_timeout = timeout if timeout is not None else TOOL_DEFAULT_TIMEOUT_SECONDS
     last_error: Exception | None = None
@@ -307,51 +428,123 @@ async def run_agentic_loop_with_events(
             final_text = text_acc
             break
 
-        # Build assistant content block for tool calls
-        assistant_content = []
-        if text_acc:
-            assistant_content.append({"type": "text", "text": text_acc})
-        for tc in turn_tool_calls:
-            assistant_content.append({
-                "type": "tool_use",
-                "id": tc.get("id", f"tool_{turn}"),
-                "name": tc["name"],
-                "input": tc.get("input", {}),
-            })
-        messages.append({"role": "assistant", "content": assistant_content})
+        # Build assistant + tool result messages per provider format
+        is_vertex = llm_config.provider == "vertex"
+        is_openai = (not is_vertex) and (llm_config.provider in ("openai", "atlas") or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-", "deepseek-", "qwen-", "nemotron")))
 
-        # Execute each tool and emit events
-        tool_results = []
-        for tc in turn_tool_calls:
-            yield {"type": "tool_call", "name": tc["name"], "input": tc.get("input", {})}
+        if is_vertex:
+            # Vertex format: functionCall + functionResponse parts
+            assistant_parts = []
+            if text_acc:
+                assistant_parts.append({"text": text_acc})
+            for tc in turn_tool_calls:
+                assistant_parts.append({"functionCall": {"name": tc["name"], "args": tc.get("input", {})}})
+            messages.append({"role": "model", "parts": assistant_parts})
 
-            timeout = _tool_timeout_for(tc["name"], tool_definitions)
-            result = await _execute_tool(
-                tc["name"], tc.get("input", {}), tool_executor, agent_context,
-                timeout=timeout,
-            )
-            yield {"type": "tool_result", "name": tc["name"], "result": result}
+            response_parts = []
+            for tc in turn_tool_calls:
+                yield {"type": "tool_call", "name": tc["name"], "input": tc.get("input", {})}
+                timeout = _tool_timeout_for(tc["name"], tool_definitions)
+                result = await _execute_tool(
+                    tc["name"], tc.get("input", {}), tool_executor, agent_context, timeout=timeout,
+                )
+                yield {"type": "tool_result", "name": tc["name"], "result": result}
+                if tc["name"] == "company__request_approval":
+                    inner = result.get("result", result) if isinstance(result, dict) else {}
+                    if isinstance(inner, dict) and inner.get("request_id"):
+                        yield {"type": "hitl_request", "request_id": inner["request_id"],
+                               "title": tc.get("input", {}).get("title", ""),
+                               "description": tc.get("input", {}).get("description", ""),
+                               "risk": tc.get("input", {}).get("risk_assessment", "medium"),
+                               "category": tc.get("input", {}).get("category", "")}
+                content = json.dumps(result) if isinstance(result, dict) else str(result)
+                response_parts.append({"functionResponse": {"name": tc["name"], "response": {"content": content}}})
+            messages.append({"role": "user", "parts": response_parts})
 
-            # Detect HITL approval request
-            if tc["name"] == "company__request_approval":
-                inner = result.get("result", result) if isinstance(result, dict) else {}
-                if isinstance(inner, dict) and inner.get("request_id"):
-                    yield {
-                        "type": "hitl_request",
-                        "request_id": inner["request_id"],
-                        "title": tc.get("input", {}).get("title", ""),
-                        "description": tc.get("input", {}).get("description", ""),
-                        "risk": tc.get("input", {}).get("risk_assessment", "medium"),
-                        "category": tc.get("input", {}).get("category", ""),
+        elif is_openai:
+            # OpenAI format
+            assistant_msg: dict[str, Any] = {
+                "role": "assistant",
+                "content": text_acc or None,
+                "tool_calls": [
+                    {
+                        "id": tc.get("id", f"tool_{turn}_{i}"),
+                        "type": "function",
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": json.dumps(tc.get("input", {})),
+                        },
                     }
+                    for i, tc in enumerate(turn_tool_calls)
+                ],
+            }
+            messages.append(assistant_msg)
 
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": tc.get("id", f"tool_{turn}"),
-                "content": json.dumps(result) if isinstance(result, dict) else str(result),
-            })
+            for tc in turn_tool_calls:
+                yield {"type": "tool_call", "name": tc["name"], "input": tc.get("input", {})}
+                timeout = _tool_timeout_for(tc["name"], tool_definitions)
+                result = await _execute_tool(
+                    tc["name"], tc.get("input", {}), tool_executor, agent_context,
+                    timeout=timeout,
+                )
+                yield {"type": "tool_result", "name": tc["name"], "result": result}
+                if tc["name"] == "company__request_approval":
+                    inner = result.get("result", result) if isinstance(result, dict) else {}
+                    if isinstance(inner, dict) and inner.get("request_id"):
+                        yield {
+                            "type": "hitl_request",
+                            "request_id": inner["request_id"],
+                            "title": tc.get("input", {}).get("title", ""),
+                            "description": tc.get("input", {}).get("description", ""),
+                            "risk": tc.get("input", {}).get("risk_assessment", "medium"),
+                            "category": tc.get("input", {}).get("category", ""),
+                        }
+                content = json.dumps(result) if isinstance(result, dict) else str(result)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.get("id", f"tool_{turn}"),
+                    "content": content,
+                })
+        else:
+            # Anthropic format
+            assistant_content = []
+            if text_acc:
+                assistant_content.append({"type": "text", "text": text_acc})
+            for tc in turn_tool_calls:
+                assistant_content.append({
+                    "type": "tool_use",
+                    "id": tc.get("id", f"tool_{turn}"),
+                    "name": tc["name"],
+                    "input": tc.get("input", {}),
+                })
+            messages.append({"role": "assistant", "content": assistant_content})
 
-        messages.append({"role": "user", "content": tool_results})
+            tool_results = []
+            for tc in turn_tool_calls:
+                yield {"type": "tool_call", "name": tc["name"], "input": tc.get("input", {})}
+                timeout = _tool_timeout_for(tc["name"], tool_definitions)
+                result = await _execute_tool(
+                    tc["name"], tc.get("input", {}), tool_executor, agent_context,
+                    timeout=timeout,
+                )
+                yield {"type": "tool_result", "name": tc["name"], "result": result}
+                if tc["name"] == "company__request_approval":
+                    inner = result.get("result", result) if isinstance(result, dict) else {}
+                    if isinstance(inner, dict) and inner.get("request_id"):
+                        yield {
+                            "type": "hitl_request",
+                            "request_id": inner["request_id"],
+                            "title": tc.get("input", {}).get("title", ""),
+                            "description": tc.get("input", {}).get("description", ""),
+                            "risk": tc.get("input", {}).get("risk_assessment", "medium"),
+                            "category": tc.get("input", {}).get("category", ""),
+                        }
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tc.get("id", f"tool_{turn}"),
+                    "content": json.dumps(result) if isinstance(result, dict) else str(result),
+                })
+            messages.append({"role": "user", "content": tool_results})
 
     yield {
         "type": "done",

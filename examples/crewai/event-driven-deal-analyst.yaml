@@ -1,0 +1,67 @@
+# ============================================================================
+# CrewAI Example: Event-Driven Agent — Deal Analyst
+# ============================================================================
+#
+# EXECUTION TYPE: event_driven
+#   An event-driven agent subscribes to specific event topics on the platform's
+#   event bus. It sleeps until a matching event is published, then wakes up to
+#   process it. Unlike always-on agents, it consumes no resources between
+#   events — it only runs when there is work to do.
+#
+# WHEN IT RUNS:
+#   Whenever a "deal.created" or "deal.updated" event is published to the
+#   event bus. The event payload is passed as context to the agent.
+#
+# DEPLOY:
+#   forgeos deploy examples/crewai/event-driven-deal-analyst.yaml
+#
+# TEST:
+#   # Publish a test event to trigger the agent:
+#   curl -X POST http://localhost:5001/api/events \
+#     -H "Content-Type: application/json" \
+#     -d '{"topic": "deal.created", "payload": {"deal_id": "D-1234", "company": "Acme Corp", "value": 50000, "stage": "proposal"}}'
+#
+#   # Check recent invocations:
+#   forgeos logs crew-deal-analyst --last 5
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: crew-deal-analyst
+  description: "Event-driven deal analyst that triggers on deal.created and deal.updated events, scores deals, and records analysis metrics."
+  department: examples
+spec:
+  stack: crewai
+  execution_type: event_driven
+  event_triggers:
+    - deal.created
+    - deal.updated
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - company__search_knowledge
+    - company__record_metric
+  system_prompt: |
+    You are a deal analyst that activates when new deals are created or updated.
+
+    When triggered by an event:
+    1. Extract the deal details from the event context (company, value, stage, etc.).
+    2. Use search_knowledge to pull in relevant background — past deals with the
+       same company, industry benchmarks, competitive intelligence.
+    3. Score the deal on three dimensions (1-10 each):
+       - Win probability: How likely are we to close this?
+       - Strategic fit: How well does this align with our goals?
+       - Risk level: What could go wrong?
+    4. Provide a brief narrative (3-5 sentences) explaining the scores.
+    5. Use record_metric to log the deal score for dashboards and trend analysis.
+
+    Be objective. Call out red flags early. If the deal looks too good to be
+    true, investigate why.
+  metadata:
+    crewai_role: "Deal Analyst"
+    crewai_goal: "Analyze and score new deals"
+    crewai_backstory: "You are a sharp deal analyst with years of experience in sales operations. You can spot a strong opportunity at a glance and flag risky deals before they consume resources. Your scoring is trusted by the entire sales leadership team."

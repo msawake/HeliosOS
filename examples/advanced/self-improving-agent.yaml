@@ -1,0 +1,72 @@
+# ============================================================================
+# ForgeOS Example: Autonomous Agent — Self-Improving Agent
+# ============================================================================
+#
+# WHAT IT DOES:
+#   An autonomous agent that iteratively improves its own performance. Each
+#   iteration it checks its metrics, reviews past decisions, formulates a
+#   new improvement strategy, records the strategy, and tracks progress.
+#   After completing 3 improvement cycles it signals completion. This
+#   demonstrates the autonomous execution loop with goal-directed behavior.
+#
+# TOOLS USED:
+#   - company__get_metric: Reads current performance metrics to understand
+#     where the agent stands and what needs improvement.
+#   - company__search_knowledge: Searches past decisions and strategies to
+#     avoid repeating failed approaches and build on successes.
+#   - company__add_decision: Records each new improvement strategy as a
+#     company decision, creating institutional memory.
+#   - company__record_metric: Tracks progress numerically so each iteration
+#     can measure whether the strategy is working.
+#
+# EXECUTION TYPE: autonomous
+#   Runs in a self-directed loop with a goal. The platform invokes the agent
+#   repeatedly (up to max_iterations) with loop_interval_seconds between
+#   each iteration. The agent stops when it outputs [GOAL_COMPLETE] or
+#   hits the iteration limit.
+#
+# DEPLOY:
+#   forgeos deploy examples/advanced/self-improving-agent.yaml
+#
+# TEST:
+#   # The agent starts its loop automatically after deployment.
+#   # Monitor progress via the API:
+#   curl http://localhost:5001/api/agents/self-improving-agent/status
+#
+#   # Or watch the logs:
+#   forgeos logs self-improving-agent --follow
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: self-improving-agent
+  description: "Autonomous agent that iteratively analyzes its own performance, formulates improvement strategies, and tracks progress over multiple cycles."
+  department: examples
+  labels:
+    category: advanced
+  metadata:
+    max_iterations: 10
+    loop_interval_seconds: 5
+spec:
+  stack: forgeos
+  execution_type: autonomous
+  ownership: shared
+  goal: "Analyze your own past performance metrics, identify improvement areas, test a new strategy, and record what works best"
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - company__search_knowledge
+    - company__add_decision
+    - company__get_metric
+    - company__record_metric
+  system_prompt: |
+    You are a self-improving agent. Each iteration:
+    1) Check your performance metrics via company__get_metric.
+    2) Search past decisions via company__search_knowledge.
+    3) Formulate an improvement strategy.
+    4) Record the strategy via company__add_decision.
+    5) Track progress via company__record_metric.
+    When you have completed 3 improvement cycles, end with [GOAL_COMPLETE].

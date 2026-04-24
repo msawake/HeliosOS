@@ -10,7 +10,6 @@ Routes tool calls to the appropriate backend:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from typing import Any
 
@@ -28,19 +27,30 @@ class ToolExecutor:
     Custom company tools are routed to the CompanySystem subsystems.
     """
 
-    def __init__(self, company_system=None, mcp_clients: dict | None = None, client_mcp_manager=None):
+    def __init__(self, company_system=None, mcp_clients: dict | None = None, client_mcp_manager=None, a2a_handler=None, kernel=None):
         self._system = company_system
         self._mcp_clients = mcp_clients or {}
         self._client_mcp_manager = client_mcp_manager
+        self._a2a_handler = a2a_handler
+        self._kernel = kernel  # AgentOS kernel for policy enforcement
         self._custom_handlers = self._register_custom_tools()
         self._mcp_tool_definitions: dict[str, list[dict]] = {}
 
     def _register_custom_tools(self) -> dict[str, Any]:
         """Register in-process custom tool handlers."""
-        if not self._system:
-            return {}
+        handlers: dict[str, Any] = {}
 
-        return {
+        # AgentOS A2A tools (available even without CompanySystem)
+        if self._a2a_handler:
+            handlers["agent__call"] = self._handle_a2a_call
+            handlers["agent__async_call"] = self._handle_a2a_async_call
+            handlers["agent__await"] = self._handle_a2a_await
+            handlers["agent__list_available"] = self._handle_a2a_list
+
+        if not self._system:
+            return handlers
+
+        handlers.update({
             # Event Bus
             "company__publish_event": self._handle_publish_event,
             "company__query_events": self._handle_query_events,
@@ -57,14 +67,22 @@ class ToolExecutor:
             "company__record_metric": self._handle_record_metric,
             "company__get_metric": self._handle_get_metric,
             "company__get_dashboard": self._handle_get_dashboard,
-        }
+        })
+        return handlers
 
     def get_custom_tool_definitions(self) -> list[dict]:
         """Return tool schemas for custom company tools (for Claude API)."""
-        if not self._system:
-            return []
+        schemas: list[dict] = []
 
-        return [
+        # AgentOS A2A tools (available whenever A2A is wired)
+        if self._a2a_handler:
+            from src.platform.a2a import A2A_TOOL_SCHEMAS
+            schemas.extend(A2A_TOOL_SCHEMAS)
+
+        if not self._system:
+            return schemas
+
+        schemas.extend([
             {
                 "name": "company__publish_event",
                 "description": "Publish an event to the internal event bus for cross-department communication.",
@@ -209,7 +227,8 @@ class ToolExecutor:
                 "description": "Get current values of all business metrics and KPIs.",
                 "input_schema": {"type": "object", "properties": {}},
             },
-        ]
+        ])
+        return schemas
 
     def register_mcp_tools(self, server_name: str, tool_schemas: list[dict]) -> None:
         """Register tool schemas discovered from an MCP server.
@@ -254,22 +273,91 @@ class ToolExecutor:
         tool_input: dict,
         agent_context: dict | None = None,
     ) -> dict:
-        """Execute a tool call and return the result."""
-        # Enforce agent tool whitelist (supports exact match and wildcard prefixes)
-        allowed_tools = (agent_context or {}).get("allowed_tools")
-        if allowed_tools:
-            is_allowed = tool_name in allowed_tools or any(
-                tool_name.startswith(prefix.rstrip("*"))
-                for prefix in allowed_tools
-                if prefix.endswith("*")
+        """Execute a tool call and return the result.
+
+        Admission is performed via ``kernel.syscall("tool.call", ...)`` when
+        ``FORGEOS_SYSCALL_PIPELINE`` is enabled (Phase A #1). That path
+        funnels capability / quota / policy / boundary / audit through the
+        single chokepoint. Otherwise, the legacy per-call ``check_tool_call``
+        path is used so pre-migration callers keep working.
+        """
+        from src.platform.syscall import syscall_pipeline_enabled
+
+        use_pipeline = (
+            syscall_pipeline_enabled()
+            and self._kernel is not None
+            and agent_context is not None
+            and agent_context.get("agent_id")
+        )
+
+        if use_pipeline:
+            decision = self._kernel.syscall(
+                verb="tool.call",
+                subject=agent_context["agent_id"],
+                object=tool_name,
+                args={
+                    "tool_input": tool_input,
+                    "estimated_cost_usd": agent_context.get("estimated_cost_usd", 0.0),
+                    "estimated_tokens": agent_context.get("estimated_tokens"),
+                },
             )
-            if not is_allowed:
-                return {"success": False, "error": f"Tool '{tool_name}' not in agent's allowed tools"}
+            if decision.action != "allow":
+                logger.warning(
+                    "Syscall %s %s for tool %s: %s",
+                    decision.action, agent_context["agent_id"], tool_name, decision.reason,
+                )
+                # rate_limit / deny / mask / ask_human all map to failure for
+                # the tool-call interface. The callsite can inspect the returned
+                # decision_action for more nuanced handling later.
+                return {
+                    "success": False,
+                    "error": f"Kernel {decision.action}: {decision.reason}",
+                    "decision_action": decision.action,
+                }
+            # Park the budget ticket on the context so callers can commit/release
+            # after they know the real cost. The syscall pipeline already ran
+            # capability + quota, so the legacy whitelist check below is
+            # skipped.
+            if agent_context is not None and hasattr(decision, "details"):
+                ticket = (decision.details or {}).get("ticket")
+                if ticket:
+                    agent_context["budget_ticket"] = ticket
+        elif self._kernel and agent_context and agent_context.get("agent_id"):
+            # Legacy path — pre-syscall-pipeline adoption.
+            decision = self._kernel.check_tool_call(
+                agent_id=agent_context["agent_id"],
+                tool_name=tool_name,
+                tool_input=tool_input,
+            )
+            if decision.denied:
+                logger.warning("Kernel denied tool %s for agent %s: %s",
+                               tool_name, agent_context["agent_id"], decision.reason)
+                return {"success": False, "error": f"Kernel denied: {decision.reason}"}
+
+        if not use_pipeline:
+            # Legacy whitelist check — the syscall pipeline's capability stage
+            # already enforces this when enabled.
+            allowed_tools = (agent_context or {}).get("allowed_tools")
+            if allowed_tools:
+                is_allowed = tool_name in allowed_tools or any(
+                    tool_name.startswith(prefix.rstrip("*"))
+                    for prefix in allowed_tools
+                    if prefix.endswith("*")
+                )
+                if not is_allowed:
+                    return {"success": False, "error": f"Tool '{tool_name}' not in agent's allowed tools"}
 
         # Custom company tools + platform tools (both in _custom_handlers)
         if tool_name in self._custom_handlers:
             try:
-                result = self._custom_handlers[tool_name](tool_input, agent_context)
+                handler = self._custom_handlers[tool_name]
+                result = handler(tool_input, agent_context)
+                # Support async handlers (A2A tools are async)
+                if asyncio.iscoroutine(result):
+                    result = await result
+                # A2A handlers already return shaped {success, ...} dicts — pass through
+                if isinstance(result, dict) and "success" in result:
+                    return result
                 return {"success": True, "result": result}
             except Exception as e:
                 logger.error("Custom tool %s failed: %s", tool_name, e)
@@ -409,3 +497,49 @@ class ToolExecutor:
 
     def _handle_get_dashboard(self, input: dict, ctx: dict | None) -> dict:
         return self._system.metrics.get_dashboard()
+
+    # ── AgentOS A2A Handlers ─────────────────────────────────────────────
+
+    async def _handle_a2a_call(self, input: dict, ctx: dict | None) -> dict:
+        """Synchronous agent-to-agent call via A2A protocol."""
+        if not self._a2a_handler:
+            return {"success": False, "error": "A2A handler not wired"}
+        return await self._a2a_handler.call(
+            caller_context=ctx or {},
+            target_namespace=input.get("namespace", "default"),
+            target_name=input["name"],
+            task=input["task"],
+            context=input.get("context"),
+            timeout=input.get("timeout", 120),
+        )
+
+    async def _handle_a2a_async_call(self, input: dict, ctx: dict | None) -> dict:
+        """Fire-and-forget A2A call. Returns a job_id."""
+        if not self._a2a_handler:
+            return {"success": False, "error": "A2A handler not wired"}
+        return await self._a2a_handler.async_call(
+            caller_context=ctx or {},
+            target_namespace=input.get("namespace", "default"),
+            target_name=input["name"],
+            task=input["task"],
+            context=input.get("context"),
+        )
+
+    async def _handle_a2a_await(self, input: dict, ctx: dict | None) -> dict:
+        """Wait for an async A2A job to complete."""
+        if not self._a2a_handler:
+            return {"success": False, "error": "A2A handler not wired"}
+        return await self._a2a_handler.await_job(
+            job_id=input["job_id"],
+            timeout=input.get("timeout", 120),
+        )
+
+    def _handle_a2a_list(self, input: dict, ctx: dict | None) -> dict:
+        """List callable agents for discovery."""
+        if not self._a2a_handler:
+            return {"agents": []}
+        agents = self._a2a_handler.list_available(
+            namespace=input.get("namespace"),
+            department=input.get("department"),
+        )
+        return {"agents": agents}

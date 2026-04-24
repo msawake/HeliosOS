@@ -1,0 +1,90 @@
+# ============================================================================
+# ForgeOS Example: Mixed Tools — Full-Stack Sales Agent
+# ============================================================================
+#
+# WHAT IT DOES:
+#   A continuous-loop sales agent that runs the entire lead-to-close pipeline.
+#   Each iteration discovers new leads, scores them, gates high-value outreach
+#   behind human approval, creates follow-up activities, tracks pipeline
+#   metrics, and broadcasts events for cross-team coordination.
+#
+# TOOLS USED (7):
+#   platform__crm_search_leads   — Discover and pull new/updated leads from CRM.
+#   platform__crm_update_lead    — Update lead status, score, and ownership.
+#   platform__crm_create_activity — Schedule follow-up calls, emails, demos.
+#   company__search_knowledge    — Look up ICP criteria, pricing, battlecards.
+#   company__request_approval    — Gate high-value (>$10K) outreach on human OK.
+#   company__record_metric       — Log pipeline stats (new leads, conversions).
+#   company__publish_event       — Broadcast lead.qualified / deal.progressed
+#                                  events so marketing & CS agents can react.
+#
+# EXECUTION TYPE: always_on
+#   Runs in a continuous loop, sleeping 180 seconds (3 minutes) between
+#   iterations. Keeps the pipeline moving 24/7 without manual intervention.
+#
+# DEPLOY:
+#   forgeos deploy examples/mixed/full-stack-sales.yaml
+#
+# TEST:
+#   # Check that the agent is running:
+#   curl http://localhost:5001/api/agents/full-stack-sales/status
+#
+#   # View recent loop iterations:
+#   curl http://localhost:5001/api/agents/full-stack-sales/history?limit=5
+#
+#   # Stop the loop:
+#   curl -X POST http://localhost:5001/api/agents/full-stack-sales/stop
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: full-stack-sales
+  description: "Always-on sales agent that runs a continuous lead-to-close cycle — discovers leads, scores them, requests approval for high-value outreach, creates follow-ups, records metrics, and publishes events."
+  department: examples
+  labels:
+    category: mixed
+spec:
+  stack: forgeos
+  execution_type: always_on
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - platform__crm_search_leads
+    - platform__crm_update_lead
+    - platform__crm_create_activity
+    - company__search_knowledge
+    - company__request_approval
+    - company__record_metric
+    - company__publish_event
+  metadata:
+    loop_interval_seconds: 180
+  system_prompt: |
+    You are a full-stack sales agent running a continuous lead-to-close cycle.
+    Each iteration:
+
+    1. Search for new leads via CRM using platform__crm_search_leads.
+       Focus on leads created or updated since your last iteration.
+    2. Score them using knowledge base insights from company__search_knowledge.
+       Look up ICP criteria, industry benchmarks, and pricing tiers to
+       determine fit and estimated deal value.
+    3. For high-value leads (>$10K estimated value), call
+       company__request_approval before any outreach. Include the lead
+       name, company, estimated value, and your scoring rationale.
+       For leads under $10K, proceed directly.
+    4. Update lead status and scores in the CRM via platform__crm_update_lead.
+    5. Create CRM activities for follow-ups using platform__crm_create_activity.
+       Schedule appropriate next steps: intro emails for new leads, demo
+       calls for qualified leads, proposal reviews for late-stage leads.
+    6. Record pipeline metrics via company__record_metric — track counts of
+       new leads found, leads qualified, activities created, and approvals
+       requested per cycle.
+    7. Publish events via company__publish_event for cross-team visibility.
+       Use event types like "lead.qualified", "deal.progressed", and
+       "outreach.scheduled" so marketing and CS agents can coordinate.
+
+    Be efficient. Each iteration should complete in under a minute. Prioritize
+    high-value leads but do not ignore smaller opportunities entirely.

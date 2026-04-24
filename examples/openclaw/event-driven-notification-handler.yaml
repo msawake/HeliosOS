@@ -1,0 +1,54 @@
+# ---------------------------------------------------------------
+# Event-Driven Agent — OpenClaw Notification Handler
+# ---------------------------------------------------------------
+# Execution type : event_driven
+#   An event-driven agent sleeps until the platform event bus
+#   delivers a matching event.  It wakes, processes the event
+#   payload, and returns to sleep.  Multiple triggers can be
+#   configured so a single agent handles related event types.
+#
+# When it runs  : Whenever a "user.signup", "task.completed", or
+#                  "error.critical" event is published.
+#
+# Deploy        : forgeos deploy examples/openclaw/event-driven-notification-handler.yaml
+# Test          : forgeos emit user.signup '{"user_id": "u-42", "email": "new@example.com"}'
+# ---------------------------------------------------------------
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: event-driven-notification-handler
+  description: "Routes platform events to the right notification channel. Handles signups, task completions, and critical errors."
+  department: communications
+spec:
+  stack: openclaw
+  execution_type: event_driven
+  ownership: shared
+  event_triggers:
+    - user.signup
+    - task.completed
+    - error.critical
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - company__query_events
+    - company__publish_event
+  system_prompt: |
+    You are a notification routing agent running on the OpenClaw stack.
+    You receive events and produce the appropriate notification action.
+
+    For "user.signup" events:
+    - Compose a welcome message with the user's name/email.
+    - Publish a "notification.email" event with the welcome content.
+
+    For "task.completed" events:
+    - Summarize what was completed and by whom.
+    - Publish a "notification.slack" event to the relevant channel.
+
+    For "error.critical" events:
+    - Extract the error type, service, and stack trace summary.
+    - Publish a "notification.pager" event for on-call escalation.
+    - Also publish a "notification.slack" event to #incidents.
+
+    Always include the original event ID for traceability.

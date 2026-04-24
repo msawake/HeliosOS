@@ -19,11 +19,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from stacks.base import AgentDefinition, ExecutionType, LLMConfig, OwnershipType
+from stacks.base import AgentDefinition
 from stacks.forgeos.adapter import ForgeOSAdapter
 from stacks.crewai.adapter import CrewAIAdapter
 from stacks.adk.adapter import ADKAdapter
 from stacks.openclaw.adapter import OpenClawAdapter
+from stacks.sandbox.adapter import SandboxAdapter
 
 from src.platform.registry import AgentRegistry
 from src.platform.executor import PlatformExecutor
@@ -176,7 +177,36 @@ class PlatformBootstrap:
 
             self.platform_registry = AgentRegistry(store=agent_store)
             self.scheduler = SchedulerEngine(job_store=job_store)
-            self.event_bus = EventBus(subscription_store=sub_store, message_store=msg_store)
+
+            # Phase A #6 — durable event store. When FORGEOS_STATE_DIR is set,
+            # the EventBus appends every fired event to a SQLite log so recent_events
+            # survives restarts and multi-worker deploys stop silently fragmenting
+            # history. Falls back to in-memory when the env var is absent.
+            event_store = None
+            state_dir = os.environ.get("FORGEOS_STATE_DIR")
+            if state_dir:
+                try:
+                    from pathlib import Path
+                    from src.platform.durable_event_store import SqliteEventStore
+                    Path(state_dir).mkdir(parents=True, exist_ok=True)
+                    event_store = SqliteEventStore(Path(state_dir) / "events.db")
+                    logger.info("  Event bus: durable (SQLite at %s/events.db)", state_dir)
+                except Exception as exc:
+                    logger.warning(
+                        "  Event bus durable store failed (%s) — falling back to in-memory", exc
+                    )
+            self.event_bus = EventBus(
+                subscription_store=sub_store,
+                message_store=msg_store,
+                event_store=event_store,
+            )
+
+            # Phase A #5 — audit-aware secrets manager. Every secret read
+            # (cache hit, secret-manager fetch, env fallback) now records
+            # an audit row via the platform audit log when the FastAPI
+            # layer wires it (via self._kernel.audit_log setter below).
+            from src.core.secrets import SecretsManager
+            self.secrets = SecretsManager(audit_recorder=None)  # recorder bound after kernel
 
             logger.info("[Phase 3] Registering stack adapters...")
             self._register_adapters()
@@ -193,6 +223,42 @@ class PlatformBootstrap:
                 event_bus=self.event_bus,
             )
             self.executor._session_store = self._session_store
+            # AgentOS: bind executor to A2A handler so agents can call each other
+            if hasattr(self, "_a2a_handler") and self._a2a_handler:
+                self._a2a_handler.bind_executor(self.executor)
+                logger.info("  A2A handler: bound to platform executor")
+
+            # AgentOS: construct the Kernel facade + publish for in-process SDK use
+            from src.platform.kernel import Kernel as PlatformKernel
+            self._kernel = PlatformKernel(
+                registry=self.platform_registry,
+                tool_executor=self._tool_executor,
+                a2a_handler=getattr(self, '_a2a_handler', None),
+                usage_enforcer=getattr(self, '_usage_enforcer', None),
+                audit_log=None,  # wired by FastAPI layer which owns the AuditLog
+            )
+            # Wire kernel into tool executor for mandatory policy enforcement
+            self._tool_executor._kernel = self._kernel
+            logger.info("  Kernel: wired into ToolExecutor (policy enforcement active)")
+
+            try:
+                from src.forgeos_sdk.kernel import Kernel as SDKKernel
+                SDKKernel.register_local_instance(self._kernel)
+                logger.info("  Kernel: registered for in-process SDK access")
+            except Exception as e:
+                logger.debug("  SDK kernel registration skipped: %s", e)
+
+            try:
+                from src.forgeos_sdk.runtime import runtime as sdk_runtime
+                sdk_runtime.register_platform(
+                    kernel=self._kernel,
+                    process_table=self.executor.process_table,
+                    checkpoint_store=self.executor.checkpoint_store,
+                )
+                logger.info("  Runtime: registered for in-process SDK access")
+            except Exception as e:
+                logger.debug("  SDK runtime registration skipped: %s", e)
+
             for name, adapter in self._adapters.items():
                 self.executor.register_adapter(adapter)
 
@@ -290,6 +356,12 @@ class PlatformBootstrap:
         google_key = os.environ.get("GOOGLE_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
         if google_key:
             api_keys["google"] = google_key
+        atlas_key = os.environ.get("ATLAS_GATEWAY_KEY", "")
+        if atlas_key:
+            api_keys["atlas"] = atlas_key
+        gcp_project = os.environ.get("GCP_PROJECT_ID", "")
+        if gcp_project:
+            api_keys["vertex"] = gcp_project
 
         self.llm_router = LLMRouter(api_keys=api_keys)
         logger.info("  LLM Router: providers=%s", self.llm_router.available_providers())
@@ -375,10 +447,15 @@ class PlatformBootstrap:
             db_client=self._db,
             tenant_id=self.tenant_id,
         )
+        # AgentOS A2A handler (bound to platform_executor later in boot sequence)
+        from src.platform.a2a import A2AHandler
+        self._a2a_handler = A2AHandler()
+
         tool_executor = ToolExecutor(
             company_system=self.system,
             mcp_clients=mcp_clients,
             client_mcp_manager=self._client_mcp_manager,
+            a2a_handler=self._a2a_handler,
         )
 
         # Attach UsageEnforcer so the agentic loop can record tokens/cost.
@@ -443,6 +520,11 @@ class PlatformBootstrap:
                 tool_executor=te,
                 openclaw_dir=os.environ.get("OPENCLAW_DIR", str(Path(__file__).resolve().parents[1] / "openclaw2")),
             ),
+            "sandbox": SandboxAdapter(
+                llm_router=self.llm_router,
+                tool_executor=te,
+                api_url=f"http://localhost:{os.environ.get('PORT', '5000')}",
+            ),
         }
         for name, adapter in self._adapters.items():
             logger.info("  Stack registered: %s", name)
@@ -453,11 +535,14 @@ class PlatformBootstrap:
             raise RuntimeError("Platform not booted yet")
         return await self.executor.deploy(agent_def)
 
-    async def run_main_loop(self, tick_interval: float = 30.0):
+    async def run_main_loop(self, tick_interval: float = 30.0, app=None):
         logger.info("Starting main loop (tick every %.0fs)...", tick_interval)
         tick_count = 0
         while self._running:
             tick_count += 1
+            # Update liveness timestamp (used by /api/liveness probe)
+            if app and hasattr(app, "state"):
+                app.state.last_tick_at = datetime.now(timezone.utc)
             try:
                 dispatches = await self.workflow_engine.tick()
                 if dispatches:
@@ -484,10 +569,46 @@ class PlatformBootstrap:
 
             await asyncio.sleep(tick_interval)
 
+    async def shutdown(self):
+        """Graceful async shutdown — cancel tasks, disconnect services, close DB."""
+        logger.info("Shutting down ForgeOS Platform (graceful)...")
+        self._running = False
+        # 1. Cancel autonomous agent tasks
+        if self.executor:
+            for tid, task in list(getattr(self.executor, '_autonomous_tasks', {}).items()):
+                task.cancel()
+                logger.info("  Cancelled autonomous task: %s", tid)
+        # 2. Stop scheduler
+        if self.scheduler:
+            self.scheduler.stop_all()
+            logger.info("  Scheduler stopped")
+        # 3. Disconnect MCP servers
+        if hasattr(self, '_mcp_manager') and self._mcp_manager:
+            try:
+                await self._mcp_manager.disconnect_all()
+                logger.info("  MCP servers disconnected")
+            except Exception as e:
+                logger.warning("  MCP disconnect error: %s", e)
+        if hasattr(self, '_client_mcp_manager') and self._client_mcp_manager:
+            try:
+                await self._client_mcp_manager.disconnect_all()
+            except Exception:
+                pass
+        # 4. Close database
+        if self._db:
+            try:
+                self._db.close()
+                logger.info("  Database closed")
+            except Exception:
+                pass
+        logger.info("Shutdown complete.")
+
     def stop(self):
+        """Synchronous stop — for backward compat and non-async contexts."""
         logger.info("Shutting down ForgeOS Platform...")
         self._running = False
-        self.scheduler.stop_all()
+        if self.scheduler:
+            self.scheduler.stop_all()
         if self._db:
             self._db.close()
 
@@ -510,6 +631,7 @@ class PlatformBootstrap:
             admin_registry=self.legacy_registry,
             ontology=getattr(self, 'ontology', None),
             tenant_id=self.tenant_id,
+            kernel=getattr(self, '_kernel', None),
         )
 
     def start_api_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):
@@ -519,7 +641,8 @@ class PlatformBootstrap:
             logger.warning("API server not available")
             return
         logger.info("API server starting on http://%s:%d (FastAPI + Uvicorn)", host, port)
-        import threading, uvicorn
+        import threading
+        import uvicorn
         config = uvicorn.Config(app, host=host, port=port, log_level="warning")
         server = uvicorn.Server(config)
         thread = threading.Thread(target=server.run, daemon=True)
@@ -544,6 +667,24 @@ def run_demo(company_id: str = "leadforge"):
     demo_mod.run_demo()
 
 
+def _validate_config(mode: str) -> list[str]:
+    """Validate required configuration before boot. Returns list of errors."""
+    errors = []
+    has_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    has_openai = bool(os.environ.get("OPENAI_API_KEY"))
+    has_db = bool(os.environ.get("DATABASE_URL"))
+
+    if mode == "autonomous":
+        if not has_anthropic and not has_openai:
+            errors.append("Autonomous mode requires ANTHROPIC_API_KEY or OPENAI_API_KEY (agents would run simulated)")
+        if not has_db:
+            errors.append("Autonomous mode requires DATABASE_URL (agents need persistence to survive restarts)")
+    elif mode == "supervised":
+        if not has_anthropic and not has_openai:
+            logger.warning("No LLM API key configured — agents will run in SIMULATED mode")
+    return errors
+
+
 async def main():
     _load_dotenv_from_repo_root()
     parser = argparse.ArgumentParser(description="Boot ForgeOS Multi-Stack Platform")
@@ -564,7 +705,24 @@ async def main():
         help="API listen port (default: env PORT or 5000). Use when 5000 is already in use.",
     )
     parser.add_argument("--no-auth", action="store_true", help="Disable API authentication (dev only)")
+    parser.add_argument("--validate-only", action="store_true", help="Validate config and exit")
     args = parser.parse_args()
+
+    # Config validation — fail fast on missing requirements
+    config_errors = _validate_config(args.mode)
+    if args.validate_only:
+        if config_errors:
+            for e in config_errors:
+                logger.error("CONFIG ERROR: %s", e)
+            sys.exit(1)
+        else:
+            logger.info("Configuration valid for mode=%s", args.mode)
+            sys.exit(0)
+    if config_errors and args.mode == "autonomous":
+        for e in config_errors:
+            logger.error("CONFIG ERROR: %s", e)
+        logger.error("Fix the above errors or use --mode supervised for dev.")
+        sys.exit(1)
 
     api_port = args.port if args.port is not None else int(os.environ.get("PORT", "5000"))
 
@@ -574,22 +732,45 @@ async def main():
     if args.demo:
         run_demo(company_id=args.company)
 
+    # Store app reference for liveness tick tracking
+    _api_app = None
     if args.dashboard:
-        bootstrap.start_api_server(port=api_port, auth_enabled=not args.no_auth)
+        auth_on = not args.no_auth and not os.environ.get("FORGEOS_AUTH_DISABLED")
+        _api_app = bootstrap.create_api_app(auth_enabled=auth_on)
+        bootstrap.start_api_server(port=api_port, auth_enabled=auth_on)
+
+    # Register SIGTERM/SIGINT for graceful shutdown
+    loop = asyncio.get_running_loop()
+    import signal
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(_handle_signal(s, bootstrap)))
 
     if args.loop:
         try:
-            await bootstrap.run_main_loop()
-        except KeyboardInterrupt:
-            bootstrap.stop()
+            await bootstrap.run_main_loop(app=_api_app)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await bootstrap.shutdown()
     elif args.dashboard:
         logger.info("API server running on http://0.0.0.0:%d — Ctrl+C to stop.", api_port)
         try:
             await asyncio.Future()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, asyncio.CancelledError):
             pass
         finally:
-            bootstrap.stop()
+            await bootstrap.shutdown()
+
+
+async def _handle_signal(sig, bootstrap):
+    """Handle SIGTERM/SIGINT for graceful shutdown."""
+    logger.info("Received signal %s — initiating graceful shutdown...", sig.name)
+    await bootstrap.shutdown()
+    # Cancel remaining tasks
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    for t in tasks:
+        t.cancel()
+    logger.info("All tasks cancelled. Exiting.")
 
 
 if __name__ == "__main__":

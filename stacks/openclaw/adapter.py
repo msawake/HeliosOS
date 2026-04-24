@@ -46,6 +46,145 @@ OPENCLAW_STATE_DIR = os.environ.get(
 )
 
 
+TOOL_PROXY_PORT = int(os.environ.get("OPENCLAW_TOOL_PROXY_PORT", "18790"))
+
+
+class ToolProxyServer:
+    """Local HTTP server that proxies OpenClaw tool calls through the kernel.
+
+    The OpenClaw Node.js gateway calls ``POST http://127.0.0.1:{port}/tool``
+    for every tool invocation. This server validates the agent token, checks
+    permissions via the kernel, executes the tool via ``tool_executor``, and
+    returns the result.
+
+    Reuses ``SandboxTokenStore`` for token minting/validation.
+    """
+
+    def __init__(self, tool_executor, port: int = TOOL_PROXY_PORT):
+        self._tool_executor = tool_executor
+        self.port = port
+        self._runner: Any | None = None
+        self._site: Any | None = None
+
+    @property
+    def base_url(self) -> str:
+        return f"http://127.0.0.1:{self.port}"
+
+    async def start(self) -> bool:
+        try:
+            from aiohttp import web
+        except ImportError:
+            try:
+                return await self._start_uvicorn()
+            except Exception:
+                logger.warning("ToolProxyServer: no aiohttp or uvicorn — proxy disabled")
+                return False
+
+        app = web.Application()
+        app.router.add_post("/tool", self._handle_tool)
+        app.router.add_get("/health", self._handle_health)
+        self._runner = web.AppRunner(app)
+        await self._runner.setup()
+        self._site = web.TCPSite(self._runner, "127.0.0.1", self.port)
+        await self._site.start()
+        logger.info("OpenClaw tool proxy started on http://127.0.0.1:%d", self.port)
+        return True
+
+    async def _start_uvicorn(self) -> bool:
+        """Fallback: use FastAPI/uvicorn if aiohttp is not installed."""
+        from fastapi import FastAPI, Request
+        from fastapi.responses import JSONResponse
+        import uvicorn
+
+        proxy_app = FastAPI()
+
+        @proxy_app.post("/tool")
+        async def tool_endpoint(request: Request):
+            return await self._handle_fastapi_tool(request)
+
+        @proxy_app.get("/health")
+        async def health():
+            return {"status": "ok"}
+
+        config = uvicorn.Config(proxy_app, host="127.0.0.1", port=self.port, log_level="warning")
+        server = uvicorn.Server(config)
+        asyncio.create_task(server.serve())
+        await asyncio.sleep(0.3)
+        logger.info("OpenClaw tool proxy started (uvicorn) on http://127.0.0.1:%d", self.port)
+        return True
+
+    async def _handle_health(self, request=None):
+        from aiohttp import web
+        return web.json_response({"status": "ok"})
+
+    async def _handle_tool(self, request):
+        """aiohttp handler: validate token, check kernel, execute tool."""
+        from aiohttp import web
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "invalid JSON"}, status=400)
+
+        token = request.headers.get("X-Agent-Token", "")
+        return web.json_response(await self._process_tool_call(body, token))
+
+    async def _handle_fastapi_tool(self, request):
+        """FastAPI handler: validate token, check kernel, execute tool."""
+        from fastapi.responses import JSONResponse
+        body = await request.json()
+        token = request.headers.get("x-agent-token", "")
+        result = await self._process_tool_call(body, token)
+        return JSONResponse(result)
+
+    async def _process_tool_call(self, body: dict, token: str) -> dict:
+        """Core logic shared by both aiohttp and FastAPI handlers."""
+        from stacks.sandbox.adapter import get_token_store
+
+        claims = get_token_store().verify(token)
+        if not claims:
+            return {"error": "Invalid or expired agent token"}
+
+        tool_name = body.get("tool_name", "")
+        tool_input = body.get("tool_input", {})
+        agent_id = claims["agent_id"]
+
+        # Kernel permission check via runtime
+        try:
+            from src.forgeos_sdk.runtime import runtime as _rt
+            if _rt.is_registered:
+                rt_token = _rt.bind(agent_id, namespace=claims.get("namespace", "default"))
+                try:
+                    decision = await _rt.check_tool(tool_name, tool_input)
+                    if decision.denied:
+                        logger.warning("Proxy denied %s for %s: %s", tool_name, agent_id, decision.reason)
+                        return {"error": f"Kernel denied: {decision.reason}"}
+                finally:
+                    _rt.unbind(rt_token)
+        except Exception as e:
+            logger.debug("Proxy kernel check skipped: %s", e)
+
+        # Execute tool
+        if not self._tool_executor:
+            return {"error": "No tool executor available"}
+
+        ctx = {
+            "agent_id": agent_id,
+            "namespace": claims.get("namespace", "default"),
+            "tier": claims.get("tier", 3),
+        }
+        try:
+            result = await self._tool_executor.execute(tool_name, tool_input, ctx)
+            return result if isinstance(result, dict) else {"result": str(result)}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def stop(self):
+        if self._runner:
+            await self._runner.cleanup()
+            self._runner = None
+            self._site = None
+
+
 class OpenClawGateway:
     """Manages the OpenClaw gateway subprocess lifecycle."""
 
@@ -142,22 +281,65 @@ class OpenClawGateway:
             self._process = None
             self._ready = False
 
-    async def chat(self, messages: list[dict], model: str = "claude-sonnet-4-5") -> dict:
-        """Send a chat completion request to the OpenClaw gateway."""
-        import httpx
-        url = f"{self.base_url}/v1/chat/completions"
-        payload = {
-            "model": model,
-            "messages": messages,
-            "stream": False,
-        }
+    async def chat(self, message: str, agent_id: str = "main", system_prompt: str | None = None) -> dict:
+        """Invoke an agent turn via the OpenClaw CLI (WebSocket RPC to gateway).
+
+        OpenClaw's gateway is WebSocket-based, not REST. The CLI command
+        ``node openclaw.mjs agent --agent {id} --message "..." --json``
+        sends a message through the gateway and returns the response as JSON.
+
+        When --local is used, the agent runs embedded with API keys from the
+        shell environment (no gateway needed).
+        """
+        import json as _json
+
+        args = [
+            "node", str(self.openclaw_dir / "openclaw.mjs"),
+            "agent",
+            "--agent", agent_id,
+            "--message", message,
+            "--json",
+        ]
+        # If gateway is running, route through it; otherwise run locally
+        if not self.running:
+            args.append("--local")
+
+        env = {**os.environ, "OPENCLAW_STATE_DIR": str(Path(OPENCLAW_STATE_DIR))}
+
         try:
-            async with httpx.AsyncClient(timeout=300) as client:
-                resp = await client.post(url, json=payload)
-                if resp.status_code == 200:
-                    return resp.json()
-                else:
-                    return {"error": f"HTTP {resp.status_code}: {resp.text}"}
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                cwd=str(self.openclaw_dir),
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
+            output_text = stdout.decode().strip()
+
+            # Parse JSON output from --json flag
+            try:
+                result = _json.loads(output_text)
+                payloads = result.get("payloads", [])
+                text = " ".join(p.get("text", "") for p in payloads if p.get("text"))
+                meta = result.get("meta", {})
+                agent_meta = meta.get("agentMeta", {})
+                usage = agent_meta.get("lastCallUsage", {})
+                tokens = usage.get("total", 0)
+                return {
+                    "text": text,
+                    "tokens": tokens,
+                    "model": agent_meta.get("model", ""),
+                    "duration_ms": meta.get("durationMs", 0),
+                    "session_id": agent_meta.get("sessionId", ""),
+                }
+            except _json.JSONDecodeError:
+                # Non-JSON output — return raw text
+                return {"text": output_text, "tokens": 0}
+        except asyncio.TimeoutError:
+            if proc and proc.returncode is None:
+                proc.kill()
+            return {"error": "OpenClaw agent timed out after 300s"}
         except Exception as e:
             return {"error": str(e)}
 
@@ -220,8 +402,11 @@ class OpenClawAdapter(AgentStackAdapter):
         self._tool_executor = tool_executor
         self._agents: dict[str, AgentDefinition] = {}
         self._loops: dict[str, asyncio.Task] = {}
+        self._agent_tokens: dict[str, str] = {}
         self._gateway = OpenClawGateway(openclaw_dir=openclaw_dir)
         self._gateway_lock = asyncio.Lock()  # prevents double gateway start
+        self._tool_proxy = ToolProxyServer(tool_executor=tool_executor)
+        self._proxy_started = False
 
     async def _ensure_gateway(self) -> bool:
         """Start the gateway if not already running. Retries on crash.
@@ -231,22 +416,35 @@ class OpenClawAdapter(AgentStackAdapter):
         if not self._gateway.available:
             return False
         async with self._gateway_lock:
-            # Re-check after acquiring lock (another task may have started it)
             if self._gateway.running:
                 return True
+            # Start tool proxy alongside the gateway
+            if not self._proxy_started:
+                try:
+                    self._proxy_started = await self._tool_proxy.start()
+                except Exception as e:
+                    logger.warning("Tool proxy failed to start: %s", e)
             return await self._gateway.start()
 
     async def create_agent(self, agent_def: AgentDefinition) -> str:
         self._agents[agent_def.agent_id] = agent_def
-        # Write workspace files for the agent
+
+        # Mint a scoped token for kernel-gated tool calls
+        from stacks.sandbox.adapter import get_token_store
+        token = get_token_store().mint(agent_def)
+        self._agent_tokens[agent_def.agent_id] = token
+
         self._setup_workspace(agent_def)
-        logger.info("OpenClaw agent created: %s (%s)", agent_def.name, agent_def.agent_id)
+        logger.info("OpenClaw agent created: %s (%s) [token minted]", agent_def.name, agent_def.agent_id)
         return agent_def.agent_id
 
     def _setup_workspace(self, agent_def: AgentDefinition):
         """Write SOUL.md and workspace files into the OpenClaw state directory."""
         workspace = Path(OPENCLAW_STATE_DIR) / "workspaces" / agent_def.name
         workspace.mkdir(parents=True, exist_ok=True)
+
+        proxy_url = self._tool_proxy.base_url
+        agent_token = self._agent_tokens.get(agent_def.agent_id, "")
 
         soul = agent_def.system_prompt or (
             f"You are {agent_def.name}.\n\n"
@@ -257,6 +455,14 @@ class OpenClawAdapter(AgentStackAdapter):
             f"- Log decisions to memory\n"
             f"- Respect rate limits and budgets\n"
         )
+        if agent_def.tools:
+            soul += (
+                f"\n## Tool Usage\n"
+                f"To call a tool, POST to {proxy_url}/tool with:\n"
+                f'  {{"tool_name": "<name>", "tool_input": {{...}}}}\n'
+                f"  Header: X-Agent-Token: {agent_token}\n"
+                f"All tool calls are validated by the ForgeOS kernel.\n"
+            )
         (workspace / "SOUL.md").write_text(soul)
 
         agents_md = (
@@ -268,6 +474,25 @@ class OpenClawAdapter(AgentStackAdapter):
         if agent_def.tools:
             agents_md += "\n## Available Tools\n" + "\n".join(f"- {t}" for t in agent_def.tools) + "\n"
         (workspace / "AGENTS.md").write_text(agents_md)
+
+        # Write SKILLS with real proxy endpoints
+        skills_dir = workspace / "SKILLS"
+        skills_dir.mkdir(exist_ok=True)
+        skills_yaml = ""
+        for tool_name in (agent_def.tools or []):
+            skills_yaml += (
+                f"- name: {tool_name}\n"
+                f"  trigger: \"use {tool_name}\"\n"
+                f"  description: \"Calls {tool_name} via ForgeOS kernel proxy\"\n"
+                f"  method: POST\n"
+                f"  endpoint: \"{proxy_url}/tool\"\n"
+                f"  headers:\n"
+                f"    X-Agent-Token: \"{agent_token}\"\n"
+                f"  body:\n"
+                f"    tool_name: \"{tool_name}\"\n"
+                f"    tool_input: \"{{{{params}}}}\"\n\n"
+            )
+        (skills_dir / "default.yaml").write_text(skills_yaml or "# No tools configured\n")
 
         if agent_def.schedule:
             heartbeat = f"# Heartbeat\n\nSchedule: {agent_def.schedule}\n"
@@ -300,23 +525,22 @@ class OpenClawAdapter(AgentStackAdapter):
         return AgentResult(
             agent_id=agent_id,
             status=AgentStatus.COMPLETED,
-            output=f"[OpenClaw simulated] Agent '{agent_def.name}' processed: {prompt[:100]}",
+            output=f"[SIMULATED - No LLM API key configured] Agent '{agent_def.name}' received: {prompt[:100]}. Configure ANTHROPIC_API_KEY or OPENAI_API_KEY.",
+            error="No LLM provider available. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.",
             elapsed_ms=(time.time() - start_time) * 1000,
         )
 
     async def _invoke_via_gateway(self, agent_def: AgentDefinition, prompt: str) -> AgentResult:
-        """Invoke agent through the OpenClaw gateway HTTP API."""
-        system_msg = agent_def.system_prompt or (
-            f"You are {agent_def.name}. {agent_def.description or ''}\n"
-            f"Use ReAct loop. Log decisions to memory."
-        )
-        messages = [
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": prompt},
-        ]
+        """Invoke agent through the OpenClaw CLI → gateway WebSocket RPC.
 
-        model = agent_def.llm_config.chat_model
-        response = await self._gateway.chat(messages, model=model)
+        Tool calls inside the OpenClaw runtime are proxied through the
+        ToolProxyServer which validates the agent's token and enforces
+        kernel permissions before execution.
+        """
+        response = await self._gateway.chat(
+            message=prompt,
+            agent_id=agent_def.name,
+        )
 
         if "error" in response:
             return AgentResult(
@@ -325,25 +549,11 @@ class OpenClawAdapter(AgentStackAdapter):
                 error=f"OpenClaw gateway error: {response['error']}",
             )
 
-        # Parse OpenAI-compatible response
-        try:
-            choices = response.get("choices", [])
-            if not choices:
-                output = str(response)
-                tokens = 0
-            else:
-                choice = choices[0]
-                output = choice.get("message", {}).get("content", "")
-                tokens = response.get("usage", {}).get("total_tokens", 0)
-        except (IndexError, KeyError, TypeError, AttributeError):
-            output = str(response)
-            tokens = 0
-
         return AgentResult(
             agent_id="",
             status=AgentStatus.COMPLETED,
-            output=output,
-            tokens_used=tokens,
+            output=response.get("text", ""),
+            tokens_used=response.get("tokens", 0),
         )
 
     async def _invoke_via_platform(
@@ -369,6 +579,7 @@ class OpenClawAdapter(AgentStackAdapter):
             agent_context=build_agent_context(agent_def, agent_id),
             context=context,
             history=history,
+            goal=agent_def.goal,
         )
         result.agent_id = agent_id
         result.elapsed_ms = (time.time() - start_time) * 1000
@@ -399,10 +610,11 @@ class OpenClawAdapter(AgentStackAdapter):
             task.cancel()
 
     async def shutdown(self) -> None:
-        """Stop all loops and the gateway."""
+        """Stop all loops, the gateway, and the tool proxy."""
         for agent_id in list(self._loops):
             await self.stop(agent_id)
         await self._gateway.stop()
+        await self._tool_proxy.stop()
 
     async def recover(self) -> int:
         """Rewrite workspace files for all known agents after boot recovery.
@@ -443,14 +655,18 @@ class OpenClawAdapter(AgentStackAdapter):
                 f"- {t}" for t in agent_def.event_triggers
             )
 
+        proxy_url = self._tool_proxy.base_url
         tools_yaml = ""
         for tool_name in agent_def.tools:
             tools_yaml += textwrap.dedent(f"""\
-                name: {tool_name}
-                trigger: "use {tool_name}"
-                description: "Calls {tool_name} via MCP gateway"
-                mcp_endpoint: "/tool/{tool_name}"
-                parameters: {{}}
+                - name: {tool_name}
+                  trigger: "use {tool_name}"
+                  description: "Calls {tool_name} via ForgeOS kernel proxy"
+                  method: POST
+                  endpoint: "{proxy_url}/tool"
+                  body:
+                    tool_name: "{tool_name}"
+                    tool_input: "{{{{params}}}}"
 
             """)
 
