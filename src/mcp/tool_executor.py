@@ -461,8 +461,11 @@ class ToolExecutor:
         return self._system.hitl.get_pending(input.get("category"))
 
     def _handle_search_knowledge(self, input: dict, ctx: dict | None) -> list:
+        query = input.get("query") or ""
+        if not query:
+            return []
         return self._system.knowledge.search(
-            query=input["query"],
+            query=query,
             category=input.get("category"),
             department=input.get("department"),
             limit=input.get("limit", 5),
