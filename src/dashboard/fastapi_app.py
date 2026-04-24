@@ -54,6 +54,7 @@ class AgentCreateRequest(BaseModel):
     ownership: str = "shared"
     owner_id: str = ""
     department: str = ""
+    namespace: str = "default"
     description: str = ""
     goal: str = ""
     schedule: str | None = None
@@ -489,6 +490,7 @@ def create_fastapi_app(
                 ownership=ownership,
                 owner_id=owner_id,
                 department=req.department or None,
+                namespace=req.namespace or "default",
                 description=req.description,
                 goal=req.goal,
                 schedule=req.schedule,

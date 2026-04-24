@@ -170,10 +170,13 @@ class PlatformExecutor:
         if '..' in agent_def.name or '/' in agent_def.name or '\\' in agent_def.name:
             raise ValueError(f"Agent name contains invalid characters: '{agent_def.name}'")
 
-        # Check uniqueness
-        existing = self.registry.get(agent_def.name)
-        if existing:
-            raise ValueError(f"Agent '{agent_def.name}' already exists. Use a different name.")
+        # Check uniqueness by name (registry.get uses agent_id, not name)
+        for existing in self.registry.list_all():
+            if existing.name == agent_def.name and existing.namespace == agent_def.namespace:
+                raise ValueError(
+                    f"Agent '{agent_def.namespace}/{agent_def.name}' already exists "
+                    f"(id={existing.agent_id}). Use a different name."
+                )
 
         # Tier-based routing: untrusted agents (tier >= 3) run in sandbox
         tier = (agent_def.metadata or {}).get("_tier", 1)
