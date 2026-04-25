@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/a2h/v1/response.json",
+  "title": "A2H Response",
+  "description": "A structured response from a human to an agent.",
+  "type": "object",
+  "required": ["request_id", "response"],
+  "properties": {
+    "protocol": {
+      "type": "string",
+      "const": "a2h/v1"
+    },
+    "request_id": {
+      "type": "string",
+      "description": "The ID of the request being responded to"
+    },
+    "from": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "namespace": { "type": "string" },
+        "participant_type": { "type": "string", "const": "human" }
+      }
+    },
+    "response": {
+      "oneOf": [
+        {
+          "title": "Choice Response",
+          "type": "object",
+          "required": ["value"],
+          "properties": {
+            "value": { "type": "string", "description": "The selected option value" },
+            "text": { "type": "string", "description": "Optional free-text note" },
+            "metadata": { "type": "object", "additionalProperties": true }
+          }
+        },
+        {
+          "title": "Approval Response",
+          "type": "object",
+          "required": ["approved"],
+          "properties": {
+            "approved": { "type": "boolean" },
+            "reason": { "type": "string" },
+            "conditions": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Conditions attached to the approval"
+            },
+            "metadata": { "type": "object", "additionalProperties": true }
+          }
+        },
+        {
+          "title": "Text Response",
+          "type": "object",
+          "required": ["text"],
+          "properties": {
+            "text": { "type": "string" },
+            "metadata": { "type": "object", "additionalProperties": true }
+          }
+        },
+        {
+          "title": "Number Response",
+          "type": "object",
+          "required": ["value"],
+          "properties": {
+            "value": { "type": "number" },
+            "metadata": { "type": "object", "additionalProperties": true }
+          }
+        },
+        {
+          "title": "Confirm Response",
+          "type": "object",
+          "required": ["confirmed"],
+          "properties": {
+            "confirmed": { "type": "boolean" },
+            "metadata": { "type": "object", "additionalProperties": true }
+          }
+        },
+        {
+          "title": "Form Response",
+          "type": "object",
+          "required": ["fields"],
+          "properties": {
+            "fields": {
+              "type": "object",
+              "additionalProperties": true,
+              "description": "Key-value pairs matching the form field names"
+            },
+            "metadata": { "type": "object", "additionalProperties": true }
+          }
+        }
+      ]
+    },
+    "responded_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "channel": {
+      "type": "string",
+      "description": "Which channel the human used to respond",
+      "examples": ["dashboard", "slack", "email", "sms", "mobile"]
+    }
+  }
+}
