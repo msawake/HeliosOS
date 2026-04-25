@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/a2h/v1/participant-card.json",
+  "title": "A2H Participant Card",
+  "description": "Discovery metadata for a human participant. Extends A2A Agent Cards.",
+  "type": "object",
+  "required": ["name", "namespace", "participant_type"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Participant's unique name within the namespace"
+    },
+    "namespace": {
+      "type": "string",
+      "description": "Logical grouping (team, department, org unit)"
+    },
+    "participant_type": {
+      "type": "string",
+      "enum": ["human", "agent"]
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of the participant's role"
+    },
+    "a2h": {
+      "type": "object",
+      "description": "A2H-specific capabilities. Present only if the participant supports A2H.",
+      "properties": {
+        "supported": {
+          "type": "boolean",
+          "default": true
+        },
+        "response_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["choice", "approval", "text", "number", "confirm", "form"]
+          },
+          "description": "Which response types this participant can handle"
+        },
+        "channels": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Available delivery channels",
+          "examples": [["dashboard", "slack", "email"]]
+        },
+        "availability": {
+          "type": "object",
+          "properties": {
+            "current_state": {
+              "type": "string",
+              "description": "Current availability state"
+            },
+            "schedule": {
+              "type": "string",
+              "description": "When the participant is generally available",
+              "examples": ["business_hours", "24x7", "on_call"]
+            }
+          }
+        },
+        "delegation_rules": {
+          "type": "array",
+          "items": { "$ref": "delegation-rule.json" },
+          "description": "Auto-response rules"
+        },
+        "escalation_timeout_minutes": {
+          "type": "integer",
+          "description": "Default timeout before escalation for this participant",
+          "default": 30
+        }
+      }
+    },
+    "version": {
+      "type": "string",
+      "default": "1.0"
+    },
+    "protocol": {
+      "type": "string",
+      "const": "a2h/v1"
+    }
+  }
+}

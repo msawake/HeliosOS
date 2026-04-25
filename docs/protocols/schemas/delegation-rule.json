@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/a2h/v1/delegation-rule.json",
+  "title": "A2H Delegation Rule",
+  "description": "A human-configured rule that auto-responds to matching requests.",
+  "type": "object",
+  "required": ["name", "match", "auto_response"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Human-readable rule name"
+    },
+    "match": {
+      "type": "object",
+      "properties": {
+        "from_namespace": {
+          "type": "string",
+          "description": "Request must be from this namespace"
+        },
+        "from_name_pattern": {
+          "type": "string",
+          "description": "Sender name must match this glob pattern (e.g., 'sales-*')"
+        },
+        "response_type": {
+          "type": "string",
+          "enum": ["choice", "approval", "text", "number", "confirm", "form"],
+          "description": "Request must ask for this response type"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["critical", "high", "medium", "low"],
+          "description": "Request must have this priority or lower"
+        },
+        "context_conditions": {
+          "type": "object",
+          "description": "Conditions on the request's context object",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "object", "properties": { "lt": { "type": "number" } }, "required": ["lt"] },
+              { "type": "object", "properties": { "gt": { "type": "number" } }, "required": ["gt"] },
+              { "type": "object", "properties": { "eq": {} }, "required": ["eq"] },
+              { "type": "object", "properties": { "in": { "type": "array" } }, "required": ["in"] }
+            ]
+          }
+        }
+      }
+    },
+    "auto_response": {
+      "type": "object",
+      "description": "The response to send when the rule matches. Shape must match the request's response_type.",
+      "additionalProperties": true
+    }
+  }
+}
