@@ -12,6 +12,35 @@ A2H:  Agent ↔ Human    (how agents and humans collaborate)
 
 ---
 
+## Introduction
+
+Google's A2A protocol solved a critical problem: how do AI agents talk to each other? With A2A, an agent can discover, call, and delegate work to other agents across frameworks, platforms, and organizations. Anthropic's MCP solved another: how do agents use tools? With MCP, any agent can connect to any tool server through a standard interface.
+
+But we are now in a world where the real work isn't done by agents alone or humans alone — it's done by **humans and agents collaborating together** in workflows that span both. A sales pipeline where an agent researches leads and a human approves deals. A support operation where agents monitor sentiment and humans handle escalations. A compliance workflow where agents flag violations and humans decide the response.
+
+In these workflows, agents need to ask humans questions — not just "approve yes/no" but structured decisions with context, deadlines, and escalation paths. And humans need to delegate work to agents — not through custom UIs but through a standard protocol that any system can implement.
+
+### Where does H2A fit?
+
+A natural question: should this spec cover both directions — Agent-to-Human (A2H) AND Human-to-Agent (H2A)?
+
+**H2A (human calls agent) is not a new protocol.** When a human delegates work to an agent, they are doing exactly what A2A defines: addressing a target by namespace/name, sending a task, and receiving a result. The only difference is that the caller is human, initiating from a UI rather than from code. H2A is an **implementation concern** — you give humans an interface (dashboard, Slack command, API) that speaks A2A on their behalf. The protocol is A2A. The UI is H2A.
+
+**A2H (agent calls human) IS a new protocol.** When an agent needs something from a human, everything changes. Humans respond in minutes or hours, not milliseconds. Humans need structured choices, not JSON payloads. Humans have availability states — they might be in a meeting, on break, or off shift. Humans can delegate routine decisions to auto-response rules. None of this exists in A2A because A2A assumes the target responds immediately and programmatically.
+
+This specification therefore focuses on **A2H** — the genuinely novel protocol for agents asking humans structured questions. H2A is mentioned where relevant but does not require its own protocol; it is A2A with a human-facing UI layer.
+
+The complete picture:
+
+```
+MCP:  Agent ↔ Tool     (published — how agents use tools)
+A2A:  Agent ↔ Agent    (published — how agents collaborate)
+H2A:  Human → Agent    (A2A from a UI — implementation, not protocol)
+A2H:  Agent → Human    (this specification — how agents ask humans)
+```
+
+---
+
 ## Abstract
 
 In every real-world AI agent deployment, agents reach a point where they need human input: an approval, a decision, clarification, or review. Today this is handled through ad-hoc integrations — Slack bots, email triggers, custom UIs — with no standard protocol.
@@ -21,13 +50,13 @@ A2H defines a structured, transport-agnostic protocol for agents to ask humans q
 A2H does not replace A2A or MCP. It complements them. A workflow that uses all three looks like:
 
 ```
-Human delegates task (H2A, uses A2A)
-  → Agent researches (MCP tools)
-  → Agent calls specialist agent (A2A)
-  → Agent asks human for approval (A2H)    ← this protocol
-  → Human approves
-  → Agent executes (MCP tools)
-  → Agent notifies human of completion (A2H notification)
+Human delegates task to agent        (H2A — A2A from a UI)
+  → Agent researches                 (MCP tools)
+  → Agent calls specialist agent     (A2A)
+  → Agent asks human for approval    (A2H — this protocol)
+  → Human approves via Slack
+  → Agent executes the decision      (MCP tools)
+  → Agent notifies human             (A2H notification)
 ```
 
 ## Design Principles
