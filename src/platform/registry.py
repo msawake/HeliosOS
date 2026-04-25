@@ -25,15 +25,24 @@ logger = logging.getLogger(__name__)
 
 class AgentRegistry:
     """
-    Universal agent registry. Optionally backed by PostgreSQL via a
-    ``PostgresAgentRegistry`` store (pass as *store* parameter).
-    When no store is provided, operates purely in-memory.
+    Universal participant registry. Stores both AI agents (AgentDefinition)
+    and human participants (HumanAgent) in a single namespace. Optionally
+    backed by PostgreSQL via a ``PostgresAgentRegistry`` store.
+
+    Query by participant type::
+
+        registry.list_all()                 # all AI agents
+        registry.list_humans()              # all humans
+        registry.list_participants()        # both
+        registry.list_participants(type="human")
+        registry.list_participants(namespace="sales")
     """
 
     def __init__(self, store=None):
         self._store = store  # Optional PostgresAgentRegistry
         self._agents: dict[str, AgentDefinition] = {}
         self._statuses: dict[str, AgentStatus] = {}
+        self._humans: dict[str, Any] = {}  # pid -> HumanAgent
 
     def register(self, agent_def: AgentDefinition) -> str:
         if agent_def.agent_id in self._agents:
@@ -131,6 +140,63 @@ class AgentRegistry:
         if status:
             results = [a for a in results if self.get_status(a.agent_id) == status]
         return results
+
+    # ---- Human participants ------------------------------------------------
+
+    def register_human(self, human) -> str:
+        """Register a human participant. Returns the human's PID."""
+        self._humans[human.pid] = human
+        logger.info("Registered human %s/%s (%s)", human.namespace, human.name, human.pid)
+        return human.pid
+
+    def unregister_human(self, pid: str) -> bool:
+        return self._humans.pop(pid, None) is not None
+
+    def get_human(self, pid: str):
+        return self._humans.get(pid)
+
+    def resolve_human(self, namespace: str, name: str):
+        for h in self._humans.values():
+            if h.name == name and h.namespace == namespace:
+                return h
+        return None
+
+    def list_humans(self, namespace: str | None = None) -> list:
+        if namespace:
+            return [h for h in self._humans.values() if h.namespace == namespace]
+        return list(self._humans.values())
+
+    def list_participants(
+        self,
+        participant_type: str | None = None,
+        namespace: str | None = None,
+        department: str | None = None,
+    ) -> list[dict]:
+        """List all participants (agents + humans) as discovery dicts."""
+        results = []
+        if participant_type in (None, "agent", "all"):
+            for a in self._agents.values():
+                if namespace and a.namespace != namespace:
+                    continue
+                if department and a.department != department:
+                    continue
+                results.append({
+                    "name": a.name, "namespace": a.namespace,
+                    "agent_id": a.agent_id, "type": "agent",
+                    "participant_type": "agent",
+                    "description": a.description, "department": a.department,
+                    "stack": a.stack,
+                })
+        if participant_type in (None, "human", "all"):
+            for h in self._humans.values():
+                if namespace and h.namespace != namespace:
+                    continue
+                if department and h.metadata.get("department") != department:
+                    continue
+                results.append(h.to_discovery_dict())
+        return results
+
+    # ---- Counts and summaries ----------------------------------------------
 
     def count_by_stack(self) -> dict[str, int]:
         counts = {s: 0 for s in STACK_NAMES}
