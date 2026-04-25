@@ -1,0 +1,14 @@
+[project]
+name = "a2h"
+version = "0.1.0"
+description = "A2H Protocol — Agent-to-Human interaction. Companion to A2A and MCP."
+requires-python = ">=3.11"
+license = "Apache-2.0"
+dependencies = []
+
+[project.optional-dependencies]
+server = ["fastapi>=0.115", "uvicorn[standard]>=0.34"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "httpx>=0.27"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
