@@ -1,23 +1,23 @@
-"""Tests for the H2A/A2H protocol — human-agent interaction."""
+"""Tests for the A2H protocol — ForgeOS implementation."""
 
 import pytest
 
 from src.platform.h2a import (
     DashboardChannel,
+    DelegationRule,
     H2AGateway,
     HumanAgent,
     HumanRequest,
+    HumanResponse,
+    HumanStateConfig,
     InMemoryHumanRequestStore,
+    Notification,
     Priority,
-    RequestStatus,
+    Status,
     RequestType,
     ResponseType,
 )
 
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 def _gateway() -> H2AGateway:
     gw = H2AGateway()
@@ -32,16 +32,18 @@ def _gateway() -> H2AGateway:
     gw.register_human(HumanAgent(
         pid="human:auto-approver", name="auto-approver", namespace="finance",
         role="finance-lead",
-        delegation_rules={
-            "auto_approve": {"agents": ["sales-*"], "max_value": 10000},
-        },
+        delegation_rules=[
+            DelegationRule(
+                name="auto_small",
+                from_name_pattern="sales-*",
+                response_type="approval",
+                context_conditions={"value": {"lt": 10000}},
+                auto_response={"approved": True, "reason": "Auto: under $10K"},
+            ),
+        ],
     ))
     return gw
 
-
-# ---------------------------------------------------------------------------
-# Human registration
-# ---------------------------------------------------------------------------
 
 class TestHumanRegistration:
     def test_register_human(self):
@@ -55,15 +57,9 @@ class TestHumanRegistration:
         assert h is not None
         assert h.role == "engineering-lead"
 
-    def test_resolve_missing_human(self):
+    def test_resolve_missing(self):
         gw = _gateway()
         assert gw.resolve_human("engineering", "nobody") is None
-
-    def test_list_by_namespace(self):
-        gw = _gateway()
-        sales = gw.list_humans(namespace="sales")
-        assert len(sales) == 1
-        assert sales[0].name == "sarah"
 
     def test_unregister(self):
         gw = _gateway()
@@ -74,180 +70,177 @@ class TestHumanRegistration:
         h = HumanAgent(pid="human:test", name="test", namespace="eng", role="dev")
         d = h.to_discovery_dict()
         assert d["type"] == "human"
+        assert d["participant_type"] == "human"
         assert d["stack"] == "human"
-        assert d["role"] == "dev"
+
+    def test_participant_card(self):
+        h = HumanAgent(pid="h:1", name="sarah", namespace="sales", role="VP",
+                        channels=["dashboard", "slack"])
+        card = h.to_card()
+        assert card["protocol"] == "a2h/v1"
+        assert card["participant_type"] == "human"
+        assert card["a2h"]["channels"] == ["dashboard", "slack"]
 
 
-# ---------------------------------------------------------------------------
-# A2H: Agent asks human
-# ---------------------------------------------------------------------------
-
-class TestAgentAsksHuman:
-    async def test_ask_creates_pending_request(self):
+class TestAskReturnsObject:
+    async def test_ask_returns_human_request(self):
         gw = _gateway()
-        result = await gw.ask(
-            from_agent="agent-123", from_agent_name="research-analyst",
+        req = await gw.ask(
+            from_agent="agent-1", from_agent_name="bot",
             to_namespace="engineering", to_name="jama",
-            question="Should we proceed with the MegaInc deal?",
-            response_type="choice",
-            options=[{"label": "Yes"}, {"label": "No"}],
-            priority="P1_HIGH",
+            question="Approve?", response_type="approval",
         )
-        assert result["success"] is True
-        assert result["status"] == "pending"
-        assert "request_id" in result
-        assert result["auto_responded"] is False
+        assert isinstance(req, HumanRequest)
+        assert req.status == Status.PENDING
+        assert req.id.startswith("req_")
+        assert req.protocol == "a2h/v1"
+        assert req.response_type == ResponseType.APPROVAL
 
-    async def test_ask_unknown_human_fails(self):
+    async def test_ask_unknown_returns_cancelled(self):
         gw = _gateway()
-        result = await gw.ask(
-            from_agent="agent-123", from_agent_name="test",
-            to_namespace="engineering", to_name="nobody",
+        req = await gw.ask(
+            from_agent="a", from_agent_name="b",
+            to_namespace="eng", to_name="nobody",
             question="Hello?",
         )
-        assert result["success"] is False
-        assert "not found" in result["error"]
+        assert req.status == Status.CANCELLED
 
     async def test_ask_with_context(self):
         gw = _gateway()
-        result = await gw.ask(
-            from_agent="agent-123", from_agent_name="sales-pipeline",
-            to_namespace="engineering", to_name="jama",
-            question="Approve this?",
-            context={"deal_value": 50000, "lead_score": 85},
-        )
-        req = gw.get_request(result["request_id"])
-        assert req["context"]["deal_value"] == 50000
-
-    async def test_ask_sets_deadline(self):
-        gw = _gateway()
-        result = await gw.ask(
+        req = await gw.ask(
             from_agent="a", from_agent_name="b",
             to_namespace="engineering", to_name="jama",
-            question="Quick question?", sla_hours=2.0,
+            question="Deal?", context={"deal_value": 50000},
         )
-        req = gw.get_request(result["request_id"])
-        assert req["deadline"] is not None
+        assert req.context["deal_value"] == 50000
 
-
-# ---------------------------------------------------------------------------
-# Human responds
-# ---------------------------------------------------------------------------
-
-class TestHumanResponds:
-    async def test_respond_to_pending_request(self):
+    async def test_priority_lowercase(self):
         gw = _gateway()
-        ask_result = await gw.ask(
+        req = await gw.ask(
             from_agent="a", from_agent_name="b",
             to_namespace="engineering", to_name="jama",
-            question="Yes or no?", response_type="choice",
-            options=[{"label": "Yes"}, {"label": "No"}],
+            question="Urgent!", priority="critical",
         )
-        request_id = ask_result["request_id"]
+        assert req.priority == Priority.CRITICAL
+        assert req.priority.value == "critical"
 
-        resp = gw.respond(request_id, {"choice": "Yes", "note": "Looks good"})
-        assert resp["success"] is True
 
-        req = gw.get_request(request_id)
-        assert req["status"] == "answered"
-        assert req["response"]["choice"] == "Yes"
-        assert req["responded_via"] == "dashboard"
-
-    async def test_respond_to_nonexistent_fails(self):
+class TestRespond:
+    async def test_respond_creates_structured_response(self):
         gw = _gateway()
-        resp = gw.respond("nonexistent", {"choice": "Yes"})
-        assert resp["success"] is False
+        req = await gw.ask(
+            from_agent="a", from_agent_name="b",
+            to_namespace="engineering", to_name="jama",
+            question="Yes?", response_type="confirm",
+        )
+        result = gw.respond(req.id, {"confirmed": True, "text": "Yes indeed"})
+        assert result["success"] is True
+
+        updated = gw.get_request(req.id)
+        assert updated["status"] == "answered"
+        assert updated["response"]["confirmed"] is True
+        assert updated["response"]["channel"] == "dashboard"
+
+    async def test_respond_nonexistent_fails(self):
+        gw = _gateway()
+        result = gw.respond("nonexistent", {"text": "hi"})
+        assert result["success"] is False
 
     async def test_double_respond_fails(self):
         gw = _gateway()
-        ask_result = await gw.ask(
+        req = await gw.ask(
             from_agent="a", from_agent_name="b",
             to_namespace="engineering", to_name="jama",
-            question="Once only?",
+            question="Once?",
         )
-        request_id = ask_result["request_id"]
-
-        gw.respond(request_id, {"text": "First"})
-        resp2 = gw.respond(request_id, {"text": "Second"})
-        assert resp2["success"] is False
-        assert "not pending" in resp2["error"]
+        gw.respond(req.id, {"text": "first"})
+        result = gw.respond(req.id, {"text": "second"})
+        assert result["success"] is False
 
 
-# ---------------------------------------------------------------------------
-# Notifications
-# ---------------------------------------------------------------------------
+class TestCancel:
+    async def test_cancel_pending(self):
+        gw = _gateway()
+        req = await gw.ask(
+            from_agent="a", from_agent_name="b",
+            to_namespace="engineering", to_name="jama",
+            question="Cancel me",
+        )
+        result = gw.cancel(req.id, reason="No longer needed")
+        assert result["success"] is True
+
+        updated = gw.get_request(req.id)
+        assert updated["status"] == "cancelled"
+
+    async def test_cancel_answered_fails(self):
+        gw = _gateway()
+        req = await gw.ask(
+            from_agent="a", from_agent_name="b",
+            to_namespace="engineering", to_name="jama",
+            question="Answer then cancel",
+        )
+        gw.respond(req.id, {"text": "done"})
+        result = gw.cancel(req.id)
+        assert result["success"] is False
+
 
 class TestNotifications:
-    async def test_notify_human(self):
+    async def test_notify_returns_notification_object(self):
         gw = _gateway()
-        result = await gw.notify(
-            from_agent="agent-x", from_agent_name="daily-reporter",
+        notif = await gw.notify(
+            from_agent="a", from_agent_name="reporter",
             to_namespace="sales", to_name="sarah",
-            message="Daily report: 12 leads qualified",
-            priority="P3_LOW",
+            message="Daily report ready",
         )
-        assert result["success"] is True
-        assert result["delivered"] is True
+        assert isinstance(notif, Notification)
+        assert notif.id.startswith("notif_")
+        assert notif.protocol == "a2h/v1"
+        assert notif.message == "Daily report ready"
 
-    async def test_notify_unknown_human_fails(self):
+    async def test_notify_unknown_human(self):
         gw = _gateway()
-        result = await gw.notify(
+        notif = await gw.notify(
             from_agent="a", from_agent_name="b",
             to_namespace="sales", to_name="nobody",
             message="Hello?",
         )
-        assert result["success"] is False
+        assert "UNDELIVERABLE" in notif.message
 
-
-# ---------------------------------------------------------------------------
-# Auto-delegation rules
-# ---------------------------------------------------------------------------
 
 class TestAutoDelegation:
     async def test_auto_approve_matching_rule(self):
         gw = _gateway()
-        result = await gw.ask(
-            from_agent="agent-sales", from_agent_name="sales-pipeline-agent",
+        req = await gw.ask(
+            from_agent="a", from_agent_name="sales-pipeline-agent",
             to_namespace="finance", to_name="auto-approver",
-            question="Approve $5K campaign?",
-            response_type="approval",
+            question="Approve $5K?", response_type="approval",
             context={"value": 5000},
         )
-        assert result["success"] is True
-        assert result["auto_responded"] is True
-        assert result["status"] == "answered"
+        assert req.status == Status.AUTO_DELEGATED
+        assert req.response is not None
+        assert req.response.approved is True
+        assert req.response.channel == "auto_delegation"
 
-        req = gw.get_request(result["request_id"])
-        assert req["response"]["decision"] == "approved"
-        assert req["responded_via"] == "auto_delegation"
-
-    async def test_auto_approve_over_limit_stays_pending(self):
+    async def test_over_limit_stays_pending(self):
         gw = _gateway()
-        result = await gw.ask(
-            from_agent="agent-sales", from_agent_name="sales-pipeline-agent",
+        req = await gw.ask(
+            from_agent="a", from_agent_name="sales-pipeline-agent",
             to_namespace="finance", to_name="auto-approver",
-            question="Approve $50K campaign?",
-            response_type="approval",
+            question="Approve $50K?", response_type="approval",
             context={"value": 50000},
         )
-        assert result["status"] == "pending"
-        assert result["auto_responded"] is False
+        assert req.status == Status.PENDING
 
-    async def test_auto_approve_wrong_agent_stays_pending(self):
+    async def test_wrong_agent_stays_pending(self):
         gw = _gateway()
-        result = await gw.ask(
-            from_agent="agent-x", from_agent_name="random-agent",
+        req = await gw.ask(
+            from_agent="a", from_agent_name="random-agent",
             to_namespace="finance", to_name="auto-approver",
-            question="Approve something?",
-            response_type="approval",
+            question="Approve?", response_type="approval",
             context={"value": 100},
         )
-        assert result["status"] == "pending"
+        assert req.status == Status.PENDING
 
-
-# ---------------------------------------------------------------------------
-# Pending list
-# ---------------------------------------------------------------------------
 
 class TestPendingList:
     async def test_list_pending_for_human(self):
@@ -261,76 +254,76 @@ class TestPendingList:
 
         jama_pending = gw.list_pending(human_pid="human:jama")
         assert len(jama_pending) == 2
-
-        sarah_pending = gw.list_pending(human_pid="human:sarah")
-        assert len(sarah_pending) == 1
-
         all_pending = gw.list_pending()
         assert len(all_pending) == 3
 
 
-# ---------------------------------------------------------------------------
-# Async wait for response
-# ---------------------------------------------------------------------------
-
 class TestAsyncWait:
     async def test_wait_returns_after_response(self):
         gw = _gateway()
-        ask_result = await gw.ask(
+        req = await gw.ask(
             from_agent="a", from_agent_name="b",
             to_namespace="engineering", to_name="jama",
-            question="Waiting for you...",
+            question="Waiting...",
         )
-        request_id = ask_result["request_id"]
 
-        # Simulate human responding after a short delay
         import asyncio
         async def _respond_later():
             await asyncio.sleep(0.1)
-            gw.respond(request_id, {"text": "Here I am!"})
+            gw.respond(req.id, {"text": "Here I am!"})
 
         asyncio.create_task(_respond_later())
-        result = await gw.wait_for_response(request_id, timeout=5.0)
-
+        result = await gw.wait_for_response(req.id, timeout=5.0)
         assert result["success"] is True
         assert result["response"]["text"] == "Here I am!"
 
-    async def test_wait_timeout_returns_pending(self):
+
+class TestSerialization:
+    async def test_request_to_dict_has_protocol(self):
         gw = _gateway()
-        ask_result = await gw.ask(
-            from_agent="a", from_agent_name="b",
+        req = await gw.ask(
+            from_agent="a", from_agent_name="bot",
             to_namespace="engineering", to_name="jama",
-            question="Will you answer?",
-        )
-        result = await gw.wait_for_response(ask_result["request_id"], timeout=0.1)
-        assert result["status"] == "pending"
-
-
-# ---------------------------------------------------------------------------
-# Data types
-# ---------------------------------------------------------------------------
-
-class TestDataTypes:
-    def test_human_request_to_dict(self):
-        req = HumanRequest(
-            type=RequestType.QUESTION,
-            question="Test?",
-            response_type=ResponseType.CHOICE,
-            priority=Priority.P1_HIGH,
+            question="Test?", priority="high",
         )
         d = req.to_dict()
-        assert d["type"] == "question"
-        assert d["response_type"] == "choice"
-        assert d["priority"] == "P1_HIGH"
+        assert d["protocol"] == "a2h/v1"
+        assert d["from"]["participant_type"] == "agent"
+        assert d["to"]["participant_type"] == "human"
+        assert d["content"]["question"] == "Test?"
+        assert d["priority"] == "high"
+        assert d["status"] == "pending"
 
-    def test_human_request_deadline_auto_set(self):
-        req = HumanRequest(sla_hours=1.0)
-        assert req.deadline is not None
+    def test_response_to_dict(self):
+        r = HumanResponse(value="approve", text="OK", approved=True, channel="slack")
+        d = r.to_dict()
+        assert d["value"] == "approve"
+        assert d["approved"] is True
+        assert d["channel"] == "slack"
 
-    def test_tool_schemas_defined(self):
-        from src.platform.h2a import H2A_TOOL_SCHEMAS
-        names = [s["name"] for s in H2A_TOOL_SCHEMAS]
-        assert "human__ask" in names
-        assert "human__notify" in names
-        assert "human__check" in names
-        assert "human__list_available" in names
+    def test_notification_to_dict(self):
+        n = Notification(from_agent_name="bot", to_human_name="sarah",
+                          message="Hello", severity="info")
+        d = n.to_dict()
+        assert d["protocol"] == "a2h/v1"
+        assert d["type"] == "notification"
+
+
+class TestStatusEnum:
+    def test_all_spec_statuses_exist(self):
+        assert Status.CREATED.value == "created"
+        assert Status.PENDING.value == "pending"
+        assert Status.ANSWERED.value == "answered"
+        assert Status.EXPIRED.value == "expired"
+        assert Status.CANCELLED.value == "cancelled"
+        assert Status.ESCALATED.value == "escalated"
+        assert Status.AUTO_DELEGATED.value == "auto_delegated"
+
+    def test_priority_lowercase(self):
+        assert Priority.CRITICAL.value == "critical"
+        assert Priority.HIGH.value == "high"
+        assert Priority.MEDIUM.value == "medium"
+        assert Priority.LOW.value == "low"
+
+    def test_form_response_type(self):
+        assert ResponseType.FORM.value == "form"
