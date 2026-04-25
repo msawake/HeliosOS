@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ForgeOS Use Case — Enterprise Deal Pipeline</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.6; }
+  code { font-family: 'SF Mono', 'Fira Code', monospace; background: #161b22; padding: 2px 6px; border-radius: 4px; font-size: 12px; color: #f0883e; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 40px 24px; }
+
+  /* Hero */
+  .hero { text-align: center; padding: 50px 0 30px; border-bottom: 1px solid #21262d; margin-bottom: 40px; }
+  .hero h1 { font-size: 32px; color: #f0f6fc; margin-bottom: 8px; }
+  .hero .sub { color: #8b949e; font-size: 15px; max-width: 700px; margin: 0 auto; }
+
+  /* Actors bar */
+  .actors { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 30px 0; }
+  .actor { padding: 10px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; text-align: center; min-width: 150px; }
+  .actor .label { font-size: 11px; opacity: 0.7; margin-bottom: 2px; }
+  .a-human   { background: #2a1f33; color: #bc8cff; border: 2px solid #8957e5; }
+  .a-crew    { background: #1f2a22; color: #56d364; border: 2px solid #3fb950; }
+  .a-kernel  { background: #2a2517; color: #e3b341; border: 2px solid #d29922; }
+  .a-runtime { background: #1c2941; color: #58a6ff; border: 2px solid #1f6feb; }
+
+  /* Step */
+  .step { margin: 0 0 8px; position: relative; }
+  .step-header { display: flex; align-items: center; gap: 12px; padding: 14px 18px; background: #161b22; border: 1px solid #30363d; border-radius: 10px; cursor: pointer; transition: all 0.15s; }
+  .step-header:hover { border-color: #58a6ff; background: #1a2332; }
+  .step-header.open { border-radius: 10px 10px 0 0; border-bottom-color: transparent; background: #1a2332; }
+  .step-num { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+  .step-title { flex: 1; font-weight: 600; font-size: 14px; color: #f0f6fc; }
+  .step-actors { display: flex; gap: 4px; }
+  .step-actor { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+  .sa-human  { background: #2a1f33; color: #bc8cff; }
+  .sa-agent  { background: #1f2a22; color: #56d364; }
+  .sa-kernel { background: #2a2517; color: #e3b341; }
+  .step-arrow { color: #484f58; font-size: 14px; transition: transform 0.2s; }
+  .step-arrow.open { transform: rotate(90deg); }
+
+  .step-body { display: none; padding: 20px; background: #161b22; border: 1px solid #30363d; border-top: none; border-radius: 0 0 10px 10px; }
+  .step-body.open { display: block; }
+
+  /* Inside step: flow diagram */
+  .flow-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  .fb { padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .fa { color: #484f58; font-size: 14px; flex-shrink: 0; }
+  .fb-human   { background: #2a1f33; color: #bc8cff; border: 1px solid #8957e5; }
+  .fb-agent   { background: #1f2a22; color: #56d364; border: 1px solid #3fb950; }
+  .fb-runtime { background: #1c2941; color: #58a6ff; border: 1px solid #1f6feb; }
+  .fb-kernel  { background: #2a2517; color: #e3b341; border: 1px solid #d29922; }
+  .fb-tool    { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+  .fb-allow   { background: #1a3a2a; color: #3fb950; border: 1px solid #238636; }
+  .fb-deny    { background: #3a1a1a; color: #f85149; border: 1px solid #da3633; }
+  .fb-h2a     { background: #2a1f33; color: #bc8cff; border: 1px solid #8957e5; }
+  .fb-a2a     { background: #17272a; color: #56d4c4; border: 1px solid #39d2c0; }
+  .fb-ckpt    { background: #1c2230; color: #8b949e; border: 1px solid #484f58; }
+
+  .detail { font-size: 12px; color: #8b949e; margin: 6px 0; line-height: 1.5; }
+  .detail strong { color: #c9d1d9; }
+
+  /* Kernel trace box */
+  .kernel-trace { background: #0d1117; border: 1px solid #2a2517; border-radius: 8px; padding: 12px 14px; margin: 10px 0; font-size: 11px; font-family: 'SF Mono', monospace; color: #e3b341; line-height: 1.6; }
+  .kt-stage { color: #8b949e; }
+  .kt-allow { color: #3fb950; }
+  .kt-deny  { color: #f85149; }
+
+  /* Section divider */
+  .phase { margin: 40px 0 16px; padding: 12px 18px; background: #21262d; border-radius: 8px; font-size: 13px; font-weight: 700; color: #58a6ff; letter-spacing: 0.5px; }
+
+  /* Summary table */
+  .summary { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 12px; }
+  .summary th { background: #161b22; color: #8b949e; padding: 8px 12px; text-align: left; border-bottom: 2px solid #30363d; }
+  .summary td { padding: 8px 12px; border-bottom: 1px solid #21262d; }
+  .summary tr:hover td { background: #161b22; }
+
+  /* Legend */
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 20px 0; padding: 16px; background: #161b22; border-radius: 8px; border: 1px solid #30363d; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #8b949e; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+
+  @media (max-width: 768px) {
+    .actors { gap: 6px; }
+    .actor { min-width: 120px; padding: 8px 12px; font-size: 11px; }
+    .step-actors { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="hero">
+  <h1>Enterprise Deal Pipeline</h1>
+  <p class="sub">3 CrewAI agents + 2 humans collaborate through the ForgeOS kernel to qualify, review, and approve a $2.5M enterprise deal. Every interaction goes through the runtime, kernel, and syscall pipeline.</p>
+</div>
+
+<!-- Actors -->
+<div class="actors">
+  <div class="actor a-human"><div class="label">HUMAN</div>Sarah Chen<br><span style="font-size:10px;opacity:0.7">VP Sales</span></div>
+  <div class="actor a-human"><div class="label">HUMAN</div>David Park<br><span style="font-size:10px;opacity:0.7">CFO</span></div>
+  <div class="actor a-crew"><div class="label">CREWAI AGENT</div>Lead Researcher<br><span style="font-size:10px;opacity:0.7">sales namespace</span></div>
+  <div class="actor a-crew"><div class="label">CREWAI AGENT</div>Deal Analyst<br><span style="font-size:10px;opacity:0.7">sales namespace</span></div>
+  <div class="actor a-crew"><div class="label">CREWAI AGENT</div>Risk Assessor<br><span style="font-size:10px;opacity:0.7">finance namespace</span></div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#8957e5"></div> Human (H2A/A2H)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div> CrewAI Agent</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#d29922"></div> Kernel / Syscall</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#1f6feb"></div> SDK Runtime</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#39d2c0"></div> A2A Call</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#484f58"></div> Checkpoint</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- PHASE 1: HUMAN INITIATES                                    -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="phase">PHASE 1 — Human Initiates the Pipeline</div>
+
+<!-- Step 1 -->
+<div class="step">
+  <div class="step-header" onclick="toggle(this)">
+    <div class="step-num" style="background:#2a1f33;color:#bc8cff">1</div>
+    <div class="step-title">Sarah calls Lead Researcher via H2A</div>
+    <div class="step-actors"><span class="step-actor sa-human">Sarah</span><span class="step-actor sa-agent">Lead Researcher</span><span class="step-actor sa-kernel">Kernel</span></div>
+    <div class="step-arrow">&#9654;</div>
+  </div>
+  <div class="step-body">
+    <p class="detail">Sarah opens the ForgeOS dashboard and asks the Lead Researcher to investigate MegaInc as a potential $2.5M deal.</p>
+    <div class="flow-row">
+      <span class="fb fb-human">Sarah (dashboard)</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-h2a">POST /api/h2a/call</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-kernel">A2AHandler.call()</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-runtime">runtime.bind("lead-researcher")</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-agent">executor.invoke(lead-researcher, "Research MegaInc...")</span>
+    </div>
+    <div class="kernel-trace">
+      <span class="kt-stage">executor.invoke():</span><br>
+      &nbsp;&nbsp;1. runtime.bind(agent_id, namespace="sales")<br>
+      &nbsp;&nbsp;2. CrewAIAdapter.invoke() &rarr; Crew.kickoff()<br>
+      &nbsp;&nbsp;3. Context carries: _caller: {type: "human", name: "sarah", namespace: "sales"}<br>
+      <span class="kt-allow">&nbsp;&nbsp;&crarr; Agent begins research loop</span>
+    </div>
+  </div>
+</div>
+
+<!-- Step 2 -->
+<div class="step">
+  <div class="step-header" onclick="toggle(this)">
+    <div class="step-num" style="background:#1f2a22;color:#56d364">2</div>
+    <div class="step-title">Lead Researcher searches knowledge base (4 tool calls)</div>
+    <div class="step-actors"><span class="step-actor sa-agent">Lead Researcher</span><span class="step-actor sa-kernel">Kernel</span></div>
+    <div class="step-arrow">&#9654;</div>
+  </div>
+  <div class="step-body">
+    <p class="detail">The CrewAI agent calls <code>company__search_knowledge</code> 4 times. Each call goes through the kernel gate inside <code>BaseTool._run()</code>.</p>
+    <div class="flow-row">
+      <span class="fb fb-agent">CrewAgent._run()</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-runtime">runtime.check_tool("company__search_knowledge")</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-kernel">kernel.check_tool_call()</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-allow">allow</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-tool">tool_executor.execute()</span>
+    </div>
+    <div class="kernel-trace">
+      <span class="kt-stage">Syscall pipeline (x4 tool calls):</span><br>
+      &nbsp;&nbsp;Stage 2 [capability] &rarr; "company__search_knowledge" in allowed list &rarr; <span class="kt-allow">allow</span><br>
+      &nbsp;&nbsp;Stage 3 [quota] &rarr; $0.12 estimated, daily=$5.00, spent=$0 &rarr; <span class="kt-allow">allow</span><br>
+      &nbsp;&nbsp;Stage 7 [audit] &rarr; 4 tool.allowed entries recorded<br>
+      <br>
+      <span class="kt-stage">Results found:</span><br>
+      &nbsp;&nbsp;- MegaInc: 2,400 employees, Series D, $180M ARR<br>
+      &nbsp;&nbsp;- Industry: Enterprise SaaS, AI/ML focus<br>
+      &nbsp;&nbsp;- Decision maker: CTO Jennifer Wu<br>
+      &nbsp;&nbsp;- Competitor engagement: None detected
+    </div>
+    <p class="detail"><strong>Budget consumed:</strong> $0.48 of $5.00 daily limit</p>
+  </div>
+</div>
+
+<!-- Step 3 -->
+<div class="step">
+  <div class="step-header" onclick="toggle(this)">
+    <div class="step-num" style="background:#1c2230;color:#8b949e">3</div>
+    <div class="step-title">Lead Researcher saves checkpoint</div>
+    <div class="step-actors"><span class="step-actor sa-agent">Lead Researcher</span></div>
+    <div class="step-arrow">&#9654;</div>
+  </div>
+  <div class="step-body">
+    <p class="detail">After completing research, the agent saves its state so the work survives any crash.</p>
+    <div class="flow-row">
+      <span class="fb fb-agent">Lead Researcher</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-runtime">runtime.checkpoint({phase: "research_complete", ...})</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-ckpt">checkpoint_store.save()</span>
+    </div>
+    <div class="kernel-trace">
+      <span class="kt-stage">Checkpoint data:</span><br>
+      &nbsp;&nbsp;{<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;"phase": "research_complete",<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;"company": "MegaInc",<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;"employees": 2400,<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;"arr": 180000000,<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;"decision_maker": "Jennifer Wu, CTO",<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;"budget_used": 0.48<br>
+      &nbsp;&nbsp;}
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- PHASE 2: A2A DELEGATION                                     -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="phase">PHASE 2 — Agent-to-Agent Delegation</div>
+
+<!-- Step 4 -->
+<div class="step">
+  <div class="step-header" onclick="toggle(this)">
+    <div class="step-num" style="background:#17272a;color:#56d4c4">4</div>
+    <div class="step-title">Lead Researcher delegates to Deal Analyst via A2A (same namespace)</div>
+    <div class="step-actors"><span class="step-actor sa-agent">Lead Researcher</span><span class="step-actor sa-agent">Deal Analyst</span><span class="step-actor sa-kernel">Kernel</span></div>
+    <div class="step-arrow">&#9654;</div>
+  </div>
+  <div class="step-body">
+    <p class="detail">The Lead Researcher calls the Deal Analyst to score the opportunity. Both are in the <code>sales</code> namespace, so A2A is allowed by the same-namespace default rule.</p>
+    <div class="flow-row">
+      <span class="fb fb-agent">Lead Researcher</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-a2a">agent__call(ns="sales", name="deal-analyst")</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-kernel">A2AHandler.call()</span>
+    </div>
+    <div class="kernel-trace">
+      <span class="kt-stage">A2A permission check:</span><br>
+      &nbsp;&nbsp;Caller: sales/lead-researcher<br>
+      &nbsp;&nbsp;Callee: sales/deal-analyst<br>
+      &nbsp;&nbsp;Same namespace? <span class="kt-allow">YES &rarr; allow (default rule)</span><br>
+      <br>
+      <span class="kt-stage">Delegation context created:</span><br>
+      &nbsp;&nbsp;root_run_id: "abc123"<br>
+      &nbsp;&nbsp;depth: 1 (max: 5)<br>
+      &nbsp;&nbsp;call_path: ["lead-researcher", "deal-analyst"]<br>
+      <br>
+      <span class="kt-stage">executor.invoke(deal-analyst):</span><br>
+      &nbsp;&nbsp;runtime.bind(deal-analyst-id, namespace="sales")<br>
+      &nbsp;&nbsp;Deal Analyst begins BANT scoring...
+    </div>
+  </div>
+</div>
+
+<!-- Step 5 -->
+<div class="step">
+  <div class="step-header" onclick="toggle(this)">
+    <div class="step-num" style="background:#1f2a22;color:#56d364">5</div>
+    <div class="step-title">Deal Analyst scores the lead (BANT: 87/100)</div>
+    <div class="step-actors"><span class="step-actor sa-agent">Deal Analyst</span><span class="step-actor sa-kernel">Kernel</span></div>
+    <div class="step-arrow">&#9654;</div>
+  </div>
+  <div class="step-body">
+    <p class="detail">Deal Analyst searches knowledge base for BANT criteria, scores MegaInc, and records the metric. Budget reservation ensures the agent can't overspend.</p>
+    <div class="flow-row">
+      <span class="fb fb-runtime">runtime.reserve($0.30)</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-kernel">BudgetManager.reserve()</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-allow">ticket=def456</span>
+    </div>
+    <div class="flow-row">
+      <span class="fb fb-agent">Search KB + Score</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-tool">company__search_knowledge</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-tool">company__record_metric("bant_score", 87)</span>
+    </div>
+    <div class="flow-row">
+      <span class="fb fb-runtime">runtime.commit(ticket, $0.22)</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-kernel">BudgetManager.commit()</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-allow">$0.08 released</span>
+    </div>
+    <div class="kernel-trace">
+      <span class="kt-stage">BANT Score: 87/100</span><br>
+      &nbsp;&nbsp;Budget: 22/25 (confirmed budget allocation)<br>
+      &nbsp;&nbsp;Authority: 20/25 (CTO is technical decision maker)<br>
+      &nbsp;&nbsp;Need: 25/25 (expressed AI automation pain point)<br>
+      &nbsp;&nbsp;Timeline: 20/25 (Q3 evaluation cycle)<br>
+      <span class="kt-allow">&nbsp;&nbsp;Verdict: SQL (Sales Qualified Lead) &mdash; score 87 &ge; 70 threshold</span>
+    </div>
+  </div>
+</div>
+
+<!-- Step 6 -->
+<div class="step">
+  <div class="step-header" onclick="toggle(this)">
+    <div class="step-num" style="background:#17272a;color:#56d4c4">6</div>
+    <div class="step-title">Lead Researcher delegates to Risk Assessor via A2A (cross-namespace &mdash; needs capability token)</div>
+    <div class="step-actors"><span class="step-actor sa-agent">Lead Researcher</span><span class="step-actor sa-agent">Risk Assessor</span><span class="step-actor sa-kernel">Kernel</span></div>
+    <div class="step-arrow">&#9654;</div>
+  </div>
+  <div class="step-body">
+    <p class="detail">The Lead Researcher needs a risk assessment from the finance namespace. Cross-namespace A2A is denied by default, so it requests a capability token first.</p>
+    <div class="flow-row">
+      <span class="fb fb-runtime">runtime.check_a2a("finance", "risk-assessor")</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-deny">deny: cross-namespace without ACL</span>
+    </div>
+    <div class="flow-row">
+      <span class="fb fb-runtime">runtime.request_capability(target="finance/risk-assessor", verb="a2a.invoke", ttl=600)</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-kernel">CapabilityManager.issue()</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-allow">token=cap_789...</span>
+    </div>
+    <div class="flow-row">
+      <span class="fb fb-a2a">agent__call(ns="finance", name="risk-assessor", context={capability_token: "cap_789"})</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-kernel">A2AHandler: token valid &rarr; bypass ACL</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-allow">allow</span>
+    </div>
+    <div class="kernel-trace">
+      <span class="kt-stage">Capability token flow:</span><br>
+      &nbsp;&nbsp;1. runtime.check_a2a("finance", "risk-assessor") &rarr; <span class="kt-deny">deny (cross-namespace)</span><br>
+      &nbsp;&nbsp;2. runtime.request_capability(target="finance/risk-assessor") &rarr; <span class="kt-allow">token issued (10min TTL)</span><br>
+      &nbsp;&nbsp;3. agent__call with token &rarr; CapabilityManager.authorize() &rarr; <span class="kt-allow">valid &rarr; allow</span><br>
+      <br>
+      <span class="kt-stage">Risk Assessor runs (finance namespace):</span><br>
+      &nbsp;&nbsp;- Checks MegaInc financial health<br>
+      &nbsp;&nbsp;- Evaluates contract risk at $2.5M<br>
+      &nbsp;&nbsp;- Data boundary: can only read finance namespace<br>
+      &nbsp;&nbsp;- Returns: risk_level="medium", notes="Standard enterprise terms"
+    </div>
+    <p class="detail"><strong>After use:</strong> <code>runtime.revoke_capability(token)</code> &mdash; token deleted, access revoked.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- PHASE 3: AGENT ASKS HUMAN                                   -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="phase">PHASE 3 — Agent Asks Human (A2H)</div>
+
+<!-- Step 7 -->
+<div class="step">
+  <div class="step-header" onclick="toggle(this)">
+    <div class="step-num" style="background:#2a1f33;color:#bc8cff">7</div>
+    <div class="step-title">Lead Researcher asks Sarah for go/no-go via human__ask</div>
+    <div class="step-actors"><span class="step-actor sa-agent">Lead Researcher</span><span class="step-actor sa-human">Sarah</span><span class="step-actor sa-kernel">Kernel</span></div>
+    <div class="step-arrow">&#9654;</div>
+  </div>
+  <div class="step-body">
+    <p class="detail">Research is complete. The agent asks Sarah (VP Sales) for a go/no-go decision with structured options and all the context.</p>
+    <div class="flow-row">
+      <span class="fb fb-agent">Lead Researcher</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-runtime">runtime.ask_human (via human__ask tool)</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-h2a">H2AGateway.ask()</span>
+    </div>
+    <div class="kernel-trace">
+      <span class="kt-stage">human__ask(</span><br>
+      &nbsp;&nbsp;namespace="sales", name="sarah",<br>
+      &nbsp;&nbsp;question="Proceed with MegaInc deal at $2.5M?",<br>
+      &nbsp;&nbsp;response_type="choice",<br>
+      &nbsp;&nbsp;options=[<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;{label: "Approve", description: "Proceed to contract negotiation"},<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;{label: "Counter", description: "Adjust terms before proceeding"},<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;{label: "Reject", description: "Walk away from this deal"}<br>
+      &nbsp;&nbsp;],<br>
+      &nbsp;&nbsp;priority="P1_HIGH",<br>
+      &nbsp;&nbsp;deadline="4h",<br>
+      &nbsp;&nbsp;context={<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;bant_score: 87,<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;risk_level: "medium",<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;company: "MegaInc",<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;deal_value: 2500000,<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;decision_maker: "Jennifer Wu, CTO",<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;agent_recommendation: "approve"<br>
+      &nbsp;&nbsp;}<br>
+      <span class="kt-stage">)</span><br>
+      <br>
+      <span class="kt-stage">Delivery:</span><br>
+      &nbsp;&nbsp;DashboardChannel &rarr; notification card in Sarah's queue<br>
+      &nbsp;&nbsp;Audit: h2a.ask recorded<br>
+      <span class="kt-allow">&nbsp;&nbsp;&larr; {request_id: "h2a_abc123", status: "pending", deadline: "4h"}</span>
+    </div>
+    <p class="detail"><strong>Agent saves checkpoint</strong> and waits. Sarah sees a structured card in the dashboard with the deal context, BANT score, risk assessment, and three buttons.</p>
+  </div>
+</div>
+
+<!-- Step 8 -->
+<div class="step">
+  <div class="step-header" onclick="toggle(this)">
+    <div class="step-num" style="background:#2a1f33;color:#bc8cff">8</div>
+    <div class="step-title">Sarah approves &mdash; responds via dashboard</div>
+    <div class="step-actors"><span class="step-actor sa-human">Sarah</span><span class="step-actor sa-kernel">Kernel</span></div>
+    <div class="step-arrow">&#9654;</div>
+  </div>
+  <div class="step-body">
+    <p class="detail">Sarah reviews the context, sees the BANT score of 87 and medium risk, and clicks "Approve".</p>
+    <div class="flow-row">
+      <span class="fb fb-human">Sarah clicks "Approve"</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-h2a">POST /api/a2h/requests/h2a_abc123/respond</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-h2a">H2AGateway.respond()</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-kernel">asyncio.Event.set()</span>
+    </div>
+    <div class="kernel-trace">
+      <span class="kt-stage">Response recorded:</span><br>
+      &nbsp;&nbsp;{choice: "Approve", note: "Good fit. Proceed to CFO for budget sign-off."}<br>
+      &nbsp;&nbsp;responded_via: "dashboard"<br>
+      &nbsp;&nbsp;responded_at: "2026-04-25T10:15:00Z"<br>
+      <br>
+      <span class="kt-stage">Audit: h2a.respond recorded</span><br>
+      <span class="kt-allow">&nbsp;&nbsp;asyncio.Event signals waiting agent &rarr; Lead Researcher resumes</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- PHASE 4: ESCALATION TO CFO                                  -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="phase">PHASE 4 — Escalation to CFO (A2H + Auto-Delegation)</div>
+
+<!-- Step 9 -->
+<div class="step">
+  <div class="step-header" onclick="toggle(this)">
+    <div class="step-num" style="background:#2a1f33;color:#bc8cff">9</div>
+    <div class="step-title">Lead Researcher asks CFO David for budget approval via human__ask</div>
+    <div class="step-actors"><span class="step-actor sa-agent">Lead Researcher</span><span class="step-actor sa-human">David</span><span class="step-actor sa-kernel">Kernel</span></div>
+    <div class="step-arrow">&#9654;</div>
+  </div>
+  <div class="step-body">
+    <p class="detail">Deal is >$1M, so it needs CFO sign-off per the financial thresholds policy. The agent asks David (CFO) for budget approval.</p>
+    <div class="flow-row">
+      <span class="fb fb-agent">Lead Researcher</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-h2a">human__ask(ns="finance", name="david", response_type="approval")</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-h2a">H2AGateway.ask()</span>
+    </div>
+    <div class="kernel-trace">
+      <span class="kt-stage">Auto-delegation check:</span><br>
+      &nbsp;&nbsp;David's rules: {auto_approve: {agents: ["sales-*"], max_value: 1000000}}<br>
+      &nbsp;&nbsp;Deal value: $2,500,000 &gt; max_value $1,000,000<br>
+      <span class="kt-deny">&nbsp;&nbsp;&rarr; Auto-delegation DOES NOT apply (over limit)</span><br>
+      <span class="kt-stage">&nbsp;&nbsp;&rarr; Request stays PENDING &mdash; David must review manually</span><br>
+      <br>
+      <span class="kt-stage">Delivery: P0_CRITICAL priority</span><br>
+      &nbsp;&nbsp;DashboardChannel &rarr; urgent notification<br>
+      &nbsp;&nbsp;SlackChannel &rarr; DM to @david.park<br>
+      &nbsp;&nbsp;EmailChannel &rarr; david@company.com
+    </div>
+    <p class="detail"><strong>Note:</strong> If the deal were under $1M, David's auto-delegation rule would have auto-approved it instantly. The $2.5M value exceeds the threshold, so David must review personally.</p>
+  </div>
+</div>
+
+<!-- Step 10 -->
+<div class="step">
+  <div class="step-header" onclick="toggle(this)">
+    <div class="step-num" style="background:#2a1f33;color:#bc8cff">10</div>
+    <div class="step-title">David approves with conditions</div>
+    <div class="step-actors"><span class="step-actor sa-human">David</span></div>
+    <div class="step-arrow">&#9654;</div>
+  </div>
+  <div class="step-body">
+    <p class="detail">David reviews the deal package: BANT 87, medium risk, Sarah's approval, and the $2.5M price point.</p>
+    <div class="flow-row">
+      <span class="fb fb-human">David responds</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-h2a">POST /api/a2h/requests/{id}/respond</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-allow">status: answered</span>
+    </div>
+    <div class="kernel-trace">
+      <span class="kt-stage">David's response:</span><br>
+      &nbsp;&nbsp;{<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;decision: "approved",<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;conditions: "Require 3-year commitment minimum. Net-60 payment terms.",<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;approved_budget: 2500000,<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;note: "Strong fit. Fast-track to legal review."<br>
+      &nbsp;&nbsp;}<br>
+      &nbsp;&nbsp;responded_via: "slack"
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- PHASE 5: COMPLETION                                         -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="phase">PHASE 5 — Completion &amp; Audit</div>
+
+<!-- Step 11 -->
+<div class="step">
+  <div class="step-header" onclick="toggle(this)">
+    <div class="step-num" style="background:#1f2a22;color:#56d364">11</div>
+    <div class="step-title">Lead Researcher publishes findings + records decision</div>
+    <div class="step-actors"><span class="step-actor sa-agent">Lead Researcher</span><span class="step-actor sa-kernel">Kernel</span></div>
+    <div class="step-arrow">&#9654;</div>
+  </div>
+  <div class="step-body">
+    <p class="detail">With both approvals in hand, the agent publishes the deal summary, records the decision, and saves a final checkpoint.</p>
+    <div class="flow-row">
+      <span class="fb fb-tool">company__publish_event(target="sales", type="NOTIFICATION", category="deal_approved")</span>
+    </div>
+    <div class="flow-row">
+      <span class="fb fb-tool">company__add_decision(title="MegaInc Deal Approved", decision="Proceed at $2.5M")</span>
+    </div>
+    <div class="flow-row">
+      <span class="fb fb-tool">company__record_metric("deals_approved", 1, tags={value: 2500000})</span>
+    </div>
+    <div class="flow-row">
+      <span class="fb fb-runtime">runtime.checkpoint({phase: "complete", ...})</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-ckpt">final checkpoint</span>
+    </div>
+    <div class="flow-row">
+      <span class="fb fb-runtime">runtime.audit("deal_pipeline_complete", {deal: "MegaInc", value: 2500000})</span>
+    </div>
+    <div class="kernel-trace">
+      <span class="kt-stage">Each tool call gated by kernel:</span><br>
+      &nbsp;&nbsp;company__publish_event &rarr; <span class="kt-allow">allow</span> (in tools list)<br>
+      &nbsp;&nbsp;company__add_decision &rarr; <span class="kt-allow">allow</span> (in tools list)<br>
+      &nbsp;&nbsp;company__record_metric &rarr; <span class="kt-allow">allow</span> (in tools list)<br>
+      <br>
+      <span class="kt-stage">Attempted: company__request_approval</span><br>
+      &nbsp;&nbsp;&rarr; <span class="kt-deny">DENIED (in explicit deny list)</span><br>
+      &nbsp;&nbsp;&rarr; Agent correctly used human__ask instead
+    </div>
+  </div>
+</div>
+
+<!-- Step 12 -->
+<div class="step">
+  <div class="step-header" onclick="toggle(this)">
+    <div class="step-num" style="background:#1f2a22;color:#56d364">12</div>
+    <div class="step-title">Lead Researcher notifies Sarah via human__notify</div>
+    <div class="step-actors"><span class="step-actor sa-agent">Lead Researcher</span><span class="step-actor sa-human">Sarah</span></div>
+    <div class="step-arrow">&#9654;</div>
+  </div>
+  <div class="step-body">
+    <p class="detail">Final step: notify Sarah that the deal pipeline is complete.</p>
+    <div class="flow-row">
+      <span class="fb fb-agent">Lead Researcher</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-h2a">human__notify(ns="sales", name="sarah")</span>
+      <span class="fa">&rarr;</span>
+      <span class="fb fb-human">Sarah's dashboard</span>
+    </div>
+    <div class="kernel-trace">
+      <span class="kt-stage">Notification:</span><br>
+      &nbsp;&nbsp;"MegaInc deal ($2.5M) approved by Sarah Chen + David Park.<br>
+      &nbsp;&nbsp;BANT: 87/100. Risk: Medium. CFO conditions: 3yr min, Net-60.<br>
+      &nbsp;&nbsp;Next: Legal review. Decision recorded in knowledge base."<br>
+      <br>
+      <span class="kt-stage">Audit: h2a.notify recorded</span><br>
+      <span class="kt-allow">Pipeline complete. runtime.unbind()</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- SUMMARY                                                     -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="phase">SUMMARY — What the Kernel Enforced</div>
+
+<table class="summary">
+  <thead>
+    <tr><th>Step</th><th>Actor</th><th>Action</th><th>Kernel Decision</th><th>Protocol</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td>Sarah &rarr; Lead Researcher</td><td>Initiate research</td><td>allow (H2A call)</td><td>H2A</td></tr>
+    <tr><td>2</td><td>Lead Researcher</td><td>4x search_knowledge</td><td>4x allow (tool permitted)</td><td>Syscall</td></tr>
+    <tr><td>3</td><td>Lead Researcher</td><td>Save checkpoint</td><td>&mdash;</td><td>Runtime</td></tr>
+    <tr><td>4</td><td>Lead Researcher &rarr; Deal Analyst</td><td>A2A call (same ns)</td><td>allow (same-namespace)</td><td>A2A</td></tr>
+    <tr><td>5</td><td>Deal Analyst</td><td>BANT scoring + budget reserve</td><td>allow + ticket</td><td>Syscall + Budget</td></tr>
+    <tr><td>6</td><td>Lead Researcher &rarr; Risk Assessor</td><td>A2A call (cross-ns)</td><td>deny &rarr; capability token &rarr; allow</td><td>A2A + Capability</td></tr>
+    <tr><td>7</td><td>Lead Researcher &rarr; Sarah</td><td>Ask go/no-go</td><td>h2a.ask recorded</td><td>A2H</td></tr>
+    <tr><td>8</td><td>Sarah</td><td>Approves</td><td>h2a.respond recorded</td><td>A2H</td></tr>
+    <tr><td>9</td><td>Lead Researcher &rarr; David</td><td>Ask budget approval</td><td>auto-delegation skipped ($2.5M > $1M)</td><td>A2H</td></tr>
+    <tr><td>10</td><td>David</td><td>Approves with conditions</td><td>h2a.respond recorded</td><td>A2H</td></tr>
+    <tr><td>11</td><td>Lead Researcher</td><td>Publish + record + checkpoint</td><td>3x allow, 1x deny (request_approval)</td><td>Syscall</td></tr>
+    <tr><td>12</td><td>Lead Researcher &rarr; Sarah</td><td>Notify completion</td><td>h2a.notify recorded</td><td>A2H</td></tr>
+  </tbody>
+</table>
+
+<table class="summary">
+  <thead>
+    <tr><th>Metric</th><th>Value</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Total kernel decisions</td><td>15+ (tool checks, A2A checks, budget, capability, audit)</td></tr>
+    <tr><td>Tool calls gated</td><td>~12 (all through BaseTool._run kernel gate)</td></tr>
+    <tr><td>A2A calls</td><td>2 (same-namespace + cross-namespace with capability token)</td></tr>
+    <tr><td>H2A interactions</td><td>3 (1 ask+respond to Sarah, 1 ask+respond to David, 1 notify)</td></tr>
+    <tr><td>Checkpoints saved</td><td>3 (research_complete, approval_pending, pipeline_complete)</td></tr>
+    <tr><td>Budget consumed</td><td>~$1.20 of $5.00 daily limit</td></tr>
+    <tr><td>Capability tokens issued</td><td>1 (cross-namespace A2A, revoked after use)</td></tr>
+    <tr><td>Audit trail entries</td><td>~20 (every decision recorded with context)</td></tr>
+    <tr><td>Protocols exercised</td><td>A2A, A2H, H2A, Syscall, Budget, Checkpoint, Capability, Audit</td></tr>
+  </tbody>
+</table>
+
+</div>
+
+<script>
+function toggle(header) {
+  const body = header.nextElementSibling;
+  const arrow = header.querySelector('.step-arrow');
+  header.classList.toggle('open');
+  body.classList.toggle('open');
+  arrow.classList.toggle('open');
+}
+// Open first step by default
+document.querySelector('.step-header').click();
+</script>
+</body>
+</html>
