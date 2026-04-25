@@ -67,6 +67,26 @@ class Priority(str, Enum):
 # ---------------------------------------------------------------------------
 
 @dataclass
+class HumanStateConfig:
+    """Defines what a human state means for request delivery.
+
+    Each state has a name and rules for how A2H requests are handled
+    when the human is in that state. Domains configure their own states:
+    a call center has ``in_call``, a law firm has ``in_court``.
+    """
+    accepts_requests: bool = True
+    queue_requests: bool = False
+    reroute_to: str | None = None
+
+DEFAULT_STATES: dict[str, HumanStateConfig] = {
+    "available":  HumanStateConfig(accepts_requests=True),
+    "busy":       HumanStateConfig(accepts_requests=False, queue_requests=True),
+    "away":       HumanStateConfig(accepts_requests=False, reroute_to="delegate"),
+    "offline":    HumanStateConfig(accepts_requests=False, reroute_to="on_call"),
+}
+
+
+@dataclass
 class HumanAgent:
     """A human participant in the agent graph.
 
@@ -74,6 +94,14 @@ class HumanAgent:
     ``agent__list_available(type="human")``. Cannot be ``invoke()``d
     like an AI agent — interactions go through ``human__ask`` /
     ``human__notify`` and the human responds asynchronously.
+
+    The ``states_config`` dict defines domain-specific states:
+
+        # Call center:
+        states_config = {"in_call": HumanStateConfig(queue_requests=True), ...}
+
+        # Law firm:
+        states_config = {"in_court": HumanStateConfig(reroute_to="paralegal"), ...}
     """
     pid: str
     name: str
@@ -85,16 +113,56 @@ class HumanAgent:
     delegation_rules: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    # Configurable state machine
+    states_config: dict[str, HumanStateConfig] = field(default_factory=lambda: dict(DEFAULT_STATES))
+    current_state: str = "available"
+    state_changed_at: str = ""
+    delegate: str | None = None
+
     @property
     def agent_type(self) -> str:
+        return "human"
+
+    @property
+    def participant_type(self) -> str:
         return "human"
 
     @property
     def qualified_name(self) -> str:
         return f"{self.namespace}/{self.name}"
 
+    @property
+    def accepts_requests(self) -> bool:
+        cfg = self.states_config.get(self.current_state)
+        return cfg.accepts_requests if cfg else True
+
+    @property
+    def should_queue(self) -> bool:
+        cfg = self.states_config.get(self.current_state)
+        return cfg.queue_requests if cfg else False
+
+    @property
+    def reroute_target(self) -> str | None:
+        cfg = self.states_config.get(self.current_state)
+        target = cfg.reroute_to if cfg else None
+        if target == "delegate":
+            return self.delegate
+        return target
+
+    def set_state(self, state: str) -> None:
+        if state not in self.states_config and state not in DEFAULT_STATES:
+            logger.warning("Unknown state '%s' for human %s", state, self.name)
+        self.current_state = state
+        self.state_changed_at = datetime.now(timezone.utc).isoformat()
+
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        d = {
+            "pid": self.pid, "name": self.name, "namespace": self.namespace,
+            "role": self.role, "email": self.email, "channels": self.channels,
+            "availability": self.availability, "current_state": self.current_state,
+            "participant_type": "human", "metadata": self.metadata,
+        }
+        return d
 
     def to_discovery_dict(self) -> dict[str, Any]:
         return {
@@ -102,10 +170,12 @@ class HumanAgent:
             "namespace": self.namespace,
             "agent_id": self.pid,
             "type": "human",
+            "participant_type": "human",
             "role": self.role,
             "description": f"Human: {self.role}" if self.role else f"Human: {self.name}",
             "channels": self.channels,
             "availability": self.availability,
+            "current_state": self.current_state,
             "department": self.metadata.get("department", ""),
             "stack": "human",
         }
@@ -348,6 +418,16 @@ class H2AGateway:
         if not human:
             return {"success": False, "error": f"Human {to_namespace}/{to_name} not found"}
 
+        # State-aware routing: reroute if human is unavailable
+        if not human.accepts_requests and not human.should_queue:
+            reroute = human.reroute_target
+            if reroute:
+                rerouted = self.resolve_human(to_namespace, reroute)
+                if rerouted and rerouted.accepts_requests:
+                    logger.info("Rerouting A2H from %s (%s) to %s",
+                                human.name, human.current_state, rerouted.name)
+                    human = rerouted
+
         req_type = RequestType.APPROVAL if response_type == "approval" else RequestType.QUESTION
         request = HumanRequest(
             type=req_type,
@@ -536,6 +616,181 @@ class H2AGateway:
 
 # ---------------------------------------------------------------------------
 # Tool schemas for agent use
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Escalation chains — timeout-based auto-promotion
+# ---------------------------------------------------------------------------
+
+@dataclass
+class EscalationLevel:
+    """One level in an escalation chain."""
+    target: str
+    timeout_minutes: int = 10
+    priority_override: str | None = None
+
+@dataclass
+class EscalationChain:
+    """Multi-level escalation with timeout auto-promotion.
+
+    When a request at level N isn't answered within ``timeout_minutes``,
+    the chain automatically promotes to level N+1 with an optional
+    priority upgrade.
+
+    Domain-neutral: a call center uses levels for team lead → manager →
+    on-call. A hospital uses attending → department head → CMO.
+    """
+    name: str
+    levels: list[EscalationLevel] = field(default_factory=list)
+    current_level: int = 0
+    request_id: str | None = None
+
+    def next_target(self) -> EscalationLevel | None:
+        if self.current_level >= len(self.levels):
+            return None
+        return self.levels[self.current_level]
+
+    def promote(self) -> EscalationLevel | None:
+        self.current_level += 1
+        return self.next_target()
+
+
+# ---------------------------------------------------------------------------
+# Behavior profiles — condition-based agent config overrides
+# ---------------------------------------------------------------------------
+
+@dataclass
+class BehaviorProfile:
+    """A named set of config overrides that activates when a condition is met.
+
+    The platform evaluates conditions at runtime. Domains define what
+    conditions matter: time-of-day, market state, load level, etc.
+
+    Example:
+        BehaviorProfile(name="night", condition={"hours": "22:00-06:00"},
+            overrides={"loop_interval": 30, "sensitivity": "high"})
+    """
+    name: str
+    condition: dict[str, Any] = field(default_factory=dict)
+    overrides: dict[str, Any] = field(default_factory=dict)
+    active: bool = False
+
+    def evaluate(self, context: dict[str, Any]) -> bool:
+        """Check if this profile's condition matches the given context."""
+        for key, expected in self.condition.items():
+            actual = context.get(key)
+            if actual is None:
+                return False
+            if isinstance(expected, str) and "-" in expected and ":" in expected:
+                if not self._check_time_range(actual, expected):
+                    return False
+            elif actual != expected:
+                return False
+        self.active = True
+        return True
+
+    @staticmethod
+    def _check_time_range(current_time: str, time_range: str) -> bool:
+        """Check if current_time (HH:MM) falls within time_range (HH:MM-HH:MM)."""
+        try:
+            start_s, end_s = time_range.split("-")
+            start = int(start_s.replace(":", ""))
+            end = int(end_s.replace(":", ""))
+            now = int(current_time.replace(":", ""))
+            if start <= end:
+                return start <= now < end
+            return now >= start or now < end
+        except (ValueError, IndexError):
+            return False
+
+
+# ---------------------------------------------------------------------------
+# Budget multiplier
+# ---------------------------------------------------------------------------
+
+@dataclass
+class BudgetMultiplierRule:
+    """Scales an agent's budget based on a condition.
+
+    Example: {"staffing_level": "<3"} → multiplier 0.3
+    """
+    condition: dict[str, Any] = field(default_factory=dict)
+    multiplier: float = 1.0
+
+    def matches(self, context: dict[str, Any]) -> bool:
+        for key, expected in self.condition.items():
+            actual = context.get(key)
+            if actual is None:
+                return False
+            if isinstance(expected, str) and expected.startswith("<"):
+                try:
+                    return float(actual) < float(expected[1:])
+                except (ValueError, TypeError):
+                    return False
+            elif isinstance(expected, str) and expected.startswith(">="):
+                try:
+                    return float(actual) >= float(expected[2:])
+                except (ValueError, TypeError):
+                    return False
+            elif actual != expected:
+                return False
+        return True
+
+
+@dataclass
+class BudgetPolicy:
+    """Dynamic budget scaling based on operational context."""
+    base_daily_usd: float = 5.0
+    rules: list[BudgetMultiplierRule] = field(default_factory=list)
+
+    def effective_budget(self, context: dict[str, Any]) -> float:
+        multiplier = 1.0
+        for rule in self.rules:
+            if rule.matches(context):
+                multiplier = rule.multiplier
+                break
+        return self.base_daily_usd * multiplier
+
+
+# ---------------------------------------------------------------------------
+# Context handoff protocol
+# ---------------------------------------------------------------------------
+
+@dataclass
+class HandoffItem:
+    """One pending item to transfer during a handoff."""
+    type: str
+    id: str
+    summary: str
+    priority: str = "P2_MEDIUM"
+    context: dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class HandoffRequest:
+    """Agent-mediated context transfer between participants."""
+    id: str = field(default_factory=lambda: f"handoff_{uuid.uuid4().hex[:8]}")
+    from_participant: str = ""
+    to_participant: str = ""
+    pending_items: list[HandoffItem] = field(default_factory=list)
+    context_summary: str = ""
+    accepted: bool = False
+    accepted_at: str | None = None
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "from": self.from_participant,
+            "to": self.to_participant,
+            "items_count": len(self.pending_items),
+            "summary": self.context_summary,
+            "accepted": self.accepted,
+            "created_at": self.created_at,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Tool schemas
 # ---------------------------------------------------------------------------
 
 H2A_TOOL_SCHEMAS = [
