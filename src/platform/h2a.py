@@ -1,18 +1,16 @@
 """
-Human-Agent Interaction Protocol (H2A / A2H).
+A2H Protocol — ForgeOS Implementation.
 
-Extends the A2A protocol to treat humans as first-class agents.
-A human is an ``HumanAgent`` with a PID, namespace, channels, and
-availability — discoverable via ``agent__list_available(type="human")``.
+Implements the A2H protocol specification (a2h/v1) for human-agent
+interaction. Adds ForgeOS-specific extensions: kernel audit integration,
+process table awareness, and namespace-scoped permissions.
 
-Two directions:
-  * **H2A** — human calls an AI agent (same as ``agent__call`` but
-    initiated from the dashboard/API).
-  * **A2H** — AI agent calls a human via ``human__ask`` (structured
-    question) or ``human__notify`` (one-way message).
+This module follows the A2H spec types (Status, Priority, ResponseType)
+and patterns (Gateway.ask returns object, structured Response, delegation
+rules with matches(), separate Notification). ForgeOS extensions are
+clearly marked and don't break spec conformance.
 
-All interactions go through the kernel for permission checks, budget
-enforcement, and audit logging.
+See: docs/protocols/a2h-spec.md
 """
 
 from __future__ import annotations
@@ -29,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Enums
+# Enums (A2H spec-aligned)
 # ---------------------------------------------------------------------------
 
 class RequestType(str, Enum):
@@ -45,35 +43,42 @@ class ResponseType(str, Enum):
     TEXT = "text"
     NUMBER = "number"
     CONFIRM = "confirm"
-    NONE = "none"
+    FORM = "form"
+    NONE = "none"  # ForgeOS extension: notifications
 
 
-class RequestStatus(str, Enum):
+class Status(str, Enum):
+    """A2H spec lifecycle: created → pending → terminal state."""
+    CREATED = "created"
     PENDING = "pending"
     ANSWERED = "answered"
     EXPIRED = "expired"
     CANCELLED = "cancelled"
+    ESCALATED = "escalated"
+    AUTO_DELEGATED = "auto_delegated"
 
 
 class Priority(str, Enum):
-    P0_CRITICAL = "P0_CRITICAL"
-    P1_HIGH = "P1_HIGH"
-    P2_MEDIUM = "P2_MEDIUM"
-    P3_LOW = "P3_LOW"
+    """A2H spec: lowercase values."""
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+# Backward-compat aliases for code that used the old P0/P1/P2/P3 names
+P0_CRITICAL = Priority.CRITICAL
+P1_HIGH = Priority.HIGH
+P2_MEDIUM = Priority.MEDIUM
+P3_LOW = Priority.LOW
 
 
 # ---------------------------------------------------------------------------
-# HumanAgent — a human registered in the platform
+# Human state machine (configurable per domain)
 # ---------------------------------------------------------------------------
 
 @dataclass
 class HumanStateConfig:
-    """Defines what a human state means for request delivery.
-
-    Each state has a name and rules for how A2H requests are handled
-    when the human is in that state. Domains configure their own states:
-    a call center has ``in_call``, a law firm has ``in_court``.
-    """
+    """Defines what happens to A2H requests when a human is in this state."""
     accepts_requests: bool = True
     queue_requests: bool = False
     reroute_to: str | None = None
@@ -86,23 +91,54 @@ DEFAULT_STATES: dict[str, HumanStateConfig] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Delegation rules (A2H spec-aligned)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class DelegationRule:
+    """Auto-responds to matching requests without human involvement.
+
+    Matches on: sender namespace, sender name pattern (glob),
+    response type, and context conditions (lt, gt, eq).
+    """
+    name: str = ""
+    from_namespace: str | None = None
+    from_name_pattern: str | None = None
+    response_type: str | None = None
+    context_conditions: dict[str, dict] = field(default_factory=dict)
+    auto_response: dict[str, Any] = field(default_factory=dict)
+
+    def matches(self, request: HumanRequest) -> bool:
+        if self.from_namespace and request.from_namespace != self.from_namespace:
+            return False
+        if self.from_name_pattern:
+            pattern = self.from_name_pattern.rstrip("*")
+            if not request.from_agent_name.startswith(pattern):
+                return False
+        if self.response_type:
+            if request.response_type.value != self.response_type and request.type.value != self.response_type:
+                return False
+        for key, cond in self.context_conditions.items():
+            actual = request.context.get(key)
+            if actual is None:
+                return False
+            if "lt" in cond and not (float(actual) < float(cond["lt"])):
+                return False
+            if "gt" in cond and not (float(actual) > float(cond["gt"])):
+                return False
+            if "eq" in cond and actual != cond["eq"]:
+                return False
+        return True
+
+
+# ---------------------------------------------------------------------------
+# HumanAgent (A2H Participant)
+# ---------------------------------------------------------------------------
+
 @dataclass
 class HumanAgent:
-    """A human participant in the agent graph.
-
-    Registered in the platform alongside AI agents. Discoverable via
-    ``agent__list_available(type="human")``. Cannot be ``invoke()``d
-    like an AI agent — interactions go through ``human__ask`` /
-    ``human__notify`` and the human responds asynchronously.
-
-    The ``states_config`` dict defines domain-specific states:
-
-        # Call center:
-        states_config = {"in_call": HumanStateConfig(queue_requests=True), ...}
-
-        # Law firm:
-        states_config = {"in_court": HumanStateConfig(reroute_to="paralegal"), ...}
-    """
+    """A human participant per the A2H protocol spec."""
     pid: str
     name: str
     namespace: str = "default"
@@ -110,7 +146,7 @@ class HumanAgent:
     email: str = ""
     channels: list[str] = field(default_factory=lambda: ["dashboard"])
     availability: str = "business_hours"
-    delegation_rules: dict[str, Any] = field(default_factory=dict)
+    delegation_rules: list[DelegationRule] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     # Configurable state machine
@@ -120,11 +156,11 @@ class HumanAgent:
     delegate: str | None = None
 
     @property
-    def agent_type(self) -> str:
+    def participant_type(self) -> str:
         return "human"
 
     @property
-    def participant_type(self) -> str:
+    def agent_type(self) -> str:
         return "human"
 
     @property
@@ -150,48 +186,94 @@ class HumanAgent:
         return target
 
     def set_state(self, state: str) -> None:
-        if state not in self.states_config and state not in DEFAULT_STATES:
-            logger.warning("Unknown state '%s' for human %s", state, self.name)
         self.current_state = state
         self.state_changed_at = datetime.now(timezone.utc).isoformat()
 
     def to_dict(self) -> dict[str, Any]:
-        d = {
+        return {
             "pid": self.pid, "name": self.name, "namespace": self.namespace,
             "role": self.role, "email": self.email, "channels": self.channels,
             "availability": self.availability, "current_state": self.current_state,
             "participant_type": "human", "metadata": self.metadata,
         }
-        return d
 
     def to_discovery_dict(self) -> dict[str, Any]:
         return {
-            "name": self.name,
-            "namespace": self.namespace,
-            "agent_id": self.pid,
-            "type": "human",
-            "participant_type": "human",
+            "name": self.name, "namespace": self.namespace,
+            "agent_id": self.pid, "type": "human", "participant_type": "human",
             "role": self.role,
             "description": f"Human: {self.role}" if self.role else f"Human: {self.name}",
-            "channels": self.channels,
-            "availability": self.availability,
+            "channels": self.channels, "availability": self.availability,
             "current_state": self.current_state,
             "department": self.metadata.get("department", ""),
             "stack": "human",
         }
 
+    def to_card(self) -> dict[str, Any]:
+        """A2H spec Participant Card for discovery."""
+        return {
+            "name": self.name, "namespace": self.namespace,
+            "participant_type": "human",
+            "description": f"Human: {self.role}" if self.role else f"Human: {self.name}",
+            "protocol": "a2h/v1", "version": "1.0",
+            "a2h": {
+                "supported": True,
+                "response_types": ["choice", "approval", "text", "number", "confirm", "form"],
+                "channels": self.channels,
+                "availability": {"current_state": self.current_state, "schedule": self.availability},
+            },
+        }
+
 
 # ---------------------------------------------------------------------------
-# HumanRequest — a structured request from agent to human (A2H)
+# HumanResponse (A2H spec-aligned)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class HumanResponse:
+    """Structured response from a human, matching A2H spec Response."""
+    value: Any = None
+    text: str = ""
+    approved: bool | None = None
+    confirmed: bool | None = None
+    fields: dict[str, Any] | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    responded_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    channel: str = "dashboard"
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"responded_at": self.responded_at, "channel": self.channel}
+        if self.value is not None: d["value"] = self.value
+        if self.text: d["text"] = self.text
+        if self.approved is not None: d["approved"] = self.approved
+        if self.confirmed is not None: d["confirmed"] = self.confirmed
+        if self.fields: d["fields"] = self.fields
+        if self.metadata: d["metadata"] = self.metadata
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> HumanResponse:
+        return cls(
+            value=data.get("value"), text=data.get("text", ""),
+            approved=data.get("approved"), confirmed=data.get("confirmed"),
+            fields=data.get("fields"), metadata=data.get("metadata", {}),
+            channel=data.get("channel", "dashboard"),
+        )
+
+
+# ---------------------------------------------------------------------------
+# HumanRequest (A2H spec Interaction)
 # ---------------------------------------------------------------------------
 
 @dataclass
 class HumanRequest:
-    """A structured interaction from an AI agent to a human."""
-    id: str = field(default_factory=lambda: f"h2a_{uuid.uuid4().hex[:12]}")
+    """A structured request per A2H spec Interaction object."""
+    id: str = field(default_factory=lambda: f"req_{uuid.uuid4().hex[:12]}")
+    protocol: str = "a2h/v1"
     type: RequestType = RequestType.QUESTION
     from_agent: str = ""
     from_agent_name: str = ""
+    from_namespace: str = "default"
     to_human: str = ""
     to_human_name: str = ""
     namespace: str = "default"
@@ -204,34 +286,32 @@ class HumanRequest:
     options: list[dict[str, str]] | None = None
 
     # Governance
-    priority: Priority = Priority.P2_MEDIUM
+    priority: Priority = Priority.MEDIUM
     deadline: str | None = None
     sla_hours: float = 24.0
     context: dict[str, Any] = field(default_factory=dict)
+    escalation: EscalationChain | None = None
 
     # State
-    status: RequestStatus = RequestStatus.PENDING
-    response: dict[str, Any] | None = None
-    responded_at: str | None = None
-    responded_via: str | None = None
+    status: Status = Status.CREATED
+    response: HumanResponse | None = None
 
     # Tracking
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    audit_id: str = field(default_factory=lambda: str(uuid.uuid4())[:12])
+    updated_at: str = ""
 
     def __post_init__(self):
         if self.deadline is None:
-            self.deadline = (
-                datetime.now(timezone.utc) + timedelta(hours=self.sla_hours)
-            ).isoformat()
+            self.deadline = (datetime.now(timezone.utc) + timedelta(hours=self.sla_hours)).isoformat()
+        if not self.updated_at:
+            self.updated_at = self.created_at
 
     @property
     def is_expired(self) -> bool:
         if not self.deadline:
             return False
         try:
-            dl = datetime.fromisoformat(self.deadline)
-            return datetime.now(timezone.utc) > dl
+            return datetime.now(timezone.utc) > datetime.fromisoformat(self.deadline)
         except (ValueError, TypeError):
             return False
 
@@ -240,16 +320,91 @@ class HumanRequest:
         return self.question or self.task or self.message or ""
 
     def to_dict(self) -> dict[str, Any]:
-        d = asdict(self)
-        d["type"] = self.type.value
-        d["response_type"] = self.response_type.value
-        d["priority"] = self.priority.value
-        d["status"] = self.status.value
+        d: dict[str, Any] = {
+            "protocol": self.protocol, "id": self.id,
+            "type": self.type.value,
+            "from": {"name": self.from_agent_name, "namespace": self.from_namespace, "participant_type": "agent"},
+            "to": {"name": self.to_human_name, "namespace": self.namespace, "participant_type": "human"},
+            "content": {
+                "question": self.question, "response_type": self.response_type.value,
+                "options": self.options, "context": self.context,
+            },
+            "priority": self.priority.value, "deadline": self.deadline,
+            "status": self.status.value,
+            "created_at": self.created_at, "updated_at": self.updated_at,
+        }
+        if self.response:
+            d["response"] = self.response.to_dict()
+        if self.escalation:
+            d["escalation"] = self.escalation.to_dict()
         return d
 
 
 # ---------------------------------------------------------------------------
-# Store protocol
+# Notification (A2H spec-aligned, separate from Request)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Notification:
+    """One-way message from agent to human. No response expected."""
+    id: str = field(default_factory=lambda: f"notif_{uuid.uuid4().hex[:10]}")
+    protocol: str = "a2h/v1"
+    from_agent: str = ""
+    from_agent_name: str = ""
+    from_namespace: str = "default"
+    to_human: str = ""
+    to_human_name: str = ""
+    namespace: str = "default"
+    message: str = ""
+    severity: str = "info"
+    priority: Priority = Priority.LOW
+    context: dict[str, Any] = field(default_factory=dict)
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "protocol": self.protocol, "id": self.id, "type": "notification",
+            "from": {"name": self.from_agent_name, "namespace": self.from_namespace},
+            "to": {"name": self.to_human_name, "namespace": self.namespace},
+            "content": {"message": self.message, "severity": self.severity, "context": self.context},
+            "priority": self.priority.value, "created_at": self.created_at,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Escalation chain
+# ---------------------------------------------------------------------------
+
+@dataclass
+class EscalationLevel:
+    target: str
+    timeout_minutes: int = 10
+    priority_override: str | None = None
+
+@dataclass
+class EscalationChain:
+    levels: list[EscalationLevel] = field(default_factory=list)
+    current_level: int = 0
+
+    def next_target(self) -> EscalationLevel | None:
+        if self.current_level >= len(self.levels):
+            return None
+        return self.levels[self.current_level]
+
+    def promote(self) -> EscalationLevel | None:
+        self.current_level += 1
+        return self.next_target()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "chain": [{"target": l.target, "timeout_minutes": l.timeout_minutes,
+                        "priority_override": l.priority_override} for l in self.levels],
+            "current_level": self.current_level,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Store protocol (A2H spec-aligned, includes cancel)
 # ---------------------------------------------------------------------------
 
 @runtime_checkable
@@ -257,12 +412,11 @@ class HumanRequestStore(Protocol):
     def save(self, request: HumanRequest) -> None: ...
     def get(self, request_id: str) -> HumanRequest | None: ...
     def list_pending(self, human_pid: str | None = None) -> list[HumanRequest]: ...
-    def respond(self, request_id: str, response: dict, via: str) -> bool: ...
+    def respond(self, request_id: str, response: HumanResponse, via: str) -> bool: ...
+    def cancel(self, request_id: str, reason: str) -> bool: ...
 
 
 class InMemoryHumanRequestStore:
-    """In-memory store for development and testing."""
-
     def __init__(self):
         self._requests: dict[str, HumanRequest] = {}
         self._events: dict[str, asyncio.Event] = {}
@@ -273,34 +427,45 @@ class InMemoryHumanRequestStore:
 
     def get(self, request_id: str) -> HumanRequest | None:
         req = self._requests.get(request_id)
-        if req and req.status == RequestStatus.PENDING and req.is_expired:
-            req.status = RequestStatus.EXPIRED
+        if req and req.status == Status.PENDING and req.is_expired:
+            req.status = Status.EXPIRED
         return req
 
     def list_pending(self, human_pid: str | None = None) -> list[HumanRequest]:
         results = []
         for req in self._requests.values():
-            if req.status != RequestStatus.PENDING:
+            if req.status != Status.PENDING:
                 continue
             if req.is_expired:
-                req.status = RequestStatus.EXPIRED
+                req.status = Status.EXPIRED
                 continue
             if human_pid and req.to_human != human_pid:
                 continue
             results.append(req)
         return results
 
-    def respond(self, request_id: str, response: dict, via: str = "dashboard") -> bool:
+    def respond(self, request_id: str, response: HumanResponse, via: str = "dashboard") -> bool:
         req = self._requests.get(request_id)
-        if not req or req.status != RequestStatus.PENDING:
+        if not req or req.status != Status.PENDING:
             return False
         if req.is_expired:
-            req.status = RequestStatus.EXPIRED
+            req.status = Status.EXPIRED
             return False
         req.response = response
-        req.status = RequestStatus.ANSWERED
-        req.responded_at = datetime.now(timezone.utc).isoformat()
-        req.responded_via = via
+        req.status = Status.ANSWERED
+        req.updated_at = datetime.now(timezone.utc).isoformat()
+        event = self._events.get(request_id)
+        if event:
+            event.set()
+        return True
+
+    def cancel(self, request_id: str, reason: str = "") -> bool:
+        req = self._requests.get(request_id)
+        if not req or req.status != Status.PENDING:
+            return False
+        req.status = Status.CANCELLED
+        req.context["cancel_reason"] = reason
+        req.updated_at = datetime.now(timezone.utc).isoformat()
         event = self._events.get(request_id)
         if event:
             event.set()
@@ -318,56 +483,57 @@ class InMemoryHumanRequestStore:
 
 
 # ---------------------------------------------------------------------------
-# Delivery channel protocol
+# Delivery channel protocol (A2H spec-aligned: two methods)
 # ---------------------------------------------------------------------------
 
 @runtime_checkable
 class DeliveryChannel(Protocol):
-    async def deliver(self, request: HumanRequest) -> bool: ...
+    async def deliver_request(self, request: HumanRequest) -> bool: ...
+    async def deliver_notification(self, notification: Notification) -> bool: ...
 
 
 class DashboardChannel:
-    """Delivers requests to the dashboard (stored in the request store)."""
+    async def deliver_request(self, request: HumanRequest) -> bool:
+        logger.info("A2H DASHBOARD | %s | %s → %s | %s | deadline=%s",
+                     request.id, request.from_agent_name, request.to_human_name,
+                     request.type.value, request.deadline)
+        return True
 
-    async def deliver(self, request: HumanRequest) -> bool:
-        logger.info(
-            "H2A DASHBOARD | %s | %s → %s | %s | %s | deadline=%s",
-            request.id, request.from_agent_name, request.to_human_name,
-            request.type.value, request.display_text[:80], request.deadline,
-        )
+    async def deliver_notification(self, notification: Notification) -> bool:
+        logger.info("A2H NOTIFY | %s | %s → %s | %s",
+                     notification.id, notification.from_agent_name,
+                     notification.to_human_name, notification.message[:60])
         return True
 
 
 class LogChannel:
-    """Delivers requests via structured logging (for dev/testing)."""
+    async def deliver_request(self, request: HumanRequest) -> bool:
+        logger.info("A2H REQUEST | %s | %s → %s | %s | %s | priority=%s",
+                     request.id, request.from_agent_name, request.to_human_name,
+                     request.type.value, request.display_text[:80], request.priority.value)
+        return True
 
-    async def deliver(self, request: HumanRequest) -> bool:
-        logger.info(
-            "H2A REQUEST | %s | %s → %s | %s | priority=%s | %s",
-            request.id, request.from_agent_name, request.to_human_name,
-            request.type.value, request.priority.value, request.display_text[:100],
-        )
+    async def deliver_notification(self, notification: Notification) -> bool:
+        logger.info("A2H NOTIFY | %s | %s | %s",
+                     notification.id, notification.severity, notification.message[:80])
         return True
 
 
 # ---------------------------------------------------------------------------
-# H2A Gateway — manages human-agent interactions
+# H2A Gateway (A2H spec-conformant + ForgeOS kernel extensions)
 # ---------------------------------------------------------------------------
 
 class H2AGateway:
-    """Central coordinator for human-agent interactions.
+    """A2H protocol gateway for ForgeOS.
 
-    Manages HumanAgent registration, request creation, delivery, and
-    response collection. Integrates with the kernel for permission
-    checks and audit logging.
+    Conformant with the A2H spec: ask() returns the HumanRequest object,
+    responses are structured HumanResponse, delegation uses DelegationRule
+    with matches(), status lifecycle includes AUTO_DELEGATED.
+
+    ForgeOS extensions: kernel audit logging on ask/respond/notify.
     """
 
-    def __init__(
-        self,
-        store: HumanRequestStore | None = None,
-        channels: list[DeliveryChannel] | None = None,
-        kernel: Any = None,
-    ):
+    def __init__(self, store=None, channels=None, kernel=None):
         self._store = store or InMemoryHumanRequestStore()
         self._channels = channels or [DashboardChannel(), LogChannel()]
         self._kernel = kernel
@@ -377,7 +543,7 @@ class H2AGateway:
 
     def register_human(self, human: HumanAgent) -> str:
         self._humans[human.pid] = human
-        logger.info("Registered human agent: %s (%s)", human.qualified_name, human.pid)
+        logger.info("Registered human: %s (%s)", human.qualified_name, human.pid)
         return human.pid
 
     def unregister_human(self, pid: str) -> bool:
@@ -397,7 +563,7 @@ class H2AGateway:
             return [h for h in self._humans.values() if h.namespace == namespace]
         return list(self._humans.values())
 
-    # ---- A2H: Agent asks human ---------------------------------------------
+    # ---- A2H: Agent asks human (spec-conformant) ---------------------------
 
     async def ask(
         self,
@@ -410,78 +576,81 @@ class H2AGateway:
         options: list[dict] | None = None,
         deadline: str | None = None,
         sla_hours: float = 24.0,
-        priority: str = "P2_MEDIUM",
+        priority: str = "medium",
         context: dict | None = None,
-    ) -> dict[str, Any]:
-        """Agent asks a human a structured question."""
+        escalation: EscalationChain | None = None,
+    ) -> HumanRequest:
+        """Agent asks a human. Returns the HumanRequest object (not a dict)."""
         human = self.resolve_human(to_namespace, to_name)
         if not human:
-            return {"success": False, "error": f"Human {to_namespace}/{to_name} not found"}
+            req = HumanRequest(
+                from_agent=from_agent, from_agent_name=from_agent_name,
+                from_namespace=to_namespace,
+                to_human_name=to_name, namespace=to_namespace,
+                question=question, status=Status.CANCELLED,
+            )
+            req.context["error"] = f"Human {to_namespace}/{to_name} not found"
+            return req
 
-        # State-aware routing: reroute if human is unavailable
+        # State-aware routing
         if not human.accepts_requests and not human.should_queue:
             reroute = human.reroute_target
             if reroute:
                 rerouted = self.resolve_human(to_namespace, reroute)
                 if rerouted and rerouted.accepts_requests:
-                    logger.info("Rerouting A2H from %s (%s) to %s",
+                    logger.info("A2H rerouting: %s (%s) → %s",
                                 human.name, human.current_state, rerouted.name)
                     human = rerouted
 
         req_type = RequestType.APPROVAL if response_type == "approval" else RequestType.QUESTION
         request = HumanRequest(
             type=req_type,
-            from_agent=from_agent,
-            from_agent_name=from_agent_name,
-            to_human=human.pid,
-            to_human_name=human.name,
+            from_agent=from_agent, from_agent_name=from_agent_name,
+            from_namespace=to_namespace,
+            to_human=human.pid, to_human_name=human.name,
             namespace=to_namespace,
-            question=question,
-            response_type=ResponseType(response_type),
-            options=options,
-            priority=Priority(priority),
-            sla_hours=sla_hours,
-            context=context or {},
+            question=question, response_type=ResponseType(response_type),
+            options=options, priority=Priority(priority),
+            sla_hours=sla_hours, context=context or {},
+            escalation=escalation,
         )
         if deadline:
             request.deadline = deadline
+        request.status = Status.PENDING
 
-        # Check auto-delegation rules
-        auto_response = self._check_delegation_rules(human, request)
-        if auto_response:
-            request.response = auto_response
-            request.status = RequestStatus.ANSWERED
-            request.responded_at = datetime.now(timezone.utc).isoformat()
-            request.responded_via = "auto_delegation"
+        # Check delegation rules
+        for rule in (human.delegation_rules or []):
+            if rule.matches(request):
+                request.response = HumanResponse.from_dict(rule.auto_response)
+                request.response.channel = "auto_delegation"
+                request.status = Status.AUTO_DELEGATED
+                request.updated_at = datetime.now(timezone.utc).isoformat()
+                logger.info("A2H auto-delegated: %s (rule: %s)", request.id, rule.name)
+                break
 
         self._store.save(request)
 
-        # Deliver via channels (if not auto-answered)
-        if request.status == RequestStatus.PENDING:
+        # Deliver (if not auto-delegated)
+        if request.status == Status.PENDING:
             for channel in self._channels:
                 try:
-                    await channel.deliver(request)
+                    await channel.deliver_request(request)
                 except Exception as e:
-                    logger.warning("Channel delivery failed: %s", e)
+                    logger.warning("A2H delivery failed: %s", e)
 
-        # Audit
+        # ForgeOS extension: kernel audit
         if self._kernel and hasattr(self._kernel, "audit"):
-            self._kernel.audit(from_agent, "h2a.ask", {
+            self._kernel.audit(from_agent, "a2h.ask", {
                 "request_id": request.id,
                 "to_human": human.qualified_name,
                 "question": question[:100],
                 "priority": priority,
+                "auto_delegated": request.status == Status.AUTO_DELEGATED,
             })
 
-        return {
-            "success": True,
-            "request_id": request.id,
-            "status": request.status.value,
-            "deadline": request.deadline,
-            "auto_responded": request.status == RequestStatus.ANSWERED,
-        }
+        return request
 
-    # ---- A2H: Agent notifies human -----------------------------------------
+    # ---- Notification (A2H spec: separate object) --------------------------
 
     async def notify(
         self,
@@ -490,99 +659,84 @@ class H2AGateway:
         to_namespace: str,
         to_name: str,
         message: str,
-        priority: str = "P3_LOW",
+        priority: str = "low",
         channel: str = "dashboard",
         context: dict | None = None,
-    ) -> dict[str, Any]:
-        """Agent sends a notification to a human (no response needed)."""
+    ) -> Notification:
+        """Send a notification. Returns Notification object (not a dict)."""
         human = self.resolve_human(to_namespace, to_name)
         if not human:
-            return {"success": False, "error": f"Human {to_namespace}/{to_name} not found"}
+            return Notification(
+                from_agent_name=from_agent_name, to_human_name=to_name,
+                namespace=to_namespace, message=f"[UNDELIVERABLE] {message}",
+            )
 
-        request = HumanRequest(
-            type=RequestType.NOTIFICATION,
-            from_agent=from_agent,
-            from_agent_name=from_agent_name,
-            to_human=human.pid,
-            to_human_name=human.name,
-            namespace=to_namespace,
-            message=message,
-            response_type=ResponseType.NONE,
-            priority=Priority(priority),
-            context=context or {},
-            status=RequestStatus.ANSWERED,
+        notification = Notification(
+            from_agent=from_agent, from_agent_name=from_agent_name,
+            from_namespace=to_namespace,
+            to_human=human.pid, to_human_name=human.name,
+            namespace=to_namespace, message=message,
+            priority=Priority(priority), context=context or {},
         )
-
-        self._store.save(request)
 
         for ch in self._channels:
             try:
-                await ch.deliver(request)
+                await ch.deliver_notification(notification)
             except Exception as e:
-                logger.warning("Notification delivery failed: %s", e)
+                logger.warning("A2H notification delivery failed: %s", e)
 
         if self._kernel and hasattr(self._kernel, "audit"):
-            self._kernel.audit(from_agent, "h2a.notify", {
-                "request_id": request.id,
+            self._kernel.audit(from_agent, "a2h.notify", {
+                "notification_id": notification.id,
                 "to_human": human.qualified_name,
-                "message": message[:100],
             })
 
-        return {"success": True, "delivered": True, "request_id": request.id}
+        return notification
 
-    # ---- Human responds ----------------------------------------------------
+    # ---- Human responds (A2H spec: structured Response) --------------------
 
-    def respond(
-        self,
-        request_id: str,
-        response: dict[str, Any],
-        responded_by: str = "",
-        via: str = "dashboard",
-    ) -> dict[str, Any]:
-        """Human submits a response to a pending request."""
+    def respond(self, request_id: str, response_data: dict, responded_by: str = "",
+                via: str = "dashboard") -> dict[str, Any]:
         req = self._store.get(request_id)
         if not req:
             return {"success": False, "error": "Request not found"}
-        if req.status != RequestStatus.PENDING:
+        if req.status != Status.PENDING:
             return {"success": False, "error": f"Request is {req.status.value}, not pending"}
 
+        response = HumanResponse.from_dict({**response_data, "channel": via})
         ok = self._store.respond(request_id, response, via)
         if not ok:
             return {"success": False, "error": "Failed to record response"}
 
         if self._kernel and hasattr(self._kernel, "audit"):
-            self._kernel.audit(responded_by or req.to_human, "h2a.respond", {
-                "request_id": request_id,
-                "from_agent": req.from_agent,
-                "response_type": req.response_type.value,
+            self._kernel.audit(responded_by or req.to_human, "a2h.respond", {
+                "request_id": request_id, "from_agent": req.from_agent,
             })
 
         return {"success": True, "request_id": request_id, "status": "answered"}
 
-    # ---- Wait for human response (agent-side) ------------------------------
+    # ---- Cancel (A2H spec) -------------------------------------------------
 
-    async def wait_for_response(
-        self, request_id: str, timeout: float = 300,
-    ) -> dict[str, Any]:
-        """Block until the human responds or timeout/expiry."""
+    def cancel(self, request_id: str, reason: str = "") -> dict[str, Any]:
+        ok = self._store.cancel(request_id, reason)
+        if not ok:
+            return {"success": False, "error": "Cannot cancel"}
+        return {"success": True, "request_id": request_id, "status": "cancelled"}
+
+    # ---- Wait + Query ------------------------------------------------------
+
+    async def wait_for_response(self, request_id: str, timeout: float = 300) -> dict[str, Any]:
         if isinstance(self._store, InMemoryHumanRequestStore):
             req = await self._store.wait_for_response(request_id, timeout)
         else:
             req = self._store.get(request_id)
-
         if not req:
             return {"success": False, "error": "Request not found"}
-
         return {
-            "success": req.status == RequestStatus.ANSWERED,
-            "request_id": request_id,
-            "status": req.status.value,
-            "response": req.response,
-            "responded_at": req.responded_at,
-            "responded_via": req.responded_via,
+            "success": req.status == Status.ANSWERED,
+            "request_id": request_id, "status": req.status.value,
+            "response": req.response.to_dict() if req.response else None,
         }
-
-    # ---- Query -------------------------------------------------------------
 
     def get_request(self, request_id: str) -> dict | None:
         req = self._store.get(request_id)
@@ -591,92 +745,20 @@ class H2AGateway:
     def list_pending(self, human_pid: str | None = None) -> list[dict]:
         return [r.to_dict() for r in self._store.list_pending(human_pid)]
 
-    # ---- Delegation rules --------------------------------------------------
-
-    def _check_delegation_rules(self, human: HumanAgent, request: HumanRequest) -> dict | None:
-        """Check if the human has auto-response rules for this request."""
-        rules = human.delegation_rules
-        if not rules:
-            return None
-
-        # Auto-approve pattern: {"auto_approve": {"agents": ["sales-*"], "max_value": 10000}}
-        auto = rules.get("auto_approve")
-        if auto and request.type == RequestType.APPROVAL:
-            agents_match = any(
-                request.from_agent_name.startswith(p.rstrip("*"))
-                for p in (auto.get("agents") or [])
-            )
-            value = request.context.get("value", 0)
-            max_val = auto.get("max_value", float("inf"))
-            if agents_match and value <= max_val:
-                return {"decision": "approved", "reason": "auto-delegation rule", "by": human.name}
-
-        return None
-
 
 # ---------------------------------------------------------------------------
-# Tool schemas for agent use
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Escalation chains — timeout-based auto-promotion
-# ---------------------------------------------------------------------------
-
-@dataclass
-class EscalationLevel:
-    """One level in an escalation chain."""
-    target: str
-    timeout_minutes: int = 10
-    priority_override: str | None = None
-
-@dataclass
-class EscalationChain:
-    """Multi-level escalation with timeout auto-promotion.
-
-    When a request at level N isn't answered within ``timeout_minutes``,
-    the chain automatically promotes to level N+1 with an optional
-    priority upgrade.
-
-    Domain-neutral: a call center uses levels for team lead → manager →
-    on-call. A hospital uses attending → department head → CMO.
-    """
-    name: str
-    levels: list[EscalationLevel] = field(default_factory=list)
-    current_level: int = 0
-    request_id: str | None = None
-
-    def next_target(self) -> EscalationLevel | None:
-        if self.current_level >= len(self.levels):
-            return None
-        return self.levels[self.current_level]
-
-    def promote(self) -> EscalationLevel | None:
-        self.current_level += 1
-        return self.next_target()
-
-
-# ---------------------------------------------------------------------------
-# Behavior profiles — condition-based agent config overrides
+# Behavior profiles + budget multipliers (platform-generic mechanisms)
 # ---------------------------------------------------------------------------
 
 @dataclass
 class BehaviorProfile:
-    """A named set of config overrides that activates when a condition is met.
-
-    The platform evaluates conditions at runtime. Domains define what
-    conditions matter: time-of-day, market state, load level, etc.
-
-    Example:
-        BehaviorProfile(name="night", condition={"hours": "22:00-06:00"},
-            overrides={"loop_interval": 30, "sensitivity": "high"})
-    """
+    """Condition-based agent config overrides."""
     name: str
     condition: dict[str, Any] = field(default_factory=dict)
     overrides: dict[str, Any] = field(default_factory=dict)
     active: bool = False
 
     def evaluate(self, context: dict[str, Any]) -> bool:
-        """Check if this profile's condition matches the given context."""
         for key, expected in self.condition.items():
             actual = context.get(key)
             if actual is None:
@@ -691,7 +773,6 @@ class BehaviorProfile:
 
     @staticmethod
     def _check_time_range(current_time: str, time_range: str) -> bool:
-        """Check if current_time (HH:MM) falls within time_range (HH:MM-HH:MM)."""
         try:
             start_s, end_s = time_range.split("-")
             start = int(start_s.replace(":", ""))
@@ -704,16 +785,8 @@ class BehaviorProfile:
             return False
 
 
-# ---------------------------------------------------------------------------
-# Budget multiplier
-# ---------------------------------------------------------------------------
-
 @dataclass
 class BudgetMultiplierRule:
-    """Scales an agent's budget based on a condition.
-
-    Example: {"staffing_level": "<3"} → multiplier 0.3
-    """
     condition: dict[str, Any] = field(default_factory=dict)
     multiplier: float = 1.0
 
@@ -739,7 +812,6 @@ class BudgetMultiplierRule:
 
 @dataclass
 class BudgetPolicy:
-    """Dynamic budget scaling based on operational context."""
     base_daily_usd: float = 5.0
     rules: list[BudgetMultiplierRule] = field(default_factory=list)
 
@@ -758,16 +830,14 @@ class BudgetPolicy:
 
 @dataclass
 class HandoffItem:
-    """One pending item to transfer during a handoff."""
     type: str
     id: str
     summary: str
-    priority: str = "P2_MEDIUM"
+    priority: str = "medium"
     context: dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class HandoffRequest:
-    """Agent-mediated context transfer between participants."""
     id: str = field(default_factory=lambda: f"handoff_{uuid.uuid4().hex[:8]}")
     from_participant: str = ""
     to_participant: str = ""
@@ -779,67 +849,48 @@ class HandoffRequest:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "id": self.id,
-            "from": self.from_participant,
-            "to": self.to_participant,
-            "items_count": len(self.pending_items),
-            "summary": self.context_summary,
-            "accepted": self.accepted,
+            "id": self.id, "from": self.from_participant,
+            "to": self.to_participant, "items_count": len(self.pending_items),
+            "summary": self.context_summary, "accepted": self.accepted,
             "created_at": self.created_at,
         }
 
 
 # ---------------------------------------------------------------------------
-# Tool schemas
+# Tool schemas (for LLM tool-use)
 # ---------------------------------------------------------------------------
 
 H2A_TOOL_SCHEMAS = [
     {
         "name": "human__ask",
-        "description": (
-            "Ask a human a structured question and wait for their response. "
-            "The human is notified via their configured channels (dashboard, "
-            "Slack, email). Returns a request_id to check status later."
-        ),
+        "description": "Ask a human a structured question. Returns a request_id to check status later.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "namespace": {"type": "string", "description": "Human's namespace", "default": "default"},
-                "name": {"type": "string", "description": "Human's name"},
-                "question": {"type": "string", "description": "The question to ask"},
-                "response_type": {
-                    "type": "string",
-                    "enum": ["choice", "approval", "text", "number", "confirm"],
-                    "description": "Type of response expected",
-                    "default": "text",
-                },
-                "options": {
-                    "type": "array",
-                    "items": {"type": "object", "properties": {"label": {"type": "string"}, "description": {"type": "string"}}},
-                    "description": "Options for choice/approval response types",
-                },
-                "deadline": {"type": "string", "description": "SLA deadline (e.g., '2h', '1d', ISO timestamp)"},
-                "priority": {"type": "string", "enum": ["P0_CRITICAL", "P1_HIGH", "P2_MEDIUM", "P3_LOW"], "default": "P2_MEDIUM"},
-                "context": {"type": "object", "description": "Structured context to help the human decide"},
+                "namespace": {"type": "string", "default": "default"},
+                "name": {"type": "string"},
+                "question": {"type": "string"},
+                "response_type": {"type": "string", "enum": ["choice", "approval", "text", "number", "confirm", "form"], "default": "text"},
+                "options": {"type": "array", "items": {"type": "object"}},
+                "deadline": {"type": "string"},
+                "priority": {"type": "string", "enum": ["critical", "high", "medium", "low"], "default": "medium"},
+                "context": {"type": "object"},
             },
             "required": ["name", "question"],
         },
     },
     {
         "name": "human__notify",
-        "description": (
-            "Send a notification to a human. No response is expected. "
-            "Use for status updates, reports, and alerts."
-        ),
+        "description": "Send a notification to a human. No response expected.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "namespace": {"type": "string", "description": "Human's namespace", "default": "default"},
-                "name": {"type": "string", "description": "Human's name"},
-                "message": {"type": "string", "description": "The notification message"},
-                "priority": {"type": "string", "enum": ["P0_CRITICAL", "P1_HIGH", "P2_MEDIUM", "P3_LOW"], "default": "P3_LOW"},
-                "channel": {"type": "string", "enum": ["dashboard", "slack", "email", "all"], "default": "dashboard"},
-                "context": {"type": "object", "description": "Additional structured data"},
+                "namespace": {"type": "string", "default": "default"},
+                "name": {"type": "string"},
+                "message": {"type": "string"},
+                "priority": {"type": "string", "enum": ["critical", "high", "medium", "low"], "default": "low"},
+                "channel": {"type": "string", "default": "dashboard"},
+                "context": {"type": "object"},
             },
             "required": ["name", "message"],
         },
@@ -849,9 +900,7 @@ H2A_TOOL_SCHEMAS = [
         "description": "Check the status of a pending human request.",
         "input_schema": {
             "type": "object",
-            "properties": {
-                "request_id": {"type": "string", "description": "The request ID returned by human__ask"},
-            },
+            "properties": {"request_id": {"type": "string"}},
             "required": ["request_id"],
         },
     },
@@ -860,9 +909,7 @@ H2A_TOOL_SCHEMAS = [
         "description": "List available humans in the platform.",
         "input_schema": {
             "type": "object",
-            "properties": {
-                "namespace": {"type": "string", "description": "Filter by namespace"},
-            },
+            "properties": {"namespace": {"type": "string"}},
         },
     },
 ]

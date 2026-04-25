@@ -16,6 +16,7 @@ from src.platform.h2a import (
     HandoffRequest,
     HumanAgent,
     HumanStateConfig,
+    Status,
 )
 from src.platform.registry import AgentRegistry
 from stacks.base import AgentDefinition, ExecutionType, OwnershipType
@@ -163,14 +164,13 @@ class TestStateAwareRouting:
             accepts_requests=False, reroute_to="bob"
         )
 
-        result = await gw.ask(
+        req = await gw.ask(
             from_agent="a", from_agent_name="bot",
             to_namespace="eng", to_name="alice",
             question="Are you there?",
         )
-        assert result["success"] is True
-        req = gw.get_request(result["request_id"])
-        assert req["to_human_name"] == "bob"
+        assert req.status == Status.PENDING
+        assert req.to_human_name == "bob"
 
     async def test_queues_when_human_busy(self):
         gw = H2AGateway()
@@ -178,13 +178,13 @@ class TestStateAwareRouting:
         gw.register_human(alice)
         alice.set_state("busy")
 
-        result = await gw.ask(
+        req = await gw.ask(
             from_agent="a", from_agent_name="bot",
             to_namespace="eng", to_name="alice",
             question="When you're free?",
         )
-        assert result["success"] is True
-        assert result["status"] == "pending"
+        assert req.status == Status.PENDING
+        assert req.to_human_name == "alice"
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +193,7 @@ class TestStateAwareRouting:
 
 class TestEscalationChains:
     def test_chain_progression(self):
-        chain = EscalationChain(name="support", levels=[
+        chain = EscalationChain(levels=[
             EscalationLevel(target="team_lead", timeout_minutes=5),
             EscalationLevel(target="manager", timeout_minutes=10),
             EscalationLevel(target="director", timeout_minutes=30),
@@ -208,7 +208,7 @@ class TestEscalationChains:
         assert chain.next_target() is None
 
     def test_priority_override(self):
-        chain = EscalationChain(name="critical", levels=[
+        chain = EscalationChain(levels=[
             EscalationLevel(target="lead", timeout_minutes=2),
             EscalationLevel(target="director", timeout_minutes=5, priority_override="P0_CRITICAL"),
         ])
@@ -217,7 +217,7 @@ class TestEscalationChains:
         assert level.priority_override == "P0_CRITICAL"
 
     def test_empty_chain(self):
-        chain = EscalationChain(name="empty")
+        chain = EscalationChain()
         assert chain.next_target() is None
 
 
