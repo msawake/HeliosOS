@@ -24,7 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +201,7 @@ class A2AHandler:
         )
 
         merged_context = dict(context or {})
-        merged_context["_delegation"] = child_delegation
+        merged_context["_delegation"] = asdict(child_delegation)
         merged_context["_caller"] = {
             "namespace": caller_namespace,
             "agent_name": caller_agent_name,
