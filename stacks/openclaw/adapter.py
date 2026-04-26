@@ -158,10 +158,13 @@ class ToolProxyServer:
                     if decision.denied:
                         logger.warning("Proxy denied %s for %s: %s", tool_name, agent_id, decision.reason)
                         return {"error": f"Kernel denied: {decision.reason}"}
+                    if hasattr(decision, "action") and decision.action == "rate_limit":
+                        return {"error": f"Rate limited: {decision.reason}"}
                 finally:
                     _rt.unbind(rt_token)
         except Exception as e:
-            logger.debug("Proxy kernel check skipped: %s", e)
+            logger.error("Proxy kernel check failed for %s: %s", tool_name, e)
+            return {"error": f"Kernel check failed: {e}"}
 
         # Execute tool
         if not self._tool_executor:

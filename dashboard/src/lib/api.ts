@@ -26,7 +26,47 @@ function getAuthHeaders(): Record<string, string> {
   return {};
 }
 
-async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
+const requestCache = new Map<string, { promise: Promise<any>; timestamp: number }>();
+const CACHE_TTL_MS = 5000; // 5 seconds default TTL
+
+async function fetchJSON<T>(path: string, options?: RequestInit & { skipCache?: boolean }): Promise<T> {
+  const isGet = !options?.method || options.method.toUpperCase() === 'GET';
+  const skipCache = options?.skipCache === true;
+  
+  // Only cache GET requests
+  if (isGet && !skipCache) {
+    const cacheKey = `${path}`;
+    const cached = requestCache.get(cacheKey);
+    
+    // Return cached promise if it exists and hasn't expired
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+      return cached.promise;
+    }
+    
+    // Create new request and cache the promise
+    const promise = (async () => {
+      try {
+        const res = await fetch(`${apiBase()}${path}`, {
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders(), ...options?.headers },
+          ...options,
+        });
+        if (res.status === 401) {
+          throw new Error('API returned 401 — check that backend is running with --no-auth');
+        }
+        if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
+        return await res.json();
+      } catch (error) {
+        // Remove from cache on error so next request tries again
+        requestCache.delete(cacheKey);
+        throw error;
+      }
+    })();
+    
+    requestCache.set(cacheKey, { promise, timestamp: Date.now() });
+    return promise;
+  }
+
+  // Non-GET requests or skipCache=true
   const res = await fetch(`${apiBase()}${path}`, {
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders(), ...options?.headers },
     ...options,

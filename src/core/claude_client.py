@@ -299,24 +299,24 @@ class ClaudeClient:
 
                 # Pre-tool-use governance hook
                 if self._hooks and hook_context:
-                    from src.core.hooks import HookDecision
+                    from src.platform.kernel import KernelDecision
                     pre_result = self._hooks.pre_tool_use(
                         hook_context, tool_call.name, tool_call.input,
                     )
-                    if pre_result.decision == HookDecision.BLOCK:
+                    if pre_result.action == "deny":
                         tool_results.append(self._llm_client.format_tool_result(
                             tool_call.id,
                             json.dumps({"error": f"BLOCKED by governance: {pre_result.reason}"}),
                             is_error=True,
                         ))
                         continue
-                    elif pre_result.decision == HookDecision.ASK_HUMAN:
+                    elif pre_result.action == "ask_human":
                         tool_results.append(self._llm_client.format_tool_result(
                             tool_call.id,
                             json.dumps({
                                 "status": "awaiting_human_approval",
                                 "reason": pre_result.reason,
-                                "approval_request_id": pre_result.metadata.get("approval_request_id"),
+                                "approval_request_id": (pre_result.details or {}).get("approval_request_id"),
                             }),
                             is_error=True,
                         ))

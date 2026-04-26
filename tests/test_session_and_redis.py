@@ -7,7 +7,8 @@ import pytest
 
 from src.core.session_store import AgentSession, InMemorySessionStore
 from src.core.redis_rate_limiter import RedisRateLimiter
-from src.core.hooks import AgentContext, HookDecision
+from src.core.hooks import AgentContext
+from src.platform.kernel import KernelDecision
 
 
 def _make_context(session_id="s1"):
@@ -116,7 +117,7 @@ class TestRedisRateLimiterFallback:
         assert not rl.is_distributed
         ctx = _make_context()
         result = rl.check(ctx)
-        assert result.decision == HookDecision.ALLOW
+        assert result.action == "allow"
 
     def test_invalid_url_falls_back(self):
         rl = RedisRateLimiter(redis_url="redis://invalid:99999")

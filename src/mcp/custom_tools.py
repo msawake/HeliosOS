@@ -276,42 +276,45 @@ class PostgresApprovalStore:
         self._company_id = company_id
 
     def save(self, request: ApprovalRequest) -> None:
-        self._db.execute(
-            "INSERT INTO hitl_approvals "
-            "(id, company_id, created_at, requesting_agent, department, category, "
-            "title, description, risk_assessment, sla_hours, deadline, status, context) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (
-                request.id, self._company_id, request.timestamp,
-                request.requesting_agent, request.department, request.category,
-                request.title, request.description, request.risk_assessment,
-                request.sla_hours, request.deadline, request.status.value,
-                json.dumps(request.context),
-            ),
-        )
+        with self._db.tenant(self._company_id) as conn:
+            conn.execute(
+                "INSERT INTO hitl_approvals "
+                "(id, company_id, created_at, requesting_agent, department, category, "
+                "title, description, risk_assessment, sla_hours, deadline, status, context) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    request.id, self._company_id, request.timestamp,
+                    request.requesting_agent, request.department, request.category,
+                    request.title, request.description, request.risk_assessment,
+                    request.sla_hours, request.deadline, request.status.value,
+                    json.dumps(request.context),
+                ),
+            )
 
     def get(self, request_id: str) -> ApprovalRequest | None:
-        rows = self._db.execute(
-            "SELECT * FROM hitl_approvals WHERE id = %s AND company_id = %s",
-            (request_id, self._company_id),
-        )
+        with self._db.tenant(self._company_id) as conn:
+            rows = conn.execute(
+                "SELECT * FROM hitl_approvals WHERE id = %s AND company_id = %s",
+                (request_id, self._company_id),
+            )
         if not rows:
             return None
         return self._row_to_request(rows[0])
 
     def list_pending(self, category: str | None = None) -> list[ApprovalRequest]:
-        if category:
-            rows = self._db.execute(
-                "SELECT * FROM hitl_approvals WHERE company_id = %s AND status = 'pending' "
-                "AND category = %s ORDER BY created_at",
-                (self._company_id, category),
-            )
-        else:
-            rows = self._db.execute(
-                "SELECT * FROM hitl_approvals WHERE company_id = %s AND status = 'pending' "
-                "ORDER BY created_at",
-                (self._company_id,),
-            )
+        with self._db.tenant(self._company_id) as conn:
+            if category:
+                rows = conn.execute(
+                    "SELECT * FROM hitl_approvals WHERE company_id = %s AND status = 'pending' "
+                    "AND category = %s ORDER BY created_at",
+                    (self._company_id, category),
+                )
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM hitl_approvals WHERE company_id = %s AND status = 'pending' "
+                    "ORDER BY created_at",
+                    (self._company_id,),
+                )
         return [self._row_to_request(r) for r in rows]
 
     def update_status(
@@ -321,24 +324,26 @@ class PostgresApprovalStore:
         decision_by: str | None = None,
         decision_reason: str | None = None,
     ) -> bool:
-        affected = self._db.execute(
-            "UPDATE hitl_approvals SET status = %s, decision_by = %s, "
-            "decision_at = %s, decision_reason = %s "
-            "WHERE id = %s AND company_id = %s AND status = 'pending'",
-            (
-                status.value, decision_by,
-                datetime.now(timezone.utc).isoformat(), decision_reason,
-                request_id, self._company_id,
-            ),
-        )
+        with self._db.tenant(self._company_id) as conn:
+            affected = conn.execute(
+                "UPDATE hitl_approvals SET status = %s, decision_by = %s, "
+                "decision_at = %s, decision_reason = %s "
+                "WHERE id = %s AND company_id = %s AND status = 'pending'",
+                (
+                    status.value, decision_by,
+                    datetime.now(timezone.utc).isoformat(), decision_reason,
+                    request_id, self._company_id,
+                ),
+            )
         return bool(affected)
 
     def list_expired_pending(self) -> list[ApprovalRequest]:
-        rows = self._db.execute(
-            "SELECT * FROM hitl_approvals WHERE company_id = %s "
-            "AND status = 'pending' AND deadline <= %s ORDER BY deadline",
-            (self._company_id, datetime.now(timezone.utc).isoformat()),
-        )
+        with self._db.tenant(self._company_id) as conn:
+            rows = conn.execute(
+                "SELECT * FROM hitl_approvals WHERE company_id = %s "
+                "AND status = 'pending' AND deadline <= %s ORDER BY deadline",
+                (self._company_id, datetime.now(timezone.utc).isoformat()),
+            )
         return [self._row_to_request(r) for r in rows]
 
     @staticmethod
@@ -772,12 +777,17 @@ class CompanySystem:
     def seed_knowledge_base(self, company_id: str = "leadforge"):
         """Seed the knowledge base with company-specific policies.
 
-        Delegates to the company's knowledge module. For backward compatibility,
-        defaults to LeadForge AI.
+        Tries src.companies first, then examples.companies (moved during cleanup).
         """
         import importlib
-        knowledge_mod = importlib.import_module(f"src.companies.{company_id}.knowledge")
-        knowledge_mod.seed_knowledge_base(self.knowledge)
+        for prefix in ("src.companies", "examples.companies"):
+            try:
+                knowledge_mod = importlib.import_module(f"{prefix}.{company_id}.knowledge")
+                knowledge_mod.seed_knowledge_base(self.knowledge)
+                return
+            except (ImportError, ModuleNotFoundError):
+                continue
+        logger.warning("No knowledge module found for company '%s'", company_id)
 
     def get_system_health(self) -> dict:
         """Get overall system health summary."""

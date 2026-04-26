@@ -123,12 +123,20 @@ class PostgresSessionStore:
                     session.session_id, session.status, session.started_at,
                     session.model, session.workflow_id, session.task_id,
                     json.dumps({
-                        "messages": session.messages,
                         "system_prompt": session.system_prompt,
                         "checkpoint_data": session.checkpoint_data,
                     }),
                 ),
             )
+            
+            # Save initial messages to the new table
+            if session.messages:
+                for i, msg in enumerate(session.messages):
+                    conn.execute(
+                        "INSERT INTO session_messages (session_id, role, content, turn_number) "
+                        "VALUES (%s, %s, %s, %s)",
+                        (session.session_id, msg.get("role", ""), json.dumps(msg.get("content", "")), i)
+                    )
             conn.commit()
 
     def get(self, session_id: str) -> AgentSession | None:
@@ -139,7 +147,26 @@ class PostgresSessionStore:
             )
             if not row:
                 return None
-            return self._row_to_session(row)
+                
+            # Fetch messages from the new table
+            msg_rows = conn.execute(
+                "SELECT role, content FROM session_messages WHERE session_id = %s ORDER BY turn_number",
+                (session_id,)
+            )
+            messages = []
+            if msg_rows:
+                for r in msg_rows:
+                    content = r.get("content")
+                    if isinstance(content, str):
+                        try:
+                            content = json.loads(content)
+                        except json.JSONDecodeError:
+                            pass
+                    messages.append({"role": r.get("role", ""), "content": content})
+                    
+            session = self._row_to_session(row)
+            session.messages = messages
+            return session
 
     def update(self, session: AgentSession) -> None:
         with self._db.tenant(self._tenant_id) as conn:
@@ -153,7 +180,6 @@ class PostgresSessionStore:
                     session.cost_usd, session.tool_calls_completed,
                     session.completed_at,
                     json.dumps({
-                        "messages": session.messages,
                         "system_prompt": session.system_prompt,
                         "checkpoint_data": session.checkpoint_data,
                         "error": session.error,
@@ -166,26 +192,35 @@ class PostgresSessionStore:
     def append_messages(self, session_id: str, messages: list[dict]) -> None:
         """Append messages incrementally without rewriting the full blob.
 
-        Uses PostgreSQL ``jsonb_set`` + ``||`` to append to the messages
-        array in-place.  Falls back to a full rewrite if the column is not
-        jsonb or the query fails.
+        Uses the normalized session_messages table to prevent write amplification.
         """
         with self._db.tenant(self._tenant_id) as conn:
             try:
-                conn.execute(
-                    "UPDATE agent_sessions "
-                    "SET metadata = jsonb_set("
-                    "  metadata::jsonb, '{messages}',"
-                    "  (metadata::jsonb->'messages') || %s::jsonb"
-                    ") WHERE session_id = %s",
-                    (json.dumps(messages), session_id),
-                )
+                for msg in messages:
+                    conn.execute(
+                        "INSERT INTO session_messages (session_id, role, content, turn_number) "
+                        "VALUES (%s, %s, %s, ("
+                        "  SELECT COALESCE(MAX(turn_number), -1) + 1 "
+                        "  FROM session_messages WHERE session_id = %s"
+                        "))",
+                        (session_id, msg.get("role", ""), json.dumps(msg.get("content", "")), session_id)
+                    )
                 conn.commit()
-            except Exception:
-                session = self.get(session_id)
-                if session:
-                    session.messages.extend(messages)
-                    self.update(session)
+            except Exception as e:
+                logger.error(f"Failed to append messages to session {session_id}: {e}")
+                # Fallback to old method if table doesn't exist yet
+                try:
+                    conn.execute(
+                        "UPDATE agent_sessions "
+                        "SET metadata = jsonb_set("
+                        "  metadata::jsonb, '{messages}',"
+                        "  (metadata::jsonb->'messages') || %s::jsonb"
+                        ") WHERE session_id = %s",
+                        (json.dumps(messages), session_id),
+                    )
+                    conn.commit()
+                except Exception:
+                    pass
 
     def list_active(self, agent_id: str | None = None) -> list[AgentSession]:
         with self._db.tenant(self._tenant_id) as conn:

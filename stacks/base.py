@@ -193,6 +193,31 @@ class AgentStackAdapter(ABC):
         """
         return 0
 
+    async def _check_kernel_gate(self, tool_name: str, tool_input: dict) -> dict | None:
+        """Standardized kernel permission check for all adapters.
+        
+        Returns None if allowed, or an error dict if denied.
+        Adapters should call this before executing any tool.
+        """
+        try:
+            from src.forgeos_sdk.runtime import runtime as _rt
+            if _rt.is_registered and _rt.is_bound:
+                decision = await _rt.check_tool(tool_name, tool_input)
+                if decision.denied:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "Kernel denied tool %s: %s", tool_name, decision.reason
+                    )
+                    return {"success": False, "error": f"Kernel denied: {decision.reason}"}
+                if hasattr(decision, "action") and decision.action == "rate_limit":
+                    return {"success": False, "error": f"Rate limited: {decision.reason}"}
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Kernel check failed for %s: %s", tool_name, e)
+            # Fail closed on kernel errors
+            return {"success": False, "error": f"Kernel check failed: {e}"}
+        return None
+
 
 def build_agent_context(agent_def: AgentDefinition, agent_id: str) -> dict:
     """Shared helper: build the per-invocation agent_context dict.

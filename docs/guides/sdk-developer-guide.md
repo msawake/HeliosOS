@@ -1,4 +1,4 @@
-# SDK Developer Guide — One Agent Per Stack
+]]# SDK Developer Guide — One Agent Per Stack
 
 Build a real agent on each ForgeOS stack, using every SDK runtime capability. Each section is self-contained — read only your framework's section to get the full picture.
 

@@ -1,0 +1,23 @@
+name: file-tracker
+stack: forgeos
+execution_type: reflex
+namespace: local
+
+llm:
+  chat_model: gemini-2.5-flash
+  provider: openai
+
+# Default scan settings
+scan:
+  directories:
+    - ~/Documents
+    - ~/Downloads
+    - ~/Desktop
+  days: 7
+  max_depth: 3
+
+# For scheduled mode (uncomment in agent.yaml lifecycle):
+# schedule:
+#   cron: "0 9 * * *"
+#   report_to: local/jama
+#   channel: dashboard

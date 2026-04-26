@@ -33,10 +33,16 @@ from src.platform.event_bus import EventBus
 from src.platform.llm_router import LLMRouter
 
 from src.config.agent_configs import load_company_config, load_company_module, load_company_demo
-from src.core.claude_client import ClaudeClient
 from src.core.database import create_database_client
 from src.core.model_client import ModelProvider, create_llm_client, get_provider
-from src.core.hooks import create_hook_chain
+
+# Legacy imports — kept for backward compat, will be removed
+try:
+    from src.core.claude_client import ClaudeClient
+    from src.core.hooks import create_hook_chain
+except ImportError:
+    ClaudeClient = None
+    create_hook_chain = None
 from src.mcp.custom_tools import CompanySystem
 from src.mcp.server_manager import MCPServerManager
 from src.mcp.tool_executor import ToolExecutor
@@ -438,9 +444,11 @@ class PlatformBootstrap:
             config=self.config, company_id=self.company_id, db_client=self._db,
         )
         redis_url = os.environ.get("REDIS_URL", "")
-        hook_chain = create_hook_chain(
-            config=self.config, hitl_gateway=self.system.hitl, redis_url=redis_url,
-        )
+        hook_chain = None
+        if create_hook_chain:
+            hook_chain = create_hook_chain(
+                config=self.config, hitl_gateway=self.system.hitl, redis_url=redis_url,
+            )
 
         self._mcp_manager = MCPServerManager(self.config, secrets_manager=getattr(self, 'secrets', None))
         self._init_stages.add("mcp_manager")
@@ -503,22 +511,29 @@ class PlatformBootstrap:
             orchestrator_key = os.environ.get("ANTHROPIC_API_KEY") or None
         llm_client = create_llm_client(default_model, api_key=orchestrator_key)
 
-        claude_client = ClaudeClient(
-            tool_executor=tool_executor, hook_chain=hook_chain, llm_client=llm_client,
-        )
-
-        company_mod = load_company_module(self.company_id)
-        self.legacy_registry = company_mod.build_registry(
-            company_name=self.config.get("company", {}).get("name", "Digital AI Corp")
-        )
-        from src.core.agent_invoker import AgentInvoker
-        self.legacy_invoker = AgentInvoker(
-            registry=self.legacy_registry,
-            hook_chain=hook_chain,
-            config=self.config,
-            tool_executor=tool_executor,
-            claude_client=claude_client,
-        )
+        # Legacy path: ClaudeClient + AgentInvoker (3-tier hierarchy).
+        # Replaced by PlatformExecutor for new agents. Kept for backward
+        # compat with company packages that use the legacy registry.
+        try:
+            claude_client = ClaudeClient(
+                tool_executor=tool_executor, hook_chain=hook_chain, llm_client=llm_client,
+            )
+            company_mod = load_company_module(self.company_id)
+            self.legacy_registry = company_mod.build_registry(
+                company_name=self.config.get("company", {}).get("name", "Digital AI Corp")
+            )
+            from src.core.agent_invoker import AgentInvoker
+            self.legacy_invoker = AgentInvoker(
+                registry=self.legacy_registry,
+                hook_chain=hook_chain,
+                config=self.config,
+                tool_executor=tool_executor,
+                claude_client=claude_client,
+            )
+        except Exception as e:
+            logger.warning("  Legacy invoker skipped: %s", e)
+            self.legacy_registry = None
+            self.legacy_invoker = None
 
         self._tool_executor = tool_executor
 
