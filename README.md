@@ -1,132 +1,276 @@
 # ForgeOS
 
-**Multi-Stack AI Agent Platform** -- Deploy, orchestrate, and manage AI agents across four framework adapters with five execution lifecycles, a real-time dashboard, and production infrastructure.
+**An operating system for AI agents.** Deploy, orchestrate, and govern agents across five framework adapters with a kernel, syscall pipeline, runtime SDK, and inter-agent protocols.
 
-ForgeOS is the **framework** (the operating system). Agents are the **programs** that run inside it.
+ForgeOS is the **OS**. Agents are the **processes** that run inside it.
 
 ```
-ForgeOS (the framework)
-  Provides: registry, scheduling, event bus, LLM routing, tool execution,
-            cost tracking, audit logging, dashboard, API, persistence
+ForgeOS (the operating system)
+  Kernel:    admission control, permissions, budgets, policies, data boundaries
+  Syscall:   identity -> capability -> quota -> policy -> boundary -> dispatch -> audit
+  Runtime:   SDK that agents use to interact with the kernel at runtime
+  Platform:  registry, executor, scheduler, event bus, LLM routing, agentic loop
+  Protocols: A2A (agent-to-agent), A2H (agent-to-human), MCP (agent-to-tool)
 
-Agents (the workloads)
-  Defined by: name, stack, execution type, tools, system prompt
-  Deployed into ForgeOS via API, dashboard, or AI wizard
-  Run using one of 4 stack adapters (ForgeOS, CrewAI, ADK, OpenClaw)
+Agents (the processes)
+  Defined by: manifest (name, framework, lifecycle, tools, boundaries)
+  Deployed via: API, CLI, or SDK
+  Run on: one of 5 framework adapters (ForgeOS, CrewAI, ADK, OpenClaw, Sandbox)
+  Governed by: kernel enforcement on every tool call, budget check, and agent call
 ```
-
-Think of ForgeOS the way you think of Kubernetes: the framework handles scheduling, networking, storage, and monitoring. Agents are the pods -- you define what they do, and the framework runs them.
-
-<p align="center">
-  <img src="docs/images/framework-vs-agents.svg" alt="Framework vs Agents" width="900"/>
-</p>
 
 ---
 
 ## Architecture
 
-<p align="center">
-  <img src="docs/images/architecture-layers.svg" alt="ForgeOS Architecture" width="900"/>
-</p>
+```
+                          +-----------------------+
+                          |    Next.js Dashboard   |
+                          +-----------+-----------+
+                                      |
+                          +-----------v-----------+
+                          |   FastAPI (~78 endpoints) |
+                          +-----------+-----------+
+                                      |
+         +----------------------------v----------------------------+
+         |                  PLATFORM LAYER                         |
+         |  +----------+ +----------+ +-----------+ +-----------+  |
+         |  | Registry | | Executor | | Scheduler | | Event Bus |  |
+         |  +----------+ +----------+ +-----------+ +-----------+  |
+         |  +----------+ +----------+ +-----------+ +-----------+  |
+         |  |LLM Router| | Agentic  | | Audit Log | | Metrics   |  |
+         |  |(Claude +  | | Loop     | | (hash-    | |(Prometheus|  |
+         |  | GPT +     | | (tool    | |  chained) | | 14 fams)  |  |
+         |  | Gemini)   | |  cycle)  | |           | |           |  |
+         |  +----------+ +----------+ +-----------+ +-----------+  |
+         +----------------------------+----------------------------+
+                                      |
+         +----------------------------v----------------------------+
+         |                   KERNEL LAYER                          |
+         |  +----------+ +----------+ +-----------+ +-----------+  |
+         |  |Admission | |Permission| | Budget    | | Policy    |  |
+         |  |Controller| |Manager   | | Manager   | | Engine    |  |
+         |  +----------+ +----------+ +-----------+ +-----------+  |
+         |  +----------+ +----------+ +-----------+ +-----------+  |
+         |  |Capability| |  Data    | | Process   | | Checkpoint|  |
+         |  |Tokens    | |Boundaries| | Table     | | / Restore |  |
+         |  +----------+ +----------+ +-----------+ +-----------+  |
+         |  +----------------------------------------------------+ |
+         |  | Syscall Pipeline: id -> cap -> quota -> policy ->  | |
+         |  |   boundary -> dispatch -> audit                    | |
+         |  +----------------------------------------------------+ |
+         +----------------------------+----------------------------+
+                                      |
+         +----------------------------v----------------------------+
+         |                 STACK ADAPTERS                           |
+         |  +--------+ +--------+ +-------+ +--------+ +--------+ |
+         |  |ForgeOS | | CrewAI | | ADK   | |OpenClaw| |Sandbox | |
+         |  |(native)| |(crews) | |(Google)| |(gateway| |(Docker)| |
+         |  +--------+ +--------+ +-------+ +--------+ +--------+ |
+         +----------------------------+----------------------------+
+                                      |
+         +----------------------------v----------------------------+
+         |                    PROTOCOLS                            |
+         |  +------------+ +-----------+ +------------------------+|
+         |  | A2A        | | A2H       | | MCP                    ||
+         |  | agent-to-  | | agent-to- | | agent-to-tool          ||
+         |  | agent      | | human     | | (tool executor)        ||
+         |  +------------+ +-----------+ +------------------------+|
+         +--------------------------------------------------------+
+```
+
+---
+
+## Kernel
+
+The kernel is the policy decision point for every meaningful action. No tool call, agent invocation, or budget spend bypasses it.
+
+| Subsystem | What It Does |
+|-----------|-------------|
+| **AdmissionController** | Validates agent contracts before deploy |
+| **PermissionManager** | Runtime tool + A2A ACL checks |
+| **BudgetManager** | Per-task and daily USD enforcement |
+| **PolicyEngine** | Declarative rule evaluation (Rego, JSON) |
+| **DataBoundaryManager** | Namespace isolation + PII policy |
+| **CapabilityManager** | Opaque runtime grants with expiry + revocation |
+| **AuditRecorder** | Immutable, hash-chained decision trail |
+
+Every check returns a uniform `KernelDecision(allowed, reason, metadata)`.
+
+### Syscall Pipeline
+
+All kernel checks flow through a 7-stage pipeline:
 
 ```
-                           +-----------------------+
-                           |     Next.js Dashboard  |
-                           |   (admin, chat, wizard) |
-                           +-----------+-----------+
-                                       |
-                           +-----------v-----------+
-                           |     FastAPI (61 endpoints) |
-                           +-----------+-----------+
-                                       |
-          +----------------------------v----------------------------+
-          |                   PLATFORM LAYER                        |
-          |  +----------+ +----------+ +-----------+ +-----------+  |
-          |  | Registry | | Executor | | Scheduler | | Event Bus |  |
-          |  +----------+ +----------+ +-----------+ +-----------+  |
-          |  +----------+ +----------+ +-----------+ +-----------+  |
-          |  |LLM Router| |Agentic   | | Audit Log | | Metrics   |  |
-          |  |(Anthropic | |Loop      | | + Alerts  | |(Prometheus|  |
-          |  | + OpenAI) | |(tool-use)| |           | |  14 fams) |  |
-          |  +----------+ +----------+ +-----------+ +-----------+  |
-          +----------------------------+----------------------------+
-                                       |
-          +----------------------------v----------------------------+
-          |                  STACK ADAPTERS                          |
-          |  +----------+ +----------+ +-----------+ +-----------+  |
-          |  | ForgeOS  | | CrewAI   | | Google    | | OpenClaw  |  |
-          |  | (native) | | (crews)  | | ADK       | | (gateway) |  |
-          |  +----------+ +----------+ +-----------+ +-----------+  |
-          +----------------------------+----------------------------+
-                                       |
-          +----------------------------v----------------------------+
-          |               CORE + COMPANIES                          |
-          |  Database (Postgres/in-memory) | MCP Tool Executor      |
-          |  Session Store | Hook Chain    | 5 Company Packages     |
-          |  Cost Tracking | Knowledge Base | Workflow Engine        |
-          +--------------------------------------------------------+
+identity -> capability -> quota/budget -> policy -> boundary -> dispatch -> audit
 ```
 
-**Platform Layer** -- Framework services that all agents share (registry, executor, scheduler, event bus, LLM router, agentic tool-use loop, audit, metrics).
+Each stage can short-circuit (deny) or pass through. The pipeline replaces the legacy hook chain and is the only admission path for new work.
 
-**Stack Adapters** -- Pluggable agent runtimes. Each implements the same `AgentStackAdapter` interface so the platform can manage them uniformly.
+### Process Table
 
-**Core + Companies** -- Database, MCP tools, hooks, session persistence, and 5 company packages (LeadForge, DealForge, TravelForge, InsureForge, HomeForge).
+Agents are first-class processes with:
+- Stable PID, phase machine (Pending -> Running -> Succeeded/Failed/Quarantined)
+- Resource accounting: tokens, USD spent, tool calls, wall-clock time
+- Checkpoint/restore for preemption and durable resume
+
+---
+
+## SDK Runtime
+
+Agent code interacts with the kernel through the Runtime SDK:
+
+```python
+from forgeos_sdk import runtime
+
+# Called automatically by the executor on each invocation
+# runtime.bind(agent_id, namespace)
+
+# Budget & permissions
+remaining = await runtime.get_budget()
+decision  = await runtime.check_tool("mcp__gmail__send")
+
+# Agent-to-agent
+result = await runtime.call_agent("sales-team", "cfo", task="Q4 analysis")
+
+# Agent-to-human (A2H)
+answer = await runtime.ask_human(
+    question="Approve the $2.5M deal?",
+    response_type="choice",
+    options=["Approve", "Reject"],
+    priority="high"
+)
+
+# Process management
+await runtime.save_checkpoint({"progress": "step_3"})
+state = await runtime.restore_checkpoint()
+
+# Observability
+await runtime.emit_metric("leads_processed", 42)
+await runtime.log_audit("deal.approved", {"deal_id": "D-1234"})
+```
+
+The runtime is a module-level singleton bound per-invocation via `contextvars`, so each concurrent agent sees its own identity and budget.
 
 ---
 
 ## Stack Adapters
 
-| Stack | What It Does | SDK Required | Best For |
-|-------|-------------|-------------|----------|
-| **ForgeOS** | Native agentic loop via LLM Router | None | Default. Most flexible, full tool access |
-| **CrewAI** | Role-based crews via CrewAI SDK | `crewai` | Multi-role collaboration patterns |
-| **Google ADK** | Google Agent Development Kit | `google-adk` | Google ecosystem, Gemini models |
-| **OpenClaw** | File-first agent via HTTP gateway | Node.js + openclaw2 | Markdown-driven, SOUL/HEARTBEAT pattern |
+| Stack | Runtime | SDK Required | Best For |
+|-------|---------|-------------|----------|
+| **ForgeOS** | Native agentic loop | None | Default. Full flexibility, all kernel features |
+| **CrewAI** | `Crew.kickoff()` | `pip install crewai` | Role-based multi-agent collaboration |
+| **Google ADK** | `Runner.run_async()` | `pip install google-adk` | Google ecosystem, Gemini models |
+| **OpenClaw** | HTTP gateway subprocess | Node.js + openclaw2 | Markdown-driven, SOUL/HEARTBEAT pattern |
+| **Sandbox** | Docker container | Docker | Untrusted code, isolated execution |
 
-All four adapters fall back to the platform agentic loop when their SDK is not installed.
-
-<p align="center">
-  <img src="docs/images/stack-adapters.svg" alt="Stack Adapter Comparison" width="900"/>
-</p>
+All adapters implement the same `AgentStackAdapter` interface. All adapters have kernel gates -- every tool call is checked through `runtime.check_tool()` regardless of which framework runs the agent. External SDK adapters fall back to the platform agentic loop when their SDK is not installed.
 
 ---
 
-## Execution Types
+## Protocols
 
-<p align="center">
-  <img src="docs/images/execution-types.svg" alt="5 Execution Types" width="900"/>
-</p>
+### A2A (Agent-to-Agent)
 
-Agents have one of five execution lifecycles:
+Agents call other agents across any stack adapter:
+
+```python
+agent__call(namespace="sales", name="cfo", task="Analyze Q4 numbers")
+agent__async_call(namespace="legal", name="reviewer", task="Review contract")
+agent__await(job_id, timeout=120)
+agent__list_available(namespace="finance")
+```
+
+ACLs declared in manifest (`spec.capabilities.a2a`). Cycle detection, depth limits, and permission checks enforced by the kernel.
+
+### A2H (Agent-to-Human)
+
+Agents ask humans structured questions with deadlines, escalation, and auto-delegation:
+
+```python
+human__ask(question="Approve deal?", response_type="choice", options=["Yes", "No"])
+human__notify(message="Report generated", channel="slack")
+human__check(request_id="req_abc")
+human__list_available(namespace="sales")
+```
+
+A2H is a companion protocol to A2A and MCP. See the [A2H specification](docs/protocols/a2h-spec.md) and the standalone package in `a2h/`.
+
+### MCP (Agent-to-Tool)
+
+Tools are routed through the MCP tool executor. Tool names follow the `mcp__{server}__{tool}` convention. The executor supports MCP servers, custom in-process handlers, and platform-level tools (A2A, A2H, kernel).
+
+---
+
+## Execution Lifecycles
 
 | Type | Behavior | Example |
 |------|----------|---------|
-| `always_on` | Runs continuously in a loop | System health monitor (every 60s) |
-| `scheduled` | Triggered by cron expression | Daily report generator (`0 9 * * *`) |
-| `event_driven` | Triggered by event bus messages | Alert responder on `cost.exceeded` |
-| `reflex` | On-demand, responds to API calls | Chat agent, single-turn Q&A |
-| `autonomous` | Goal-directed, iterates until done | Research agent working toward an objective |
+| `always_on` | Runs continuously in a loop | System health monitor |
+| `scheduled` | Triggered by cron expression | Daily report (`0 9 * * *`) |
+| `event_driven` | Triggered by event bus messages | Alert on `cost.exceeded` |
+| `reflex` | On-demand, responds to API/chat | Chat agent, single-turn Q&A |
+| `autonomous` | Goal-directed, iterates until done | Research agent with an objective |
+
+---
+
+## Agent Manifests
+
+Agents are declared as YAML contracts (k8s-style):
+
+```yaml
+apiVersion: agentos/v1
+kind: AgentContract
+metadata:
+  name: sales-researcher
+  namespace: sales-team
+  labels: { domain: sales, tier: production }
+spec:
+  runtime:
+    framework: forgeos
+  lifecycle:
+    type: always_on
+    restart_policy: OnFailure
+  llm:
+    chat_model: claude-sonnet-4-5-20250514
+    provider: anthropic
+  capabilities:
+    tools:
+      allowed: [mcp__filesystem__*, company__search_knowledge]
+      denied: [shell.exec]
+    a2a:
+      canCall: [{ namespace: sales-team, agents: [cfo] }]
+      max_depth: 3
+  boundaries:
+    budgets: { daily_usd: 45.00, per_task_usd: 5.00 }
+    data: { pii_policy: redact }
+  governance:
+    human_in_loop:
+      - event: email.send
+        approvers: [team-lead]
+    audit_level: full
+```
+
+See [Agent Manifest Reference](docs/reference/agent-manifest.md) for the full schema.
 
 ---
 
 ## Quick Start
 
 ```bash
-# 1. Install
-cd ~/Documents/one
+# Install (Python 3.11+)
 pip install -e ".[dev]"
 
-# 2. Configure
+# Configure
 echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env
 
-# 3. Boot the platform
+# Boot the platform
 PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
 
-# 4. Start the dashboard (separate terminal)
+# Start the dashboard (separate terminal)
 cd dashboard && npm install && npm run dev
 
-# 5. Deploy your first agent
+# Deploy an agent
 curl -s -X POST http://localhost:5000/api/platform/agents \
   -H "Content-Type: application/json" \
   -d '{
@@ -136,9 +280,14 @@ curl -s -X POST http://localhost:5000/api/platform/agents \
     "description": "A simple test agent",
     "chat_model": "claude-sonnet-4-5-20250514"
   }' | python3 -m json.tool
+
+# Or use the CLI
+forgeos deploy agent.yaml
+forgeos list
+forgeos invoke <agent-id> "Hello, what can you do?"
 ```
 
-Then open http://localhost:3000 to see the dashboard.
+Dashboard at http://localhost:3000. API at http://localhost:5000/docs.
 
 ---
 
@@ -146,148 +295,41 @@ Then open http://localhost:3000 to see the dashboard.
 
 ```
 .
-+-- src/                          # Platform + core framework (112 Python files, 30K lines)
-|   +-- bootstrap.py              # Boot sequence: DB -> MCP -> tools -> adapters -> API
-|   +-- platform/                 # Registry, executor, scheduler, event bus, LLM router
-|   +-- core/                     # Database, hooks, session store, migrations
-|   +-- mcp/                      # MCP server manager, tool executor, providers
-|   +-- companies/                # 5 company packages (leadforge, dealforge, ...)
-|   +-- dashboard/                # FastAPI app (61 endpoints)
-|   +-- forgeos_sdk/              # Python SDK (Agent, Runtime, Kernel, CLI)
-|   +-- billing/                  # Stripe billing, usage enforcement, cost tracking
-|   +-- api/                      # Auth (Firebase JWT + API keys), tenant management
-|   +-- workflows/                # DAG workflow engine
-|   +-- forgeos_sandbox/           # Sandbox runner (Docker container agent)
++-- src/                            # Platform + kernel (134 Python files, ~40K lines)
+|   +-- bootstrap.py                # Boot: DB -> MCP -> kernel -> adapters -> API
+|   +-- platform/                   # Kernel, syscall, process table, registry, executor,
+|   |                               #   scheduler, event bus, LLM router, agentic loop,
+|   |                               #   A2A, A2H, capabilities, checkpoints, audit, metrics
+|   +-- forgeos_sdk/                # Python SDK: Agent, Runtime, Kernel, Manifest, CLI
+|   +-- core/                       # Database, session store, model clients
+|   +-- mcp/                        # MCP server manager, tool executor, providers
+|   +-- dashboard/                  # FastAPI app (~78 endpoints)
+|   +-- billing/                    # Stripe billing, usage enforcement
+|   +-- api/                        # Auth (Firebase JWT + API keys), tenants
+|   +-- workflows/                  # DAG workflow engine
+|   +-- forgeos_sandbox/            # Sandbox runner (Docker container primitives)
 |
-+-- stacks/                       # Stack adapter layer
-|   +-- base.py                   # AgentStackAdapter ABC, AgentDefinition, enums
-|   +-- forgeos/adapter.py        # Native ForgeOS adapter
-|   +-- crewai/adapter.py         # CrewAI adapter
-|   +-- adk/adapter.py            # Google ADK adapter
-|   +-- openclaw/adapter.py       # OpenClaw gateway adapter
++-- stacks/                         # Stack adapter layer
+|   +-- base.py                     # AgentStackAdapter ABC, AgentDefinition, enums
+|   +-- forgeos/adapter.py          # Native ForgeOS adapter
+|   +-- crewai/adapter.py           # CrewAI adapter
+|   +-- adk/adapter.py              # Google ADK adapter
+|   +-- openclaw/adapter.py         # OpenClaw gateway adapter
+|   +-- sandbox/adapter.py          # Docker sandbox adapter
 |
-+-- dashboard/                    # Next.js 15 + React 19 + Tailwind frontend
-|   +-- src/app/                  # Pages: agents, admin, clients, workflows, settings
-|   +-- src/components/           # AppShell, Sidebar, Badge, StatCard
-|   +-- src/lib/                  # API client, auth hooks, utilities
++-- a2h/                            # A2H protocol (standalone package)
+|   +-- a2h/                        # Gateway, models, store, channels, registry
+|   +-- tests/                      # Protocol conformance tests
 |
-+-- agents/                       # Deployed agent configurations (74 agents)
-|   +-- personal/                 # Per-user agents (21 agents across 3 users)
-|   +-- shared/                   # Company-wide agents (53 agents)
-|
-+-- tests/                        # ~900 tests across 49 files
-+-- infrastructure/               # Docker, Terraform (GCP), database migrations
-+-- deploy/                       # Kubernetes manifests (dev/staging/prod overlays)
-+-- observability/                # Prometheus + Grafana dashboards
-+-- resources/                    # MCP package catalog, agent templates, skill definitions
-+-- docs/                         # Architecture, guides, reference, runbooks
++-- dashboard/                      # Next.js 15 + React 19 + Tailwind frontend
++-- examples/                       # Example agents per stack (ForgeOS, CrewAI, ADK, etc.)
++-- agents/                         # Deployed agent configurations (gitignored)
++-- tests/                          # ~1249 tests across 67 files
++-- docs/                           # Architecture, guides, reference, runbooks, protocols
++-- infrastructure/                 # Docker, Terraform (GCP), database migrations
++-- deploy/                         # Kubernetes manifests (dev/staging/prod)
++-- observability/                  # Prometheus + Grafana dashboards
 ```
-
----
-
-## Key Concepts
-
-### Framework vs Agents
-
-| | **ForgeOS Framework** | **Agents** |
-|---|---|---|
-| **What** | The platform that runs agents | AI workloads that perform tasks |
-| **Analogy** | Kubernetes | Pods |
-| **Defined in** | `src/`, `stacks/` | `agents/`, API requests |
-| **Provides** | Scheduling, routing, tools, persistence, monitoring | System prompt, tool selection, execution behavior |
-| **Lifecycle** | Boots once, runs forever | Deployed, invoked, stopped, undeployed |
-| **Config** | `.env`, company YAML | `AgentDefinition` (name, stack, type, tools) |
-
-### Agent Definition
-
-Every agent is defined by an `AgentDefinition` (see `stacks/base.py`):
-
-```python
-AgentDefinition(
-    name="daily-report",
-    stack="forgeos",                        # Which runtime to use
-    execution_type=ExecutionType.SCHEDULED,  # When/how it runs
-    ownership=OwnershipType.SHARED,          # Who can use it
-    schedule="0 9 * * *",                   # Cron (for scheduled)
-    tools=["mcp__google-workspace__*"],      # What tools it can use
-    system_prompt="You generate daily reports...",
-    llm_config=LLMConfig(chat_model="claude-sonnet-4-5-20250514"),
-)
-```
-
-### How an Agent Runs
-
-```
-1. Deploy:  API request -> executor.deploy() -> registry + scaffold + adapter.create_agent()
-2. Wire:    execution type determines lifecycle (loop, cron, event subscription, or on-demand)
-3. Invoke:  executor.invoke() -> adapter.invoke() -> agentic loop (LLM <-> tools)
-4. Tools:   LLM requests tool_use -> tool_executor routes to MCP/custom/platform tools
-5. Result:  AgentResult with output text, tool calls, token count
-```
-
----
-
-## AgentOS Kernel
-
-ForgeOS is not just a platform -- it is an **operating system for agents**. The kernel is the policy decision point for every meaningful action, composed of 6 subsystems:
-
-| Subsystem | Responsibility |
-|-----------|---------------|
-| AdmissionController | Validates contracts before deploy |
-| PermissionManager | Runtime tool + A2A ACL checks |
-| BudgetManager | Per-task + daily USD enforcement |
-| PolicyEngine | Declarative rule evaluation |
-| DataBoundaryManager | Namespace + PII policy |
-| AuditRecorder | Immutable decision trail |
-
-Every check returns a uniform `KernelDecision`. See [docs/architecture/kernel.md](docs/architecture/kernel.md).
-
-## Agent-to-Agent (A2A) Protocol
-
-First-class primitive for agents to call other agents across any stack:
-
-```python
-# From any agent's toolkit:
-agent__call(namespace="sales", name="cfo", task="Analyze Q4 numbers")
-agent__async_call(namespace="legal", name="reviewer", task="...")
-agent__await(job_id, timeout=120)
-agent__list_available(department="finance")
-```
-
-ACLs declared in manifest (`spec.capabilities.a2a`). Cycle detection, depth limits, and permission checks enforced by the kernel. See [docs/architecture/a2a-protocol.md](docs/architecture/a2a-protocol.md).
-
-## Python SDK
-
-```bash
-pip install -e ".[dev]"
-```
-
-```python
-from forgeos_sdk import Agent, ForgeOSClient, Kernel
-
-# Declarative agent
-class EmailChecker(Agent):
-    name = "email-checker"
-    stack = "forgeos"
-    execution_type = "scheduled"
-    schedule = "0 9 * * *"
-    model = "gpt-4o"
-    tools = ["mcp__filesystem__*"]
-
-# Deploy
-with ForgeOSClient() as client:
-    client.deploy(EmailChecker.manifest())
-
-# Check permissions from agent code
-kernel = Kernel.connect()
-decision = await kernel.check_tool_call("email-checker", "email.send")
-if decision.denied:
-    raise PermissionError(decision.reason)
-```
-
-CLI: `forgeos deploy ./agent.yaml`, `forgeos list`, `forgeos invoke <id> "prompt"`.
-
-See [docs/guides/sdk.md](docs/guides/sdk.md) and [docs/reference/agent-manifest.md](docs/reference/agent-manifest.md).
 
 ---
 
@@ -297,11 +339,11 @@ ForgeOS runs with whatever is available:
 
 | Component | Available | Unavailable |
 |-----------|-----------|-------------|
-| Anthropic API key | Real LLM calls | Simulated responses |
+| Anthropic/OpenAI API key | Real LLM calls | Simulated responses |
 | PostgreSQL | Persistent storage + RLS | In-memory (lost on restart) |
 | Redis | Distributed rate limiting | In-memory rate limiting |
 | MCP servers | Real tool execution | "Not connected" errors |
-| CrewAI/ADK SDK | Native framework execution | Falls back to ForgeOS agentic loop |
+| CrewAI/ADK/OpenClaw SDK | Native framework execution | Falls back to ForgeOS agentic loop |
 
 ---
 
@@ -309,22 +351,18 @@ ForgeOS runs with whatever is available:
 
 | Guide | Description |
 |-------|-------------|
-| [Architecture Overview](docs/architecture/overview.md) | Framework vs agents, 3-layer design |
-| [AgentOS Kernel](docs/architecture/kernel.md) | Policy decision point: admission, permissions, budgets, policies |
-| [A2A Protocol](docs/architecture/a2a-protocol.md) | Agent-to-agent calling primitive across frameworks |
+| [Architecture Overview](docs/architecture/overview.md) | OS layers, kernel, platform, adapters |
+| [AgentOS Kernel](docs/architecture/kernel.md) | Admission, permissions, budgets, policies, capabilities |
+| [Syscall Pipeline](docs/architecture/kernel.md) | 7-stage admission pipeline |
+| [A2A Protocol](docs/architecture/a2a-protocol.md) | Agent-to-agent calling across frameworks |
+| [A2H Protocol](docs/protocols/a2h-spec.md) | Agent-to-human interaction protocol |
 | [Platform Layer](docs/architecture/platform-layer.md) | Registry, executor, scheduler, event bus, LLM router |
-| [Stack Adapters](docs/architecture/stack-adapters.md) | ForgeOS, CrewAI, ADK, OpenClaw comparison |
-| [Quick Start](docs/guides/quickstart.md) | Install, configure, boot, deploy first agent |
-| [Python SDK](docs/guides/sdk.md) | Declarative agents, HTTP client, Kernel accessor, CLI |
-| [Creating Agents](docs/guides/creating-agents.md) | 5 execution types, 3 ownership types, tools |
-| [Agent Tools & MCP](docs/guides/agent-tools.md) | MCP servers, custom tools, tool executor |
-| [Agent Manifest Reference](docs/reference/agent-manifest.md) | Full `agent.yaml` schema (AgentOS v2) |
-| [API Reference](docs/reference/api-endpoints.md) | All FastAPI endpoints including `/api/platform/kernel/*` |
-| [Configuration](docs/reference/configuration.md) | Environment variables, YAML config, LLM config |
-| [Deployment](docs/operations/deployment.md) | Docker, Kubernetes, GCP |
-| [Monitoring](docs/operations/monitoring.md) | Prometheus metrics, Grafana, alerts |
-| [Runbooks](docs/runbooks/) | Incident response, DB recovery |
-| [Project History](docs/development/project-history.md) | Evolution from v1 to v3 |
+| [Stack Adapters](docs/architecture/stack-adapters.md) | ForgeOS, CrewAI, ADK, OpenClaw, Sandbox |
+| [Python SDK](docs/guides/sdk.md) | Agent, Runtime, Kernel, Manifest, CLI |
+| [Agent Manifest](docs/reference/agent-manifest.md) | Full `agent.yaml` schema |
+| [API Reference](docs/reference/api-endpoints.md) | All FastAPI endpoints |
+| [Creating Agents](docs/guides/creating-agents.md) | 5 lifecycles, 3 ownership types, tools |
+| [Quick Start](docs/guides/quickstart.md) | Install, configure, boot, deploy |
 
 ---
 
@@ -332,7 +370,7 @@ ForgeOS runs with whatever is available:
 
 - **Backend:** Python 3.11+, FastAPI, asyncio, psycopg3
 - **Frontend:** Next.js 15, React 19, Tailwind CSS, TypeScript
-- **LLM Providers:** Anthropic (Claude), OpenAI (GPT/o3)
+- **LLM Providers:** Anthropic (Claude), OpenAI (GPT/o3), Google (Gemini)
 - **Database:** PostgreSQL 16 with pgvector, Row-Level Security
 - **Tools:** Model Context Protocol (MCP) servers
 - **Infrastructure:** Docker, Kubernetes, Terraform (GCP), GitHub Actions
@@ -343,9 +381,9 @@ ForgeOS runs with whatever is available:
 ## Running Tests
 
 ```bash
-PYTHONPATH=. python3 -m pytest                          # All ~900 tests
-PYTHONPATH=. python3 -m pytest tests/test_platform_executor.py  # Single file
-PYTHONPATH=. python3 -m pytest -k "test_deploy"         # By name pattern
+PYTHONPATH=. python3 -m pytest                                    # All ~1249 tests
+PYTHONPATH=. python3 -m pytest tests/test_platform_executor.py    # Single file
+PYTHONPATH=. python3 -m pytest -k "test_deploy"                   # By pattern
 ```
 
 ## License
