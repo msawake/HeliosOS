@@ -199,6 +199,7 @@ class Runtime:
         self._kernel: Any | None = None
         self._process_table: Any | None = None
         self._checkpoint_store: Any | None = None
+        self._a2h_gateway: Any | None = None
 
     # ---- Platform wiring (called once at bootstrap) ---------------------
 
@@ -207,11 +208,13 @@ class Runtime:
         kernel: Any,
         process_table: Any | None = None,
         checkpoint_store: Any | None = None,
+        a2h_gateway: Any | None = None,
     ) -> None:
         """Publish platform references so the runtime can reach the kernel."""
         self._kernel = kernel
         self._process_table = process_table
         self._checkpoint_store = checkpoint_store
+        self._a2h_gateway = a2h_gateway
         logger.info("Runtime: platform registered (kernel=%s)", type(kernel).__name__)
 
     @property
@@ -477,6 +480,56 @@ class Runtime:
         d = proc.to_dict() if hasattr(proc, "to_dict") else asdict(proc)
         return ProcessSnapshot.from_dict(d)
 
+    # ---- A2H (Agent-to-Human) -------------------------------------------
+
+    async def ask_human(
+        self,
+        namespace: str,
+        name: str,
+        question: str,
+        response_type: str = "text",
+        options: list[dict] | None = None,
+        context: dict | None = None,
+        priority: str = "medium",
+        deadline: str | None = None,
+    ) -> dict:
+        """Ask a human a structured question via the A2H protocol."""
+        gw = self._require_a2h()
+        req = await gw.ask(
+            from_agent=self.agent_id,
+            from_agent_name=self.agent_id,
+            to_namespace=namespace,
+            to_name=name,
+            question=question,
+            response_type=response_type,
+            options=options,
+            context=context,
+            priority=priority,
+            deadline=deadline,
+        )
+        return req.to_dict() if hasattr(req, "to_dict") else {"id": getattr(req, "id", ""), "status": str(getattr(req, "status", ""))}
+
+    async def notify_human(
+        self,
+        namespace: str,
+        name: str,
+        message: str,
+        priority: str = "low",
+        context: dict | None = None,
+    ) -> dict:
+        """Send a notification to a human (no response needed)."""
+        gw = self._require_a2h()
+        notif = await gw.notify(
+            from_agent=self.agent_id,
+            from_agent_name=self.agent_id,
+            to_namespace=namespace,
+            to_name=name,
+            message=message,
+            priority=priority,
+            context=context,
+        )
+        return notif.to_dict() if hasattr(notif, "to_dict") else {"id": getattr(notif, "id", "")}
+
     # ---- Audit ----------------------------------------------------------
 
     async def audit(self, event: str, details: dict | None = None) -> None:
@@ -498,6 +551,16 @@ class Runtime:
                 "before using runtime methods."
             )
         return self._kernel
+
+    def _require_a2h(self):
+        if self._a2h_gateway is None:
+            raise RuntimeError(
+                "No A2H gateway registered. Wire one via "
+                "runtime.register_platform(kernel, a2h_gateway=...)."
+            )
+        if not self.is_bound:
+            raise RuntimeError("Runtime not bound to an agent.")
+        return self._a2h_gateway
 
     def _require_checkpoint_store(self):
         if self._checkpoint_store is None:
