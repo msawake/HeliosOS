@@ -2,7 +2,7 @@
   "mcpServers": {
     "forgeos": {
       "command": "python3",
-      "args": ["/Users/jama/Documents/one/forgeos-mcp-server.py"],
+      "args": ["tools/forgeos-mcp-server.py"],
       "env": {
         "FORGEOS_URL": "http://localhost:5000"
       }
