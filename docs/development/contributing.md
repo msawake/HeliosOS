@@ -20,7 +20,7 @@ cp .env.example .env
 ## Running Tests
 
 ```bash
-# All tests (730 tests, ~20s)
+# All tests (~900 tests, ~20s)
 PYTHONPATH=. python3 -m pytest
 
 # Single file

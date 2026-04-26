@@ -18,7 +18,7 @@ Five company packages ship as fixtures: **LeadForge AI** (B2B sales), **DealForg
 # Install (Python 3.11+)
 pip install -e ".[dev]"
 
-# Run all tests (~1132 tests, 63 files)
+# Run all tests (~900 tests, 49 files)
 PYTHONPATH=. python3 -m pytest
 
 # Run a single test file / pattern

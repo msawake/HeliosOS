@@ -153,11 +153,11 @@ Then open http://localhost:3000 to see the dashboard.
 |   +-- mcp/                      # MCP server manager, tool executor, providers
 |   +-- companies/                # 5 company packages (leadforge, dealforge, ...)
 |   +-- dashboard/                # FastAPI app (61 endpoints)
-|   +-- intelligence/             # Ontology, connectors, intelligence agents
+|   +-- forgeos_sdk/              # Python SDK (Agent, Runtime, Kernel, CLI)
 |   +-- billing/                  # Stripe billing, usage enforcement, cost tracking
 |   +-- api/                      # Auth (Firebase JWT + API keys), tenant management
 |   +-- workflows/                # DAG workflow engine
-|   +-- admin/                    # Admin monitoring tools
+|   +-- forgeos_sandbox/           # Sandbox runner (Docker container agent)
 |
 +-- stacks/                       # Stack adapter layer
 |   +-- base.py                   # AgentStackAdapter ABC, AgentDefinition, enums
@@ -175,7 +175,7 @@ Then open http://localhost:3000 to see the dashboard.
 |   +-- personal/                 # Per-user agents (21 agents across 3 users)
 |   +-- shared/                   # Company-wide agents (53 agents)
 |
-+-- tests/                        # 730 tests across 42 files
++-- tests/                        # ~900 tests across 49 files
 +-- infrastructure/               # Docker, Terraform (GCP), database migrations
 +-- deploy/                       # Kubernetes manifests (dev/staging/prod overlays)
 +-- observability/                # Prometheus + Grafana dashboards
@@ -343,7 +343,7 @@ ForgeOS runs with whatever is available:
 ## Running Tests
 
 ```bash
-PYTHONPATH=. python3 -m pytest                          # All 730 tests
+PYTHONPATH=. python3 -m pytest                          # All ~900 tests
 PYTHONPATH=. python3 -m pytest tests/test_platform_executor.py  # Single file
 PYTHONPATH=. python3 -m pytest -k "test_deploy"         # By name pattern
 ```

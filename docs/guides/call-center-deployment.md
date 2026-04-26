@@ -20,43 +20,43 @@ Deploy a complete call center system: 10 humans + 8 AI agents across 3 namespace
 Register all 10 humans before deploying agents:
 
 ```python
-from src.platform.h2a import H2AGateway, HumanAgent
+from src.platform.a2h import A2HGateway, HumanAgent
 
-h2a = H2AGateway(kernel=kernel)
+a2h = A2HGateway(kernel=kernel)
 
 # 6 CSRs
 for name, specialty in [
     ("maria", "billing"), ("carlos", "technical"), ("aisha", "general"),
     ("james", "sales"), ("sofia", "retention"), ("david", "enterprise"),
 ]:
-    h2a.register_human(HumanAgent(
+    a2h.register_human(HumanAgent(
         pid=f"human:{name}", name=name, namespace="support",
         role=f"CSR — {specialty}", channels=["dashboard"],
         availability="shift_hours",
     ))
 
 # Team Lead
-h2a.register_human(HumanAgent(
+a2h.register_human(HumanAgent(
     pid="human:rachel", name="rachel", namespace="support",
     role="Team Lead", channels=["dashboard", "slack"],
     delegation_rules={"auto_approve": {"agents": ["escalation-*"], "max_value": 0}},
 ))
 
 # QA Analyst
-h2a.register_human(HumanAgent(
+a2h.register_human(HumanAgent(
     pid="human:michael", name="michael", namespace="quality",
     role="Quality Analyst", channels=["dashboard", "email"],
 ))
 
 # Workforce Manager
-h2a.register_human(HumanAgent(
+a2h.register_human(HumanAgent(
     pid="human:priya", name="priya", namespace="operations",
     role="Workforce Manager", channels=["dashboard", "slack"],
     delegation_rules={"auto_approve": {"agents": ["dashboard-*"], "max_value": 500}},
 ))
 
 # Center Manager
-h2a.register_human(HumanAgent(
+a2h.register_human(HumanAgent(
     pid="human:tom", name="tom", namespace="operations",
     role="Center Manager", channels=["dashboard", "slack", "email"],
     delegation_rules={"auto_approve": {"agents": ["dashboard-*"], "max_value": 0}},

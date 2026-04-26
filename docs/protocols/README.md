@@ -82,8 +82,8 @@ POST /a2h/v1/requests/req_abc/respond
 
 The ForgeOS platform includes a reference implementation:
 
-- `src/platform/h2a.py` — H2AGateway, HumanAgent, HumanRequest, delivery channels
-- `tests/test_h2a_protocol.py` — Protocol conformance tests
+- `src/platform/a2h.py` — A2HGateway, HumanAgent, HumanRequest, delivery channels
+- `tests/test_a2h_protocol.py` — Protocol conformance tests
 - `tests/test_platform_generic.py` — State machine, escalation, delegation tests
 
 ## License

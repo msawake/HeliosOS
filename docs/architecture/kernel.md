@@ -201,7 +201,7 @@ The kernel loads policy files at startup and evaluates each referenced policy at
 At admission, the kernel validates:
 
 1. **Name format** — alphanumeric, hyphens, underscores; starts with letter; 2-64 chars
-2. **Stack** — must be one of `forgeos`, `crewai`, `adk`, `openclaw`, `langgraph`
+2. **Stack** — must be one of `forgeos`, `crewai`, `adk`, `openclaw`, `sandbox`
 3. **Namespace** — same format rules as name; scoped uniqueness
 4. **Uniqueness** — `(namespace, name)` must not already exist
 5. **Lifecycle consistency** — `scheduled` requires `schedule`, `event_driven` requires `event_triggers`
