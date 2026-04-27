@@ -1,0 +1,1023 @@
+#!/usr/bin/env python3
+"""
+ForgeOS CLI — Full lifecycle agent management.
+
+Usage:
+    ./forgeos              # interactive menu
+    ./forgeos --verbose    # with debug logs
+    ./forgeos --api-url http://host:port   # custom API endpoint
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import secrets
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+
+CYAN = "\033[36m"
+YELLOW = "\033[33m"
+RED = "\033[31m"
+GREEN = "\033[32m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+RESET = "\033[0m"
+
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_SCRIPT_DIR)
+_DOCKER_DIR = os.path.join(_REPO_ROOT, "infrastructure", "docker")
+_DEFINITIONS_DIR = os.path.join(_REPO_ROOT, "agents", "definitions")
+_ENV_FILE = os.path.join(_DOCKER_DIR, ".env")
+
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+API_BASE = "http://localhost:5000"
+
+
+# ── API Client ──────────────────────────────────────────────────────────
+
+def _api(method: str, path: str, body: dict | None = None, timeout: int = 120):
+    url = f"{API_BASE}{path}"
+    data = json.dumps(body).encode() if body else None
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode() if e.fp else ""
+        raise RuntimeError(f"API {e.code}: {err_body}") from e
+
+
+def _api_healthy() -> bool:
+    try:
+        resp = _api("GET", "/api/health", timeout=3)
+        return resp.get("status") in ("healthy", "ok")
+    except Exception:
+        return False
+
+
+# ── Docker Compose ──────────────────────────────────────────────────────
+
+def _docker_compose(*args, capture=False, stream=False):
+    cmd = ["docker", "compose"] + list(args)
+    if stream:
+        proc = subprocess.Popen(cmd, cwd=_DOCKER_DIR)
+        try:
+            proc.wait()
+        except KeyboardInterrupt:
+            proc.terminate()
+        return proc.returncode
+    result = subprocess.run(cmd, cwd=_DOCKER_DIR, capture_output=capture, text=True)
+    if capture:
+        return result
+    return result.returncode
+
+
+# ── Agent Definition Persistence (YAML) ────────────────────────────────
+
+def _load_custom_agents() -> list[dict]:
+    agents = []
+    if not os.path.isdir(_DEFINITIONS_DIR):
+        return agents
+    try:
+        import yaml
+    except ImportError:
+        return agents
+    for fname in sorted(os.listdir(_DEFINITIONS_DIR)):
+        if not fname.endswith((".yaml", ".yml")):
+            continue
+        fpath = os.path.join(_DEFINITIONS_DIR, fname)
+        try:
+            with open(fpath) as f:
+                spec = yaml.safe_load(f)
+            if spec and isinstance(spec, dict) and "name" in spec:
+                from stacks.base import ExecutionType, OwnershipType
+                if isinstance(spec.get("execution_type"), str):
+                    spec["execution_type"] = ExecutionType(spec["execution_type"])
+                if isinstance(spec.get("ownership"), str):
+                    spec["ownership"] = OwnershipType(spec["ownership"])
+                elif "ownership" not in spec:
+                    spec["ownership"] = OwnershipType.SHARED
+                if "llm_config" not in spec:
+                    spec["llm_config"] = {
+                        "chat_model": spec.pop("chat_model", "gemini-2.5-flash"),
+                        "reasoning_model": spec.pop("reasoning_model", None),
+                        "provider": spec.pop("provider", "google"),
+                    }
+                spec.setdefault("stack", "forgeos")
+                spec.setdefault("tools", [])
+                spec.setdefault("metadata", {})
+                spec.setdefault("description", "")
+                spec.setdefault("system_prompt", "")
+                spec["_source"] = "custom"
+                spec["_file"] = fpath
+                agents.append(spec)
+        except Exception as e:
+            print(f"  {RED}Warning: {fname}: {e}{RESET}")
+    return agents
+
+
+def _save_agent_yaml(spec: dict) -> str:
+    import yaml
+    os.makedirs(_DEFINITIONS_DIR, exist_ok=True)
+    data = {}
+    data["name"] = spec["name"]
+    data["stack"] = spec.get("stack", "forgeos")
+    etype = spec.get("execution_type")
+    data["execution_type"] = etype.value if hasattr(etype, "value") else str(etype)
+    ownership = spec.get("ownership")
+    if ownership:
+        data["ownership"] = ownership.value if hasattr(ownership, "value") else str(ownership)
+    data["description"] = spec.get("description", "")
+    data["department"] = spec.get("department", "")
+    llm = spec.get("llm_config", {})
+    data["chat_model"] = llm.get("chat_model", "gemini-2.5-flash")
+    data["provider"] = llm.get("provider", "google")
+    if llm.get("reasoning_model"):
+        data["reasoning_model"] = llm["reasoning_model"]
+    data["tools"] = spec.get("tools", [])
+    data["metadata"] = spec.get("metadata", {})
+    if spec.get("system_prompt"):
+        data["system_prompt"] = spec["system_prompt"]
+    if spec.get("schedule"):
+        data["schedule"] = spec["schedule"]
+    if spec.get("event_triggers"):
+        data["event_triggers"] = spec["event_triggers"]
+    fname = f"{spec['name']}.yaml"
+    fpath = os.path.join(_DEFINITIONS_DIR, fname)
+    with open(fpath, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    return fpath
+
+
+def _get_full_catalog() -> list[dict]:
+    try:
+        from src.platform.agent_definitions import ALL_AGENTS
+        catalog = [dict(s, _source="builtin") for s in ALL_AGENTS]
+    except Exception:
+        catalog = []
+    custom = _load_custom_agents()
+    custom_names = {c["name"] for c in custom}
+    merged = [s for s in catalog if s["name"] not in custom_names]
+    merged.extend(custom)
+    return merged
+
+
+# ── .env Setup ──────────────────────────────────────────────────────────
+
+def _ensure_env_file() -> bool:
+    if os.path.isfile(_ENV_FILE):
+        return True
+    print(f"\n{BOLD}Docker environment setup{RESET}\n")
+    db_password = secrets.token_hex(32)
+    print(f"  {DIM}Enter API keys (press Enter to skip):{RESET}")
+    try:
+        anthropic_key = input(f"  Anthropic API key: ").strip()
+        google_key = input(f"  Google API key: ").strip()
+        openai_key = input(f"  OpenAI API key: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    content = (
+        f"# ForgeOS environment — generated by ./forgeos\n"
+        f"DB_PASSWORD={db_password}\n"
+        f"ANTHROPIC_API_KEY={anthropic_key}\n"
+        f"GOOGLE_API_KEY={google_key}\n"
+        f"OPENAI_API_KEY={openai_key}\n"
+    )
+    os.makedirs(os.path.dirname(_ENV_FILE), exist_ok=True)
+    with open(_ENV_FILE, "w") as f:
+        f.write(content)
+    os.chmod(_ENV_FILE, 0o600)
+    print(f"\n  {GREEN}✓ Environment file created{RESET}\n")
+    return True
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 1. Agents — list, create, edit, view, delete
+# ═══════════════════════════════════════════════════════════════════════
+
+def _do_agents():
+    while True:
+        print(f"\n{BOLD}Agents{RESET}\n")
+        print(f"  {CYAN}1{RESET}  List definitions")
+        print(f"  {CYAN}2{RESET}  View agent details")
+        print(f"  {CYAN}3{RESET}  Create new agent")
+        print(f"  {CYAN}4{RESET}  Edit custom agent")
+        print(f"  {CYAN}5{RESET}  Delete custom agent")
+        print(f"  {CYAN}b{RESET}  Back")
+        print()
+        try:
+            choice = input(f"{CYAN}Agents>{RESET} ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if choice in ("1", "list"):
+            _agents_list()
+        elif choice in ("2", "view"):
+            _agents_view()
+        elif choice in ("3", "create", "new"):
+            _agents_create()
+        elif choice in ("4", "edit"):
+            _agents_edit()
+        elif choice in ("5", "delete", "del"):
+            _agents_delete()
+        elif choice in ("b", "back"):
+            break
+
+
+def _agents_list():
+    catalog = _get_full_catalog()
+    print(f"\n{BOLD}Agent Definitions ({len(catalog)}){RESET}\n")
+    print(f"  {'#':<4} {'Name':<35} {'Stack':<10} {'Type':<14} {'Source'}")
+    print(f"  {'─'*4} {'─'*35} {'─'*10} {'─'*14} {'─'*10}")
+    for i, spec in enumerate(catalog, 1):
+        name = spec["name"]
+        stack = spec.get("stack", "?")
+        etype = spec["execution_type"]
+        etype_str = etype.value if hasattr(etype, "value") else str(etype)
+        source = spec.get("_source", "?")
+        source_str = f"{GREEN}custom{RESET}" if source == "custom" else f"{DIM}builtin{RESET}"
+        print(f"  {i:<4} {name:<35} {stack:<10} {etype_str:<14} {source_str}")
+    print()
+
+
+def _agents_view():
+    catalog = _get_full_catalog()
+    if not catalog:
+        print(f"\n  {DIM}No agent definitions.{RESET}\n")
+        return
+    _agents_list()
+    try:
+        raw = input(f"{CYAN}View #>{RESET} ").strip()
+        idx = int(raw) - 1
+        spec = catalog[idx]
+    except (ValueError, IndexError, EOFError, KeyboardInterrupt):
+        return
+
+    name = spec["name"]
+    etype = spec["execution_type"]
+    etype_str = etype.value if hasattr(etype, "value") else str(etype)
+    llm = spec.get("llm_config", {})
+    meta = spec.get("metadata", {})
+
+    print(f"\n{'─'*60}")
+    print(f"{BOLD}{name}{RESET}")
+    print(f"{'─'*60}")
+    print(f"  Source:         {spec.get('_source', '?')}")
+    print(f"  Stack:          {spec.get('stack', 'forgeos')}")
+    print(f"  Type:           {etype_str}")
+    print(f"  Department:     {spec.get('department') or '—'}")
+    print(f"  Model:          {llm.get('chat_model', '?')} ({llm.get('provider', '?')})")
+    print(f"  Tools:          {', '.join(spec.get('tools', [])) or '—'}")
+    if meta.get("workspace"):
+        print(f"  Workspace:      {meta['workspace']}")
+    if meta.get("source_files"):
+        print(f"  Source files:   {', '.join(meta['source_files'])}")
+    if meta.get("loop_interval_seconds"):
+        print(f"  Loop interval:  {meta['loop_interval_seconds']}s")
+    print(f"  Description:    {spec.get('description', '')[:80]}")
+    sp = spec.get("system_prompt", "")
+    if sp:
+        print(f"\n  {BOLD}System Prompt:{RESET}")
+        for line in sp.split("\n")[:20]:
+            print(f"  {DIM}{line}{RESET}")
+        if sp.count("\n") > 20:
+            print(f"  {DIM}... ({sp.count(chr(10)) - 20} more lines){RESET}")
+    print()
+
+
+def _agents_create():
+    print(f"\n{BOLD}═══ Create New Agent ═══{RESET}\n")
+    try:
+        name = input(f"  Name: ").strip()
+        if not name:
+            print(f"  {RED}Name required.{RESET}")
+            return
+        name = name.lower().replace(" ", "-")
+
+        description = input(f"  Description: ").strip()
+        department = input(f"  Department [{DIM}general{RESET}]: ").strip() or "general"
+
+        print(f"\n  {BOLD}LLM{RESET}")
+        provider = input(f"  Provider (anthropic/google/openai) [{DIM}google{RESET}]: ").strip() or "google"
+        defaults = {"google": "gemini-2.5-flash", "anthropic": "claude-sonnet-4-5-20250514", "openai": "gpt-4o"}
+        default_model = defaults.get(provider, "gemini-2.5-flash")
+        model = input(f"  Model [{DIM}{default_model}{RESET}]: ").strip() or default_model
+
+        print(f"\n  {BOLD}Execution{RESET}")
+        etype = input(f"  Type (always_on/event_driven/scheduled) [{DIM}always_on{RESET}]: ").strip() or "always_on"
+
+        metadata = {}
+        if etype == "always_on":
+            interval = input(f"  Loop interval seconds [{DIM}120{RESET}]: ").strip()
+            metadata["loop_interval_seconds"] = int(interval) if interval else 120
+
+        print(f"\n  {BOLD}Tools{RESET}")
+        print(f"  {DIM}Available: platform__file_read, platform__file_write, platform__file_list{RESET}")
+        use_files = input(f"  Enable file tools? (y/n) [{DIM}y{RESET}]: ").strip().lower()
+        tools = ["platform__file_read", "platform__file_write", "platform__file_list"] if use_files != "n" else []
+
+        print(f"\n  {BOLD}Files{RESET}")
+        default_ws = f"files/knowledge/{name}"
+        workspace = input(f"  Workspace [{DIM}{default_ws}{RESET}]: ").strip() or default_ws
+        metadata["workspace"] = workspace
+
+        print(f"  Source files (one per line, empty to finish):")
+        source_files = []
+        while True:
+            sf = input(f"    > ").strip()
+            if not sf:
+                break
+            full_path = os.path.join(_REPO_ROOT, sf)
+            if not os.path.isfile(full_path):
+                print(f"    {YELLOW}⚠ {sf} not found locally — add it before building Docker{RESET}")
+            source_files.append(sf)
+        if source_files:
+            metadata["source_files"] = source_files
+
+        print(f"\n  {BOLD}System Prompt{RESET}")
+        print(f"  {DIM}Enter prompt (end with a line containing only '---'):{RESET}")
+        prompt_lines = []
+        while True:
+            line = input(f"  ")
+            if line.strip() == "---":
+                break
+            prompt_lines.append(line)
+        system_prompt = "\n".join(prompt_lines)
+
+    except (EOFError, KeyboardInterrupt):
+        print(f"\n  {DIM}Cancelled.{RESET}")
+        return
+
+    from stacks.base import ExecutionType, OwnershipType
+    spec = {
+        "name": name,
+        "stack": "forgeos",
+        "execution_type": ExecutionType(etype),
+        "ownership": OwnershipType.SHARED,
+        "description": description,
+        "department": department,
+        "llm_config": {"chat_model": model, "reasoning_model": None, "provider": provider},
+        "tools": tools,
+        "metadata": metadata,
+        "system_prompt": system_prompt,
+    }
+    fpath = _save_agent_yaml(spec)
+    print(f"\n  {GREEN}✓ Agent '{name}' saved to {fpath}{RESET}\n")
+
+
+def _agents_edit():
+    custom = [s for s in _get_full_catalog() if s.get("_source") == "custom"]
+    if not custom:
+        print(f"\n  {DIM}No custom agents. Create one first, or override a builtin by creating one with the same name.{RESET}\n")
+        return
+
+    print(f"\n{BOLD}Custom agents:{RESET}\n")
+    for i, spec in enumerate(custom, 1):
+        etype = spec["execution_type"]
+        etype_str = etype.value if hasattr(etype, "value") else str(etype)
+        print(f"  {i:<4} {spec['name']:<35} {etype_str}")
+
+    try:
+        raw = input(f"\n{CYAN}Edit #>{RESET} ").strip()
+        idx = int(raw) - 1
+        spec = custom[idx]
+    except (ValueError, IndexError, EOFError, KeyboardInterrupt):
+        return
+
+    print(f"\n{BOLD}Editing: {spec['name']}{RESET}")
+    print(f"{DIM}Press Enter to keep current value{RESET}\n")
+
+    try:
+        desc = input(f"  Description [{DIM}{spec.get('description','')[:50]}{RESET}]: ").strip()
+        if desc:
+            spec["description"] = desc
+
+        dept = input(f"  Department [{DIM}{spec.get('department','')}{RESET}]: ").strip()
+        if dept:
+            spec["department"] = dept
+
+        llm = spec.get("llm_config", {})
+        prov = input(f"  Provider [{DIM}{llm.get('provider','')}{RESET}]: ").strip()
+        if prov:
+            llm["provider"] = prov
+
+        model = input(f"  Model [{DIM}{llm.get('chat_model','')}{RESET}]: ").strip()
+        if model:
+            llm["chat_model"] = model
+
+        meta = spec.get("metadata", {})
+        if meta.get("loop_interval_seconds"):
+            interval = input(f"  Loop interval [{DIM}{meta['loop_interval_seconds']}s{RESET}]: ").strip()
+            if interval:
+                meta["loop_interval_seconds"] = int(interval)
+
+        sp = spec.get("system_prompt", "")
+        if sp:
+            print(f"\n  {DIM}Current prompt: {sp[:100]}...{RESET}")
+        edit_prompt = input(f"  Edit system prompt? (y/n) [{DIM}n{RESET}]: ").strip().lower()
+        if edit_prompt == "y":
+            print(f"  {DIM}Enter new prompt (end with '---'):{RESET}")
+            lines = []
+            while True:
+                line = input(f"  ")
+                if line.strip() == "---":
+                    break
+                lines.append(line)
+            spec["system_prompt"] = "\n".join(lines)
+
+    except (EOFError, KeyboardInterrupt):
+        print(f"\n  {DIM}Cancelled.{RESET}")
+        return
+
+    fpath = _save_agent_yaml(spec)
+    print(f"\n  {GREEN}✓ Updated: {fpath}{RESET}\n")
+
+
+def _agents_delete():
+    custom = [s for s in _get_full_catalog() if s.get("_source") == "custom"]
+    if not custom:
+        print(f"\n  {DIM}No custom agents to delete.{RESET}\n")
+        return
+
+    print(f"\n{BOLD}Custom agents:{RESET}\n")
+    for i, spec in enumerate(custom, 1):
+        print(f"  {i:<4} {spec['name']}")
+
+    try:
+        raw = input(f"\n{CYAN}Delete #>{RESET} ").strip()
+        idx = int(raw) - 1
+        spec = custom[idx]
+    except (ValueError, IndexError, EOFError, KeyboardInterrupt):
+        return
+
+    confirm = input(f"  Delete '{spec['name']}'? (yes/no): ").strip().lower()
+    if confirm == "yes":
+        fpath = spec.get("_file")
+        if fpath and os.path.isfile(fpath):
+            os.remove(fpath)
+            print(f"  {GREEN}✓ Deleted{RESET}\n")
+        else:
+            print(f"  {RED}File not found.{RESET}\n")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 2. Environment — Docker lifecycle
+# ═══════════════════════════════════════════════════════════════════════
+
+def _do_environment():
+    while True:
+        running = _api_healthy()
+        status_str = f"{GREEN}running{RESET}" if running else f"{RED}stopped{RESET}"
+
+        print(f"\n{BOLD}Environment{RESET}  [{status_str}]\n")
+        print(f"  {CYAN}1{RESET}  Start        {DIM}build & launch containers{RESET}")
+        print(f"  {CYAN}2{RESET}  Stop         {DIM}tear down containers{RESET}")
+        print(f"  {CYAN}3{RESET}  Status       {DIM}containers + health check{RESET}")
+        print(f"  {CYAN}4{RESET}  Logs         {DIM}stream container logs{RESET}")
+        print(f"  {CYAN}5{RESET}  Rebuild      {DIM}force rebuild image & restart{RESET}")
+        print(f"  {CYAN}b{RESET}  Back")
+        print()
+        try:
+            choice = input(f"{CYAN}Env>{RESET} ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if choice in ("1", "start"):
+            _env_start()
+        elif choice in ("2", "stop"):
+            _env_stop()
+        elif choice in ("3", "status"):
+            _env_status()
+        elif choice in ("4", "logs"):
+            _env_logs()
+        elif choice in ("5", "rebuild"):
+            _env_start(rebuild=True)
+        elif choice in ("b", "back"):
+            break
+
+
+def _env_start(rebuild=False):
+    if not _ensure_env_file():
+        return
+    action = "Rebuilding" if rebuild else "Starting"
+    print(f"\n{DIM}{action} ForgeOS environment...{RESET}\n")
+
+    args = ["up", "-d"]
+    if rebuild:
+        args.insert(1, "--build")
+
+    rc = _docker_compose(*args)
+    if rc != 0:
+        print(f"\n{RED}Failed. Is Docker installed and running?{RESET}\n")
+        return
+
+    print(f"\n{DIM}Waiting for API...{RESET}", end="", flush=True)
+    for _ in range(60):
+        time.sleep(2)
+        if _api_healthy():
+            print(f" {GREEN}ready!{RESET}\n")
+            return
+        print(".", end="", flush=True)
+    print(f" {YELLOW}timeout — check 'Logs' for details{RESET}\n")
+
+
+def _env_stop():
+    print(f"\n{DIM}Stopping environment...{RESET}")
+    _docker_compose("down")
+    print(f"{GREEN}Stopped.{RESET}\n")
+
+
+def _env_status():
+    print()
+    result = _docker_compose("ps", "--format", "table {{.Name}}\t{{.Status}}\t{{.Ports}}", capture=True)
+    if result.stdout.strip():
+        print(result.stdout)
+    else:
+        print(f"  {DIM}No containers running.{RESET}")
+
+    if _api_healthy():
+        print(f"  API: {GREEN}healthy{RESET}")
+        try:
+            health = _api("GET", "/api/health")
+            for k, v in health.get("components", {}).items():
+                st = v if isinstance(v, str) else v.get("status", str(v))
+                color = GREEN if st in ("ok", "healthy", "connected") else YELLOW
+                print(f"    {k}: {color}{st}{RESET}")
+        except Exception:
+            pass
+        try:
+            agents = _api("GET", "/api/platform/agents")
+            print(f"  Agents deployed: {BOLD}{len(agents)}{RESET}")
+        except Exception:
+            pass
+    else:
+        print(f"  API: {RED}unreachable{RESET}")
+    print()
+
+
+def _env_logs():
+    print(f"\n{DIM}Streaming logs... (Ctrl+C to stop){RESET}\n")
+    _docker_compose("logs", "-f", "--tail", "100", "forgeos", stream=True)
+    print()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 3. Deploy — send agents to running environment
+# ═══════════════════════════════════════════════════════════════════════
+
+def _do_deploy():
+    if not _api_healthy():
+        print(f"\n{RED}Environment not running. Start it first (option 2).{RESET}\n")
+        return
+
+    catalog = _get_full_catalog()
+    try:
+        agents = _api("GET", "/api/platform/agents")
+    except Exception as e:
+        print(f"\n{RED}API error: {e}{RESET}\n")
+        return
+    deployed_names = {a["name"] for a in agents}
+
+    available = [(i, s) for i, s in enumerate(catalog, 1) if s["name"] not in deployed_names]
+    if not available:
+        print(f"\n{DIM}All agents already deployed ({len(agents)} running).{RESET}\n")
+        return
+
+    print(f"\n{BOLD}Available to deploy ({len(available)}/{len(catalog)}):{RESET}\n")
+    for i, spec in available:
+        etype = spec["execution_type"]
+        etype_str = etype.value if hasattr(etype, "value") else str(etype)
+        star = f" {GREEN}★{RESET}" if spec.get("_source") == "custom" else ""
+        print(f"  {i:<4} {spec['name']:<35} ({spec.get('stack','?')}/{etype_str}){star}")
+
+    print(f"\n  {DIM}Enter numbers, range (1-5), or 'all'{RESET}")
+    try:
+        raw = input(f"\n{CYAN}Deploy>{RESET} ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return
+    if not raw:
+        return
+
+    indices = set()
+    if raw.lower() == "all":
+        indices = {i for i, _ in available}
+    else:
+        for part in raw.replace(",", " ").split():
+            if "-" in part:
+                lo, hi = part.split("-", 1)
+                try:
+                    indices.update(range(int(lo), int(hi) + 1))
+                except ValueError:
+                    pass
+            else:
+                try:
+                    indices.add(int(part))
+                except ValueError:
+                    pass
+
+    to_deploy = [s for i, s in available if i in indices]
+    if not to_deploy:
+        print(f"{DIM}No valid selection.{RESET}")
+        return
+
+    print()
+    for spec in to_deploy:
+        name = spec["name"]
+        llm = spec.get("llm_config", {})
+        etype = spec["execution_type"]
+        etype_str = etype.value if hasattr(etype, "value") else str(etype)
+        ownership = spec.get("ownership", "shared")
+        if hasattr(ownership, "value"):
+            ownership = ownership.value
+
+        body = {
+            "name": name,
+            "stack": spec.get("stack", "forgeos"),
+            "execution_type": etype_str,
+            "ownership": str(ownership),
+            "department": spec.get("department", ""),
+            "description": spec.get("description", ""),
+            "goal": spec.get("goal", ""),
+            "tools": spec.get("tools", []),
+            "metadata": spec.get("metadata", {}),
+            "chat_model": llm.get("chat_model", "gemini-2.5-flash"),
+            "provider": llm.get("provider", "google"),
+            "system_prompt": spec.get("system_prompt", ""),
+        }
+        if spec.get("schedule"):
+            body["schedule"] = spec["schedule"]
+        if spec.get("event_triggers"):
+            body["event_triggers"] = spec["event_triggers"]
+
+        try:
+            resp = _api("POST", "/api/platform/agents", body)
+            agent_id = resp.get("agent_id", "?")
+            print(f"  {GREEN}✓{RESET} {name} ({agent_id}) — {etype_str}")
+        except Exception as e:
+            print(f"  {RED}✗{RESET} {name}: {e}")
+    print()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 4. Chat — interactive conversation with deployed agent
+# ═══════════════════════════════════════════════════════════════════════
+
+def _do_chat():
+    if not _api_healthy():
+        print(f"\n{RED}Environment not running. Start it first (option 2).{RESET}\n")
+        return
+
+    try:
+        agents = _api("GET", "/api/platform/agents")
+    except Exception as e:
+        print(f"\n{RED}API error: {e}{RESET}\n")
+        return
+    if not agents:
+        print(f"\n{DIM}No deployed agents. Deploy some first (option 3).{RESET}\n")
+        return
+
+    print(f"\n{BOLD}Deployed agents:{RESET}\n")
+    for i, a in enumerate(agents, 1):
+        name = a.get("name", "?")
+        etype = a.get("execution_type", "?")
+        print(f"  {i:<4} {name:<35} {DIM}{etype}{RESET}")
+
+    try:
+        raw = input(f"\n{CYAN}Chat with #>{RESET} ").strip()
+        idx = int(raw) - 1
+        agent = agents[idx]
+    except (ValueError, IndexError, EOFError, KeyboardInterrupt):
+        print()
+        return
+
+    agent_id = agent["agent_id"]
+    name = agent.get("name", agent_id)
+
+    print(f"\n{BOLD}Chatting with {name}{RESET}")
+    print(f"{DIM}Type 'back' to return{RESET}\n")
+
+    while True:
+        try:
+            user_input = input(f"{CYAN}You>{RESET} ")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+        cmd = user_input.strip().lower()
+        if cmd in ("back", "quit", "exit", "q"):
+            break
+        if not user_input.strip():
+            continue
+        try:
+            print(f"{DIM}Thinking...{RESET}", end="", flush=True)
+            resp = _api("POST", f"/api/platform/agents/{agent_id}/invoke",
+                        {"prompt": user_input}, timeout=300)
+            print(f"\r{' '*20}\r", end="")
+            error = resp.get("error")
+            output = resp.get("result", "")
+            tokens = resp.get("tokens_used", 0)
+            tool_calls = resp.get("tool_calls", 0)
+            if error:
+                print(f"{YELLOW}{name}>{RESET} {RED}[Error]{RESET} {error}\n")
+            else:
+                print(f"{YELLOW}{name}>{RESET} {output or '(no response)'}")
+                if tokens or tool_calls:
+                    print(f"{DIM}  [{tokens} tokens, {tool_calls} tool calls]{RESET}")
+                print()
+        except Exception as e:
+            print(f"\r{' '*20}\r", end="")
+            print(f"{YELLOW}{name}>{RESET} {RED}[Error]{RESET} {e}\n")
+    print()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 5. Monitor — activity logs, workspace files, live tail
+# ═══════════════════════════════════════════════════════════════════════
+
+def _do_monitor():
+    if not _api_healthy():
+        print(f"\n{RED}Environment not running. Start it first (option 2).{RESET}\n")
+        return
+
+    try:
+        agents = _api("GET", "/api/platform/agents")
+    except Exception as e:
+        print(f"\n{RED}API error: {e}{RESET}\n")
+        return
+    if not agents:
+        print(f"\n{DIM}No deployed agents.{RESET}\n")
+        return
+
+    print(f"\n{BOLD}Deployed agents:{RESET}\n")
+    for i, a in enumerate(agents, 1):
+        name = a.get("name", "?")
+        etype = a.get("execution_type", "?")
+        print(f"  {i:<4} {name:<35} {etype}")
+
+    try:
+        raw = input(f"\n{CYAN}Monitor #>{RESET} ").strip()
+        idx = int(raw) - 1
+        agent = agents[idx]
+    except (ValueError, IndexError, EOFError, KeyboardInterrupt):
+        print()
+        return
+
+    agent_id = agent["agent_id"]
+    name = agent.get("name", agent_id)
+
+    _show_agent_info(agent)
+    _show_workspace(agent_id)
+    _show_activity(agent_id)
+
+    print(f"\n{DIM}Commands: tail | refresh | files | read <filename> | back{RESET}")
+    while True:
+        try:
+            cmd = input(f"{CYAN}Monitor:{name}>{RESET} ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+        parts = cmd.lower().split(None, 1)
+        if not parts:
+            continue
+        verb = parts[0]
+        arg = parts[1] if len(parts) > 1 else ""
+
+        if verb in ("back", "b", "q", "quit"):
+            break
+        elif verb == "tail":
+            _monitor_tail(agent_id, name)
+        elif verb in ("refresh", "r"):
+            _show_workspace(agent_id)
+            _show_activity(agent_id)
+        elif verb == "files":
+            _show_workspace(agent_id)
+        elif verb == "read" and arg:
+            _read_workspace_file(agent_id, arg)
+        elif verb == "read":
+            print(f"  {DIM}Usage: read <filename>{RESET}")
+        elif verb == "info":
+            _show_agent_info(agent)
+        else:
+            print(f"  {DIM}Commands: tail | refresh | files | read <filename> | back{RESET}")
+    print()
+
+
+def _show_agent_info(agent: dict):
+    agent_id = agent["agent_id"]
+    name = agent.get("name", agent_id)
+    llm = agent.get("llm_config", {})
+    meta = agent.get("metadata", {})
+
+    print(f"\n{'─'*60}")
+    print(f"{BOLD}{name}{RESET}")
+    print(f"{'─'*60}")
+    print(f"  Agent ID:       {agent_id}")
+    print(f"  Stack:          {agent.get('stack', '?')}")
+    print(f"  Type:           {agent.get('execution_type', '?')}")
+    print(f"  Department:     {agent.get('department') or '—'}")
+    if isinstance(llm, dict):
+        print(f"  Model:          {llm.get('chat_model', '?')} ({llm.get('provider', '?')})")
+    tools = agent.get("tools", [])
+    print(f"  Tools:          {', '.join(tools) if tools else '—'}")
+    if meta.get("workspace"):
+        print(f"  Workspace:      {meta['workspace']}")
+    if meta.get("source_files"):
+        print(f"  Source files:   {', '.join(meta['source_files'])}")
+    if meta.get("loop_interval_seconds"):
+        print(f"  Loop interval:  {meta['loop_interval_seconds']}s")
+    desc = agent.get("description", "")
+    if desc:
+        print(f"  Description:    {desc[:80]}")
+
+
+def _show_workspace(agent_id: str):
+    try:
+        ws = _api("GET", f"/api/platform/agents/{agent_id}/workspace")
+        files = ws.get("files", [])
+        if files:
+            print(f"\n  {BOLD}Workspace files:{RESET}")
+            for f in files:
+                print(f"    {f['name']:<40} {f['size']:>8} bytes")
+        elif ws.get("workspace"):
+            print(f"\n  {DIM}Workspace empty (agent hasn't produced files yet){RESET}")
+    except Exception:
+        pass
+
+
+def _show_activity(agent_id: str):
+    try:
+        act = _api("GET", f"/api/platform/agents/{agent_id}/activity?limit=50")
+        log = act.get("entries", [])
+        if log:
+            _print_activity_log(log)
+        else:
+            print(f"\n  {DIM}No activity yet.{RESET}")
+    except Exception:
+        pass
+
+
+def _read_workspace_file(agent_id: str, filename: str):
+    try:
+        resp = _api("GET", f"/api/platform/agents/{agent_id}/workspace/{filename}")
+        content = resp.get("content", "")
+        size = resp.get("size", 0)
+        print(f"\n  {BOLD}{filename}{RESET} ({size} bytes)\n")
+        for line in content.split("\n"):
+            print(f"  {line}")
+        print()
+    except Exception as e:
+        print(f"  {RED}Error: {e}{RESET}\n")
+
+
+def _monitor_tail(agent_id: str, name: str):
+    print(f"\n{DIM}Live tail for {name}... (Ctrl+C to stop){RESET}\n")
+    try:
+        act = _api("GET", f"/api/platform/agents/{agent_id}/activity?limit=9999")
+        seen = len(act.get("entries", []))
+    except Exception:
+        seen = 0
+    try:
+        while True:
+            time.sleep(2)
+            try:
+                act = _api("GET", f"/api/platform/agents/{agent_id}/activity?limit=9999")
+                full_log = act.get("entries", [])
+                for entry in full_log[seen:]:
+                    _print_activity_entry(entry)
+                seen = len(full_log)
+            except Exception:
+                pass
+    except KeyboardInterrupt:
+        pass
+    print()
+
+
+# ── Activity log formatting ────────────────────────────────────────────
+
+def _print_activity_log(log: list[dict]):
+    print(f"\n  {BOLD}Activity log ({len(log)} entries):{RESET}\n")
+    for entry in log:
+        _print_activity_entry(entry)
+
+
+def _print_activity_entry(entry: dict):
+    ts = entry.get("timestamp", "")
+    ts_short = ts[11:19] if len(ts) > 19 else ts
+    etype = entry.get("type", "?")
+
+    if etype == "loop_start":
+        print(f"  {DIM}{ts_short}{RESET}  {GREEN}▶ Loop started{RESET} (interval: {entry.get('interval')}s)")
+    elif etype == "loop_tick":
+        print(f"  {DIM}{ts_short}{RESET}  ↻ Iteration #{entry.get('iteration')}")
+    elif etype == "invoke":
+        prompt = entry.get("prompt", "")
+        if prompt.startswith("Standing duties"):
+            print(f"  {DIM}{ts_short}{RESET}  ⚙ Standing duties")
+        else:
+            print(f"  {DIM}{ts_short}{RESET}  💬 {prompt[:80]}")
+    elif etype == "tool_call":
+        tool = entry.get("tool", "?")
+        inp = entry.get("input", {})
+        detail = inp.get("path", inp.get("directory", ""))
+        print(f"  {DIM}{ts_short}{RESET}  🔧 {tool}" + (f" → {detail}" if detail else ""))
+    elif etype == "result":
+        st = entry.get("status", "?")
+        tokens = entry.get("tokens", 0)
+        err = entry.get("error")
+        if err:
+            print(f"  {DIM}{ts_short}{RESET}  {RED}✗ {st}: {err}{RESET}")
+        else:
+            preview = (entry.get("output_preview") or "")[:100].replace("\n", " ")
+            tok_str = f"({tokens} tok)"
+            print(f"  {DIM}{ts_short}{RESET}  {GREEN}✓{RESET} {st} {tok_str}" + (f" — {DIM}{preview}{RESET}" if preview else ""))
+    elif etype == "loop_error":
+        print(f"  {DIM}{ts_short}{RESET}  {RED}✗ {entry.get('error', '?')}{RESET}")
+    elif etype == "stopped":
+        print(f"  {DIM}{ts_short}{RESET}  {RED}■ Stopped{RESET}")
+    else:
+        print(f"  {DIM}{ts_short}{RESET}  {etype}")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Main Menu
+# ═══════════════════════════════════════════════════════════════════════
+
+def _print_banner():
+    running = _api_healthy()
+    env_str = f"{GREEN}running{RESET}" if running else f"{DIM}stopped{RESET}"
+    print(f"""
+{BOLD}╔══════════════════════════════════════════════════╗
+║              ForgeOS CLI v4.0                    ║
+╚══════════════════════════════════════════════════╝{RESET}
+  Environment: {env_str}
+""")
+
+
+def _print_menu():
+    print(f"{BOLD}What do you want to do?{RESET}")
+    print()
+    print(f"  {CYAN}1{RESET}  Agents        {DIM}list, create, edit definitions{RESET}")
+    print(f"  {CYAN}2{RESET}  Environment   {DIM}start, stop, status, logs{RESET}")
+    print(f"  {CYAN}3{RESET}  Deploy        {DIM}deploy agents to environment{RESET}")
+    print(f"  {CYAN}4{RESET}  Chat          {DIM}talk to a deployed agent{RESET}")
+    print(f"  {CYAN}5{RESET}  Monitor       {DIM}activity, workspace, live tail{RESET}")
+    print(f"  {CYAN}q{RESET}  Quit")
+    print()
+
+
+def run_interactive():
+    _print_banner()
+    while True:
+        _print_menu()
+        try:
+            choice = input(f"{CYAN}>{RESET} ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if choice in ("1", "agents"):
+            _do_agents()
+        elif choice in ("2", "env", "environment"):
+            _do_environment()
+        elif choice in ("3", "deploy"):
+            _do_deploy()
+        elif choice in ("4", "chat"):
+            _do_chat()
+        elif choice in ("5", "monitor"):
+            _do_monitor()
+        elif choice in ("q", "quit", "exit"):
+            break
+        else:
+            print(f"{DIM}Pick 1-5 or q{RESET}")
+        print()
+
+    print("Goodbye!")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="forgeos",
+        description="ForgeOS CLI — full lifecycle agent management",
+    )
+    parser.add_argument("--verbose", action="store_true", help="Show debug logs")
+    parser.add_argument("--api-url", default=None, help="API URL (default: http://localhost:5000)")
+    args = parser.parse_args()
+
+    if args.api_url:
+        global API_BASE
+        API_BASE = args.api_url.rstrip("/")
+
+    if not args.verbose:
+        logging.disable(logging.CRITICAL)
+
+    run_interactive()
+
+
+if __name__ == "__main__":
+    main()

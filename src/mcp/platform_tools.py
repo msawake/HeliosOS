@@ -13,11 +13,32 @@ handlers take (tool_input: dict, agent_context: dict | None) -> dict.
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Path helpers for file-tool workspace isolation
+# ---------------------------------------------------------------------------
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _resolve_path(p: str) -> Path:
+    return (_REPO_ROOT / p).resolve()
+
+
+def _is_within(child: Path, parent: Path) -> bool:
+    try:
+        child.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
 
 # ---------------------------------------------------------------------------
 # In-memory mailbox store for inter-agent messaging
@@ -732,12 +753,16 @@ def handle_read_messages(tool_input: dict, agent_context: dict | None) -> dict:
     Bridges to EventBus.query when a company_system is available via
     agent_context, otherwise reads from the in-memory mailbox.
     """
-    agent_id = (agent_context or {}).get("agent_id", tool_input.get("agent_id", "unknown"))
+    ctx = agent_context or {}
+    agent_id = ctx.get("agent_id", tool_input.get("agent_id", "unknown"))
+    agent_name = ctx.get("agent_name", "")
     unread_only = tool_input.get("unread_only", False)
     limit = tool_input.get("limit", 20)
     mark_read = tool_input.get("mark_read", True)
 
     mailbox = _agent_mailboxes.get(agent_id, [])
+    if not mailbox and agent_name:
+        mailbox = _agent_mailboxes.get(agent_name, [])
 
     if unread_only:
         messages = [m for m in mailbox if not m["read"]]
@@ -759,6 +784,106 @@ def handle_read_messages(tool_input: dict, agent_context: dict | None) -> dict:
         "returned_count": len(messages),
         "messages": messages,
     }
+
+
+# ── File Tools ───────────────────────────────────────────────────────────
+
+
+def handle_file_read(tool_input: dict, agent_context: dict | None) -> dict:
+    """Read a file. Allowed if path is within workspace, readable_dirs, or matches source_files."""
+    ctx = agent_context or {}
+    workspace = ctx.get("workspace")
+    source_files = ctx.get("source_files") or []
+    readable_dirs = ctx.get("readable_dirs") or []
+    rel_path = tool_input.get("path", "")
+    resolved = _resolve_path(rel_path)
+
+    allowed = False
+    if workspace and _is_within(resolved, _resolve_path(workspace)):
+        allowed = True
+    for sf in source_files:
+        if resolved == _resolve_path(sf):
+            allowed = True
+            break
+    for rd in readable_dirs:
+        if _is_within(resolved, _resolve_path(rd)):
+            allowed = True
+            break
+
+    if not allowed:
+        return {"error": f"Access denied: {rel_path} is outside workspace and not a source file."}
+
+    if not resolved.exists():
+        return {"error": f"File not found: {rel_path}"}
+
+    try:
+        content = resolved.read_text(encoding="utf-8")
+        return {"path": rel_path, "content": content, "size": len(content)}
+    except Exception as exc:
+        return {"error": f"Failed to read {rel_path}: {exc}"}
+
+
+def handle_file_write(tool_input: dict, agent_context: dict | None) -> dict:
+    """Write a file. Only allowed if path is within workspace."""
+    ctx = agent_context or {}
+    workspace = ctx.get("workspace")
+    rel_path = tool_input.get("path", "")
+    content = tool_input.get("content", "")
+    resolved = _resolve_path(rel_path)
+
+    if not workspace or not _is_within(resolved, _resolve_path(workspace)):
+        return {"error": f"Access denied: {rel_path} is outside workspace."}
+
+    try:
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        resolved.write_text(content, encoding="utf-8")
+        return {"path": rel_path, "written": len(content), "success": True}
+    except Exception as exc:
+        return {"error": f"Failed to write {rel_path}: {exc}"}
+
+
+def handle_file_list(tool_input: dict, agent_context: dict | None) -> dict:
+    """List directory contents. Restricts to workspace, readable_dirs, or source_files parent."""
+    ctx = agent_context or {}
+    workspace = ctx.get("workspace")
+    source_files = ctx.get("source_files") or []
+    readable_dirs = ctx.get("readable_dirs") or []
+    directory = tool_input.get("directory", workspace or "")
+    if not directory:
+        return {"error": "No directory specified and no workspace configured."}
+
+    resolved = _resolve_path(directory)
+
+    allowed = False
+    if workspace and (_is_within(resolved, _resolve_path(workspace)) or resolved == _resolve_path(workspace)):
+        allowed = True
+    for sf in source_files:
+        sf_parent = _resolve_path(sf).parent
+        if resolved == sf_parent:
+            allowed = True
+            break
+    for rd in readable_dirs:
+        if _is_within(resolved, _resolve_path(rd)) or resolved == _resolve_path(rd):
+            allowed = True
+            break
+
+    if not allowed:
+        return {"error": f"Access denied: {directory} is outside workspace."}
+
+    if not resolved.is_dir():
+        return {"error": f"Not a directory: {directory}"}
+
+    try:
+        entries = []
+        for entry in sorted(resolved.iterdir()):
+            entries.append({
+                "name": entry.name,
+                "type": "directory" if entry.is_dir() else "file",
+                "size": entry.stat().st_size if entry.is_file() else None,
+            })
+        return {"directory": directory, "entries": entries, "count": len(entries)}
+    except Exception as exc:
+        return {"error": f"Failed to list {directory}: {exc}"}
 
 
 # ===========================================================================
@@ -1114,6 +1239,49 @@ PLATFORM_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
         },
     },
+    # ── File Tools ────────────────────────────────────────────────────
+    {
+        "name": "platform__file_read",
+        "description": (
+            "Read the contents of a file. Path is relative to the repo root. "
+            "Access is restricted to your workspace directory and configured source files."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File path relative to repo root"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "platform__file_write",
+        "description": (
+            "Write content to a file. Path is relative to the repo root. "
+            "You can only write to files within your workspace directory."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File path relative to repo root"},
+                "content": {"type": "string", "description": "Content to write to the file"},
+            },
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "platform__file_list",
+        "description": (
+            "List files and directories at a given path. Path is relative to repo root. "
+            "Defaults to your workspace directory. Restricted to workspace and source file directories."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "directory": {"type": "string", "description": "Directory path relative to repo root (defaults to workspace)"},
+            },
+        },
+    },
 ]
 
 # ===========================================================================
@@ -1137,6 +1305,9 @@ _SIMULATED_HANDLERS: dict[str, Any] = {
     "platform__github_create_review": handle_github_create_review,
     "platform__send_message": handle_send_message,
     "platform__read_messages": handle_read_messages,
+    "platform__file_read": handle_file_read,
+    "platform__file_write": handle_file_write,
+    "platform__file_list": handle_file_list,
 }
 
 
@@ -1190,9 +1361,14 @@ def register_platform_tools(tool_executor) -> list[dict[str, Any]]:
         tool_defs = register_platform_tools(tool_executor)
         # tool_defs is the list of Anthropic-format tool schemas
     """
-    for tool_name, handler_fn in _HANDLER_MAP.items():
-        tool_executor._custom_handlers[tool_name] = handler_fn
-        logger.debug("Registered platform tool: %s", tool_name)
+    if hasattr(tool_executor, "register_platform_tools"):
+        tool_executor.register_platform_tools(
+            dict(_HANDLER_MAP), list(PLATFORM_TOOL_DEFINITIONS)
+        )
+    else:
+        for tool_name, handler_fn in _HANDLER_MAP.items():
+            tool_executor._custom_handlers[tool_name] = handler_fn
+        logger.debug("Fallback: wrote %d handlers to _custom_handlers", len(_HANDLER_MAP))
 
     logger.info("Registered %d platform tools", len(_HANDLER_MAP))
     return list(PLATFORM_TOOL_DEFINITIONS)

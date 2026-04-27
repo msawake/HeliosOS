@@ -1,5 +1,5 @@
 .PHONY: help install install-dev install-prod install-all \
-       run dashboard \
+       run forgeos dashboard \
        test test-file test-match \
        lint typecheck check \
        migrate \
@@ -35,6 +35,9 @@ install-all: install-dev ## Install Python deps + dashboard Node modules
 
 run: ## Boot the platform (port=$(PORT), no-auth mode)
 	PYTHONPATH=. $(PYTHON) -m src.bootstrap --no-auth --dashboard --port $(PORT)
+
+forgeos: ## ForgeOS CLI — define agents, manage Docker, deploy, chat, monitor
+	PYTHONPATH=. $(PYTHON) backend/forgeos
 
 dashboard: ## Start the Next.js dashboard (dev server)
 	cd dashboard && npm run dev

@@ -17,6 +17,7 @@ Production hardening:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import random
@@ -264,6 +265,10 @@ class LLMRouter:
             async for ev in self._stream_openai(client, model, messages, tools):
                 yield ev
             return
+        if provider == "google" and client:
+            async for ev in self._stream_openai(client, model, messages, tools):
+                yield ev
+            return
 
         # Simulated fallback
         yield {
@@ -381,7 +386,7 @@ class LLMRouter:
                 try:
                     stream = client.chat.completions.create(**kwargs)
                     text_acc = ""
-                    tool_calls: list[dict] = []
+                    tc_accum: dict[int, dict] = {}
                     for chunk in stream:
                         try:
                             choice = chunk.choices[0]
@@ -397,12 +402,31 @@ class LLMRouter:
                                 q.put({"type": "text_delta", "content": content}),
                                 loop,
                             )
-                        # tool calls aggregate across chunks; skip for now
+                        for tc_delta in getattr(delta, "tool_calls", None) or []:
+                            idx = getattr(tc_delta, "index", 0)
+                            if idx not in tc_accum:
+                                tc_accum[idx] = {"id": "", "name": "", "arguments": ""}
+                            if getattr(tc_delta, "id", None):
+                                tc_accum[idx]["id"] = tc_delta.id
+                            fn = getattr(tc_delta, "function", None)
+                            if fn:
+                                if getattr(fn, "name", None):
+                                    tc_accum[idx]["name"] = fn.name
+                                if getattr(fn, "arguments", None):
+                                    tc_accum[idx]["arguments"] += fn.arguments
+                    tool_calls = []
+                    for idx in sorted(tc_accum):
+                        tc = tc_accum[idx]
+                        try:
+                            inp = json.loads(tc["arguments"]) if tc["arguments"] else {}
+                        except json.JSONDecodeError:
+                            inp = {}
+                        tool_calls.append({"id": tc["id"], "name": tc["name"], "input": inp})
                     asyncio.run_coroutine_threadsafe(
                         q.put({
                             "type": "done",
                             "tokens_used": 0,
-                            "text": "",  # Already streamed via text_delta events
+                            "text": "",
                             "tool_calls": tool_calls,
                         }),
                         loop,
@@ -592,7 +616,7 @@ class LLMRouter:
         kwargs: dict[str, Any] = {"model": model, "messages": messages}
         if tools:
             kwargs["tools"] = _to_openai_tools(tools)
-        response = client.chat.completions.create(**kwargs)
+        response = await asyncio.to_thread(client.chat.completions.create, **kwargs)
         choice = response.choices[0]
         tool_calls = None
         if choice.message.tool_calls:
@@ -621,7 +645,7 @@ class LLMRouter:
         kwargs: dict[str, Any] = {"model": model, "messages": messages}
         if tools:
             kwargs["tools"] = _to_openai_tools(tools)
-        response = client.chat.completions.create(**kwargs)
+        response = await asyncio.to_thread(client.chat.completions.create, **kwargs)
         choice = response.choices[0]
         tool_calls = None
         if choice.message.tool_calls:

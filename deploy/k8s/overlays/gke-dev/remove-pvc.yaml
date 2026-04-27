@@ -1,0 +1,12 @@
+# Remove PVCs for dev — use emptyDir instead.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: forgeos-agents
+$patch: delete
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: forgeos-openclaw-state
+$patch: delete

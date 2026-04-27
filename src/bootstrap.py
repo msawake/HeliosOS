@@ -520,14 +520,22 @@ class PlatformBootstrap:
                 tool_executor=te,
                 openclaw_dir=os.environ.get("OPENCLAW_DIR", str(Path(__file__).resolve().parents[1] / "openclaw2")),
             ),
-            "sandbox": SandboxAdapter(
-                llm_router=self.llm_router,
-                tool_executor=te,
-                api_url=f"http://localhost:{os.environ.get('PORT', '5000')}",
-            ),
+            "sandbox": self._create_sandbox_adapter(te),
         }
         for name, adapter in self._adapters.items():
             logger.info("  Stack registered: %s", name)
+
+    def _create_sandbox_adapter(self, te):
+        api_url = os.environ.get("FORGEOS_API_URL", f"http://localhost:{os.environ.get('PORT', '5000')}")
+        if os.environ.get("KUBERNETES_SERVICE_HOST"):
+            try:
+                from stacks.sandbox.k8s_adapter import K8sSandboxAdapter
+                logger.info("  Using K8s sandbox adapter (in-cluster)")
+                return K8sSandboxAdapter(llm_router=self.llm_router, tool_executor=te, api_url=api_url)
+            except Exception as e:
+                logger.warning("  K8s sandbox adapter failed (%s), falling back to Docker", e)
+        from stacks.sandbox.adapter import SandboxAdapter
+        return SandboxAdapter(llm_router=self.llm_router, tool_executor=te, api_url=api_url)
 
     async def deploy_agent(self, agent_def: AgentDefinition) -> str:
         """Deploy an agent through the platform executor."""

@@ -1,0 +1,22 @@
+# Force pull latest images on every pod start.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgeos-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          imagePullPolicy: Always
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgeos-web
+spec:
+  template:
+    spec:
+      containers:
+        - name: web
+          imagePullPolicy: Always

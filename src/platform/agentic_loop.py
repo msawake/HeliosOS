@@ -168,7 +168,7 @@ async def run_agentic_loop(
 
         # Build assistant + tool result messages in the correct provider format
         is_vertex = llm_config.provider == "vertex"
-        is_openai = (not is_vertex) and (llm_config.provider in ("openai", "atlas") or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-", "deepseek-", "qwen-", "nemotron")))
+        is_openai = (not is_vertex) and (llm_config.provider in ("openai", "atlas", "google") or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-", "deepseek-", "qwen-", "nemotron", "gemini-")))
 
         if is_vertex:
             # Vertex AI Gemini format: functionCall parts + functionResponse parts
@@ -430,7 +430,7 @@ async def run_agentic_loop_with_events(
 
         # Build assistant + tool result messages per provider format
         is_vertex = llm_config.provider == "vertex"
-        is_openai = (not is_vertex) and (llm_config.provider in ("openai", "atlas") or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-", "deepseek-", "qwen-", "nemotron")))
+        is_openai = (not is_vertex) and (llm_config.provider in ("openai", "atlas", "google") or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-", "deepseek-", "qwen-", "nemotron", "gemini-")))
 
         if is_vertex:
             # Vertex format: functionCall + functionResponse parts

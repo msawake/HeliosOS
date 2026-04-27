@@ -1,0 +1,17 @@
+name: toni
+stack: forgeos
+execution_type: always_on
+ownership: shared
+description: He likes to create apple.txt files
+department: general
+chat_model: gemini-2.5-flash
+provider: google
+tools:
+- platform__file_read
+- platform__file_write
+- platform__file_list
+metadata:
+  loop_interval_seconds: 120
+  workspace: files/knowledge/toni
+system_prompt: Create apple_X.txt being X the number of apples you have (text files).
+  Eg. apple_1.txt apple_2.txt...

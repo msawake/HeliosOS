@@ -1,0 +1,18 @@
+# External LoadBalancer for the web dashboard.
+# Browser → LB:80 → forgeos-web:3000 (Next.js proxies /api to internal API).
+apiVersion: v1
+kind: Service
+metadata:
+  name: forgeos-web-lb
+  labels:
+    app.kubernetes.io/name: forgeos
+    app.kubernetes.io/component: web
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: forgeos
+    app.kubernetes.io/component: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000

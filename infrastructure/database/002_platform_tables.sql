@@ -12,7 +12,7 @@ CREATE TABLE platform_agents (
     agent_id        TEXT PRIMARY KEY,
     tenant_id       TEXT NOT NULL REFERENCES tenants(id),
     name            TEXT NOT NULL,
-    stack           TEXT NOT NULL CHECK (stack IN ('forgeos', 'crewai', 'adk', 'openclaw')),
+    stack           TEXT NOT NULL CHECK (stack IN ('forgeos', 'crewai', 'adk', 'openclaw', 'sandbox')),
     execution_type  TEXT NOT NULL CHECK (execution_type IN ('always_on', 'scheduled', 'event_driven', 'reflex', 'autonomous')),
     ownership       TEXT NOT NULL CHECK (ownership IN ('personal', 'shared')),
     owner_id        TEXT,

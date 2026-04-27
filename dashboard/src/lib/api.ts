@@ -258,4 +258,43 @@ export const api = {
     }),
   getClientAgents: (clientId: string) =>
     fetchJSON<AgentSummary[]>(`/api/clients/${encodeURIComponent(clientId)}/agents`),
+
+  // Environments
+  getEnvironments: () =>
+    fetchJSON<any[]>('/api/platform/environments'),
+  getEnvironment: (id: string) =>
+    fetchJSON<any>(`/api/platform/environments/${id}`),
+  createEnvironment: (payload: { name: string; namespace?: string; cpu_request?: string; cpu_limit?: string; mem_request?: string; mem_limit?: string; metadata?: Record<string, unknown> }) =>
+    fetchJSON<{ env_id: string; name: string; status: string }>('/api/platform/environments', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  deleteEnvironment: (id: string) =>
+    fetchJSON<{ ok: boolean }>(`/api/platform/environments/${id}`, { method: 'DELETE' }),
+  getEnvironmentLogs: (id: string, tail = 500) =>
+    fetchJSON<{ env_id: string; logs: string; pod_name: string; status: string }>(
+      `/api/platform/environments/${id}/logs?tail=${tail}`
+    ),
+  getEnvironmentAgents: (id: string) =>
+    fetchJSON<any[]>(`/api/platform/environments/${id}/agents`),
+  deployAgentToEnvironment: (envId: string, payload: { name: string; chat_model?: string; provider?: string; system_prompt?: string; tools?: string[]; prompt?: string; loop_mode?: boolean; loop_interval?: number; metadata?: Record<string, unknown> }) =>
+    fetchJSON<{ agent_id: string; name: string; environment_id: string }>(
+      `/api/platform/environments/${envId}/agents`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    ),
+  removeAgentFromEnvironment: (envId: string, agentId: string) =>
+    fetchJSON<{ ok: boolean }>(`/api/platform/environments/${envId}/agents/${agentId}`, { method: 'DELETE' }),
+  getAgentLogsInEnv: (envId: string, agentId: string, tail = 500) =>
+    fetchJSON<{ agent_id: string; logs: string; status: string }>(
+      `/api/platform/environments/${envId}/agents/${agentId}/logs?tail=${tail}`
+    ),
+
+  getAgentActivity: (id: string) =>
+    fetchJSON<{ agent_id: string; activity: Array<{ ts: string; event: string; detail: string }> }>(
+      `/api/platform/agents/${id}/activity`
+    ),
+  getAgentLogs: (id: string, tail = 500) =>
+    fetchJSON<{ agent_id: string; logs: string; pod_name: string; status: string }>(
+      `/api/platform/agents/${id}/logs?tail=${tail}`
+    ),
 };

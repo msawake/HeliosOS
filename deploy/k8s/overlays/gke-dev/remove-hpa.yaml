@@ -1,0 +1,6 @@
+# Remove HPA for dev — single replica.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: forgeos-api
+$patch: delete

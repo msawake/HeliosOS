@@ -16,6 +16,7 @@ resources:
   - hpa-api.yaml
   - pdb-api.yaml
   - pdb-web.yaml
+  - rbac-sandbox.yaml
 
 commonLabels:
   app.kubernetes.io/managed-by: kustomize

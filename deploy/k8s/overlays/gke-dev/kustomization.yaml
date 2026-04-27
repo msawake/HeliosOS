@@ -1,0 +1,43 @@
+# GKE Autopilot dev overlay — single replica, LoadBalancer, no auth.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: forgeos
+
+resources:
+  - ../../base
+  - service-lb.yaml
+
+patches:
+  - path: replicas-patch.yaml
+  - path: remove-ingress.yaml
+  - path: remove-hpa.yaml
+  - path: remove-pdb.yaml
+  - path: web-env-patch.yaml
+  - path: image-pull-patch.yaml
+  - path: api-command-patch.yaml
+  - path: api-volumes-patch.yaml
+    target:
+      kind: Deployment
+      name: forgeos-api
+  - path: remove-pvc.yaml
+  - path: remove-netpol.yaml
+
+configMapGenerator:
+  - name: forgeos-config
+    behavior: merge
+    literals:
+      - COMPANY_ID=leadforge
+      - FORGEOS_SEED_HITL=1
+      - FORGEOS_ALLOW_DEV_LOGIN=1
+      - FORGEOS_NO_AUTH=1
+      - FORGEOS_API_URL=http://forgeos-api.forgeos.svc.cluster.local:5000
+      - FORGEOS_SANDBOX_IMAGE=europe-west1-docker.pkg.dev/admachina-atomic-test-84/forgeos/forgeos-sandbox:latest
+
+images:
+  - name: forgeos-api
+    newName: europe-west1-docker.pkg.dev/admachina-atomic-test-84/forgeos/forgeos-api
+    newTag: latest
+  - name: forgeos-web
+    newName: europe-west1-docker.pkg.dev/admachina-atomic-test-84/forgeos/forgeos-web
+    newTag: latest

@@ -41,6 +41,9 @@ ANTHROPIC_API_KEY=
 # OpenAI API key (optional)
 OPENAI_API_KEY=
 
+# Google API key (optional — required for Gemini-powered Knowledge Guardian agents)
+GOOGLE_API_KEY=
+
 # Dashboard auth password (set to whatever you want; default is "forgeos")
 FORGEOS_DEV_PASSWORD=forgeos
 EOF

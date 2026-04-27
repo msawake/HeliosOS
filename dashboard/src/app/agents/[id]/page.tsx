@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Badge } from '@/components/Badge';
@@ -18,6 +18,21 @@ interface InvokeResult {
   elapsed_ms: number;
 }
 
+interface ActivityEntry {
+  ts: string;
+  event: string;
+  detail: string;
+}
+
+interface LogsData {
+  agent_id: string;
+  logs: string;
+  pod_name: string;
+  status: string;
+}
+
+type Tab = 'activity' | 'logs' | 'config';
+
 export default function AgentDetailPage() {
   const params = useParams();
   const agentId = typeof params.id === 'string' ? params.id : params.id?.[0] ?? '';
@@ -25,11 +40,15 @@ export default function AgentDetailPage() {
   const [agent, setAgent] = useState<AgentSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [invokePrompt, setInvokePrompt] = useState(
-    'Summarize the agent’s role in one paragraph and suggest one next action.'
+    'Summarize the agent\u2019s role in one paragraph and suggest one next action.'
   );
   const [invokeLoading, setInvokeLoading] = useState(false);
   const [invokeError, setInvokeError] = useState('');
   const [invokeResult, setInvokeResult] = useState<InvokeResult | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>('activity');
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [logsData, setLogsData] = useState<LogsData | null>(null);
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!agentId) return;
@@ -39,6 +58,43 @@ export default function AgentDetailPage() {
       .catch(() => setAgent(null))
       .finally(() => setLoading(false));
   }, [agentId]);
+
+  const fetchActivity = useCallback(() => {
+    if (!agentId) return;
+    fetch(`/api/platform/agents/${agentId}/activity`)
+      .then((r) => (r.ok ? r.json() : { activity: [] }))
+      .then((data) => setActivity(data.activity || []))
+      .catch(() => {});
+  }, [agentId]);
+
+  const fetchLogs = useCallback(() => {
+    if (!agentId) return;
+    fetch(`/api/platform/agents/${agentId}/logs?tail=500`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) setLogsData(data);
+      })
+      .catch(() => {});
+  }, [agentId]);
+
+  useEffect(() => {
+    if (activeTab === 'activity') {
+      fetchActivity();
+      const iv = setInterval(fetchActivity, 5000);
+      return () => clearInterval(iv);
+    }
+    if (activeTab === 'logs') {
+      fetchLogs();
+      const iv = setInterval(fetchLogs, 3000);
+      return () => clearInterval(iv);
+    }
+  }, [activeTab, fetchActivity, fetchLogs]);
+
+  useEffect(() => {
+    if (activeTab === 'logs' && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logsData, activeTab]);
 
   async function handleStop() {
     await fetch(`/api/platform/agents/${agentId}/stop`, { method: 'POST' });
@@ -83,6 +139,12 @@ export default function AgentDetailPage() {
   if (!agentId) return <div className="text-gray-400">Invalid agent id</div>;
   if (loading) return <div className="text-gray-400">Loading...</div>;
   if (!agent) return <div className="text-gray-400">Agent not found</div>;
+
+  const tabs: { key: Tab; label: string }[] = [
+    { key: 'activity', label: 'Activity' },
+    { key: 'logs', label: 'Logs' },
+    { key: 'config', label: 'Config' },
+  ];
 
   return (
     <div>
@@ -154,7 +216,7 @@ export default function AgentDetailPage() {
               disabled={invokeLoading || !invokePrompt.trim()}
               className="px-4 py-2 bg-[#10A37F] text-white rounded-lg text-sm font-medium hover:bg-[#0d8c6d] disabled:opacity-50"
             >
-              {invokeLoading ? 'Running…' : 'Run invoke'}
+              {invokeLoading ? 'Running\u2026' : 'Run invoke'}
             </button>
             {invokeError && <span className="text-sm text-red-600">{invokeError}</span>}
           </div>
@@ -192,12 +254,94 @@ export default function AgentDetailPage() {
         )}
       </div>
 
-      <div className="card">
-        <h2 className="font-semibold mb-3">Agent Configuration</h2>
-        <pre className="bg-gray-50 rounded-lg p-4 text-xs overflow-auto">
-          {JSON.stringify(agent, null, 2)}
-        </pre>
+      {/* Tab bar */}
+      <div className="border-b border-gray-200 mb-4">
+        <div className="flex gap-0">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === t.key
+                  ? 'border-[#10A37F] text-[#10A37F]'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {/* Activity tab */}
+      {activeTab === 'activity' && (
+        <div className="card">
+          <h2 className="font-semibold mb-3">Activity Feed</h2>
+          {activity.length === 0 ? (
+            <p className="text-sm text-gray-400">No activity recorded yet. Deploy the agent to see events.</p>
+          ) : (
+            <div className="space-y-2 max-h-[500px] overflow-y-auto">
+              {activity.map((entry, i) => (
+                <div key={i} className="flex items-start gap-3 text-sm border-b border-gray-100 pb-2">
+                  <span className="text-xs text-gray-400 font-mono whitespace-nowrap min-w-[140px]">
+                    {entry.ts?.replace('T', ' ').replace('.000Z', '')}
+                  </span>
+                  <Badge
+                    label={entry.event}
+                    variant={
+                      entry.event.includes('error') || entry.event.includes('failed') || entry.event.includes('timeout')
+                        ? 'failed'
+                        : entry.event.includes('completed')
+                        ? 'completed'
+                        : entry.event.includes('tool')
+                        ? 'running'
+                        : 'idle'
+                    }
+                  />
+                  <span className="text-gray-600 truncate">{entry.detail}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Logs tab */}
+      {activeTab === 'logs' && (
+        <div className="card">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold">Container Logs</h2>
+            {logsData && (
+              <div className="flex gap-2 items-center text-xs">
+                {logsData.pod_name && (
+                  <span className="text-gray-400 font-mono">{logsData.pod_name}</span>
+                )}
+                <Badge label={logsData.status} variant={logsData.status === 'running' ? 'running' : logsData.status === 'succeeded' ? 'completed' : 'idle'} />
+              </div>
+            )}
+          </div>
+          <div className="bg-[#0d0d0d] rounded-lg p-4 max-h-[600px] overflow-y-auto">
+            {logsData?.logs ? (
+              <pre className="text-[#00ff41] text-xs font-mono whitespace-pre-wrap leading-relaxed">
+                {logsData.logs}
+                <div ref={logsEndRef} />
+              </pre>
+            ) : (
+              <p className="text-gray-500 text-sm">No logs available. The agent may not have started yet.</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Config tab */}
+      {activeTab === 'config' && (
+        <div className="card">
+          <h2 className="font-semibold mb-3">Agent Configuration</h2>
+          <pre className="bg-gray-50 rounded-lg p-4 text-xs overflow-auto">
+            {JSON.stringify(agent, null, 2)}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }

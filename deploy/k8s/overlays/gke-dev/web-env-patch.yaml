@@ -1,0 +1,21 @@
+# Override web env: set API URL for Next.js server-side proxy.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgeos-web
+spec:
+  template:
+    spec:
+      containers:
+        - name: web
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: INTERNAL_API_URL
+              value: http://forgeos-api.forgeos.svc.cluster.local:5000
+            - name: FORGEOS_API_URL
+              value: http://forgeos-api.forgeos.svc.cluster.local:5000
+            - name: PORT
+              value: "3000"
+            - name: HOSTNAME
+              value: "0.0.0.0"

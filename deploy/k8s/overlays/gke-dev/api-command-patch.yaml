@@ -1,0 +1,11 @@
+# Override API command: add --no-auth for dev.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgeos-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          command: ["python", "-m", "src.bootstrap", "--no-auth", "--dashboard", "--loop"]

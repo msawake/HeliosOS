@@ -1,0 +1,11 @@
+# JSON patch: replace PVC volumes with emptyDir for dev.
+- op: replace
+  path: /spec/template/spec/volumes/0
+  value:
+    name: agents
+    emptyDir: {}
+- op: replace
+  path: /spec/template/spec/volumes/1
+  value:
+    name: openclaw-state
+    emptyDir: {}

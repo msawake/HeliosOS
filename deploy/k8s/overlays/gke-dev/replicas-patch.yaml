@@ -1,0 +1,14 @@
+# GKE dev: single replica per tier
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgeos-api
+spec:
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgeos-web
+spec:
+  replicas: 1

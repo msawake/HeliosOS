@@ -1,0 +1,12 @@
+# Remove PDBs for dev — single replica, no disruption budget needed.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: forgeos-api
+$patch: delete
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: forgeos-web
+$patch: delete

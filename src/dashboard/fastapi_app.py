@@ -65,6 +65,28 @@ class AgentCreateRequest(BaseModel):
     client_id: str | None = None
     system_prompt: str = ""
 
+class EnvironmentCreateRequest(BaseModel):
+    name: str
+    namespace: str = "default"
+    owner_id: str | None = None
+    cpu_request: str = "250m"
+    cpu_limit: str = "1000m"
+    mem_request: str = "512Mi"
+    mem_limit: str = "1Gi"
+    labels: dict = {}
+    metadata: dict = {}
+
+class DeployAgentToEnvRequest(BaseModel):
+    name: str
+    chat_model: str = "gemini-2.0-flash"
+    provider: str = "google"
+    system_prompt: str = ""
+    tools: list[str] = []
+    prompt: str = ""
+    loop_mode: bool = True
+    loop_interval: int = 120
+    metadata: dict = {}
+
 class ClientCreateRequest(BaseModel):
     id: str
     name: str
@@ -1999,6 +2021,15 @@ def create_fastapi_app(
             raise HTTPException(503, "Kernel not initialized")
         return kernel
 
+    def _get_tool_executor():
+        if not platform_executor:
+            return None
+        for stack_name in ("forgeos", "sandbox", "crewai", "adk", "openclaw"):
+            adapter = platform_executor.get_adapter(stack_name)
+            if adapter and hasattr(adapter, "_tool_executor") and adapter._tool_executor:
+                return adapter._tool_executor
+        return None
+
     @app.post("/api/platform/kernel/check-tool", tags=["kernel"])
     async def kernel_check_tool(req: ToolCheckRequest):
         """Check if an agent is allowed to call a tool."""
@@ -2070,16 +2101,31 @@ def create_fastapi_app(
         if not tool_ok:
             raise HTTPException(status_code=403, detail=f"Tool '{req.tool_name}' not permitted")
 
-        if platform_kernel:
-            decision = platform_kernel.check_tool_call(agent_id, req.tool_name, req.tool_input)
+        if kernel:
+            decision = kernel.check_tool_call(agent_id, req.tool_name, req.tool_input)
             if hasattr(decision, "denied") and decision.denied:
                 raise HTTPException(status_code=403, detail=decision.reason)
 
-        if not tool_executor:
+        te = _get_tool_executor()
+        if not te:
             raise HTTPException(status_code=503, detail="Tool executor unavailable")
 
-        ctx = {"agent_id": agent_id, "namespace": claims.get("namespace", "default"), "tier": claims.get("tier", 3)}
-        result = await tool_executor.execute(req.tool_name, req.tool_input, ctx)
+        ctx = {
+            "agent_id": agent_id,
+            "agent_name": claims.get("agent_name", ""),
+            "namespace": claims.get("namespace", "default"),
+            "tier": claims.get("tier", 3),
+            "workspace": claims.get("workspace"),
+            "source_files": claims.get("source_files", []),
+            "readable_dirs": claims.get("readable_dirs", []),
+        }
+        result = await te.execute(req.tool_name, req.tool_input, ctx)
+
+        if platform_executor:
+            sbx = platform_executor.get_adapter("sandbox")
+            if sbx and hasattr(sbx, "_log_activity"):
+                sbx._log_activity(agent_id, "tool_call", f"{req.tool_name}")
+
         return result
 
     @app.post("/api/sandbox/result", tags=["sandbox"])
@@ -2096,17 +2142,256 @@ def create_fastapi_app(
     @app.get("/api/platform/tools", tags=["platform"])
     async def list_platform_tools():
         """List all tool schemas (for sandbox agent discovery)."""
-        if not tool_executor:
-            return []
+        te = _get_tool_executor()
         defs = []
         try:
             from src.mcp.platform_tools import PLATFORM_TOOL_DEFINITIONS
             defs.extend(PLATFORM_TOOL_DEFINITIONS)
         except Exception:
             pass
-        if hasattr(tool_executor, 'get_mcp_tool_definitions'):
-            defs.extend(tool_executor.get_mcp_tool_definitions())
+        if te and hasattr(te, 'get_mcp_tool_definitions'):
+            defs.extend(te.get_mcp_tool_definitions())
         return defs
+
+    # ── Knowledge Guardian: activity + workspace endpoints ──────────
+
+    @app.get("/api/platform/agents/{agent_id}/activity", tags=["agents"])
+    async def get_agent_activity(agent_id: str):
+        """Return the activity log for an agent."""
+        if not platform_executor:
+            raise HTTPException(404, "Platform executor not available")
+        for stack_name in ("sandbox", "forgeos"):
+            adapter = platform_executor.get_adapter(stack_name)
+            if adapter and hasattr(adapter, "get_activity_log"):
+                log = adapter.get_activity_log(agent_id)
+                if log:
+                    return {"agent_id": agent_id, "activity": log}
+        return {"agent_id": agent_id, "activity": []}
+
+    @app.get("/api/platform/agents/{agent_id}/logs", tags=["agents"])
+    async def get_agent_logs(agent_id: str, tail: int = 200):
+        """Return pod/container logs for a sandbox agent."""
+        if not platform_executor:
+            raise HTTPException(404, "Platform executor not available")
+        adapter = platform_executor.get_adapter("sandbox")
+        if adapter and hasattr(adapter, "get_pod_logs"):
+            return adapter.get_pod_logs(agent_id, tail_lines=tail)
+        return {"agent_id": agent_id, "logs": "", "pod_name": "", "status": "unavailable"}
+
+    @app.get("/api/platform/agents/{agent_id}/workspace", tags=["agents"])
+    async def list_agent_workspace(agent_id: str):
+        """List files in the agent's workspace directory."""
+        if not platform_registry:
+            raise HTTPException(404, "Registry not available")
+        agent_def = platform_registry.get(agent_id)
+        if not agent_def:
+            raise HTTPException(404, f"Agent {agent_id} not found")
+        workspace = (agent_def.metadata or {}).get("workspace")
+        if not workspace:
+            raise HTTPException(404, "Agent has no workspace configured")
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parents[2]
+        ws_path = (repo_root / workspace).resolve()
+        if not ws_path.is_dir():
+            return {"agent_id": agent_id, "workspace": workspace, "files": []}
+        files = []
+        for entry in sorted(ws_path.iterdir()):
+            files.append({
+                "name": entry.name,
+                "type": "directory" if entry.is_dir() else "file",
+                "size": entry.stat().st_size if entry.is_file() else None,
+            })
+        return {"agent_id": agent_id, "workspace": workspace, "files": files}
+
+    @app.get("/api/platform/agents/{agent_id}/workspace/{filename:path}", tags=["agents"])
+    async def read_agent_workspace_file(agent_id: str, filename: str):
+        """Read a file from the agent's workspace (path traversal protected)."""
+        if not platform_registry:
+            raise HTTPException(404, "Registry not available")
+        agent_def = platform_registry.get(agent_id)
+        if not agent_def:
+            raise HTTPException(404, f"Agent {agent_id} not found")
+        workspace = (agent_def.metadata or {}).get("workspace")
+        if not workspace:
+            raise HTTPException(404, "Agent has no workspace configured")
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parents[2]
+        ws_path = (repo_root / workspace).resolve()
+        file_path = (ws_path / filename).resolve()
+        # Path traversal protection
+        try:
+            file_path.relative_to(ws_path)
+        except ValueError:
+            raise HTTPException(403, "Path traversal not allowed")
+        if not file_path.is_file():
+            raise HTTPException(404, f"File not found: {filename}")
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            raise HTTPException(500, f"Error reading file: {exc}")
+        return {"agent_id": agent_id, "filename": filename, "content": content, "size": len(content)}
+
+    # ── Environments ─────────────────────────────────────────────────
+
+    @app.post("/api/platform/environments", tags=["environments"], status_code=201)
+    async def create_environment(req: EnvironmentCreateRequest):
+        if not platform_executor:
+            raise HTTPException(503, "Platform executor not available")
+        adapter = platform_executor.get_adapter("sandbox")
+        if not adapter or not hasattr(adapter, "create_environment"):
+            raise HTTPException(503, "Sandbox adapter not available")
+
+        from src.platform.environment import EnvironmentDefinition
+        env_def = EnvironmentDefinition(
+            name=req.name,
+            namespace=req.namespace,
+            owner_id=req.owner_id,
+            cpu_request=req.cpu_request,
+            cpu_limit=req.cpu_limit,
+            mem_request=req.mem_request,
+            mem_limit=req.mem_limit,
+            labels=req.labels,
+            metadata=req.metadata,
+        )
+        env_id = await adapter.create_environment(env_def)
+        return {"env_id": env_id, "name": req.name, "status": "pending"}
+
+    @app.get("/api/platform/environments", tags=["environments"])
+    async def list_environments():
+        if not platform_executor:
+            raise HTTPException(503, "Platform executor not available")
+        adapter = platform_executor.get_adapter("sandbox")
+        if not adapter or not hasattr(adapter, "env_registry"):
+            return []
+        return [e.to_dict() for e in adapter.env_registry.list_all()]
+
+    @app.get("/api/platform/environments/{env_id}", tags=["environments"])
+    async def get_environment(env_id: str):
+        if not platform_executor:
+            raise HTTPException(503, "Platform executor not available")
+        adapter = platform_executor.get_adapter("sandbox")
+        if not adapter or not hasattr(adapter, "get_environment_status"):
+            raise HTTPException(404, "Not found")
+        result = await adapter.get_environment_status(env_id)
+        if "error" in result:
+            raise HTTPException(404, result["error"])
+        return result
+
+    @app.delete("/api/platform/environments/{env_id}", tags=["environments"])
+    async def delete_environment(env_id: str):
+        if not platform_executor:
+            raise HTTPException(503, "Platform executor not available")
+        adapter = platform_executor.get_adapter("sandbox")
+        if not adapter or not hasattr(adapter, "delete_environment"):
+            raise HTTPException(404, "Not found")
+        await adapter.delete_environment(env_id)
+        return {"ok": True}
+
+    @app.get("/api/platform/environments/{env_id}/logs", tags=["environments"])
+    async def get_environment_logs(env_id: str, tail: int = 200):
+        if not platform_executor:
+            raise HTTPException(503, "Platform executor not available")
+        adapter = platform_executor.get_adapter("sandbox")
+        if not adapter or not hasattr(adapter, "env_registry"):
+            raise HTTPException(404, "Not found")
+        env = adapter.env_registry.get(env_id)
+        if not env:
+            raise HTTPException(404, f"Environment {env_id} not found")
+        # Get pod-level logs from K8s
+        logs = ""
+        pod_name = ""
+        status = "unknown"
+        if hasattr(adapter, "_k8s_available") and adapter._k8s_available:
+            try:
+                pods = adapter._v1.list_namespaced_pod(
+                    "forgeos", label_selector=f"forgeos.env-id={env_id}",
+                )
+                if pods.items:
+                    pod = pods.items[0]
+                    pod_name = pod.metadata.name
+                    status = pod.status.phase.lower() if pod.status else "unknown"
+                    logs = adapter._v1.read_namespaced_pod_log(pod_name, "forgeos", tail_lines=tail)
+            except Exception:
+                pass
+        return {"env_id": env_id, "logs": logs, "pod_name": pod_name, "status": status}
+
+    @app.post("/api/platform/environments/{env_id}/agents", tags=["environments"], status_code=201)
+    async def deploy_agent_to_environment(env_id: str, req: DeployAgentToEnvRequest):
+        if not platform_executor:
+            raise HTTPException(503, "Platform executor not available")
+        adapter = platform_executor.get_adapter("sandbox")
+        if not adapter or not hasattr(adapter, "deploy_agent_to_env"):
+            raise HTTPException(503, "Sandbox adapter not available")
+
+        from stacks.base import AgentDefinition, ExecutionType, OwnershipType, LLMConfig
+        agent_def = AgentDefinition(
+            name=req.name,
+            stack="sandbox",
+            execution_type=ExecutionType.ALWAYS_ON,
+            ownership=OwnershipType.SHARED,
+            llm_config=LLMConfig(chat_model=req.chat_model, provider=req.provider),
+            system_prompt=req.system_prompt,
+            tools=req.tools,
+            metadata=req.metadata,
+        )
+
+        if platform_registry:
+            platform_registry.register(agent_def)
+
+        try:
+            agent_id = await adapter.deploy_agent_to_env(
+                env_id, agent_def,
+                prompt=req.prompt or f"Standing duties for {req.name}",
+                loop_mode=req.loop_mode,
+                loop_interval=req.loop_interval,
+            )
+        except Exception as e:
+            if platform_registry:
+                platform_registry.unregister(agent_def.agent_id)
+            raise HTTPException(500, str(e))
+
+        return {"agent_id": agent_id, "name": req.name, "environment_id": env_id}
+
+    @app.get("/api/platform/environments/{env_id}/agents", tags=["environments"])
+    async def list_agents_in_environment(env_id: str):
+        if not platform_executor:
+            raise HTTPException(503, "Platform executor not available")
+        adapter = platform_executor.get_adapter("sandbox")
+        if not adapter or not hasattr(adapter, "env_registry"):
+            return []
+        env = adapter.env_registry.get(env_id)
+        if not env:
+            raise HTTPException(404, f"Environment {env_id} not found")
+
+        agents = []
+        for aid in env.agent_ids:
+            agent_def = platform_registry.get(aid) if platform_registry else None
+            agents.append({
+                "agent_id": aid,
+                "name": agent_def.name if agent_def else aid,
+                "status": adapter.get_status(aid).value if agent_def else "unknown",
+                "environment_id": env_id,
+            })
+        return agents
+
+    @app.delete("/api/platform/environments/{env_id}/agents/{agent_id}", tags=["environments"])
+    async def remove_agent_from_environment(env_id: str, agent_id: str):
+        if not platform_executor:
+            raise HTTPException(503, "Platform executor not available")
+        adapter = platform_executor.get_adapter("sandbox")
+        if not adapter or not hasattr(adapter, "stop_agent_in_env"):
+            raise HTTPException(503, "Sandbox adapter not available")
+        await adapter.stop_agent_in_env(env_id, agent_id)
+        return {"ok": True}
+
+    @app.get("/api/platform/environments/{env_id}/agents/{agent_id}/logs", tags=["environments"])
+    async def get_agent_logs_in_env(env_id: str, agent_id: str, tail: int = 200):
+        if not platform_executor:
+            raise HTTPException(503, "Platform executor not available")
+        adapter = platform_executor.get_adapter("sandbox")
+        if not adapter or not hasattr(adapter, "_get_env_agent_logs"):
+            raise HTTPException(503, "Not available")
+        return adapter._get_env_agent_logs(env_id, agent_id, tail)
 
     return app
 

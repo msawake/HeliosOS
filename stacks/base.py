@@ -78,6 +78,7 @@ class AgentDefinition:
     metadata: dict[str, Any] = field(default_factory=dict)
     system_prompt: str = ""
     namespace: str = "default"  # AgentOS kernel: logical isolation group (k8s-style)
+    environment_id: str | None = None
 
     def __post_init__(self):
         if self.stack not in STACK_NAMES:
@@ -106,6 +107,7 @@ class AgentDefinition:
             "created_at": self.created_at.isoformat(),
             "metadata": self.metadata,
             "system_prompt": self.system_prompt,
+            "environment_id": self.environment_id,
         }
 
 
@@ -215,4 +217,7 @@ def build_agent_context(agent_def: AgentDefinition, agent_id: str) -> dict:
         "tenant_id": metadata.get("tenant_id", "default"),
         "plan": metadata.get("plan", "starter"),
         "monthly_limit_usd": metadata.get("monthly_limit_usd"),
+        "workspace": metadata.get("workspace"),
+        "source_files": metadata.get("source_files", []),
+        "readable_dirs": metadata.get("readable_dirs", []),
     }
