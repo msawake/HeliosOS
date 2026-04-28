@@ -1,0 +1,43 @@
+apiVersion: agentos/v1
+kind: AgentContract
+metadata:
+  name: file-tracker
+  namespace: local
+  description: Scans local filesystem for recently created files and reports statistics
+  labels:
+    department: devops
+    category: monitoring
+
+spec:
+  runtime:
+    framework: forgeos
+
+  lifecycle:
+    type: reflex
+    # Uncomment for daily automated scans:
+    # type: scheduled
+    # schedule: "0 9 * * *"
+
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: openai
+
+  capabilities:
+    tools:
+      allowed:
+        - file_tracker__scan_recent
+        - file_tracker__scan_directory
+        - company__record_metric
+        - company__publish_event
+        - human__notify
+      denied: []
+
+  boundaries:
+    budgets:
+      daily_usd: 1.00
+      per_task_usd: 0.25
+    data:
+      allowed_namespaces: [local]
+
+  governance:
+    audit_level: minimal

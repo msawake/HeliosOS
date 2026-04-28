@@ -25,7 +25,7 @@ spec:
     - Egress
 ---
 
-# 2. API ingress: accept from web pods, sandbox pods, and ingress-nginx namespace
+# 2. API ingress: accept from web pods + from the ingress-nginx namespace
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -41,9 +41,6 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/component: web
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/component: sandbox
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: ingress-nginx
@@ -89,14 +86,6 @@ spec:
           port: 3000
         - protocol: TCP
           port: 5000
-    # K8s API server (needed by K8s sandbox adapter to create pods).
-    # GKE service CIDR — covers the kubernetes ClusterIP.
-    - to:
-        - ipBlock:
-            cidr: 34.118.224.0/20
-      ports:
-        - protocol: TCP
-          port: 443
     # External HTTPS for Anthropic/OpenAI/Google/MCP providers.
     # Prod overlays should tighten this further with CIDR allowlists.
     - to:
@@ -134,47 +123,7 @@ spec:
           port: 3000
 ---
 
-# 5. Sandbox egress: DNS + API + external HTTPS (LLM providers)
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: sandbox-egress
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/component: sandbox
-  policyTypes:
-    - Egress
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/component: api
-      ports:
-        - protocol: TCP
-          port: 5000
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8
-              - 172.16.0.0/12
-              - 192.168.0.0/16
-      ports:
-        - protocol: TCP
-          port: 443
----
-
-# 6. Web egress: DNS + internal API (SSR + client fetches go through ingress)
+# 5. Web egress: DNS + internal API (SSR + client fetches go through ingress)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

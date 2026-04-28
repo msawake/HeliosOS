@@ -18,7 +18,6 @@ spec:
         app.kubernetes.io/name: forgeos
         app.kubernetes.io/component: api
     spec:
-      serviceAccountName: forgeos-api-sa
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -87,12 +86,6 @@ spec:
                 secretKeyRef:
                   name: forgeos-secrets
                   key: REDIS_URL
-                  optional: true
-            - name: GOOGLE_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: forgeos-secrets
-                  key: GOOGLE_API_KEY
                   optional: true
           readinessProbe:
             httpGet:

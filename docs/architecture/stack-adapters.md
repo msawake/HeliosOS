@@ -227,12 +227,12 @@ config.yaml
 
 ## Adding a New Stack Adapter
 
-To add a fifth stack adapter (e.g., LangGraph):
+To add a new stack adapter (e.g., LangGraph):
 
-1. Create `stacks/langgraph/__init__.py` and `stacks/langgraph/adapter.py`
+1. Create `stacks/mystack/__init__.py` and `stacks/mystack/adapter.py`
 2. Implement `AgentStackAdapter` with all 6 required methods
-3. Set `stack_name = "langgraph"`
-4. Add `"langgraph"` to `STACK_NAMES` tuple in `stacks/base.py`
+3. Set `stack_name = "mystack"`
+4. Add `"mystack"` to `STACK_NAMES` tuple in `stacks/base.py`
 5. Register in `src/bootstrap.py` `_register_adapters()`
 6. Implement `scaffold_files()` for the new framework's file layout
 

@@ -17,7 +17,10 @@ Production hardening:
 from __future__ import annotations
 
 import asyncio
+<<<<<<< HEAD
 import json
+=======
+>>>>>>> origin/main
 import logging
 import os
 import random
@@ -196,6 +199,7 @@ class LLMRouter:
                 logger.info("Initialized Vertex AI client (project=%s, region=%s)",
                             key, self._clients["vertex"]["region"])
             elif provider == "google" and key:
+<<<<<<< HEAD
                 try:
                     from openai import OpenAI
                     self._clients["google"] = OpenAI(
@@ -206,6 +210,9 @@ class LLMRouter:
                 except ImportError:
                     logger.warning("openai package not installed (needed for Gemini)")
 
+=======
+                logger.info("Google ADK client placeholder registered")
+>>>>>>> origin/main
 
     async def chat(self, llm_config: LLMConfig, messages: list[dict], tools: list[dict] | None = None) -> LLMResponse:
         """Send a chat completion using the agent's chat model.
@@ -265,10 +272,13 @@ class LLMRouter:
             async for ev in self._stream_openai(client, model, messages, tools):
                 yield ev
             return
+<<<<<<< HEAD
         if provider == "google" and client:
             async for ev in self._stream_openai(client, model, messages, tools):
                 yield ev
             return
+=======
+>>>>>>> origin/main
 
         # Simulated fallback
         yield {
@@ -386,7 +396,11 @@ class LLMRouter:
                 try:
                     stream = client.chat.completions.create(**kwargs)
                     text_acc = ""
+<<<<<<< HEAD
                     tc_accum: dict[int, dict] = {}
+=======
+                    tool_calls: list[dict] = []
+>>>>>>> origin/main
                     for chunk in stream:
                         try:
                             choice = chunk.choices[0]
@@ -402,6 +416,7 @@ class LLMRouter:
                                 q.put({"type": "text_delta", "content": content}),
                                 loop,
                             )
+<<<<<<< HEAD
                         for tc_delta in getattr(delta, "tool_calls", None) or []:
                             idx = getattr(tc_delta, "index", 0)
                             if idx not in tc_accum:
@@ -422,11 +437,18 @@ class LLMRouter:
                         except json.JSONDecodeError:
                             inp = {}
                         tool_calls.append({"id": tc["id"], "name": tc["name"], "input": inp})
+=======
+                        # tool calls aggregate across chunks; skip for now
+>>>>>>> origin/main
                     asyncio.run_coroutine_threadsafe(
                         q.put({
                             "type": "done",
                             "tokens_used": 0,
+<<<<<<< HEAD
                             "text": "",
+=======
+                            "text": "",  # Already streamed via text_delta events
+>>>>>>> origin/main
                             "tool_calls": tool_calls,
                         }),
                         loop,
@@ -538,11 +560,14 @@ class LLMRouter:
                 lambda: self._call_openai(client, model, messages, tools),
                 provider=provider, model=model,
             )
+<<<<<<< HEAD
         if provider == "google" and client:
             return await _with_retry(
                 lambda: self._call_google(client, model, messages, tools),
                 provider=provider, model=model,
             )
+=======
+>>>>>>> origin/main
         if provider == "atlas" and client:
             return await _with_retry(
                 lambda: self._call_openai(client, model, messages, tools),
@@ -616,7 +641,11 @@ class LLMRouter:
         kwargs: dict[str, Any] = {"model": model, "messages": messages}
         if tools:
             kwargs["tools"] = _to_openai_tools(tools)
+<<<<<<< HEAD
         response = await asyncio.to_thread(client.chat.completions.create, **kwargs)
+=======
+        response = client.chat.completions.create(**kwargs)
+>>>>>>> origin/main
         choice = response.choices[0]
         tool_calls = None
         if choice.message.tool_calls:
@@ -638,6 +667,7 @@ class LLMRouter:
             tool_calls=tool_calls,
         )
 
+<<<<<<< HEAD
     async def _call_google(
         self, client: Any, model: str, messages: list[dict], tools: list[dict] | None
     ) -> LLMResponse:
@@ -667,6 +697,8 @@ class LLMRouter:
             tool_calls=tool_calls,
         )
 
+=======
+>>>>>>> origin/main
     async def _call_vertex(
         self, config: dict, model: str, messages: list[dict],
         tools: list[dict] | None = None,
@@ -686,6 +718,10 @@ class LLMRouter:
             raise RuntimeError("Failed to get gcloud access token")
         access_token = token_result.stdout.strip()
 
+<<<<<<< HEAD
+=======
+        # Convert messages to Vertex AI format
+>>>>>>> origin/main
         contents = []
         system_text = ""
         for m in messages:
@@ -697,6 +733,10 @@ class LLMRouter:
                     system_text += content + "\n"
                 continue
 
+<<<<<<< HEAD
+=======
+            # Messages already in Vertex-native format (from agentic loop)
+>>>>>>> origin/main
             if "parts" in m and role in ("model", "user"):
                 contents.append(m)
                 continue
@@ -726,6 +766,10 @@ class LLMRouter:
         if system_text:
             payload["systemInstruction"] = {"parts": [{"text": system_text.strip()}]}
 
+<<<<<<< HEAD
+=======
+        # Convert tool definitions to Vertex functionDeclarations format
+>>>>>>> origin/main
         if tools:
             function_declarations = []
             for t in tools:
@@ -733,6 +777,10 @@ class LLMRouter:
                 if not name:
                     continue
                 schema = t.get("input_schema", {"type": "object", "properties": {}})
+<<<<<<< HEAD
+=======
+                # Remove unsupported fields from schema
+>>>>>>> origin/main
                 clean_schema = {
                     "type": schema.get("type", "object"),
                     "properties": schema.get("properties", {}),

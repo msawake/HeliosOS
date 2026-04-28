@@ -100,11 +100,23 @@ export default function AgentChatPage() {
     setMessages([]);
   }
 
+<<<<<<< HEAD
   async function send() {
     const text = input.trim();
     if (!text || loading) return;
     setInput('');
     setLoading(true);
+=======
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
+
+  async function send() {
+    const text = input.trim();
+    if (!text) return;
+    setInput('');
+    
+    // Don't set loading=true here, allow user to type during stream
+    // setLoading(true);
+>>>>>>> origin/main
 
     const userMsg: ChatMessage = { id: newId(), role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
@@ -113,11 +125,21 @@ export default function AgentChatPage() {
     const assistantId = newId();
     setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '' }]);
 
+<<<<<<< HEAD
+=======
+    const controller = new AbortController();
+    setAbortController(controller);
+
+>>>>>>> origin/main
     try {
       const res = await fetch(`/api/platform/agents/${agentId}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, session_id: sessionId }),
+<<<<<<< HEAD
+=======
+        signal: controller.signal,
+>>>>>>> origin/main
       });
 
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
@@ -146,6 +168,7 @@ export default function AgentChatPage() {
         }
       }
     } catch (e: any) {
+<<<<<<< HEAD
       setMessages(prev => {
         const copy = [...prev];
         const last = copy.find(m => m.id === assistantId);
@@ -154,6 +177,33 @@ export default function AgentChatPage() {
       });
     } finally {
       setLoading(false);
+=======
+      if (e.name === 'AbortError') {
+        setMessages(prev => {
+          const copy = [...prev];
+          const last = copy.find(m => m.id === assistantId);
+          if (last) last.content += `\n\n[Generation stopped]`;
+          return [...copy];
+        });
+      } else {
+        setMessages(prev => {
+          const copy = [...prev];
+          const last = copy.find(m => m.id === assistantId);
+          if (last) last.content = `Error: ${e.message}`;
+          return [...copy];
+        });
+      }
+    } finally {
+      setAbortController(null);
+      // setLoading(false);
+    }
+  }
+
+  function stopGeneration() {
+    if (abortController) {
+      abortController.abort();
+      setAbortController(null);
+>>>>>>> origin/main
     }
   }
 
@@ -368,6 +418,7 @@ export default function AgentChatPage() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && send()}
               placeholder={`Message ${agentName || 'agent'}...`}
+<<<<<<< HEAD
               disabled={loading}
               className="flex-1 px-4 py-3 border border-[#d1d1d1] rounded-xl text-sm text-[#0d0d0d] placeholder-[#8e8ea0] focus:border-[#10A37F] focus:ring-1 focus:ring-[#10A37F]/30 disabled:opacity-50"
             />
@@ -377,6 +428,26 @@ export default function AgentChatPage() {
               className="px-5 py-3 bg-[#10A37F] hover:bg-[#0d8c6d] disabled:opacity-50 text-white text-sm rounded-xl font-medium">
               Send
             </button>
+=======
+              className="flex-1 px-4 py-3 border border-[#d1d1d1] rounded-xl text-sm text-[#0d0d0d] placeholder-[#8e8ea0] focus:border-[#10A37F] focus:ring-1 focus:ring-[#10A37F]/30"
+            />
+            {abortController ? (
+              <button
+                onClick={stopGeneration}
+                className="px-5 py-3 bg-red-500 hover:bg-red-600 text-white text-sm rounded-xl font-medium transition-colors"
+              >
+                Stop
+              </button>
+            ) : (
+              <button
+                onClick={send}
+                disabled={!input.trim()}
+                className="px-5 py-3 bg-[#10A37F] hover:bg-[#0d8c6d] disabled:opacity-50 text-white text-sm rounded-xl font-medium transition-colors"
+              >
+                Send
+              </button>
+            )}
+>>>>>>> origin/main
           </div>
         </div>
       </div>

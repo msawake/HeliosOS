@@ -6,8 +6,8 @@ Base URL: `http://localhost:8000` (default) or the port configured via `--port`.
 
 Authentication: Endpoints marked **Auth: Required** expect an `X-API-Key` header.
 Public paths (`/api/health`, `/api/readiness`, `/api/auth/token`, `/api/me`, `/docs`,
-`/redoc`, `/openapi.json`, all `/api/approvals/*` paths, `/api/admin/chat`, and
-`/api/intelligence/ask`) skip auth checks entirely.
+`/redoc`, `/openapi.json`, all `/api/approvals/*` paths, and all `/api/a2h/*` paths)
+skip auth checks entirely.
 
 ---
 
@@ -1373,6 +1373,48 @@ Record a custom audit event from an agent.
 ---
 
 ## Interactive Documentation
+
+---
+
+## A2H Protocol Endpoints (Agent-to-Human)
+
+### POST /api/a2h/requests
+
+Create an A2H request (agent asks human). Returns the request object with ID and status.
+
+**Body:** `to_namespace`, `to_name`, `question`, `response_type`, `options`, `context`, `priority`, `deadline`, `from_agent`
+
+### GET /api/a2h/requests/{request_id}
+
+Get status of an A2H request, including response if answered.
+
+### POST /api/a2h/requests/{request_id}/respond
+
+Human submits a response to a pending request.
+
+**Body:** `response` (dict), `channel`, `responded_by`
+
+### GET /api/a2h/pending
+
+List pending A2H requests. Optional query param: `to` (human PID).
+
+### POST /api/a2h/notifications
+
+Send a notification to a human (no response needed).
+
+**Body:** `to_namespace`, `to_name`, `message`, `priority`, `context`, `from_agent`
+
+### POST /api/a2h/humans
+
+Register a human participant.
+
+**Body:** `name`, `namespace`, `role`, `channels`
+
+### GET /api/a2h/humans
+
+List registered human participants. Optional query param: `namespace`.
+
+---
 
 When the server is running, auto-generated interactive docs are available at:
 

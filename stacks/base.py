@@ -78,7 +78,10 @@ class AgentDefinition:
     metadata: dict[str, Any] = field(default_factory=dict)
     system_prompt: str = ""
     namespace: str = "default"  # AgentOS kernel: logical isolation group (k8s-style)
+<<<<<<< HEAD
     environment_id: str | None = None
+=======
+>>>>>>> origin/main
 
     def __post_init__(self):
         if self.stack not in STACK_NAMES:
@@ -107,7 +110,10 @@ class AgentDefinition:
             "created_at": self.created_at.isoformat(),
             "metadata": self.metadata,
             "system_prompt": self.system_prompt,
+<<<<<<< HEAD
             "environment_id": self.environment_id,
+=======
+>>>>>>> origin/main
         }
 
 
@@ -195,6 +201,34 @@ class AgentStackAdapter(ABC):
         """
         return 0
 
+<<<<<<< HEAD
+=======
+    async def _check_kernel_gate(self, tool_name: str, tool_input: dict) -> dict | None:
+        """Standardized kernel permission check for all adapters.
+        
+        Returns None if allowed, or an error dict if denied.
+        Adapters should call this before executing any tool.
+        """
+        try:
+            from src.forgeos_sdk.runtime import runtime as _rt
+            if _rt.is_registered and _rt.is_bound:
+                decision = await _rt.check_tool(tool_name, tool_input)
+                if decision.denied:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "Kernel denied tool %s: %s", tool_name, decision.reason
+                    )
+                    return {"success": False, "error": f"Kernel denied: {decision.reason}"}
+                if hasattr(decision, "action") and decision.action == "rate_limit":
+                    return {"success": False, "error": f"Rate limited: {decision.reason}"}
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Kernel check failed for %s: %s", tool_name, e)
+            # Fail closed on kernel errors
+            return {"success": False, "error": f"Kernel check failed: {e}"}
+        return None
+
+>>>>>>> origin/main
 
 def build_agent_context(agent_def: AgentDefinition, agent_id: str) -> dict:
     """Shared helper: build the per-invocation agent_context dict.
@@ -217,7 +251,10 @@ def build_agent_context(agent_def: AgentDefinition, agent_id: str) -> dict:
         "tenant_id": metadata.get("tenant_id", "default"),
         "plan": metadata.get("plan", "starter"),
         "monthly_limit_usd": metadata.get("monthly_limit_usd"),
+<<<<<<< HEAD
         "workspace": metadata.get("workspace"),
         "source_files": metadata.get("source_files", []),
         "readable_dirs": metadata.get("readable_dirs", []),
+=======
+>>>>>>> origin/main
     }

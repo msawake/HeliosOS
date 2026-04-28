@@ -168,7 +168,11 @@ async def run_agentic_loop(
 
         # Build assistant + tool result messages in the correct provider format
         is_vertex = llm_config.provider == "vertex"
+<<<<<<< HEAD
         is_openai = (not is_vertex) and (llm_config.provider in ("openai", "atlas", "google") or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-", "deepseek-", "qwen-", "nemotron", "gemini-")))
+=======
+        is_openai = (not is_vertex) and (llm_config.provider in ("openai", "atlas") or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-", "deepseek-", "qwen-", "nemotron")))
+>>>>>>> origin/main
 
         if is_vertex:
             # Vertex AI Gemini format: functionCall parts + functionResponse parts
@@ -187,6 +191,7 @@ async def run_agentic_loop(
             # that _call_vertex can parse. Simpler: build Vertex-native parts directly.
             messages[-1] = {"role": "model", "parts": assistant_parts} if assistant_parts else {"role": "model", "parts": [{"text": ""}]}
 
+<<<<<<< HEAD
             # Execute tools and build functionResponse parts
             response_parts = []
             for tc in response.tool_calls:
@@ -196,6 +201,24 @@ async def run_agentic_loop(
                     tc.name, tc.input, tool_executor, agent_context,
                     timeout=tool_timeout,
                 )
+=======
+            # Execute tools in parallel
+            response_parts = []
+            tasks = []
+            for tc in response.tool_calls:
+                all_tool_calls.append({"name": tc.name, "input": tc.input})
+                tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
+                tasks.append(_execute_tool(
+                    tc.name, tc.input, tool_executor, agent_context,
+                    timeout=tool_timeout,
+                ))
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for tc, result_data in zip(response.tool_calls, results):
+                if isinstance(result_data, Exception):
+                    result_data = {"error": str(result_data)}
+>>>>>>> origin/main
                 content = json.dumps(result_data) if isinstance(result_data, dict) else str(result_data)
                 response_parts.append({
                     "functionResponse": {
@@ -224,6 +247,7 @@ async def run_agentic_loop(
             }
             messages.append(assistant_msg)
 
+<<<<<<< HEAD
             # Execute tools and append each result as a separate "tool" role message
             for tc in response.tool_calls:
                 all_tool_calls.append({"name": tc.name, "input": tc.input})
@@ -232,6 +256,23 @@ async def run_agentic_loop(
                     tc.name, tc.input, tool_executor, agent_context,
                     timeout=tool_timeout,
                 )
+=======
+            # Execute tools in parallel
+            tasks = []
+            for tc in response.tool_calls:
+                all_tool_calls.append({"name": tc.name, "input": tc.input})
+                tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
+                tasks.append(_execute_tool(
+                    tc.name, tc.input, tool_executor, agent_context,
+                    timeout=tool_timeout,
+                ))
+                
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for tc, result_data in zip(response.tool_calls, results):
+                if isinstance(result_data, Exception):
+                    result_data = {"error": str(result_data)}
+>>>>>>> origin/main
                 content = json.dumps(result_data) if isinstance(result_data, dict) else str(result_data)
                 messages.append({
                     "role": "tool",
@@ -253,6 +294,7 @@ async def run_agentic_loop(
             messages.append({"role": "assistant", "content": assistant_content})
 
             tool_results = []
+<<<<<<< HEAD
             for tc in response.tool_calls:
                 all_tool_calls.append({"name": tc.name, "input": tc.input})
                 tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
@@ -260,6 +302,22 @@ async def run_agentic_loop(
                     tc.name, tc.input, tool_executor, agent_context,
                     timeout=tool_timeout,
                 )
+=======
+            tasks = []
+            for tc in response.tool_calls:
+                all_tool_calls.append({"name": tc.name, "input": tc.input})
+                tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
+                tasks.append(_execute_tool(
+                    tc.name, tc.input, tool_executor, agent_context,
+                    timeout=tool_timeout,
+                ))
+                
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for tc, result_data in zip(response.tool_calls, results):
+                if isinstance(result_data, Exception):
+                    result_data = {"error": str(result_data)}
+>>>>>>> origin/main
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": tc.id,
@@ -430,7 +488,11 @@ async def run_agentic_loop_with_events(
 
         # Build assistant + tool result messages per provider format
         is_vertex = llm_config.provider == "vertex"
+<<<<<<< HEAD
         is_openai = (not is_vertex) and (llm_config.provider in ("openai", "atlas", "google") or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-", "deepseek-", "qwen-", "nemotron", "gemini-")))
+=======
+        is_openai = (not is_vertex) and (llm_config.provider in ("openai", "atlas") or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-", "deepseek-", "qwen-", "nemotron")))
+>>>>>>> origin/main
 
         if is_vertex:
             # Vertex format: functionCall + functionResponse parts
@@ -480,6 +542,7 @@ async def run_agentic_loop_with_events(
             }
             messages.append(assistant_msg)
 
+<<<<<<< HEAD
             for tc in turn_tool_calls:
                 yield {"type": "tool_call", "name": tc["name"], "input": tc.get("input", {})}
                 timeout = _tool_timeout_for(tc["name"], tool_definitions)
@@ -487,6 +550,22 @@ async def run_agentic_loop_with_events(
                     tc["name"], tc.get("input", {}), tool_executor, agent_context,
                     timeout=timeout,
                 )
+=======
+            tasks = []
+            for tc in turn_tool_calls:
+                yield {"type": "tool_call", "name": tc["name"], "input": tc.get("input", {})}
+                timeout = _tool_timeout_for(tc["name"], tool_definitions)
+                tasks.append(_execute_tool(
+                    tc["name"], tc.get("input", {}), tool_executor, agent_context,
+                    timeout=timeout,
+                ))
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for tc, result in zip(turn_tool_calls, results):
+                if isinstance(result, Exception):
+                    result = {"error": str(result)}
+>>>>>>> origin/main
                 yield {"type": "tool_result", "name": tc["name"], "result": result}
                 if tc["name"] == "company__request_approval":
                     inner = result.get("result", result) if isinstance(result, dict) else {}
@@ -520,6 +599,7 @@ async def run_agentic_loop_with_events(
             messages.append({"role": "assistant", "content": assistant_content})
 
             tool_results = []
+<<<<<<< HEAD
             for tc in turn_tool_calls:
                 yield {"type": "tool_call", "name": tc["name"], "input": tc.get("input", {})}
                 timeout = _tool_timeout_for(tc["name"], tool_definitions)
@@ -527,6 +607,22 @@ async def run_agentic_loop_with_events(
                     tc["name"], tc.get("input", {}), tool_executor, agent_context,
                     timeout=timeout,
                 )
+=======
+            tasks = []
+            for tc in turn_tool_calls:
+                yield {"type": "tool_call", "name": tc["name"], "input": tc.get("input", {})}
+                timeout = _tool_timeout_for(tc["name"], tool_definitions)
+                tasks.append(_execute_tool(
+                    tc["name"], tc.get("input", {}), tool_executor, agent_context,
+                    timeout=timeout,
+                ))
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for tc, result in zip(turn_tool_calls, results):
+                if isinstance(result, Exception):
+                    result = {"error": str(result)}
+>>>>>>> origin/main
                 yield {"type": "tool_result", "name": tc["name"], "result": result}
                 if tc["name"] == "company__request_approval":
                     inner = result.get("result", result) if isinstance(result, dict) else {}

@@ -22,8 +22,17 @@ Every check returns a ``KernelDecision``. Every admission returns an
 
 from __future__ import annotations
 
+<<<<<<< HEAD
 import logging
 import re
+=======
+import functools
+import hashlib
+import json
+import logging
+import re
+import threading
+>>>>>>> origin/main
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -369,6 +378,10 @@ class BudgetManager:
         # today; durable accounting comes with the Store[T] work in Phase 2.
         self._reservations: dict[str, dict] = {}   # ticket -> {...}
         self._reserved_by_agent: dict[str, float] = {}  # agent_id -> total reserved USD
+<<<<<<< HEAD
+=======
+        self._lock = threading.RLock()
+>>>>>>> origin/main
 
     def check_budget(
         self,
@@ -414,6 +427,7 @@ class BudgetManager:
                     today_cost = float(summary.get("today_cost_usd", 0.0))
                 except Exception as e:
                     logger.debug("Budget check skipped: %s", e)
+<<<<<<< HEAD
             reserved = self._reserved_by_agent.get(agent_id, 0.0)
             projected = today_cost + reserved + (estimated_cost_usd or 0)
             if projected > daily_usd:
@@ -431,6 +445,27 @@ class BudgetManager:
                         "daily_usd": daily_usd,
                     },
                 )
+=======
+            
+            with self._lock:
+                reserved = self._reserved_by_agent.get(agent_id, 0.0)
+                projected = today_cost + reserved + (estimated_cost_usd or 0)
+                if projected > daily_usd:
+                    return KernelDecision(
+                        action="rate_limit",
+                        reason=(
+                            f"Daily budget exceeded: spent ${today_cost:.2f} + "
+                            f"reserved ${reserved:.2f} + estimated "
+                            f"${estimated_cost_usd or 0:.2f} > ${daily_usd:.2f}"
+                        ),
+                        details={
+                            "today_cost_usd": today_cost,
+                            "reserved_usd": reserved,
+                            "estimated_cost_usd": estimated_cost_usd or 0,
+                            "daily_usd": daily_usd,
+                        },
+                    )
+>>>>>>> origin/main
 
         return KernelDecision.allow(reason="within budget")
 
@@ -453,6 +488,7 @@ class BudgetManager:
         ``check_budget`` independently: each reservation is deducted up
         front and released only after commit.
         """
+<<<<<<< HEAD
         # Check first (counts prior reservations against the cap).
         decision = self.check_budget(
             agent_id,
@@ -478,6 +514,34 @@ class BudgetManager:
             ticket=ticket,
             reserved_usd=reserved_usd,
         )
+=======
+        with self._lock:
+            # Check first (counts prior reservations against the cap).
+            decision = self.check_budget(
+                agent_id,
+                estimated_cost_usd=estimated_cost_usd,
+                estimated_tokens=estimated_tokens,
+            )
+            if decision.action != "allow":
+                return None, decision
+
+            ticket = uuid.uuid4().hex[:12]
+            reserved_usd = float(estimated_cost_usd or 0.0)
+            self._reservations[ticket] = {
+                "agent_id": agent_id,
+                "reserved_usd": reserved_usd,
+                "reserved_tokens": int(estimated_tokens or 0),
+                "issued_at": datetime.now(timezone.utc).isoformat(),
+            }
+            self._reserved_by_agent[agent_id] = (
+                self._reserved_by_agent.get(agent_id, 0.0) + reserved_usd
+            )
+            return ticket, KernelDecision.allow(
+                reason="reserved",
+                ticket=ticket,
+                reserved_usd=reserved_usd,
+            )
+>>>>>>> origin/main
 
     def commit(
         self,
@@ -491,6 +555,7 @@ class BudgetManager:
         underlying usage enforcer when one is wired. Idempotent: a missing
         or already-committed ticket returns ``allow`` with a note.
         """
+<<<<<<< HEAD
         record = self._reservations.pop(ticket, None)
         if record is None:
             return KernelDecision.allow(reason="ticket unknown or already settled", ticket=ticket)
@@ -500,6 +565,18 @@ class BudgetManager:
         self._reserved_by_agent[agent_id] = max(
             0.0, self._reserved_by_agent.get(agent_id, 0.0) - reserved
         )
+=======
+        with self._lock:
+            record = self._reservations.pop(ticket, None)
+            if record is None:
+                return KernelDecision.allow(reason="ticket unknown or already settled", ticket=ticket)
+
+            agent_id = record["agent_id"]
+            reserved = record["reserved_usd"]
+            self._reserved_by_agent[agent_id] = max(
+                0.0, self._reserved_by_agent.get(agent_id, 0.0) - reserved
+            )
+>>>>>>> origin/main
 
         # Record actual usage against the usage enforcer if one is wired.
         if self._usage_enforcer and actual_cost_usd is not None:
@@ -527,6 +604,7 @@ class BudgetManager:
 
     def release(self, ticket: str) -> KernelDecision:
         """Release an un-consumed reservation (error paths, early aborts)."""
+<<<<<<< HEAD
         record = self._reservations.pop(ticket, None)
         if record is None:
             return KernelDecision.allow(reason="ticket unknown or already settled", ticket=ticket)
@@ -540,6 +618,23 @@ class BudgetManager:
     def reserved_for(self, agent_id: str) -> float:
         """Total outstanding reservations (USD) for an agent."""
         return self._reserved_by_agent.get(agent_id, 0.0)
+=======
+        with self._lock:
+            record = self._reservations.pop(ticket, None)
+            if record is None:
+                return KernelDecision.allow(reason="ticket unknown or already settled", ticket=ticket)
+            agent_id = record["agent_id"]
+            reserved = record["reserved_usd"]
+            self._reserved_by_agent[agent_id] = max(
+                0.0, self._reserved_by_agent.get(agent_id, 0.0) - reserved
+            )
+            return KernelDecision.allow(reason="released", ticket=ticket, reserved_usd=reserved)
+
+    def reserved_for(self, agent_id: str) -> float:
+        """Total outstanding reservations (USD) for an agent."""
+        with self._lock:
+            return self._reserved_by_agent.get(agent_id, 0.0)
+>>>>>>> origin/main
 
 
 class PolicyEngine:
@@ -556,6 +651,11 @@ class PolicyEngine:
 
     def load_policy(self, name: str, rule: dict) -> None:
         self._policies[name] = rule
+<<<<<<< HEAD
+=======
+        # Clear cache when policies change
+        self._evaluate_rule_cached.cache_clear()
+>>>>>>> origin/main
 
     def evaluate(
         self,
@@ -566,6 +666,18 @@ class PolicyEngine:
 
         Returns deny if any policy denies, else allow.
         """
+<<<<<<< HEAD
+=======
+        # Create a deterministic hash of the context for caching
+        try:
+            # Sort keys to ensure consistent hashing
+            context_str = json.dumps(context, sort_keys=True, default=str)
+            context_hash = hashlib.md5(context_str.encode()).hexdigest()
+        except Exception:
+            # Fallback if context is not JSON serializable
+            context_hash = None
+
+>>>>>>> origin/main
         for ref in policy_refs:
             policy_name = ref.get("name")
             rule = self._policies.get(policy_name)
@@ -575,13 +687,36 @@ class PolicyEngine:
                     reason=f"Policy '{policy_name}' not loaded (referenced but missing)",
                     policy=policy_name,
                 )
+<<<<<<< HEAD
             if self._evaluate_rule(rule, context):
+=======
+            
+            # Use cached evaluation if possible
+            if context_hash:
+                rule_str = json.dumps(rule, sort_keys=True)
+                rule_hash = hashlib.md5(rule_str.encode()).hexdigest()
+                is_denied = self._evaluate_rule_cached(rule_hash, context_hash, rule_str, context_str)
+            else:
+                is_denied = self._evaluate_rule(rule, context)
+                
+            if is_denied:
+>>>>>>> origin/main
                 return KernelDecision.deny(
                     reason=f"Policy '{policy_name}' denies action",
                     policy=policy_name,
                 )
         return KernelDecision.allow(reason="all policies permit")
 
+<<<<<<< HEAD
+=======
+    @functools.lru_cache(maxsize=10000)
+    def _evaluate_rule_cached(self, rule_hash: str, context_hash: str, rule_str: str, context_str: str) -> bool:
+        """Cached version of rule evaluation."""
+        rule = json.loads(rule_str)
+        context = json.loads(context_str)
+        return self._evaluate_rule(rule, context)
+
+>>>>>>> origin/main
     def _evaluate_rule(self, rule: dict, context: dict) -> bool:
         """Return True if the rule should DENY."""
         deny_if = rule.get("deny_if")

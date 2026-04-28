@@ -9,10 +9,15 @@ uses the platform's own LLM client and tool system directly.
 from __future__ import annotations
 
 import asyncio
+<<<<<<< HEAD
 import collections
 import logging
 import textwrap
 from datetime import datetime, timezone
+=======
+import logging
+import textwrap
+>>>>>>> origin/main
 from typing import Any
 
 from stacks.base import (
@@ -27,8 +32,11 @@ from stacks.base import (
 
 logger = logging.getLogger(__name__)
 
+<<<<<<< HEAD
 MAX_ACTIVITY_LOG = 200
 
+=======
+>>>>>>> origin/main
 
 class ForgeOSAdapter(AgentStackAdapter):
     stack_name = "forgeos"
@@ -38,6 +46,7 @@ class ForgeOSAdapter(AgentStackAdapter):
         self._tool_executor = tool_executor
         self._agents: dict[str, AgentDefinition] = {}
         self._loops: dict[str, asyncio.Task] = {}
+<<<<<<< HEAD
         self._activity: dict[str, collections.deque] = {}
 
     # -- activity logging --------------------------------------------------
@@ -53,6 +62,8 @@ class ForgeOSAdapter(AgentStackAdapter):
 
     def get_activity_log(self, agent_id: str) -> list[dict]:
         return list(self._activity.get(agent_id, []))
+=======
+>>>>>>> origin/main
 
     async def create_agent(self, agent_def: AgentDefinition) -> str:
         self._agents[agent_def.agent_id] = agent_def
@@ -67,8 +78,11 @@ class ForgeOSAdapter(AgentStackAdapter):
         if not agent_def:
             return AgentResult(agent_id=agent_id, status=AgentStatus.FAILED, error="Agent not found")
 
+<<<<<<< HEAD
         self._log_activity(agent_id, "invoke", prompt[:120])
 
+=======
+>>>>>>> origin/main
         if self._llm_router:
             if not self._tool_executor:
                 logger.warning("ForgeOS invoke for %s: no tool_executor — agent will run without tools", agent_id)
@@ -109,6 +123,7 @@ class ForgeOSAdapter(AgentStackAdapter):
         if not agent_def:
             return
 
+<<<<<<< HEAD
         self._log_activity(agent_id, "start_loop")
 
         async def _loop():
@@ -121,6 +136,13 @@ class ForgeOSAdapter(AgentStackAdapter):
                     if workspace:
                         prompt += f" Your workspace is {workspace}."
                     await self.invoke(agent_id, prompt)
+=======
+        async def _loop():
+            interval = agent_def.metadata.get("loop_interval_seconds", 60)
+            while True:
+                try:
+                    await self.invoke(agent_id, f"Standing duties for {agent_def.name}")
+>>>>>>> origin/main
                 except asyncio.CancelledError:
                     break
                 except Exception:
@@ -131,7 +153,10 @@ class ForgeOSAdapter(AgentStackAdapter):
         logger.info("Started ForgeOS loop for %s", agent_id)
 
     async def stop(self, agent_id: str) -> None:
+<<<<<<< HEAD
         self._log_activity(agent_id, "stop")
+=======
+>>>>>>> origin/main
         task = self._loops.pop(agent_id, None)
         if task:
             task.cancel()

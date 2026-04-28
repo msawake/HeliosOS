@@ -43,6 +43,7 @@ class SandboxTokenStore:
 
     def mint(self, agent_def: AgentDefinition) -> str:
         token = f"sbx_{secrets.token_urlsafe(32)}"
+<<<<<<< HEAD
         metadata = agent_def.metadata or {}
         self._tokens[token] = {
             "agent_id": agent_def.agent_id,
@@ -55,6 +56,15 @@ class SandboxTokenStore:
             "workspace": metadata.get("workspace"),
             "source_files": metadata.get("source_files", []),
             "readable_dirs": metadata.get("readable_dirs", []),
+=======
+        self._tokens[token] = {
+            "agent_id": agent_def.agent_id,
+            "namespace": agent_def.namespace,
+            "owner_id": agent_def.owner_id or "",
+            "tools": agent_def.tools or [],
+            "tier": (agent_def.metadata or {}).get("_tier", 3),
+            "created_at": time.time(),
+>>>>>>> origin/main
         }
         return token
 
@@ -109,7 +119,11 @@ class SandboxAdapter(AgentStackAdapter):
             self._docker.networks.get(SANDBOX_NETWORK)
         except Exception:
             try:
+<<<<<<< HEAD
                 self._docker.networks.create(SANDBOX_NETWORK, driver="bridge", internal=False)
+=======
+                self._docker.networks.create(SANDBOX_NETWORK, driver="bridge", internal=True)
+>>>>>>> origin/main
                 logger.info("Created Docker network: %s", SANDBOX_NETWORK)
             except Exception:
                 pass
@@ -154,7 +168,11 @@ class SandboxAdapter(AgentStackAdapter):
             "AGENT_MAX_TURNS": str((agent_def.metadata or {}).get("max_turns", 15)),
             "PYTHONUNBUFFERED": "1",
         }
+<<<<<<< HEAD
         for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY"):
+=======
+        for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+>>>>>>> origin/main
             if os.environ.get(key):
                 env[key] = os.environ[key]
 
@@ -165,7 +183,10 @@ class SandboxAdapter(AgentStackAdapter):
                 image=SANDBOX_IMAGE, name=name, environment=env,
                 mem_limit=SANDBOX_MEM, cpu_quota=SANDBOX_CPU,
                 detach=True, auto_remove=False, read_only=True,
+<<<<<<< HEAD
                 network=SANDBOX_NETWORK,
+=======
+>>>>>>> origin/main
                 labels={"forgeos.agent_id": agent_def.agent_id, "forgeos.owner_id": agent_def.owner_id or "", "forgeos.namespace": agent_def.namespace},
                 tmpfs={"/tmp": "size=64M"},
             )
@@ -222,12 +243,16 @@ class SandboxAdapter(AgentStackAdapter):
             return
         token = self._tokens.mint(agent_def)
         name = f"forgeos-sbx-{agent_id}"
+<<<<<<< HEAD
         metadata = agent_def.metadata or {}
+=======
+>>>>>>> origin/main
         env = {
             "AGENT_ID": agent_id, "AGENT_TOKEN": token, "FORGEOS_API_URL": self._api_url,
             "AGENT_MODEL": agent_def.llm_config.chat_model if agent_def.llm_config else "gpt-4o-mini",
             "AGENT_PROVIDER": agent_def.llm_config.provider if agent_def.llm_config else "openai",
             "AGENT_SYSTEM_PROMPT": agent_def.system_prompt or "", "AGENT_TOOLS": json.dumps(agent_def.tools or []),
+<<<<<<< HEAD
             "AGENT_PROMPT": f"Standing duties for {agent_def.name}", "AGENT_MAX_TURNS": "50", "PYTHONUNBUFFERED": "1",
             "AGENT_LOOP_MODE": "true",
             "AGENT_LOOP_INTERVAL": str(metadata.get("loop_interval_seconds", 120)),
@@ -237,6 +262,15 @@ class SandboxAdapter(AgentStackAdapter):
                 env[k] = os.environ[k]
         try:
             c = self._docker.containers.run(image=SANDBOX_IMAGE, name=name, environment=env, mem_limit=SANDBOX_MEM, cpu_quota=SANDBOX_CPU, detach=True, auto_remove=False, read_only=True, network=SANDBOX_NETWORK, restart_policy={"Name": "on-failure", "MaximumRetryCount": 5}, tmpfs={"/tmp": "size=64M"})
+=======
+            "AGENT_PROMPT": agent_def.goal or f"Heartbeat for {agent_def.name}.", "AGENT_MAX_TURNS": "50", "PYTHONUNBUFFERED": "1",
+        }
+        for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+            if os.environ.get(k):
+                env[k] = os.environ[k]
+        try:
+            c = self._docker.containers.run(image=SANDBOX_IMAGE, name=name, environment=env, mem_limit=SANDBOX_MEM, cpu_quota=SANDBOX_CPU, detach=True, auto_remove=True, read_only=True, restart_policy={"Name": "on-failure", "MaximumRetryCount": 3}, tmpfs={"/tmp": "size=64M"})
+>>>>>>> origin/main
             self._containers[agent_id] = c
             logger.info("Sandbox always-on started: %s", name)
         except Exception as e:

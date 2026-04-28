@@ -67,7 +67,6 @@ def _build_agent_definition(spec: dict) -> AgentDefinition:
         description=spec.get("description", ""),
         department=spec.get("department", ""),
         metadata=spec.get("metadata", {}),
-        system_prompt=spec.get("system_prompt", ""),
     )
 
 

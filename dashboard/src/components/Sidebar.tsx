@@ -9,7 +9,10 @@ const NAV_ITEMS = [
   { href: '/agents', label: 'Agents' },
   { href: '/agents/create/ai', label: 'AI Wizard' },
   { href: '/agents/create', label: 'Create Agent' },
+<<<<<<< HEAD
   { href: '/environments', label: 'Environments' },
+=======
+>>>>>>> origin/main
   { href: '/workflows', label: 'Workflows' },
   { href: '/approvals', label: 'Approvals' },
   { href: '/clients', label: 'Clients' },

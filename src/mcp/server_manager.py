@@ -46,11 +46,19 @@ class MCPServerManager:
     and provides clients + schemas to the rest of the system.
     """
 
+<<<<<<< HEAD
     def __init__(self, config: dict | None = None):
+=======
+    def __init__(self, config: dict | None = None, secrets_manager: Any | None = None):
+>>>>>>> origin/main
         self._server_configs = self._parse_config(config or {})
         self._clients: dict[str, Any] = {}
         self._tool_schemas: dict[str, list[dict]] = {}
         self._sessions: list[Any] = []
+<<<<<<< HEAD
+=======
+        self._secrets_manager = secrets_manager
+>>>>>>> origin/main
 
     def _parse_config(self, config: dict) -> list[MCPServerConfig]:
         """Parse mcp_servers section from company config YAML."""
@@ -88,7 +96,11 @@ class MCPServerManager:
                 )
             return {}
 
+<<<<<<< HEAD
         for server_config in self._server_configs:
+=======
+        async def _connect_and_discover(server_config: MCPServerConfig):
+>>>>>>> origin/main
             try:
                 client = await self._connect_server(server_config)
                 if client:
@@ -120,6 +132,13 @@ class MCPServerManager:
                         server_config.name, e,
                     )
 
+<<<<<<< HEAD
+=======
+        import asyncio
+        tasks = [_connect_and_discover(config) for config in self._server_configs]
+        await asyncio.gather(*tasks)
+
+>>>>>>> origin/main
         connected = len(self._clients)
         total = len(self._server_configs)
         logger.info("MCP servers: %d/%d connected", connected, total)
@@ -142,10 +161,44 @@ class MCPServerManager:
             command = "uvx"
             args = [package] + config.args
 
+<<<<<<< HEAD
         server_params = StdioServerParameters(
             command=command,
             args=args,
             env=config.env_vars or None,
+=======
+        # Resolve environment variables securely at runtime
+        resolved_env = None
+        if config.env_vars:
+            resolved_env = {}
+            for k, v in config.env_vars.items():
+                if v.startswith("secret:"):
+                    # Extract secret name (e.g., "secret:github-token" -> "github-token")
+                    secret_name = v[7:]
+                    if self._secrets_manager:
+                        resolved_val = self._secrets_manager.get(
+                            secret_name, 
+                            caller=f"mcp_server_{config.name}",
+                            reason="mcp_server_boot"
+                        )
+                        if resolved_val:
+                            resolved_env[k] = resolved_val
+                        else:
+                            logger.warning(f"Secret '{secret_name}' not found for MCP server '{config.name}'")
+                    else:
+                        # Fallback to os.environ if no secrets manager
+                        import os
+                        env_name = secret_name.upper().replace("-", "_")
+                        resolved_env[k] = os.environ.get(env_name, "")
+                else:
+                    # Plaintext value
+                    resolved_env[k] = v
+
+        server_params = StdioServerParameters(
+            command=command,
+            args=args,
+            env=resolved_env,
+>>>>>>> origin/main
         )
 
         transport = stdio_client(server_params)

@@ -34,7 +34,7 @@ Both `apiVersion` values validate through the same Pydantic schema.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `framework` | enum | `forgeos` | `forgeos`, `crewai`, `adk`, `openclaw`, `langgraph` |
+| `framework` | enum | `forgeos` | `forgeos`, `crewai`, `adk`, `openclaw`, `sandbox` |
 | `image` | string | — | Versioned artifact reference (e.g. `sales-agent:2.1.0`) |
 | `image_pull_policy` | enum | `IfNotPresent` | `Always`, `IfNotPresent`, `Never` |
 
@@ -257,7 +257,7 @@ metadata:
 
 spec:
   runtime:
-    framework: langgraph
+    framework: forgeos
     image: "sales-researcher:2.1.0"
 
   lifecycle:
