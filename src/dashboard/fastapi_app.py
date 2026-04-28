@@ -54,6 +54,7 @@ class AgentCreateRequest(BaseModel):
     ownership: str = "shared"
     owner_id: str = ""
     department: str = ""
+    namespace: str = "default"
     description: str = ""
     goal: str = ""
     schedule: str | None = None
@@ -465,11 +466,14 @@ def create_fastapi_app(
         stack: str = None, execution_type: str = None,
         ownership: str = None, owner_id: str = None, department: str = None,
         client_id: str = None,
+        limit: int = Query(50, ge=1, le=500),
+        offset: int = Query(0, ge=0),
     ):
-        """List all agents with optional filters."""
+        """List all agents with optional filters and pagination."""
         if not platform_registry:
             if admin_tools:
-                return admin_tools.list_agents(department=department)
+                agents = admin_tools.list_agents(department=department)
+                return agents[offset:offset+limit] if isinstance(agents, list) else []
             return []
         filters = {}
         if stack: filters["stack"] = stack
@@ -480,7 +484,10 @@ def create_fastapi_app(
             filters["ownership"] = "client"
             filters["owner_id"] = client_id
         if department: filters["department"] = department
-        agents = platform_registry.query(**filters) if filters else platform_registry.list_all()
+        
+        all_agents = platform_registry.query(**filters) if filters else platform_registry.list_all()
+        agents = all_agents[offset:offset+limit]
+        
         return [a.to_dict() if hasattr(a, "to_dict") else {"agent_id": str(a)} for a in agents]
 
     @app.get("/api/platform/agents/{agent_id}", tags=["agents"])
@@ -511,6 +518,7 @@ def create_fastapi_app(
                 ownership=ownership,
                 owner_id=owner_id,
                 department=req.department or None,
+                namespace=req.namespace or "default",
                 description=req.description,
                 goal=req.goal,
                 schedule=req.schedule,
@@ -868,8 +876,14 @@ def create_fastapi_app(
     # ------------------------------------------------------------------
 
     @app.get("/api/events", tags=["events"])
-    async def list_events(department: str = None, status: str = None, priority: str = None):
-        """Query the event bus."""
+    async def list_events(
+        department: str = None, 
+        status: str = None, 
+        priority: str = None,
+        limit: int = Query(50, ge=1, le=500),
+        offset: int = Query(0, ge=0),
+    ):
+        """Query the event bus with pagination."""
         if not company_system:
             return []
         kwargs = {}
@@ -878,7 +892,7 @@ def create_fastapi_app(
         events = company_system.event_bus.query(**kwargs)
         if priority:
             events = [e for e in events if e.get("priority", "").upper() == priority.upper()]
-        return events[:100]
+        return events[offset:offset+limit]
 
     @app.post("/api/platform/events", tags=["events"])
     async def fire_event(req: EventFireRequest, _auth=Depends(check_auth)):
@@ -2392,6 +2406,124 @@ def create_fastapi_app(
         if not adapter or not hasattr(adapter, "_get_env_agent_logs"):
             raise HTTPException(503, "Not available")
         return adapter._get_env_agent_logs(env_id, agent_id, tail)
+
+    # ------------------------------------------------------------------
+    # A2H Protocol Endpoints (Agent-to-Human)
+    # ------------------------------------------------------------------
+
+    class A2HAskRequest(BaseModel):
+        to_namespace: str = "default"
+        to_name: str
+        question: str
+        response_type: str = "text"
+        options: list[dict] | None = None
+        context: dict | None = None
+        priority: str = "medium"
+        deadline: str | None = None
+        from_agent: str = ""
+
+    class A2HRespondRequest(BaseModel):
+        response: dict
+        channel: str = "dashboard"
+        responded_by: str = ""
+
+    class A2HNotifyRequest(BaseModel):
+        to_namespace: str = "default"
+        to_name: str
+        message: str
+        priority: str = "low"
+        context: dict | None = None
+        from_agent: str = ""
+
+    @app.post("/api/a2h/requests", tags=["a2h"], status_code=201)
+    async def a2h_create_request(req: A2HAskRequest):
+        """Create an A2H request (agent asks human)."""
+        if not hasattr(bootstrap, '_a2h_gateway') or not bootstrap._a2h_gateway:
+            raise HTTPException(503, "A2H gateway not available")
+        result = await bootstrap._a2h_gateway.ask(
+            from_agent=req.from_agent or "api",
+            from_agent_name=req.from_agent or "api",
+            to_namespace=req.to_namespace,
+            to_name=req.to_name,
+            question=req.question,
+            response_type=req.response_type,
+            options=req.options,
+            context=req.context,
+            priority=req.priority,
+            deadline=req.deadline,
+        )
+        return result.to_dict() if hasattr(result, 'to_dict') else result
+
+    @app.get("/api/a2h/requests/{request_id}", tags=["a2h"])
+    async def a2h_get_request(request_id: str):
+        """Get status of an A2H request."""
+        if not hasattr(bootstrap, '_a2h_gateway') or not bootstrap._a2h_gateway:
+            raise HTTPException(503, "A2H gateway not available")
+        result = bootstrap._a2h_gateway.get_request(request_id)
+        if not result:
+            raise HTTPException(404, "Request not found")
+        return result
+
+    @app.post("/api/a2h/requests/{request_id}/respond", tags=["a2h"])
+    async def a2h_respond(request_id: str, req: A2HRespondRequest):
+        """Human submits a response to a pending A2H request."""
+        if not hasattr(bootstrap, '_a2h_gateway') or not bootstrap._a2h_gateway:
+            raise HTTPException(503, "A2H gateway not available")
+        result = bootstrap._a2h_gateway.respond(
+            request_id, req.response,
+            responded_by=req.responded_by, via=req.channel,
+        )
+        if not result.get("success"):
+            raise HTTPException(400, result.get("error", "Failed"))
+        return result
+
+    @app.get("/api/a2h/pending", tags=["a2h"])
+    async def a2h_list_pending(to: str | None = None):
+        """List pending A2H requests for a human."""
+        if not hasattr(bootstrap, '_a2h_gateway') or not bootstrap._a2h_gateway:
+            return {"requests": []}
+        return {"requests": bootstrap._a2h_gateway.list_pending(to)}
+
+    @app.post("/api/a2h/notifications", tags=["a2h"], status_code=201)
+    async def a2h_notify(req: A2HNotifyRequest):
+        """Send a notification to a human (no response needed)."""
+        if not hasattr(bootstrap, '_a2h_gateway') or not bootstrap._a2h_gateway:
+            raise HTTPException(503, "A2H gateway not available")
+        notif = await bootstrap._a2h_gateway.notify(
+            from_agent=req.from_agent or "api",
+            from_agent_name=req.from_agent or "api",
+            to_namespace=req.to_namespace,
+            to_name=req.to_name,
+            message=req.message,
+            priority=req.priority,
+            context=req.context,
+        )
+        return notif.to_dict() if hasattr(notif, 'to_dict') else {"delivered": True}
+
+    @app.post("/api/a2h/humans", tags=["a2h"], status_code=201)
+    async def a2h_register_human(request: Request):
+        """Register a human participant."""
+        if not hasattr(bootstrap, '_a2h_gateway') or not bootstrap._a2h_gateway:
+            raise HTTPException(503, "A2H gateway not available")
+        body = await request.json()
+        from src.platform.a2h import HumanAgent
+        human = HumanAgent(
+            pid=f"human:{body['name']}",
+            name=body["name"],
+            namespace=body.get("namespace", "default"),
+            role=body.get("role", ""),
+            channels=body.get("channels", ["dashboard"]),
+        )
+        pid = bootstrap._a2h_gateway.register_human(human)
+        return {"pid": pid, "name": human.name, "namespace": human.namespace}
+
+    @app.get("/api/a2h/humans", tags=["a2h"])
+    async def a2h_list_humans(namespace: str | None = None):
+        """List registered human participants."""
+        if not hasattr(bootstrap, '_a2h_gateway') or not bootstrap._a2h_gateway:
+            return {"humans": []}
+        humans = bootstrap._a2h_gateway.list_humans(namespace)
+        return {"humans": [h.to_discovery_dict() for h in humans]}
 
     return app
 

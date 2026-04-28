@@ -13,6 +13,9 @@ import asyncio
 import logging
 from typing import Any
 
+import jsonschema
+from jsonschema.exceptions import ValidationError
+
 logger = logging.getLogger(__name__)
 
 # Timeout for tool execution (configurable via module attribute)
@@ -27,12 +30,13 @@ class ToolExecutor:
     Custom company tools are routed to the CompanySystem subsystems.
     """
 
-    def __init__(self, company_system=None, mcp_clients: dict | None = None, client_mcp_manager=None, a2a_handler=None, kernel=None):
+    def __init__(self, company_system=None, mcp_clients: dict | None = None, client_mcp_manager=None, a2a_handler=None, kernel=None, a2h_gateway=None):
         self._system = company_system
         self._mcp_clients = mcp_clients or {}
         self._client_mcp_manager = client_mcp_manager
         self._a2a_handler = a2a_handler
         self._kernel = kernel  # AgentOS kernel for policy enforcement
+        self._a2h_gateway = a2h_gateway
         self._custom_handlers = self._register_custom_tools()
         self._mcp_tool_definitions: dict[str, list[dict]] = {}
 
@@ -46,6 +50,13 @@ class ToolExecutor:
             handlers["agent__async_call"] = self._handle_a2a_async_call
             handlers["agent__await"] = self._handle_a2a_await
             handlers["agent__list_available"] = self._handle_a2a_list
+
+        # A2H tools (agent-to-human interaction)
+        if self._a2h_gateway:
+            handlers["human__ask"] = self._handle_human_ask
+            handlers["human__notify"] = self._handle_human_notify
+            handlers["human__check"] = self._handle_human_check
+            handlers["human__list_available"] = self._handle_human_list
 
         if not self._system:
             return handlers
@@ -78,6 +89,11 @@ class ToolExecutor:
         if self._a2a_handler:
             from src.platform.a2a import A2A_TOOL_SCHEMAS
             schemas.extend(A2A_TOOL_SCHEMAS)
+
+        # A2H tools (agent-to-human interaction)
+        if self._a2h_gateway:
+            from src.platform.a2h import H2A_TOOL_SCHEMAS
+            schemas.extend(H2A_TOOL_SCHEMAS)
 
         if not self._system:
             return schemas
@@ -267,6 +283,31 @@ class ToolExecutor:
         """Return platform tool schemas."""
         return getattr(self, "_platform_tool_definitions", [])
 
+    def _get_tool_schema(self, tool_name: str, agent_context: dict | None = None) -> dict | None:
+        """Find the schema for a given tool name."""
+        # Check platform tools
+        for schema in self.get_platform_tool_definitions():
+            if schema.get("name") == tool_name:
+                return schema
+        
+        # Check MCP tools
+        if tool_name.startswith("mcp__"):
+            parts = tool_name.split("__", 2)
+            if len(parts) >= 3:
+                server_name = parts[1]
+                method_name = parts[2]
+                
+                # Check company-level MCP tools
+                schemas = self._mcp_tool_definitions.get(server_name, [])
+                for schema in schemas:
+                    if schema.get("name") == method_name:
+                        return schema
+                        
+                # Client-level MCP tools would need async fetch, so we skip validation
+                # here if it's not cached. The MCP server will validate it anyway.
+                
+        return None
+
     async def execute(
         self,
         tool_name: str,
@@ -281,6 +322,15 @@ class ToolExecutor:
         single chokepoint. Otherwise, the legacy per-call ``check_tool_call``
         path is used so pre-migration callers keep working.
         """
+        # 1. Validate input against schema
+        schema = self._get_tool_schema(tool_name, agent_context)
+        if schema and "inputSchema" in schema:
+            try:
+                jsonschema.validate(instance=tool_input, schema=schema["inputSchema"])
+            except ValidationError as e:
+                logger.warning("Tool %s input validation failed: %s", tool_name, e.message)
+                return {"success": False, "error": f"Input validation failed: {e.message}"}
+
         from src.platform.syscall import syscall_pipeline_enabled
 
         use_pipeline = (
@@ -461,8 +511,11 @@ class ToolExecutor:
         return self._system.hitl.get_pending(input.get("category"))
 
     def _handle_search_knowledge(self, input: dict, ctx: dict | None) -> list:
+        query = input.get("query") or ""
+        if not query:
+            return []
         return self._system.knowledge.search(
-            query=input["query"],
+            query=query,
             category=input.get("category"),
             department=input.get("department"),
             limit=input.get("limit", 5),
@@ -543,3 +596,54 @@ class ToolExecutor:
             department=input.get("department"),
         )
         return {"agents": agents}
+
+    # ---- A2H tool handlers ------------------------------------------------
+
+    async def _handle_human_ask(self, input: dict, ctx: dict | None) -> dict:
+        """Ask a human a structured question."""
+        if not self._a2h_gateway:
+            return {"error": "A2H gateway not available"}
+        agent_id = (ctx or {}).get("agent_id", "")
+        req = await self._a2h_gateway.ask(
+            from_agent=agent_id,
+            from_agent_name=agent_id,
+            to_namespace=input.get("namespace", "default"),
+            to_name=input["name"],
+            question=input["question"],
+            response_type=input.get("response_type", "text"),
+            options=input.get("options"),
+            context=input.get("context"),
+            priority=input.get("priority", "medium"),
+            deadline=input.get("deadline"),
+        )
+        return req.to_dict() if hasattr(req, "to_dict") else {"id": str(req)}
+
+    async def _handle_human_notify(self, input: dict, ctx: dict | None) -> dict:
+        """Send a notification to a human."""
+        if not self._a2h_gateway:
+            return {"error": "A2H gateway not available"}
+        agent_id = (ctx or {}).get("agent_id", "")
+        notif = await self._a2h_gateway.notify(
+            from_agent=agent_id,
+            from_agent_name=agent_id,
+            to_namespace=input.get("namespace", "default"),
+            to_name=input["name"],
+            message=input["message"],
+            priority=input.get("priority", "low"),
+            context=input.get("context"),
+        )
+        return notif.to_dict() if hasattr(notif, "to_dict") else {"delivered": True}
+
+    def _handle_human_check(self, input: dict, ctx: dict | None) -> dict:
+        """Check status of a pending A2H request."""
+        if not self._a2h_gateway:
+            return {"error": "A2H gateway not available"}
+        result = self._a2h_gateway.get_request(input["request_id"])
+        return result if result else {"error": "Request not found"}
+
+    def _handle_human_list(self, input: dict, ctx: dict | None) -> dict:
+        """List available humans."""
+        if not self._a2h_gateway:
+            return {"humans": []}
+        humans = self._a2h_gateway.list_humans(namespace=input.get("namespace"))
+        return {"humans": [h.to_discovery_dict() for h in humans]}

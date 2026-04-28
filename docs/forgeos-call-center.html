@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ForgeOS Call Center — 10 Humans + 8 Agents</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.6; }
+  code { font-family: 'SF Mono', 'Fira Code', monospace; background: #161b22; padding: 2px 6px; border-radius: 4px; font-size: 11px; color: #f0883e; }
+  .container { max-width: 1260px; margin: 0 auto; padding: 32px 24px; }
+
+  /* Hero */
+  .hero { text-align: center; padding: 40px 0 24px; border-bottom: 1px solid #21262d; margin-bottom: 32px; }
+  .hero h1 { font-size: 30px; color: #f0f6fc; }
+  .hero .sub { color: #8b949e; font-size: 14px; max-width: 750px; margin: 8px auto 0; }
+  .hero .stats { display: flex; gap: 24px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
+  .hero .stat { text-align: center; }
+  .hero .stat .num { font-size: 28px; font-weight: 800; }
+  .hero .stat .lbl { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; }
+  .stat-human .num { color: #bc8cff; }
+  .stat-agent .num { color: #56d364; }
+  .stat-flow  .num { color: #58a6ff; }
+  .stat-kern  .num { color: #e3b341; }
+
+  /* Nav tabs */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid #21262d; margin-bottom: 24px; overflow-x: auto; }
+  .tab { padding: 8px 16px; font-size: 13px; font-weight: 500; color: #8b949e; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; transition: all 0.15s; }
+  .tab:hover { color: #f0f6fc; }
+  .tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Participant grid */
+  .pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin: 16px 0; }
+  .pcard { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 14px; transition: border-color 0.15s; }
+  .pcard:hover { border-color: #58a6ff; }
+  .pcard.human { border-left: 3px solid #8957e5; }
+  .pcard.agent { border-left: 3px solid #3fb950; }
+  .pcard .pname { font-weight: 700; font-size: 14px; color: #f0f6fc; }
+  .pcard .prole { font-size: 11px; color: #8b949e; margin: 2px 0; }
+  .pcard .pns { font-size: 10px; padding: 2px 6px; border-radius: 3px; display: inline-block; margin-top: 4px; }
+  .ns-support    { background: #1f2a22; color: #56d364; }
+  .ns-quality    { background: #2a2517; color: #e3b341; }
+  .ns-operations { background: #1c2941; color: #58a6ff; }
+  .pcard .ptype { font-size: 10px; color: #484f58; margin-top: 4px; }
+  .pcard .ptools { font-size: 10px; color: #6e7681; margin-top: 6px; line-height: 1.4; }
+  .pcard .pbudget { font-size: 10px; color: #e3b341; margin-top: 4px; }
+
+  /* Flow section */
+  .flow-section { margin: 24px 0; }
+  .flow-title { font-size: 16px; font-weight: 700; color: #f0f6fc; margin-bottom: 4px; }
+  .flow-desc { font-size: 12px; color: #8b949e; margin-bottom: 12px; }
+
+  /* Message card */
+  .msg { background: #161b22; border: 1px solid #30363d; border-radius: 10px; margin: 8px 0; overflow: hidden; }
+  .msg-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; transition: background 0.15s; }
+  .msg-header:hover { background: #1a2332; }
+  .msg-header.open { background: #1a2332; }
+  .msg-num { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; flex-shrink: 0; }
+  .msg-from-to { flex: 1; font-size: 13px; }
+  .msg-from-to strong { color: #f0f6fc; }
+  .msg-from-to .arrow { color: #484f58; margin: 0 6px; }
+  .msg-protocol { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+  .mp-h2a { background: #2a1f33; color: #bc8cff; }
+  .mp-a2h { background: #2a1f22; color: #ff7b72; }
+  .mp-a2a { background: #17272a; color: #56d4c4; }
+  .msg-arrow { color: #484f58; font-size: 12px; transition: transform 0.2s; }
+  .msg-arrow.open { transform: rotate(90deg); }
+
+  .msg-body { display: none; padding: 0 16px 14px; }
+  .msg-body.open { display: block; }
+
+  /* Inside message */
+  .msg-flow { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin: 8px 0; }
+  .mf { padding: 5px 10px; border-radius: 5px; font-size: 10px; font-weight: 600; white-space: nowrap; }
+  .mfa { color: #484f58; font-size: 12px; }
+  .mf-human   { background: #2a1f33; color: #bc8cff; border: 1px solid #8957e5; }
+  .mf-agent   { background: #1f2a22; color: #56d364; border: 1px solid #3fb950; }
+  .mf-kernel  { background: #2a2517; color: #e3b341; border: 1px solid #d29922; }
+  .mf-tool    { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+  .mf-allow   { background: #1a3a2a; color: #3fb950; border: 1px solid #238636; }
+  .mf-deny    { background: #3a1a1a; color: #f85149; border: 1px solid #da3633; }
+  .mf-cap     { background: #1c2230; color: #8b949e; border: 1px solid #484f58; }
+
+  .msg-detail { font-size: 11px; color: #8b949e; margin: 4px 0; line-height: 1.5; }
+  .msg-detail strong { color: #c9d1d9; }
+
+  .msg-kernel { background: #0d1117; border: 1px solid #2a2517; border-radius: 6px; padding: 10px 12px; margin: 8px 0; font-size: 10px; font-family: 'SF Mono', monospace; color: #e3b341; line-height: 1.5; }
+  .mk-a { color: #3fb950; }
+  .mk-d { color: #f85149; }
+  .mk-s { color: #8b949e; }
+
+  .msg-response { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 10px 12px; margin: 8px 0; font-size: 11px; }
+  .msg-response .resp-label { color: #58a6ff; font-weight: 600; font-size: 10px; margin-bottom: 4px; }
+
+  /* Governance table */
+  .gov-table { width: 100%; border-collapse: collapse; font-size: 11px; margin: 12px 0; }
+  .gov-table th { background: #161b22; color: #8b949e; padding: 8px 10px; text-align: left; border-bottom: 2px solid #30363d; font-weight: 600; }
+  .gov-table td { padding: 7px 10px; border-bottom: 1px solid #21262d; }
+  .gov-table tr:hover td { background: #161b22; }
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 9px; font-weight: 600; }
+  .b-allow { background: #1a3a2a; color: #3fb950; }
+  .b-deny  { background: #3a1a1a; color: #f85149; }
+  .b-budget { background: #2a2517; color: #e3b341; }
+
+  /* Summary grid */
+  .sgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin: 16px 0; }
+  .scard { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; }
+  .scard h4 { font-size: 13px; color: #58a6ff; margin-bottom: 8px; }
+  .scard .srow { display: flex; justify-content: space-between; font-size: 11px; padding: 3px 0; border-bottom: 1px solid #21262d; }
+  .scard .srow:last-child { border: none; }
+  .scard .sval { font-weight: 600; color: #f0f6fc; }
+
+  /* Topology diagram */
+  .topo { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 16px 0; overflow-x: auto; }
+  .topo-title { font-size: 12px; color: #484f58; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; font-weight: 600; }
+  .topo-row { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 6px 0; flex-wrap: wrap; }
+  .topo-node { padding: 6px 14px; border-radius: 6px; font-size: 11px; font-weight: 600; text-align: center; min-width: 100px; }
+  .tn-human  { background: #2a1f33; color: #bc8cff; border: 1px solid #8957e5; }
+  .tn-agent  { background: #1f2a22; color: #56d364; border: 1px solid #3fb950; }
+  .tn-ns     { background: #0d1117; color: #484f58; border: 1px dashed #30363d; padding: 10px; border-radius: 10px; }
+  .topo-arrow { color: #484f58; font-size: 11px; }
+  .topo-label { font-size: 9px; color: #484f58; text-align: center; }
+
+  @media (max-width: 768px) {
+    .pgrid { grid-template-columns: 1fr 1fr; }
+    .hero .stats { gap: 12px; }
+    .tabs { gap: 0; }
+    .tab { padding: 6px 10px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="hero">
+  <h1>ForgeOS Call Center</h1>
+  <p class="sub">10 humans + 8 AI agents collaborate through A2A, A2H, and H2A protocols. Every interaction governed by the kernel.</p>
+  <div class="stats">
+    <div class="stat stat-human"><div class="num">10</div><div class="lbl">Humans</div></div>
+    <div class="stat stat-agent"><div class="num">8</div><div class="lbl">Agents</div></div>
+    <div class="stat stat-flow"><div class="num">21</div><div class="lbl">Interaction Flows</div></div>
+    <div class="stat stat-kern"><div class="num">~2000</div><div class="lbl">Kernel Decisions/Day</div></div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <div class="tab active" onclick="showTab('participants')">Participants</div>
+  <div class="tab" onclick="showTab('topology')">Topology</div>
+  <div class="tab" onclick="showTab('h2a')">H2A Flows (6)</div>
+  <div class="tab" onclick="showTab('a2h')">A2H Flows (7)</div>
+  <div class="tab" onclick="showTab('a2a')">A2A Flows (8)</div>
+  <div class="tab" onclick="showTab('governance')">Governance</div>
+  <div class="tab" onclick="showTab('scenario')">Live Scenario</div>
+  <div class="tab" onclick="showTab('metrics')">Daily Metrics</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- TAB: PARTICIPANTS                                           -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div id="tab-participants" class="tab-content active">
+  <div class="flow-title">10 Humans</div>
+  <div class="flow-desc">Registered as HumanAgent in the platform. Discoverable via <code>agent__list_available(type="human")</code>.</div>
+  <div class="pgrid">
+    <div class="pcard human"><div class="pname">Maria Lopez</div><div class="prole">CSR — Billing Specialist</div><span class="pns ns-support">support</span><div class="ptype">Channels: dashboard | Availability: shift_hours</div></div>
+    <div class="pcard human"><div class="pname">Carlos Rivera</div><div class="prole">CSR — Technical Support</div><span class="pns ns-support">support</span><div class="ptype">Channels: dashboard | Availability: shift_hours</div></div>
+    <div class="pcard human"><div class="pname">Aisha Patel</div><div class="prole">CSR — General Inquiries</div><span class="pns ns-support">support</span><div class="ptype">Channels: dashboard | Availability: shift_hours</div></div>
+    <div class="pcard human"><div class="pname">James Chen</div><div class="prole">CSR — Sales Support</div><span class="pns ns-support">support</span><div class="ptype">Channels: dashboard | Availability: shift_hours</div></div>
+    <div class="pcard human"><div class="pname">Sofia Kim</div><div class="prole">CSR — Retention</div><span class="pns ns-support">support</span><div class="ptype">Channels: dashboard | Availability: shift_hours</div></div>
+    <div class="pcard human"><div class="pname">David Okafor</div><div class="prole">CSR — Enterprise Accounts</div><span class="pns ns-support">support</span><div class="ptype">Channels: dashboard | Availability: shift_hours</div></div>
+    <div class="pcard human"><div class="pname">Rachel Torres</div><div class="prole">Team Lead</div><span class="pns ns-support">support</span><div class="ptype">Channels: dashboard, slack | Auto-approve: escalation reassignment</div></div>
+    <div class="pcard human"><div class="pname">Michael Wright</div><div class="prole">Quality Analyst</div><span class="pns ns-quality">quality</span><div class="ptype">Channels: dashboard, email | Availability: business_hours</div></div>
+    <div class="pcard human"><div class="pname">Priya Sharma</div><div class="prole">Workforce Manager</div><span class="pns ns-operations">operations</span><div class="ptype">Channels: dashboard, slack | Auto-approve: overtime &lt; $500</div></div>
+    <div class="pcard human"><div class="pname">Tom Henderson</div><div class="prole">Center Manager</div><span class="pns ns-operations">operations</span><div class="ptype">Channels: dashboard, slack, email | Auto-approve: report requests</div></div>
+  </div>
+
+  <div class="flow-title" style="margin-top:24px">8 AI Agents</div>
+  <div class="flow-desc">Deployed across 3 namespaces. Each has kernel-enforced tool permissions, budget limits, and data boundaries.</div>
+  <div class="pgrid">
+    <div class="pcard agent"><div class="pname">Call Router</div><div class="prole">Routes incoming calls to best CSR by skill + availability</div><span class="pns ns-operations">operations</span><div class="ptype">always_on (loop: 5s) | Stack: forgeos</div><div class="ptools">Tools: crm_search, publish_event</div><div class="pbudget">Budget: $3/day | Denied: crm_update</div></div>
+    <div class="pcard agent"><div class="pname">Knowledge Assistant</div><div class="prole">Real-time knowledge lookup during calls</div><span class="pns ns-support">support</span><div class="ptype">reflex | Stack: forgeos</div><div class="ptools">Tools: search_knowledge</div><div class="pbudget">Budget: $8/day (highest — serves 6 CSRs)</div></div>
+    <div class="pcard agent"><div class="pname">Customer Profiler</div><div class="prole">Pulls customer history before call connects</div><span class="pns ns-support">support</span><div class="ptype">event_driven (call.incoming) | Stack: adk</div><div class="ptools">Tools: crm_search, search_knowledge</div><div class="pbudget">Budget: $5/day | Denied: crm_update</div></div>
+    <div class="pcard agent"><div class="pname">Sentiment Monitor</div><div class="prole">Real-time sentiment analysis during live calls</div><span class="pns ns-quality">quality</span><div class="ptype">always_on (loop: 10s) | Stack: forgeos</div><div class="ptools">Tools: record_metric, publish_event</div><div class="pbudget">Budget: $2/day | Denied: search_knowledge</div></div>
+    <div class="pcard agent"><div class="pname">After-Call Automator</div><div class="prole">Generates call notes, categorizes, schedules follow-ups</div><span class="pns ns-support">support</span><div class="ptype">event_driven (call.ended) | Stack: crewai</div><div class="ptools">Tools: search_knowledge, add_decision, record_metric, publish_event</div><div class="pbudget">Budget: $6/day</div></div>
+    <div class="pcard agent"><div class="pname">Escalation Manager</div><div class="prole">Routes escalated calls, tracks SLA, notifies team lead</div><span class="pns ns-support">support</span><div class="ptype">always_on (loop: 30s) | Stack: forgeos</div><div class="ptools">Tools: publish_event, record_metric, search_knowledge</div><div class="pbudget">Budget: $4/day</div></div>
+    <div class="pcard agent"><div class="pname">Quality Scorer</div><div class="prole">Scores call quality, identifies coaching needs</div><span class="pns ns-quality">quality</span><div class="ptype">scheduled (daily 6am) | Stack: adk</div><div class="ptools">Tools: search_knowledge, record_metric, add_decision</div><div class="pbudget">Budget: $6/day</div></div>
+    <div class="pcard agent"><div class="pname">Dashboard Reporter</div><div class="prole">Generates KPI dashboards and trend analysis</div><span class="pns ns-operations">operations</span><div class="ptype">scheduled (daily 7am + 5pm) | Stack: forgeos</div><div class="ptools">Tools: get_dashboard, get_metric, search_knowledge, record_metric</div><div class="pbudget">Budget: $5/day</div></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- TAB: TOPOLOGY                                               -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div id="tab-topology" class="tab-content">
+  <div class="flow-title">System Topology</div>
+  <div class="flow-desc">Three namespaces with kernel-enforced boundaries. Cross-namespace A2A requires capability tokens.</div>
+
+  <div class="topo">
+    <div class="topo-title">support namespace</div>
+    <div class="topo-row">
+      <div class="topo-node tn-human">Maria (CSR)</div>
+      <div class="topo-node tn-human">Carlos (CSR)</div>
+      <div class="topo-node tn-human">Aisha (CSR)</div>
+      <div class="topo-node tn-human">James (CSR)</div>
+      <div class="topo-node tn-human">Sofia (CSR)</div>
+      <div class="topo-node tn-human">David (CSR)</div>
+      <div class="topo-node tn-human">Rachel (Lead)</div>
+    </div>
+    <div class="topo-label">&#8597; H2A / A2H</div>
+    <div class="topo-row">
+      <div class="topo-node tn-agent">Knowledge Assistant</div>
+      <div class="topo-node tn-agent">Customer Profiler</div>
+      <div class="topo-node tn-agent">Escalation Manager</div>
+      <div class="topo-node tn-agent">After-Call Automator</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:16px;flex-wrap:wrap">
+    <div class="topo" style="flex:1;min-width:280px">
+      <div class="topo-title">quality namespace</div>
+      <div class="topo-row"><div class="topo-node tn-human">Michael (QA)</div></div>
+      <div class="topo-label">&#8597; A2H</div>
+      <div class="topo-row">
+        <div class="topo-node tn-agent">Sentiment Monitor</div>
+        <div class="topo-node tn-agent">Quality Scorer</div>
+      </div>
+    </div>
+    <div class="topo" style="flex:1;min-width:280px">
+      <div class="topo-title">operations namespace</div>
+      <div class="topo-row">
+        <div class="topo-node tn-human">Priya (WFM)</div>
+        <div class="topo-node tn-human">Tom (Manager)</div>
+      </div>
+      <div class="topo-label">&#8597; H2A / A2H</div>
+      <div class="topo-row">
+        <div class="topo-node tn-agent">Call Router</div>
+        <div class="topo-node tn-agent">Dashboard Reporter</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="topo">
+    <div class="topo-title">Cross-Namespace A2A (requires capability tokens)</div>
+    <div class="topo-row">
+      <div class="topo-node tn-agent">Sentiment Monitor<br><span style="font-size:9px">quality</span></div>
+      <div class="topo-arrow">──capability token──►</div>
+      <div class="topo-node tn-agent">Escalation Manager<br><span style="font-size:9px">support</span></div>
+    </div>
+    <div class="topo-row" style="margin-top:8px">
+      <div class="topo-node tn-agent">After-Call Automator<br><span style="font-size:9px">support</span></div>
+      <div class="topo-arrow">──capability token──►</div>
+      <div class="topo-node tn-agent">Quality Scorer<br><span style="font-size:9px">quality</span></div>
+    </div>
+    <div class="topo-row" style="margin-top:8px">
+      <div class="topo-node tn-agent">Dashboard Reporter<br><span style="font-size:9px">operations</span></div>
+      <div class="topo-arrow">──capability token──►</div>
+      <div class="topo-node tn-agent">Escalation Manager<br><span style="font-size:9px">support</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- TAB: H2A FLOWS                                              -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div id="tab-h2a" class="tab-content">
+  <div class="flow-title">H2A — Humans Call Agents (6 flows)</div>
+  <div class="flow-desc">Human initiates via dashboard. Goes through A2AHandler → executor.invoke() → adapter → agentic loop. Kernel gates every tool call inside.</div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#2a1f33;color:#bc8cff">1</div>
+    <div class="msg-from-to"><strong>CSR Maria</strong><span class="arrow">&rarr;</span><strong>Knowledge Assistant</strong></div>
+    <span class="msg-protocol mp-h2a">H2A</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Maria is on a call with a customer asking about refund policy for premium accounts.</p>
+    <div class="msg-flow"><span class="mf mf-human">Maria types in dashboard</span><span class="mfa">&rarr;</span><span class="mf mf-kernel">POST /api/h2a/call</span><span class="mfa">&rarr;</span><span class="mf mf-agent">Knowledge Assistant</span></div>
+    <p class="msg-detail"><strong>Prompt:</strong> "What is our refund policy for premium accounts? Include exceptions and time limits."</p>
+    <div class="msg-kernel"><span class="mk-s">kernel gate:</span> search_knowledge &rarr; <span class="mk-a">allow</span> (in tools list)<br><span class="mk-s">budget:</span> $0.08 (within $8 daily)</div>
+    <div class="msg-response"><div class="resp-label">Response (1.2s)</div>"Premium accounts: full refund within 30 days of purchase. 50% refund within 31-60 days. No refund after 60 days. Exception: hardware defects get full refund within 1 year. Enterprise contracts follow custom terms in the MSA."</div>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#2a1f33;color:#bc8cff">2</div>
+    <div class="msg-from-to"><strong>CSR Carlos</strong><span class="arrow">&rarr;</span><strong>After-Call Automator</strong></div>
+    <span class="msg-protocol mp-h2a">H2A</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Carlos just finished a 12-minute technical support call and needs notes.</p>
+    <div class="msg-flow"><span class="mf mf-human">Carlos</span><span class="mfa">&rarr;</span><span class="mf mf-agent">After-Call Automator</span></div>
+    <p class="msg-detail"><strong>Prompt:</strong> "Summarize and categorize call #4521 with customer Jane Smith."</p>
+    <div class="msg-kernel"><span class="mk-s">kernel gates (3 tool calls):</span><br>&nbsp;&nbsp;search_knowledge &rarr; <span class="mk-a">allow</span><br>&nbsp;&nbsp;add_decision &rarr; <span class="mk-a">allow</span><br>&nbsp;&nbsp;record_metric &rarr; <span class="mk-a">allow</span></div>
+    <div class="msg-response"><div class="resp-label">Response (3.4s)</div>{summary: "Customer reported intermittent API timeouts on the /v2/data endpoint. Confirmed issue is on client-side proxy configuration. Walked through fix. Customer confirmed resolution.", category: "technical_support", resolution: "resolved_first_call", follow_up: null, handle_time: "12:03"}</div>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#2a1f33;color:#bc8cff">3</div>
+    <div class="msg-from-to"><strong>Team Lead Rachel</strong><span class="arrow">&rarr;</span><strong>Escalation Manager</strong></div>
+    <span class="msg-protocol mp-h2a">H2A</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Rachel wants to check the current escalation queue before her standup.</p>
+    <div class="msg-flow"><span class="mf mf-human">Rachel</span><span class="mfa">&rarr;</span><span class="mf mf-agent">Escalation Manager</span></div>
+    <p class="msg-detail"><strong>Prompt:</strong> "Show me current escalation queue with SLA status."</p>
+    <div class="msg-response"><div class="resp-label">Response (0.8s)</div>{pending: 3, p1: 1, p2: 2, oldest_wait: "8min", breached_sla: 0, details: [{id: "E-201", customer: "Acme Corp", issue: "contract dispute", wait: "8min", assigned: null}, {id: "E-202", customer: "TechStart", issue: "billing error", wait: "3min", assigned: "Sofia"}, ...]}</div>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#2a1f33;color:#bc8cff">4</div>
+    <div class="msg-from-to"><strong>QA Michael</strong><span class="arrow">&rarr;</span><strong>Quality Scorer</strong></div>
+    <span class="msg-protocol mp-h2a">H2A</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Michael wants to review Maria's quality scores for the week.</p>
+    <div class="msg-flow"><span class="mf mf-human">Michael</span><span class="mfa">&rarr;</span><span class="mf mf-agent">Quality Scorer</span></div>
+    <div class="msg-response"><div class="resp-label">Response (2.1s)</div>{agent: "Maria Lopez", period: "this week", calls_scored: 23, avg_score: 82, compliance: 95%, strengths: ["empathy", "product knowledge"], improve: ["call closing technique", "upsell opportunities"], trend: "stable"}</div>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#2a1f33;color:#bc8cff">5</div>
+    <div class="msg-from-to"><strong>WFM Priya</strong><span class="arrow">&rarr;</span><strong>Dashboard Reporter</strong></div>
+    <span class="msg-protocol mp-h2a">H2A</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Priya needs tomorrow's call volume forecast for scheduling.</p>
+    <div class="msg-flow"><span class="mf mf-human">Priya</span><span class="mfa">&rarr;</span><span class="mf mf-agent">Dashboard Reporter</span></div>
+    <div class="msg-response"><div class="resp-label">Response (1.5s)</div>{forecast_date: "2026-04-26", total_calls: 340, peak_hours: "10am-12pm", peak_volume: 52/hr, suggested_staff: 8, current_scheduled: 6, recommendation: "Add 2 CSRs for morning peak"}</div>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#2a1f33;color:#bc8cff">6</div>
+    <div class="msg-from-to"><strong>Manager Tom</strong><span class="arrow">&rarr;</span><strong>Dashboard Reporter</strong></div>
+    <span class="msg-protocol mp-h2a">H2A</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Tom needs the weekly performance report for the executive meeting.</p>
+    <div class="msg-flow"><span class="mf mf-human">Tom</span><span class="mfa">&rarr;</span><span class="mf mf-agent">Dashboard Reporter</span></div>
+    <div class="msg-kernel"><span class="mk-s">Dashboard Reporter reads from all 3 namespaces:</span><br>&nbsp;&nbsp;support &rarr; <span class="mk-a">allow</span> (in allowed_namespaces)<br>&nbsp;&nbsp;quality &rarr; <span class="mk-a">allow</span><br>&nbsp;&nbsp;operations &rarr; <span class="mk-a">allow</span></div>
+    <div class="msg-response"><div class="resp-label">Response (4.2s)</div>{period: "2026-W17", fcr: "78%", csat: 4.2, avg_handle_time: "4:30", calls_handled: 1204, escalation_rate: "6.2%", quality_avg: 84, compliance: "97%", top_issue: "billing", agent_of_week: "Aisha Patel"}</div>
+  </div></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- TAB: A2H FLOWS                                              -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div id="tab-a2h" class="tab-content">
+  <div class="flow-title">A2H — Agents Call Humans (7 flows)</div>
+  <div class="flow-desc">Agent uses <code>human__ask</code> (structured question with options + deadline) or <code>human__notify</code> (one-way alert). Delivered via dashboard, Slack, or email based on priority.</div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#1f2a22;color:#56d364">1</div>
+    <div class="msg-from-to"><strong>Sentiment Monitor</strong><span class="arrow">&rarr;</span><strong>Team Lead Rachel</strong></div>
+    <span class="msg-protocol mp-a2h">A2H</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Customer anger spike detected on Maria's call #4521. Sentiment score dropped from 0.6 to 0.15 in 30 seconds.</p>
+    <div class="msg-flow"><span class="mf mf-agent">Sentiment Monitor</span><span class="mfa">&rarr;</span><span class="mf mf-kernel">human__ask(priority=P0_CRITICAL)</span><span class="mfa">&rarr;</span><span class="mf mf-human">Rachel (dashboard + slack)</span></div>
+    <div class="msg-kernel"><span class="mk-s">human__ask(</span><br>&nbsp;&nbsp;question: "Call #4521 — customer anger spike. Maria may need help."<br>&nbsp;&nbsp;response_type: "choice"<br>&nbsp;&nbsp;options: [Take Over, Coach CSR, Monitor Only]<br>&nbsp;&nbsp;priority: P0_CRITICAL &rarr; all channels<br>&nbsp;&nbsp;deadline: 2min<br>&nbsp;&nbsp;context: {call_id: 4521, csr: "Maria", sentiment: 0.15, customer: "Jane Smith"}<br><span class="mk-s">)</span></div>
+    <div class="msg-response"><div class="resp-label">Rachel responds (45s via Slack)</div>{choice: "Coach CSR", note: "Sending Maria the de-escalation script. I'll monitor."}</div>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#1f2a22;color:#56d364">2</div>
+    <div class="msg-from-to"><strong>Escalation Manager</strong><span class="arrow">&rarr;</span><strong>Team Lead Rachel</strong></div>
+    <span class="msg-protocol mp-a2h">A2H</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Escalation E-201 (Acme Corp contract dispute) has been waiting 14 minutes. SLA is 10 minutes. Breach detected.</p>
+    <div class="msg-flow"><span class="mf mf-agent">Escalation Manager</span><span class="mfa">&rarr;</span><span class="mf mf-kernel">human__ask(P1_HIGH)</span><span class="mfa">&rarr;</span><span class="mf mf-human">Rachel</span></div>
+    <div class="msg-kernel"><span class="mk-s">SLA breach: 14min &gt; 10min threshold</span><br><span class="mk-s">Auto-delegation check:</span> Rachel allows escalation reassignment &rarr; <span class="mk-d">does not apply (needs assignment, not reassignment)</span></div>
+    <div class="msg-response"><div class="resp-label">Rachel responds (30s)</div>{choice: "Assign to self", note: "Taking Acme Corp myself — they're a key account."}</div>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#1f2a22;color:#56d364">3</div>
+    <div class="msg-from-to"><strong>Compliance Checker</strong><span class="arrow">&rarr;</span><strong>QA Michael</strong></div>
+    <span class="msg-protocol mp-a2h">A2H</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> CSR James promised a 30% discount on call #4522. Company policy allows max 15%.</p>
+    <div class="msg-flow"><span class="mf mf-agent">Compliance Checker</span><span class="mfa">&rarr;</span><span class="mf mf-kernel">human__ask(P1_HIGH)</span><span class="mfa">&rarr;</span><span class="mf mf-human">Michael (QA)</span></div>
+    <div class="msg-kernel"><span class="mk-s">human__ask(</span><br>&nbsp;&nbsp;question: "Call #4522: James offered 30% discount (policy max: 15%)"<br>&nbsp;&nbsp;options: [Void Discount, Approve Exception, Escalate to Manager]<br>&nbsp;&nbsp;context: {csr: "James", discount_offered: 30, max_allowed: 15, customer: "StartupXYZ"}<br><span class="mk-s">)</span></div>
+    <div class="msg-response"><div class="resp-label">Michael responds (3min)</div>{choice: "Void Discount", reason: "Retraining needed. Adding to James's coaching plan."}</div>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#1f2a22;color:#56d364">4</div>
+    <div class="msg-from-to"><strong>Quality Scorer</strong><span class="arrow">&rarr;</span><strong>CSR Maria</strong></div>
+    <span class="msg-protocol mp-a2h">A2H</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Weekly quality summary generated. Maria's score dipped below team average.</p>
+    <div class="msg-flow"><span class="mf mf-agent">Quality Scorer</span><span class="mfa">&rarr;</span><span class="mf mf-kernel">human__notify(P2_MEDIUM)</span><span class="mfa">&rarr;</span><span class="mf mf-human">Maria (dashboard)</span></div>
+    <div class="msg-response"><div class="resp-label">Notification (no response needed)</div>"Weekly quality: 82/100 (team avg: 85). Your strengths: empathy (92), product knowledge (88). Area to improve: call closing — try the 3-step close technique in the coaching library."</div>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#1f2a22;color:#56d364">5</div>
+    <div class="msg-from-to"><strong>Dashboard Reporter</strong><span class="arrow">&rarr;</span><strong>Manager Tom</strong></div>
+    <span class="msg-protocol mp-a2h">A2H</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Anomaly detected — CSAT dropped 0.8 points in the last 2 hours, correlated with billing system outage.</p>
+    <div class="msg-flow"><span class="mf mf-agent">Dashboard Reporter</span><span class="mfa">&rarr;</span><span class="mf mf-kernel">human__notify(P1_HIGH)</span><span class="mfa">&rarr;</span><span class="mf mf-human">Tom (dashboard + slack + email)</span></div>
+    <div class="msg-response"><div class="resp-label">Notification</div>"ALERT: CSAT dropped 0.8 points (4.2 → 3.4) in last 2 hours. Root cause: billing system outage — 45% of current calls are billing-related. Recommended: post status page update and redirect billing calls to IVR hold message."</div>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#1f2a22;color:#56d364">6</div>
+    <div class="msg-from-to"><strong>Workforce Optimizer</strong><span class="arrow">&rarr;</span><strong>WFM Priya</strong></div>
+    <span class="msg-protocol mp-a2h">A2H</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Call volume forecast shows 30% spike tomorrow 2-4pm. Need 2 CSRs overtime.</p>
+    <div class="msg-flow"><span class="mf mf-agent">Dashboard Reporter</span><span class="mfa">&rarr;</span><span class="mf mf-kernel">human__ask(P2_MEDIUM)</span><span class="mfa">&rarr;</span><span class="mf mf-human">Priya</span></div>
+    <div class="msg-kernel"><span class="mk-s">Auto-delegation check:</span><br>&nbsp;&nbsp;Priya's rules: auto-approve overtime &lt; $500<br>&nbsp;&nbsp;Estimated cost: $240 (2 CSRs × 2hrs × $60/hr)<br>&nbsp;&nbsp;$240 &lt; $500 &rarr; <span class="mk-a">AUTO-APPROVED</span><br><span class="mk-s">No human action needed — Priya sees notification that overtime was auto-approved</span></div>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#1f2a22;color:#56d364">7</div>
+    <div class="msg-from-to"><strong>After-Call Automator</strong><span class="arrow">&rarr;</span><strong>CSR Carlos</strong></div>
+    <span class="msg-protocol mp-a2h">A2H</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Follow-up reminder for call #4518 from yesterday. Customer requested callback about upgrade pricing.</p>
+    <div class="msg-flow"><span class="mf mf-agent">After-Call Automator</span><span class="mfa">&rarr;</span><span class="mf mf-kernel">human__notify(P2_MEDIUM)</span><span class="mfa">&rarr;</span><span class="mf mf-human">Carlos (dashboard)</span></div>
+    <div class="msg-response"><div class="resp-label">Notification</div>"Follow-up due: Call #4518, customer Bob Lee. Requested callback today about Enterprise tier upgrade pricing. Last interaction: resolved API timeout issue. Sentiment: positive."</div>
+  </div></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- TAB: A2A FLOWS                                              -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div id="tab-a2a" class="tab-content">
+  <div class="flow-title">A2A — Agent-to-Agent (8 flows)</div>
+  <div class="flow-desc">Same-namespace calls are auto-allowed. Cross-namespace calls require capability tokens.</div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#17272a;color:#56d4c4">1</div>
+    <div class="msg-from-to"><strong>Call Router</strong><span class="arrow">&rarr;</span><strong>Customer Profiler</strong></div>
+    <span class="msg-protocol mp-a2a">A2A</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Incoming call from customer #12345. Router needs history to pick the right CSR.</p>
+    <div class="msg-flow"><span class="mf mf-agent">Call Router (operations)</span><span class="mfa">&rarr;</span><span class="mf mf-cap">capability token (operations→support)</span><span class="mfa">&rarr;</span><span class="mf mf-agent">Customer Profiler (support)</span></div>
+    <div class="msg-kernel"><span class="mk-s">Cross-namespace: operations → support</span><br><span class="mk-s">Capability token issued (30s TTL) →</span> <span class="mk-a">allow</span></div>
+    <div class="msg-response"><div class="resp-label">Profiler returns (0.4s)</div>{name: "Jane Smith", tier: "premium", last_issue: "billing", sentiment_trend: "declining", lifetime_value: "$34K", preferred_csr: "Maria", skill_needed: "billing"}</div>
+    <p class="msg-detail"><strong>Router decision:</strong> Routes to Maria (billing specialist + previous relationship).</p>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#17272a;color:#56d4c4">2</div>
+    <div class="msg-from-to"><strong>Sentiment Monitor</strong><span class="arrow">&rarr;</span><strong>Escalation Manager</strong></div>
+    <span class="msg-protocol mp-a2a">A2A</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Anger threshold exceeded on call #4521. Auto-escalate.</p>
+    <div class="msg-flow"><span class="mf mf-agent">Sentiment Monitor (quality)</span><span class="mfa">&rarr;</span><span class="mf mf-cap">capability token (quality→support)</span><span class="mfa">&rarr;</span><span class="mf mf-agent">Escalation Manager (support)</span></div>
+    <div class="msg-kernel"><span class="mk-s">Cross-namespace: quality → support</span><br><span class="mk-s">Token: verb="a2a.invoke", TTL=60s</span><br><span class="mk-s">Escalation Manager creates P1 ticket + notifies Rachel (A2H)</span></div>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#17272a;color:#56d4c4">3</div>
+    <div class="msg-from-to"><strong>After-Call Automator</strong><span class="arrow">&rarr;</span><strong>Quality Scorer</strong></div>
+    <span class="msg-protocol mp-a2a">A2A</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Call #4525 completed. Queue for quality scoring.</p>
+    <div class="msg-flow"><span class="mf mf-agent">After-Call Automator (support)</span><span class="mfa">&rarr;</span><span class="mf mf-cap">capability token (support→quality)</span><span class="mfa">&rarr;</span><span class="mf mf-agent">Quality Scorer (quality)</span></div>
+    <div class="msg-kernel"><span class="mk-s">Async call: agent__async_call → job_id returned immediately</span><br><span class="mk-s">Quality Scorer processes in background batch</span></div>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#17272a;color:#56d4c4">4</div>
+    <div class="msg-from-to"><strong>Quality Scorer</strong><span class="arrow">&rarr;</span><strong>Compliance Checker</strong></div>
+    <span class="msg-protocol mp-a2a">A2A</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Scoring detected potential compliance issue. Flag for priority review.</p>
+    <div class="msg-flow"><span class="mf mf-agent">Quality Scorer</span><span class="mfa">&rarr;</span><span class="mf mf-agent">Compliance Checker</span></div>
+    <div class="msg-kernel"><span class="mk-s">Same namespace (quality) →</span> <span class="mk-a">auto-allow</span></div>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#17272a;color:#56d4c4">5</div>
+    <div class="msg-from-to"><strong>Call Router</strong><span class="arrow">&rarr;</span><strong>Escalation Manager</strong></div>
+    <span class="msg-protocol mp-a2a">A2A</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> No CSR available with billing skill. All 6 CSRs in active calls. Queue depth: 5.</p>
+    <div class="msg-flow"><span class="mf mf-agent">Call Router (operations)</span><span class="mfa">&rarr;</span><span class="mf mf-cap">capability token</span><span class="mfa">&rarr;</span><span class="mf mf-agent">Escalation Manager (support)</span></div>
+    <div class="msg-kernel"><span class="mk-s">Escalation Manager → publishes event "queue.overflow"</span><br><span class="mk-s">Escalation Manager → human__ask(Rachel, "Queue overflow: 5 waiting, 0 available")</span></div>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#17272a;color:#56d4c4">6</div>
+    <div class="msg-from-to"><strong>Customer Profiler</strong><span class="arrow">&rarr;</span><strong>Knowledge Assistant</strong></div>
+    <span class="msg-protocol mp-a2a">A2A</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Customer #12345 has open case #C-789. Profiler needs resolution notes to include in briefing.</p>
+    <div class="msg-flow"><span class="mf mf-agent">Customer Profiler</span><span class="mfa">&rarr;</span><span class="mf mf-agent">Knowledge Assistant</span></div>
+    <div class="msg-kernel"><span class="mk-s">Same namespace (support) →</span> <span class="mk-a">auto-allow</span></div>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#17272a;color:#56d4c4">7</div>
+    <div class="msg-from-to"><strong>Dashboard Reporter</strong><span class="arrow">&rarr;</span><strong>Escalation Manager</strong></div>
+    <span class="msg-protocol mp-a2a">A2A</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Dashboard detects call volume trending 30% above forecast. Alerts Escalation Manager to prepare for overflow.</p>
+    <div class="msg-flow"><span class="mf mf-agent">Dashboard Reporter (operations)</span><span class="mfa">&rarr;</span><span class="mf mf-cap">capability token (operations→support)</span><span class="mfa">&rarr;</span><span class="mf mf-agent">Escalation Manager (support)</span></div>
+  </div></div>
+
+  <div class="msg"><div class="msg-header" onclick="toggleMsg(this)">
+    <div class="msg-num" style="background:#17272a;color:#56d4c4">8</div>
+    <div class="msg-from-to"><strong>Compliance Checker</strong><span class="arrow">&rarr;</span><strong>Quality Scorer</strong></div>
+    <span class="msg-protocol mp-a2a">A2A</span><div class="msg-arrow">&#9654;</div>
+  </div><div class="msg-body">
+    <p class="msg-detail"><strong>Trigger:</strong> Compliance violation confirmed on call #4522. Flag for priority scoring and add to coaching queue.</p>
+    <div class="msg-flow"><span class="mf mf-agent">Compliance Checker</span><span class="mfa">&rarr;</span><span class="mf mf-agent">Quality Scorer</span></div>
+    <div class="msg-kernel"><span class="mk-s">Same namespace (quality) →</span> <span class="mk-a">auto-allow</span><br><span class="mk-s">Quality Scorer bumps call #4522 to top of scoring queue</span></div>
+  </div></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- TAB: GOVERNANCE                                             -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div id="tab-governance" class="tab-content">
+  <div class="flow-title">Kernel Governance</div>
+  <div class="flow-desc">Every agent has kernel-enforced tool permissions, budget limits, data boundaries, and namespace isolation.</div>
+
+  <table class="gov-table">
+    <thead><tr><th>Agent</th><th>Namespace</th><th>Tools Allowed</th><th>Tools Denied</th><th>Daily Budget</th><th>Data Access</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Call Router</strong></td><td>operations</td><td>crm_search, publish_event</td><td><span class="badge b-deny">crm_update</span></td><td><span class="badge b-budget">$3</span></td><td>operations, support</td></tr>
+      <tr><td><strong>Knowledge Assistant</strong></td><td>support</td><td>search_knowledge</td><td>—</td><td><span class="badge b-budget">$8</span></td><td>support</td></tr>
+      <tr><td><strong>Customer Profiler</strong></td><td>support</td><td>crm_search, search_knowledge</td><td><span class="badge b-deny">crm_update</span></td><td><span class="badge b-budget">$5</span></td><td>support</td></tr>
+      <tr><td><strong>Sentiment Monitor</strong></td><td>quality</td><td>record_metric, publish_event</td><td><span class="badge b-deny">search_knowledge</span></td><td><span class="badge b-budget">$2</span></td><td>quality</td></tr>
+      <tr><td><strong>After-Call Automator</strong></td><td>support</td><td>search_knowledge, add_decision, record_metric, publish_event</td><td>—</td><td><span class="badge b-budget">$6</span></td><td>support</td></tr>
+      <tr><td><strong>Escalation Manager</strong></td><td>support</td><td>publish_event, record_metric, search_knowledge</td><td><span class="badge b-deny">crm_update</span></td><td><span class="badge b-budget">$4</span></td><td>support</td></tr>
+      <tr><td><strong>Quality Scorer</strong></td><td>quality</td><td>search_knowledge, record_metric, add_decision</td><td><span class="badge b-deny">publish_event</span></td><td><span class="badge b-budget">$6</span></td><td>quality</td></tr>
+      <tr><td><strong>Dashboard Reporter</strong></td><td>operations</td><td>get_dashboard, get_metric, search_knowledge, record_metric</td><td><span class="badge b-deny">request_approval</span></td><td><span class="badge b-budget">$5</span></td><td>operations, support, quality</td></tr>
+    </tbody>
+  </table>
+
+  <div class="flow-title" style="margin-top:24px">Denied Tool Examples</div>
+  <div class="flow-desc">What happens when an agent tries a denied tool:</div>
+  <div class="msg-kernel" style="margin:12px 0">
+    <span class="mk-s">Call Router tries crm_update:</span><br>
+    &nbsp;&nbsp;Stage 2 [capability] → PermissionManager: "crm_update" in denied list<br>
+    &nbsp;&nbsp;<span class="mk-d">SHORT CIRCUIT → deny("Tool 'crm_update' is explicitly denied")</span><br>
+    &nbsp;&nbsp;<span class="mk-s">Why:</span> Routing agent can READ customer data but must NOT modify records<br><br>
+
+    <span class="mk-s">Sentiment Monitor tries search_knowledge:</span><br>
+    &nbsp;&nbsp;Stage 2 [capability] → "search_knowledge" in denied list<br>
+    &nbsp;&nbsp;<span class="mk-d">deny</span><br>
+    &nbsp;&nbsp;<span class="mk-s">Why:</span> Sentiment analysis is real-time signal processing — it should NOT query the knowledge base (different concern, different budget)<br><br>
+
+    <span class="mk-s">Quality Scorer tries publish_event:</span><br>
+    &nbsp;&nbsp;Stage 2 [capability] → "publish_event" in denied list<br>
+    &nbsp;&nbsp;<span class="mk-d">deny</span><br>
+    &nbsp;&nbsp;<span class="mk-s">Why:</span> Quality scores are internal — they go through add_decision (audited, reviewable), not broadcast events
+  </div>
+
+  <div class="flow-title" style="margin-top:24px">Auto-Delegation Rules</div>
+  <table class="gov-table">
+    <thead><tr><th>Human</th><th>Rule</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Rachel (Team Lead)</td><td>Auto-approve escalation reassignment within support team</td><td>Routine reassignments don't interrupt her. New escalations still require her attention.</td></tr>
+      <tr><td>Priya (WFM)</td><td>Auto-approve overtime requests &lt; $500</td><td>Small overtime is auto-approved. Large requests ($500+) need her review.</td></tr>
+      <tr><td>Tom (Manager)</td><td>Auto-approve report generation requests</td><td>Agents can generate reports without waiting. Policy changes still need Tom.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- TAB: LIVE SCENARIO                                          -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div id="tab-scenario" class="tab-content">
+  <div class="flow-title">Live Scenario — 60 Seconds in the Call Center</div>
+  <div class="flow-desc">What happens in a single minute when multiple calls are active simultaneously.</div>
+
+  <div class="topo">
+    <div class="topo-title">T+0s — Incoming call from Jane Smith (premium customer)</div>
+    <div class="msg-kernel">
+      <span class="mk-a">1.</span> Call Router detects incoming call → <span class="mk-s">agent__call</span> → Customer Profiler<br>
+      <span class="mk-a">2.</span> Profiler pulls history: premium tier, declining sentiment, last issue was billing<br>
+      <span class="mk-a">3.</span> Router decision: route to Maria (billing specialist + previous relationship)<br>
+      <span class="mk-s">Kernel: 4 tool calls gated, 1 A2A call (cross-namespace with token), 2 budget checks</span>
+    </div>
+  </div>
+
+  <div class="topo">
+    <div class="topo-title">T+15s — Maria picks up the call</div>
+    <div class="msg-kernel">
+      <span class="mk-a">4.</span> Maria sees customer briefing card (pre-populated by Profiler)<br>
+      <span class="mk-a">5.</span> Sentiment Monitor begins tracking call #4521<br>
+      <span class="mk-a">6.</span> Maria asks Knowledge Assistant: "refund policy for premium?" → <span class="mk-s">H2A</span><br>
+      <span class="mk-a">7.</span> Knowledge Assistant returns answer in 1.2s<br>
+      <span class="mk-s">Kernel: 1 H2A call, 1 tool call (search_knowledge), budget: $0.08</span>
+    </div>
+  </div>
+
+  <div class="topo">
+    <div class="topo-title">T+35s — Customer gets angry about billing charge</div>
+    <div class="msg-kernel">
+      <span class="mk-d">8.</span> Sentiment Monitor detects anger spike (0.6 → 0.15)<br>
+      <span class="mk-d">9.</span> Sentiment Monitor → <span class="mk-s">A2A</span> → Escalation Manager (cross-namespace token)<br>
+      <span class="mk-d">10.</span> Escalation Manager → <span class="mk-s">A2H</span> → Rachel (P0_CRITICAL: "Maria needs help")<br>
+      <span class="mk-s">Kernel: 1 A2A (token issued + revoked), 1 A2H (human__ask), 2 tool calls, 1 audit event</span>
+    </div>
+  </div>
+
+  <div class="topo">
+    <div class="topo-title">T+50s — Rachel responds via Slack</div>
+    <div class="msg-kernel">
+      <span class="mk-a">11.</span> Rachel clicks "Coach CSR" on Slack interactive message<br>
+      <span class="mk-a">12.</span> H2A response recorded: {choice: "Coach CSR"}<br>
+      <span class="mk-a">13.</span> Escalation Manager sends de-escalation script to Maria's dashboard<br>
+      <span class="mk-s">Kernel: 1 A2H response recorded, 1 notification delivered, audit logged</span>
+    </div>
+  </div>
+
+  <div class="topo">
+    <div class="topo-title">T+60s — Call continues with coaching support</div>
+    <div class="msg-kernel">
+      <span class="mk-a">14.</span> Maria uses de-escalation script, customer calms down<br>
+      <span class="mk-a">15.</span> Sentiment Monitor detects recovery (0.15 → 0.55)<br>
+      <span class="mk-a">16.</span> Meanwhile: Call Router processes 2 more incoming calls, Customer Profiler runs 2 more lookups<br>
+      <span class="mk-s">Total kernel decisions in 60 seconds: ~25</span><br>
+      <span class="mk-s">Protocols used: H2A (1), A2H (1), A2A (3), Syscall (~18 tool calls)</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- TAB: METRICS                                                -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div id="tab-metrics" class="tab-content">
+  <div class="flow-title">Daily Metrics (8-hour shift)</div>
+
+  <div class="sgrid">
+    <div class="scard">
+      <h4>Call Volume</h4>
+      <div class="srow"><span>Calls handled</span><span class="sval">240</span></div>
+      <div class="srow"><span>Avg handle time</span><span class="sval">4:30</span></div>
+      <div class="srow"><span>First-call resolution</span><span class="sval">78%</span></div>
+      <div class="srow"><span>Escalation rate</span><span class="sval">6.2%</span></div>
+      <div class="srow"><span>Customer satisfaction</span><span class="sval">4.2/5</span></div>
+    </div>
+    <div class="scard">
+      <h4>H2A Interactions</h4>
+      <div class="srow"><span>Knowledge lookups (CSRs)</span><span class="sval">~180</span></div>
+      <div class="srow"><span>After-call summaries</span><span class="sval">~100</span></div>
+      <div class="srow"><span>Queue checks (Team Lead)</span><span class="sval">~12</span></div>
+      <div class="srow"><span>Quality reviews (QA)</span><span class="sval">~8</span></div>
+      <div class="srow"><span>Reports (Manager/WFM)</span><span class="sval">~5</span></div>
+    </div>
+    <div class="scard">
+      <h4>A2H Interactions</h4>
+      <div class="srow"><span>Sentiment alerts (→ Team Lead)</span><span class="sval">~8</span></div>
+      <div class="srow"><span>Escalation alerts</span><span class="sval">~5</span></div>
+      <div class="srow"><span>Compliance flags (→ QA)</span><span class="sval">~3</span></div>
+      <div class="srow"><span>Quality notifications (→ CSRs)</span><span class="sval">6</span></div>
+      <div class="srow"><span>Anomaly alerts (→ Manager)</span><span class="sval">~2</span></div>
+      <div class="srow"><span>Auto-delegated (no human action)</span><span class="sval">~12</span></div>
+    </div>
+    <div class="scard">
+      <h4>A2A Interactions</h4>
+      <div class="srow"><span>Router → Profiler (per call)</span><span class="sval">~240</span></div>
+      <div class="srow"><span>Automator → Scorer (per call)</span><span class="sval">~200</span></div>
+      <div class="srow"><span>Sentiment → Escalation</span><span class="sval">~8</span></div>
+      <div class="srow"><span>Other A2A</span><span class="sval">~30</span></div>
+      <div class="srow"><span>Capability tokens issued</span><span class="sval">~280</span></div>
+    </div>
+    <div class="scard">
+      <h4>Kernel Activity</h4>
+      <div class="srow"><span>Tool calls gated</span><span class="sval">~1,800</span></div>
+      <div class="srow"><span>Permission denials</span><span class="sval">~15</span></div>
+      <div class="srow"><span>Budget checks</span><span class="sval">~200</span></div>
+      <div class="srow"><span>Audit trail entries</span><span class="sval">~2,500</span></div>
+      <div class="srow"><span>Checkpoints saved</span><span class="sval">~50</span></div>
+    </div>
+    <div class="scard">
+      <h4>Cost</h4>
+      <div class="srow"><span>Knowledge Assistant</span><span class="sval">$6.40</span></div>
+      <div class="srow"><span>After-Call Automator</span><span class="sval">$4.80</span></div>
+      <div class="srow"><span>Quality Scorer</span><span class="sval">$3.20</span></div>
+      <div class="srow"><span>Customer Profiler</span><span class="sval">$3.60</span></div>
+      <div class="srow"><span>All other agents</span><span class="sval">$5.50</span></div>
+      <div class="srow"><span><strong>Total daily AI cost</strong></span><span class="sval"><strong>$23.50</strong></span></div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+function showTab(id) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  event.target.classList.add('active');
+}
+function toggleMsg(header) {
+  const body = header.nextElementSibling;
+  const arrow = header.querySelector('.msg-arrow');
+  header.classList.toggle('open');
+  body.classList.toggle('open');
+  if (arrow) arrow.classList.toggle('open');
+}
+</script>
+</body>
+</html>

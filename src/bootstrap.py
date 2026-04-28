@@ -241,6 +241,11 @@ class PlatformBootstrap:
             self._tool_executor._kernel = self._kernel
             logger.info("  Kernel: wired into ToolExecutor (policy enforcement active)")
 
+            # Wire A2H gateway into tool executor so agents can use human__* tools
+            if self._a2h_gateway:
+                self._tool_executor._a2h_gateway = self._a2h_gateway
+                logger.info("  A2H: wired into ToolExecutor (human__ask/notify/check available)")
+
             try:
                 from src.forgeos_sdk.kernel import Kernel as SDKKernel
                 SDKKernel.register_local_instance(self._kernel)
@@ -248,12 +253,22 @@ class PlatformBootstrap:
             except Exception as e:
                 logger.debug("  SDK kernel registration skipped: %s", e)
 
+            # A2H Gateway — agent-to-human interaction
+            self._a2h_gateway = None
+            try:
+                from src.platform.a2h import A2HGateway
+                self._a2h_gateway = A2HGateway(kernel=self._kernel)
+                logger.info("  A2H Gateway: initialized")
+            except Exception as e:
+                logger.debug("  A2H Gateway initialization skipped: %s", e)
+
             try:
                 from src.forgeos_sdk.runtime import runtime as sdk_runtime
                 sdk_runtime.register_platform(
                     kernel=self._kernel,
                     process_table=self.executor.process_table,
                     checkpoint_store=self.executor.checkpoint_store,
+                    a2h_gateway=self._a2h_gateway,
                 )
                 logger.info("  Runtime: registered for in-process SDK access")
             except Exception as e:
@@ -430,7 +445,7 @@ class PlatformBootstrap:
             config=self.config, hitl_gateway=self.system.hitl, redis_url=redis_url,
         )
 
-        self._mcp_manager = MCPServerManager(self.config)
+        self._mcp_manager = MCPServerManager(self.config, secrets_manager=getattr(self, 'secrets', None))
         self._init_stages.add("mcp_manager")
         try:
             mcp_clients = await asyncio.wait_for(
@@ -446,6 +461,7 @@ class PlatformBootstrap:
         self._client_mcp_manager = ClientMCPManager(
             db_client=self._db,
             tenant_id=self.tenant_id,
+            secrets_manager=getattr(self, 'secrets', None),
         )
         # AgentOS A2A handler (bound to platform_executor later in boot sequence)
         from src.platform.a2a import A2AHandler
