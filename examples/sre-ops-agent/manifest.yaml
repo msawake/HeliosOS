@@ -1,0 +1,86 @@
+# ============================================================================
+# SRE Ops Agent — Always-On Infrastructure Monitor
+# ============================================================================
+#
+# Long-running autonomous agent using Claude Agent SDK + ForgeOS runtime.
+# Monitors infrastructure, detects anomalies, runs diagnostics,
+# proposes fixes, escalates critical issues to humans.
+#
+# Runs continuously (always_on), checking every 2 minutes.
+# ~4,300 runtime governance calls per day.
+#
+# DEPLOY:  forgeos deploy examples/sre-ops-agent/manifest.yaml
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: sre-ops-agent
+  namespace: operations
+  description: "Always-on SRE agent — monitors health, detects anomalies, escalates critical issues"
+  labels:
+    category: sre
+    execution: always_on
+    autonomous: "true"
+spec:
+  stack: anthropic-agent-sdk
+  execution_type: always_on
+  ownership: shared
+  llm:
+    chat_model: claude-haiku-4-5-20251001
+    provider: anthropic
+  tools:
+    - health_check
+    - run_diagnostic
+    - check_logs
+    - check_metrics
+    - apply_fix
+    - memory__read
+    - memory__write
+    - memory__search
+  capabilities:
+    tools:
+      allowed:
+        - health_check
+        - run_diagnostic
+        - check_logs
+        - check_metrics
+        - memory__*
+      denied:
+        - apply_fix
+        - restart_service
+        - delete_*
+        - drop_*
+  boundaries:
+    budgets:
+      daily_usd: 10.00
+      per_task_usd: 0.50
+    data:
+      allowed_namespaces:
+        - operations
+        - shared
+        - monitoring
+      pii_policy: mask
+  governance:
+    audit_level: full
+    human_in_loop:
+      - event: apply_fix
+        approvers: [oncall, sre-lead]
+        sla_hours: 0.5
+      - event: restart_service
+        approvers: [sre-lead]
+        sla_hours: 0.25
+  metadata:
+    loop_interval_seconds: 120
+  system_prompt: |
+    You are an SRE operations agent. You monitor infrastructure health
+    continuously and respond to anomalies.
+
+    RULES:
+    - Check health endpoints every iteration
+    - If anomaly detected: investigate with diagnostics
+    - NEVER apply fixes without human approval (kernel enforces this)
+    - For critical issues: immediately escalate to oncall
+    - Record every finding in the audit trail
+    - Save state to checkpoint for crash recovery
+    - Pace your budget — you run 24/7, don't burn it in one hour
