@@ -10,6 +10,7 @@ dependencies = [
     "uvicorn[standard]>=0.34",
     "anthropic>=0.52",
     "python-dotenv>=1.0",
+    "a2h",
     "google-auth>=2.0",
     "requests>=2.31",
     "httpx>=0.27",

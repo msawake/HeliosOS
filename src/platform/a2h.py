@@ -27,16 +27,25 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Enums (A2H spec-aligned)
+# A2H spec types — imported from the standalone a2h package
+# (github.com/makingscience-awake/a2h)
 # ---------------------------------------------------------------------------
 
-class RequestType(str, Enum):
-    QUESTION = "question"
-    APPROVAL = "approval"
-    NOTIFICATION = "notification"
-    TASK = "task"
+from a2h.models import (
+    Status,
+    ResponseType as _A2HResponseType,
+    Priority,
+    Interaction as A2HInteraction,
+    Response as A2HResponse,
+    Notification as A2HNotification,
+    Option as A2HOption,
+    DelegationRule as A2HDelegationRule,
+    EscalationLevel,
+    EscalationChain,
+    Participant as A2HParticipant,
+)
 
-
+# ForgeOS extension: ResponseType with NONE for notifications
 class ResponseType(str, Enum):
     CHOICE = "choice"
     APPROVAL = "approval"
@@ -46,24 +55,12 @@ class ResponseType(str, Enum):
     FORM = "form"
     NONE = "none"  # ForgeOS extension: notifications
 
-
-class Status(str, Enum):
-    """A2H spec lifecycle: created → pending → terminal state."""
-    CREATED = "created"
-    PENDING = "pending"
-    ANSWERED = "answered"
-    EXPIRED = "expired"
-    CANCELLED = "cancelled"
-    ESCALATED = "escalated"
-    AUTO_DELEGATED = "auto_delegated"
-
-
-class Priority(str, Enum):
-    """A2H spec: lowercase values."""
-    CRITICAL = "critical"
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
+# ForgeOS-only: request type categories
+class RequestType(str, Enum):
+    QUESTION = "question"
+    APPROVAL = "approval"
+    NOTIFICATION = "notification"
+    TASK = "task"
 
 # Backward-compat aliases for code that used the old P0/P1/P2/P3 names
 P0_CRITICAL = Priority.CRITICAL
