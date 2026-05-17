@@ -1,0 +1,15 @@
+FROM python:3.12-slim
+WORKDIR /app
+RUN pip install --no-cache-dir \
+    fastapi>=0.115 uvicorn[standard]>=0.34 httpx>=0.27 \
+    google-auth>=2.0 requests>=2.31 anthropic>=0.52
+COPY examples/competitive-intel/ /app/examples/competitive_intel/
+COPY competitive-intel-main.py /app/main.py
+COPY src/forgeos_sdk/ /app/src/forgeos_sdk/
+COPY src/platform/kernel/ /app/src/platform/kernel/
+COPY src/platform/kernel_stubs/ /app/src/platform/kernel_stubs/
+COPY src/platform/process.py src/platform/checkpoint.py src/platform/syscall.py src/platform/capabilities.py /app/src/platform/
+RUN touch /app/src/__init__.py /app/src/platform/__init__.py /app/examples/__init__.py /app/examples/competitive_intel/__init__.py
+ENV PYTHONPATH=/app PORT=8080
+EXPOSE 8080
+CMD ["python", "main.py"]

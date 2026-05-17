@@ -1,0 +1,85 @@
+# ============================================================================
+# Competitive Intelligence Agent — Dual-LLM with Full Runtime Governance
+# ============================================================================
+#
+# Uses Gemini Flash for scanning (cheap/fast) and Claude Opus for deep
+# analysis (expensive/thorough). ForgeOS kernel gates every action via HTTP.
+#
+# 13 runtime calls per invocation:
+#   budget checks, data boundaries, tool gates, audit trail,
+#   checkpoints, HITL for high-impact recommendations
+#
+# DEPLOY:  forgeos deploy examples/competitive-intel/manifest.yaml
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: competitive-intel
+  namespace: strategy
+  description: "Dual-LLM competitive intelligence — Gemini scans, Claude analyzes, ForgeOS governs"
+  labels:
+    category: intelligence
+    llm-count: "2"
+spec:
+  stack: adk
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - web_search
+    - analyze_competitor
+    - generate_report
+    - request_deep_analysis
+    - memory__read
+    - memory__write
+    - memory__search
+  capabilities:
+    tools:
+      allowed:
+        - web_search
+        - analyze_competitor
+        - generate_report
+        - request_deep_analysis
+        - memory__*
+      denied:
+        - delete_*
+        - finance__*
+        - hr__*
+    a2a:
+      canCall:
+        - namespace: strategy
+          agents: ["*"]
+      canBeCalledBy:
+        - namespace: executive
+          agents: ["*"]
+  boundaries:
+    budgets:
+      daily_usd: 20.00
+      per_task_usd: 5.00
+    data:
+      allowed_namespaces:
+        - strategy
+        - shared
+        - competitors
+      blocked_namespaces:
+        - finance
+        - hr
+      pii_policy: mask
+  governance:
+    audit_level: full
+    human_in_loop:
+      - event: recommend.strategic
+        approvers: [cso, ceo]
+        sla_hours: 4
+  system_prompt: |
+    You are a competitive intelligence analyst. You analyze competitors
+    using a dual-LLM approach:
+    - Use Gemini Flash for fast scanning and data gathering
+    - Use Claude Opus for deep strategic analysis (budget-gated)
+    - Always check budget before expensive operations
+    - Checkpoint after each phase for crash recovery
+    - Audit every finding for compliance
+    - Escalate recommendations above $100K impact to humans
