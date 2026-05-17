@@ -44,10 +44,10 @@ hitl:
     offer_above_budget: true
 
 models:
-  orchestrator_default: "claude-opus-4-6"
-  doer_default: "claude-sonnet-4-5-20250514"
-  offer_drafter: "claude-opus-4-6"
-  counter_negotiator: "claude-opus-4-6"
+  orchestrator_default: "claude-haiku-4-5-20251001"
+  doer_default: "claude-haiku-4-5-20251001"
+  offer_drafter: "claude-haiku-4-5-20251001"
+  counter_negotiator: "claude-haiku-4-5-20251001"
   classifier_default: "claude-haiku-4-5-20251001"
 
 polling_intervals:

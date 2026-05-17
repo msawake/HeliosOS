@@ -1,0 +1,78 @@
+# ============================================================================
+# ForgeOS Team: Research Pipeline (Sequential Pattern)
+# ============================================================================
+#
+# A four-stage pipeline where each agent's output feeds the next:
+# Discover → Analyze → Draft → Review
+#
+# Each agent can only call the next agent in the chain.
+#
+# DEPLOY:   forgeos deploy examples/teams/research-pipeline.yaml
+# UNDEPLOY: forgeos undeploy-team research-pipeline
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Team
+metadata:
+  name: research-pipeline
+  namespace: research
+  description: "Sequential research pipeline: discover → analyze → draft → review"
+spec:
+  orchestration: sequential
+
+  defaults:
+    stack: forgeos
+    llm:
+      chat_model: claude-haiku-4-5-20251001
+      provider: anthropic
+
+  agents:
+    - name: discoverer
+      description: "Discovers raw data and sources for the research topic."
+      execution_type: reflex
+      tools:
+        - company__search_knowledge
+        - agent__call
+        - memory__write
+      system_prompt: |
+        You discover raw data and sources for research topics. After
+        gathering information, pass your findings to the analyzer via
+        agent__call. Save useful sources to memory.
+
+    - name: analyzer
+      description: "Analyzes raw findings and extracts insights."
+      execution_type: reflex
+      tools:
+        - agent__call
+        - memory__read
+        - memory__write
+      system_prompt: |
+        You receive raw findings from the discoverer and extract structured
+        insights. Pass your analysis to the drafter via agent__call.
+
+    - name: drafter
+      description: "Drafts a report from analyzed insights."
+      execution_type: reflex
+      tools:
+        - agent__call
+        - memory__read
+        - memory__write
+      system_prompt: |
+        You receive analyzed insights and draft a clear, structured report.
+        Pass the draft to the reviewer via agent__call for quality check.
+
+    - name: reviewer
+      description: "Reviews the draft for quality and completeness."
+      execution_type: reflex
+      tools:
+        - memory__read
+        - memory__write
+      system_prompt: |
+        You review drafts for quality, completeness, and accuracy.
+        Write your review verdict and final report to memory.
+
+  shared_context:
+    namespace: research
+    shared_tools:
+      - company__publish_event

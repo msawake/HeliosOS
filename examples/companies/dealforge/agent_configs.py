@@ -461,38 +461,38 @@ TOOL_PERMISSIONS = {
 
 AGENT_DEFINITIONS: list[dict] = [
     # Executive (3)
-    {"id": "exec-ceo", "name": "Chief Executive Orchestrator", "dept": "executive", "tier": AgentTier.EXECUTIVE, "model": "claude-opus-4-6", "max_turns": 50},
-    {"id": "exec-coo", "name": "Chief Operations Orchestrator", "dept": "executive", "tier": AgentTier.EXECUTIVE, "model": "claude-opus-4-6", "max_turns": 40},
-    {"id": "exec-cfo", "name": "Chief Financial Orchestrator", "dept": "executive", "tier": AgentTier.EXECUTIVE, "model": "claude-opus-4-6", "max_turns": 40},
+    {"id": "exec-ceo", "name": "Chief Executive Orchestrator", "dept": "executive", "tier": AgentTier.EXECUTIVE, "model": "claude-haiku-4-5-20251001", "max_turns": 50},
+    {"id": "exec-coo", "name": "Chief Operations Orchestrator", "dept": "executive", "tier": AgentTier.EXECUTIVE, "model": "claude-haiku-4-5-20251001", "max_turns": 40},
+    {"id": "exec-cfo", "name": "Chief Financial Orchestrator", "dept": "executive", "tier": AgentTier.EXECUTIVE, "model": "claude-haiku-4-5-20251001", "max_turns": 40},
 
     # Search / Crawling (5)
-    {"id": "search-lead", "name": "Search Operations Lead", "dept": "search", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 35},
+    {"id": "search-lead", "name": "Search Operations Lead", "dept": "search", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-haiku-4-5-20251001", "max_turns": 35},
     {"id": "crawler-craigslist", "name": "Craigslist Crawler Agent", "dept": "search", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 15},
     {"id": "crawler-fbmp", "name": "Facebook Marketplace Crawler Agent", "dept": "search", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 15},
     {"id": "crawler-offerup", "name": "OfferUp Crawler Agent", "dept": "search", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 15},
     {"id": "crawler-ebay", "name": "eBay Crawler Agent", "dept": "search", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 15},
 
     # Deals / Matching (6)
-    {"id": "deals-lead", "name": "Deals Operations Lead", "dept": "deals", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 35},
-    {"id": "matcher-agent", "name": "Deal Matcher Agent", "dept": "deals", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
-    {"id": "price-analyzer", "name": "Price Analysis Agent", "dept": "deals", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 25},
+    {"id": "deals-lead", "name": "Deals Operations Lead", "dept": "deals", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-haiku-4-5-20251001", "max_turns": 35},
+    {"id": "matcher-agent", "name": "Deal Matcher Agent", "dept": "deals", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 20},
+    {"id": "price-analyzer", "name": "Price Analysis Agent", "dept": "deals", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 25},
     {"id": "alert-agent", "name": "Deal Alert Agent", "dept": "deals", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 15},
-    {"id": "negotiator-agent", "name": "Negotiation Assistant Agent", "dept": "deals", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 25},
-    {"id": "fraud-detector", "name": "Fraud Detection Agent", "dept": "deals", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
+    {"id": "negotiator-agent", "name": "Negotiation Assistant Agent", "dept": "deals", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 25},
+    {"id": "fraud-detector", "name": "Fraud Detection Agent", "dept": "deals", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 20},
 
     # Marketing (4)
-    {"id": "mkt-lead", "name": "Marketing Lead Orchestrator", "dept": "marketing", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 30},
-    {"id": "mkt-content", "name": "Content Marketing Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 40},
-    {"id": "mkt-ppc", "name": "PPC/Google Ads Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 25},
-    {"id": "mkt-analytics", "name": "Marketing Analytics Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 25},
+    {"id": "mkt-lead", "name": "Marketing Lead Orchestrator", "dept": "marketing", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-haiku-4-5-20251001", "max_turns": 30},
+    {"id": "mkt-content", "name": "Content Marketing Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 40},
+    {"id": "mkt-ppc", "name": "PPC/Google Ads Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 25},
+    {"id": "mkt-analytics", "name": "Marketing Analytics Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 25},
 
     # Finance (2)
-    {"id": "fin-lead", "name": "Finance Lead", "dept": "finance", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 30},
-    {"id": "fin-billing", "name": "Billing Agent", "dept": "finance", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
+    {"id": "fin-lead", "name": "Finance Lead", "dept": "finance", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-haiku-4-5-20251001", "max_turns": 30},
+    {"id": "fin-billing", "name": "Billing Agent", "dept": "finance", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 20},
 
     # Support (2)
-    {"id": "support-lead", "name": "Support Lead", "dept": "support", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 25},
-    {"id": "support-agent", "name": "User Support Agent", "dept": "support", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
+    {"id": "support-lead", "name": "Support Lead", "dept": "support", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-haiku-4-5-20251001", "max_turns": 25},
+    {"id": "support-agent", "name": "User Support Agent", "dept": "support", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 20},
 ]
 
 
@@ -535,7 +535,7 @@ def build_registry(company_name: str = "DealForge AI") -> AgentRegistry:
                         "description": f"{sub_defn['name']} - {sub_defn['dept']} department",
                         "prompt": SYSTEM_PROMPTS.get(sub_id, f"You are the {sub_defn['name']}."),
                         "tools": TOOL_PERMISSIONS.get(sub_id, ["Read"]),
-                        "model": sub_defn.get("model", "claude-sonnet-4-5-20250514"),
+                        "model": sub_defn.get("model", "claude-haiku-4-5-20251001"),
                         "max_turns": sub_defn.get("max_turns", 30),
                     }
 
@@ -546,7 +546,7 @@ def build_registry(company_name: str = "DealForge AI") -> AgentRegistry:
             tier=defn["tier"],
             system_prompt=system_prompt,
             allowed_tools=TOOL_PERMISSIONS.get(agent_id, ["Read"]),
-            model=defn.get("model", "claude-sonnet-4-5-20250514"),
+            model=defn.get("model", "claude-haiku-4-5-20251001"),
             max_turns=defn.get("max_turns", 50),
             subagents=subagents,
         )

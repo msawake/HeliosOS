@@ -7,6 +7,8 @@ the real SDK path.
 
 import pytest
 
+pytestmark = pytest.mark.kernel
+
 from src.forgeos_sdk.runtime import runtime as _rt
 from src.platform.kernel import Kernel
 from src.platform.registry import AgentRegistry

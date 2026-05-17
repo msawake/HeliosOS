@@ -1,0 +1,46 @@
+# ============================================================================
+# Namespace Policy: Google Ads
+# ============================================================================
+#
+# Applied to all ads-* namespaces. Enforces governance rules that every
+# ads agent must comply with, regardless of individual manifest settings.
+#
+# APPLY:
+#   forgeos apply examples/google-ads/namespace-policy.yaml
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: NamespacePolicy
+metadata:
+  name: ads-governance
+  namespace: ads
+spec:
+  # Capacity
+  max_agents: 10
+
+  # Budget controls
+  daily_budget_usd: 20.00
+  max_cost_per_agent_day: 5.00
+
+  # Tool access — only ads + memory + company tools allowed
+  allowed_tools:
+    - platform__ads_*
+    - memory__*
+    - company__*
+    - agent__*
+  denied_tools:
+    - mcp__google-workspace__delete_*
+    - mcp__google-workspace__send_gmail_message
+    - platform__crm_*
+    - finance__*
+
+  # Governance
+  required_audit_level: full
+  required_hitl_events:
+    - ads.budget_increase_large
+
+  # Data
+  pii_policy: mask
+  allowed_stacks:
+    - forgeos

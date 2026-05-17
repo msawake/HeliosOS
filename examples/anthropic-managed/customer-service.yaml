@@ -1,0 +1,41 @@
+# ============================================================================
+# Anthropic Managed Agent: Customer Service
+# ============================================================================
+#
+# Deploys to Anthropic's hosted runtime via the Managed Agents API.
+# ForgeOS handles governance (budget, ACL, audit). Anthropic handles execution.
+#
+# Requires: ANTHROPIC_API_KEY with beta access
+#
+# DEPLOY:  forgeos deploy examples/anthropic-managed/customer-service.yaml
+# INVOKE:  forgeos invoke managed-customer-service "Help me with my plant"
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: managed-customer-service
+  namespace: support
+  description: "Customer service on Anthropic Managed Agents — hosted runtime + ForgeOS governance"
+spec:
+  stack: anthropic-managed
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: claude-haiku-4-5-20251001
+    provider: anthropic
+  tools:
+    - agent_toolset_20260401
+  boundaries:
+    budgets:
+      daily_usd: 10.00
+      per_task_usd: 1.00
+    data:
+      pii_policy: mask
+  governance:
+    audit_level: full
+  system_prompt: |
+    You are Cymbal Home & Garden's AI customer service agent. You help
+    customers with orders, returns, product recommendations, and garden
+    planning. Be friendly, helpful, and proactive about garden care tips.

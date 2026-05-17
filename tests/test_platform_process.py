@@ -2,6 +2,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.kernel
+
 from stacks.base import (
     AgentDefinition,
     AgentStatus,

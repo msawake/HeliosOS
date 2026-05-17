@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+pytestmark = pytest.mark.kernel
+
 from src.platform.kernel import (
     BudgetManager,
     Kernel,

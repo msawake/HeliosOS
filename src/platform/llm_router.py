@@ -153,15 +153,36 @@ class LLMRouter:
     each provider branch calls the actual API client.
     """
 
-    def __init__(self, api_keys: dict[str, str] | None = None, audit_log=None):
+    def __init__(self, api_keys: dict[str, str] | None = None, audit_log=None, callback_registry=None):
         self._api_keys = api_keys or {}
         self._clients: dict[str, Any] = {}
         self._audit = audit_log  # optional AuditLog for failover events
+        self._callbacks = callback_registry  # optional CallbackRegistry for model-level interception
         self._init_clients()
 
     def bind_audit(self, audit_log) -> None:
         """Attach an AuditLog instance after construction (bootstrap convenience)."""
         self._audit = audit_log
+
+    def bind_callbacks(self, callback_registry) -> None:
+        """Attach a CallbackRegistry after construction (bootstrap convenience)."""
+        self._callbacks = callback_registry
+
+    async def _dispatch_callback(self, event_name: str, agent_id: str, namespace: str, args: dict) -> Any:
+        """Dispatch a model-level callback if registry is wired."""
+        if not self._callbacks:
+            return None
+        from src.platform.callbacks import CallbackContext, CallbackLevel, CallbackTiming
+        timing = CallbackTiming.BEFORE if "before" in event_name else CallbackTiming.AFTER
+        ctx = CallbackContext(
+            agent_id=agent_id,
+            namespace=namespace,
+            level=CallbackLevel.MODEL,
+            timing=timing,
+            event_name=event_name,
+            args=args,
+        )
+        return await self._callbacks.dispatch(ctx)
 
     def _init_clients(self) -> None:
         for provider, key in self._api_keys.items():
@@ -204,15 +225,70 @@ class LLMRouter:
         If the primary provider fails after retries and the agent config
         specifies `metadata.fallback_provider`, a single failover attempt is
         made against the fallback provider.
+
+        When a CallbackRegistry is bound, model-level before/after callbacks
+        are dispatched around the provider call.  A DENY result short-circuits
+        with an error response; a MODIFY result can rewrite messages/tools
+        (before) or response text (after).
         """
-        fallback = (getattr(llm_config, "metadata", None) or {}).get("fallback_provider")
-        return await self._call_with_failover(
+        metadata = getattr(llm_config, "metadata", None) or {}
+        agent_id = metadata.get("agent_id", "")
+        namespace = metadata.get("namespace", "default")
+
+        # --- Before callback ---------------------------------------------------
+        if self._callbacks:
+            from src.platform.callbacks import CallbackDecision
+            cb_result = await self._dispatch_callback(
+                "model.chat.before",
+                agent_id=agent_id,
+                namespace=namespace,
+                args={"messages": messages, "tools": tools, "config": llm_config},
+            )
+            if cb_result and cb_result.decision == CallbackDecision.DENY:
+                return LLMResponse(
+                    text="",
+                    model=llm_config.chat_model,
+                    provider=llm_config.provider,
+                    tokens_used=0,
+                    error=cb_result.reason,
+                )
+            if cb_result and cb_result.decision == CallbackDecision.MODIFY and cb_result.modified_args:
+                messages = cb_result.modified_args.get("messages", messages)
+                tools = cb_result.modified_args.get("tools", tools)
+
+        # --- Provider call -----------------------------------------------------
+        fallback = metadata.get("fallback_provider")
+        response = await self._call_with_failover(
             provider=llm_config.provider,
             model=llm_config.chat_model,
             messages=messages,
             tools=tools,
             fallback_provider=fallback,
         )
+
+        # --- After callback ----------------------------------------------------
+        if self._callbacks and response:
+            from src.platform.callbacks import CallbackDecision
+            cb_result = await self._dispatch_callback(
+                "model.chat.after",
+                agent_id=agent_id,
+                namespace=namespace,
+                args={"response": response, "config": llm_config},
+            )
+            if cb_result and cb_result.decision == CallbackDecision.MODIFY and cb_result.modified_args:
+                if "text" in cb_result.modified_args:
+                    response = LLMResponse(
+                        text=cb_result.modified_args["text"],
+                        model=response.model,
+                        provider=response.provider,
+                        tokens_used=response.tokens_used,
+                        finish_reason=response.finish_reason,
+                        tool_calls=response.tool_calls,
+                        raw=response.raw,
+                        error=response.error,
+                    )
+
+        return response
 
     async def reason(self, llm_config: LLMConfig, messages: list[dict]) -> LLMResponse:
         """Send a reasoning/thinking call using the agent's reasoning model."""
@@ -605,19 +681,34 @@ class LLMRouter:
         tools: list[dict] | None = None,
     ) -> LLMResponse:
         """Call Vertex AI Gemini with tool calling support."""
-        import subprocess
         import httpx
 
         project_id = config["project_id"]
         region = config["region"]
 
-        token_result = subprocess.run(
-            ["gcloud", "auth", "print-access-token"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if token_result.returncode != 0:
-            raise RuntimeError("Failed to get gcloud access token")
-        access_token = token_result.stdout.strip()
+        access_token = None
+        try:
+            import google.auth
+            import google.auth.transport.requests as gauth_requests
+            credentials, _ = google.auth.default()
+            credentials.refresh(gauth_requests.Request())
+            access_token = credentials.token
+            logger.debug("Vertex AI auth via google.auth ADC")
+        except Exception as auth_err:
+            logger.warning("google.auth ADC failed: %s, trying gcloud CLI", auth_err)
+            try:
+                import subprocess
+                token_result = subprocess.run(
+                    ["gcloud", "auth", "print-access-token"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if token_result.returncode == 0:
+                    access_token = token_result.stdout.strip()
+            except Exception as cli_err:
+                logger.error("gcloud CLI also failed: %s", cli_err)
+
+        if not access_token:
+            raise RuntimeError("Failed to get Vertex AI access token (tried google.auth ADC and gcloud CLI)")
 
         # Convert messages to Vertex AI format
         contents = []

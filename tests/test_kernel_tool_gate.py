@@ -6,6 +6,8 @@ loop are checked against the kernel's PermissionManager before execution.
 
 import pytest
 
+pytestmark = pytest.mark.kernel
+
 from src.forgeos_sdk.runtime import runtime as _module_runtime, Runtime
 from src.platform.kernel import Kernel
 from src.platform.registry import AgentRegistry

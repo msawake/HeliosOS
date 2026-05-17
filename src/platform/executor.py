@@ -418,6 +418,175 @@ class PlatformExecutor:
         logger.info("Undeployed agent %s", agent_id)
         return True
 
+    # ------------------------------------------------------------------
+    # Team deployment
+    # ------------------------------------------------------------------
+
+    async def deploy_team(self, team_manifest) -> list[str]:
+        """Deploy all agents in a team with pre-wired relationships."""
+        from src.forgeos_sdk.manifest import TeamManifest
+        if isinstance(team_manifest, dict):
+            team_manifest = TeamManifest.from_dict(team_manifest)
+
+        team_name = team_manifest.metadata.name
+        namespace = team_manifest.metadata.namespace
+        orchestration = team_manifest.spec.orchestration
+        agent_ids: list[str] = []
+        supervisor_id: str | None = None
+        agent_names = [a.name for a in team_manifest.spec.agents]
+
+        for i, agent_spec in enumerate(team_manifest.spec.agents):
+            agent_def = self._build_agent_from_team(team_manifest, agent_spec)
+
+            # Wire A2A ACLs based on orchestration
+            self._wire_team_a2a(team_manifest, agent_spec, agent_def, agent_names, i)
+
+            # Deploy the agent
+            agent_id = await self.deploy(agent_def)
+            agent_ids.append(agent_id)
+
+            # Track supervisor for parent_pid wiring
+            if orchestration == "supervisor" and agent_spec.role == "supervisor":
+                supervisor_id = agent_id
+
+            # Set parent_pid for workers in supervisor pattern
+            if orchestration == "supervisor" and agent_spec.role != "supervisor" and supervisor_id:
+                proc = self.process_table.get(agent_id)
+                if proc and hasattr(proc, 'identity') and hasattr(proc.identity, 'parent_pid'):
+                    proc.identity.parent_pid = supervisor_id
+
+        logger.info(
+            "TEAM DEPLOYED | %s/%s | %d agents | orchestration=%s",
+            namespace, team_name, len(agent_ids), orchestration,
+        )
+        return agent_ids
+
+    async def undeploy_team(self, team_name: str, namespace: str = "default") -> int:
+        """Undeploy all agents belonging to a team."""
+        count = 0
+        for agent in list(self.registry.list_all()):
+            agent_meta = getattr(agent, 'metadata', {}) or {}
+            if isinstance(agent_meta, dict):
+                if agent_meta.get("_team") == team_name and getattr(agent, 'namespace', 'default') == namespace:
+                    try:
+                        await self.stop_agent(getattr(agent, 'agent_id', agent.name))
+                        count += 1
+                    except Exception as e:
+                        logger.error("Failed to undeploy team agent %s: %s", agent.name, e)
+        logger.info("TEAM UNDEPLOYED | %s/%s | %d agents removed", namespace, team_name, count)
+        return count
+
+    def _build_agent_from_team(self, team_manifest, agent_spec) -> AgentDefinition:
+        """Build an AgentDefinition by merging team defaults with agent overrides."""
+        from stacks.base import LLMConfig as StackLLMConfig
+
+        defaults = team_manifest.spec.defaults
+        namespace = team_manifest.metadata.namespace
+        team_name = team_manifest.metadata.name
+        shared = team_manifest.spec.shared_context
+
+        # Merge LLM config: agent overrides team defaults
+        llm_config: StackLLMConfig | None = None
+        source_llm = agent_spec.llm or defaults.llm
+        if source_llm:
+            llm_config = StackLLMConfig(
+                chat_model=source_llm.chat_model,
+                provider=source_llm.provider,
+                metadata=source_llm.metadata if hasattr(source_llm, 'metadata') else {},
+            )
+
+        # Merge tools: agent tools + shared tools
+        tools = list(agent_spec.tools)
+        if shared and shared.shared_tools:
+            for t in shared.shared_tools:
+                if t not in tools:
+                    tools.append(t)
+
+        # Determine stack and execution type
+        stack = agent_spec.stack or defaults.stack or "forgeos"
+        exec_type = agent_spec.execution_type or "reflex"
+
+        # Build system prompt
+        system_prompt = ""
+        if agent_spec.system_prompt:
+            if isinstance(agent_spec.system_prompt, str):
+                system_prompt = agent_spec.system_prompt
+            elif hasattr(agent_spec.system_prompt, 'content'):
+                system_prompt = agent_spec.system_prompt.content or ""
+
+        # Build metadata with team reference
+        metadata = dict(agent_spec.metadata)
+        metadata["_team"] = team_name
+        metadata["_team_role"] = agent_spec.role
+        metadata["_namespace"] = namespace
+
+        # Merge boundaries
+        if agent_spec.boundaries:
+            metadata["_boundaries"] = (
+                agent_spec.boundaries.model_dump()
+                if hasattr(agent_spec.boundaries, 'model_dump')
+                else {}
+            )
+        elif defaults.boundaries:
+            metadata["_boundaries"] = (
+                defaults.boundaries.model_dump()
+                if hasattr(defaults.boundaries, 'model_dump')
+                else {}
+            )
+
+        return AgentDefinition(
+            name=agent_spec.name,
+            stack=stack,
+            execution_type=ExecutionType(exec_type),
+            ownership=OwnershipType.SHARED,
+            tools=tools,
+            llm_config=llm_config or StackLLMConfig(),
+            system_prompt=system_prompt,
+            schedule=agent_spec.schedule,
+            event_triggers=agent_spec.event_triggers,
+            goal=agent_spec.goal,
+            metadata=metadata,
+        )
+
+    def _wire_team_a2a(
+        self,
+        team_manifest,
+        agent_spec,
+        agent_def: AgentDefinition,
+        all_agent_names: list[str],
+        index: int,
+    ) -> None:
+        """Set canCall/canBeCalledBy based on orchestration pattern."""
+        namespace = team_manifest.metadata.namespace
+        orchestration = team_manifest.spec.orchestration
+        other_names = [n for n in all_agent_names if n != agent_spec.name]
+
+        capabilities = agent_def.metadata.get("_capabilities", {})
+        a2a = capabilities.get("a2a", {})
+
+        if orchestration == "supervisor":
+            if agent_spec.role == "supervisor":
+                a2a["canCall"] = [{"namespace": namespace, "agents": other_names}]
+            else:
+                supervisors = [a.name for a in team_manifest.spec.agents if a.role == "supervisor"]
+                a2a["canBeCalledBy"] = [{"namespace": namespace, "agents": supervisors}]
+
+        elif orchestration == "sequential":
+            if index < len(all_agent_names) - 1:
+                a2a["canCall"] = [{"namespace": namespace, "agents": [all_agent_names[index + 1]]}]
+            if index > 0:
+                a2a["canBeCalledBy"] = [{"namespace": namespace, "agents": [all_agent_names[index - 1]]}]
+
+        elif orchestration == "mesh":
+            a2a["canCall"] = [{"namespace": namespace, "agents": other_names}]
+            a2a["canBeCalledBy"] = [{"namespace": namespace, "agents": other_names}]
+
+        elif orchestration == "parallel":
+            pass  # No cross-calling
+
+        capabilities["a2a"] = a2a
+        agent_def.metadata["_capabilities"] = capabilities
+
     def get_status(self, agent_id: str) -> dict:
         agent_def = self.registry.get(agent_id)
         if not agent_def:

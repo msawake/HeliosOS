@@ -6,6 +6,8 @@ import asyncio
 
 import pytest
 
+pytestmark = pytest.mark.kernel
+
 from src.platform.kernel import Kernel
 from src.platform.process import AgentIdentity, Phase, ProcessTable
 from src.platform.triggers import (

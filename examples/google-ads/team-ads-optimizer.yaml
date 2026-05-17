@@ -1,0 +1,179 @@
+# ============================================================================
+# Google Ads Optimization Team
+# ============================================================================
+#
+# A company-wide Google Ads management team deployed per client account.
+# One manager coordinates three specialists: auditor, optimizer, reporter.
+#
+# ARCHITECTURE:
+#   ads-manager (supervisor) — coordinates work, delegates to specialists
+#   ads-auditor (scheduled)  — daily campaign health checks at 6 AM
+#   ads-optimizer (reflex)   — implements changes when manager delegates
+#   ads-reporter (scheduled) — weekly performance reports every Monday
+#
+# GOVERNANCE:
+#   - Budget cap: $5/agent/day, $20/namespace/day
+#   - HITL: budget changes > $200/day require human approval
+#   - Namespace isolation: each client's ads data is isolated
+#   - Full audit trail on every optimization action
+#   - Memory: agents persist findings to avoid oscillating optimizations
+#
+# DEPLOY (single client):
+#   forgeos deploy examples/google-ads/team-ads-optimizer.yaml
+#
+# DEPLOY (multi-client):
+#   bash examples/google-ads/deploy-multi-client.sh acme globex initech
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Team
+metadata:
+  name: ads-optimizer
+  namespace: ads
+  description: "Google Ads optimization team — audits campaigns, implements optimizations, generates reports"
+spec:
+  orchestration: supervisor
+
+  defaults:
+    stack: forgeos
+    llm:
+      chat_model: gemini-2.5-flash
+      provider: vertex
+    boundaries:
+      budgets:
+        daily_usd: 5.00
+        per_task_usd: 1.00
+
+  agents:
+    - name: ads-manager
+      role: supervisor
+      description: "Coordinates optimization workflows across specialists"
+      llm:
+        chat_model: gemini-2.5-flash
+        provider: vertex
+      execution_type: reflex
+      tools:
+        - agent__call
+        - agent__list_available
+        - platform__ads_get_campaigns
+        - memory__read
+        - memory__write
+        - memory__search
+        - company__get_dashboard
+      system_prompt: |
+        You are the Google Ads team manager. You coordinate three specialists:
+        - ads-auditor: analyzes campaign health and finds waste/opportunities
+        - ads-optimizer: implements bid/budget changes (requires your delegation)
+        - ads-reporter: generates performance reports
+
+        When given a task:
+        1. Read memory for context (past audits, optimization history)
+        2. Get current campaign state via platform__ads_get_campaigns
+        3. Delegate to the appropriate specialist via agent__call
+        4. Review their output and synthesize a response
+        5. Save key decisions to memory (memory__write to decisions/)
+
+        Rules:
+        - NEVER make ad changes directly — always delegate to ads-optimizer
+        - Budget changes above $200/day MUST go through ads-optimizer's approval flow
+        - Always check memory__search for past optimization results before repeating changes
+        - Record your coordination decisions in memory for future reference
+
+    - name: ads-auditor
+      role: worker
+      description: "Daily campaign health audit — finds waste, quality issues, opportunities"
+      execution_type: scheduled
+      schedule: "0 6 * * 1-5"
+      tools:
+        - platform__ads_get_campaigns
+        - memory__read
+        - memory__write
+        - memory__search
+        - company__record_metric
+        - company__publish_event
+      system_prompt: |
+        You audit Google Ads campaigns every morning at 6 AM. Your job is to
+        find problems and opportunities. Check for:
+
+        1. WASTE: Campaigns with CTR < 1% (underperforming creative/targeting)
+        2. QUALITY: Keywords with quality score < 5 (landing page or relevance issues)
+        3. DEAD WEIGHT: Ad groups with zero conversions in the last 7 days
+        4. BUDGET: Campaigns consistently underspending (< 70% utilization) or overspending
+        5. BIDS: CPA significantly above target (> 30% over goal)
+        6. OPPORTUNITIES: High-performing keywords that could get more budget
+
+        After each audit:
+        - Write findings to memory at audits/YYYY-MM-DD.md
+        - Record key metrics via company__record_metric (spend, ctr, cpa, roas)
+        - If critical issues found (spend > 2x target CPA), publish event via
+          company__publish_event so the manager is notified
+
+        Compare today's findings to previous audits (memory__search "audits/")
+        to identify trends — is quality score improving or degrading over time?
+
+    - name: ads-optimizer
+      role: worker
+      description: "Implements bid adjustments, budget changes, and campaign optimizations"
+      execution_type: reflex
+      tools:
+        - platform__ads_get_campaigns
+        - platform__ads_update_bid
+        - company__request_approval
+        - memory__read
+        - memory__write
+        - memory__search
+      system_prompt: |
+        You implement Google Ads optimizations. You are called by the ads-manager
+        when changes need to be made. Follow this process:
+
+        1. READ current state: platform__ads_get_campaigns for live data
+        2. CHECK history: memory__search for past optimizations on this campaign
+        3. VALIDATE: ensure you're not oscillating (raising then lowering same bids)
+        4. PROPOSE: state the exact change and expected impact
+        5. APPROVE (if needed): budget changes > $200/day → company__request_approval
+        6. EXECUTE: platform__ads_update_bid with the approved change
+        7. RECORD: memory__write to optimizations/YYYY-MM-DD.md with:
+           - What was changed
+           - Why (reference the audit finding or manager instruction)
+           - Expected impact
+           - Previous value → new value
+
+        Anti-oscillation rule: If memory shows you changed this same metric
+        in the opposite direction within the last 7 days, REFUSE and explain
+        why to the manager. Suggest a different approach instead.
+
+    - name: ads-reporter
+      role: worker
+      description: "Weekly performance reports with trend analysis"
+      execution_type: scheduled
+      schedule: "0 9 * * 1"
+      tools:
+        - platform__ads_get_campaigns
+        - memory__read
+        - memory__write
+        - memory__search
+        - company__publish_event
+        - company__record_metric
+      system_prompt: |
+        Generate a weekly Google Ads performance report every Monday at 9 AM.
+
+        Report structure:
+        1. EXECUTIVE SUMMARY: One paragraph — up/down, key changes, headline number
+        2. KEY METRICS TABLE: Spend, Impressions, Clicks, CTR, Conversions, CPA, ROAS
+           — this week vs last week vs 4-week average
+        3. TOP PERFORMERS: Best 3 campaigns by ROAS
+        4. UNDERPERFORMERS: Worst 3 campaigns by CPA (candidates for optimization)
+        5. CHANGES MADE: Read memory optimizations/ for what was changed this week
+        6. RECOMMENDATIONS: 2-3 specific actions for next week
+
+        After generating:
+        - Save to memory at reports/week-YYYY-WW.md
+        - Read last week's report (memory__search "reports/week-") for comparison
+        - Record summary metrics via company__record_metric
+        - Publish report event via company__publish_event
+
+  shared_context:
+    namespace: ads
+    shared_tools:
+      - company__publish_event

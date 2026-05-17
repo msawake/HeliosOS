@@ -660,6 +660,30 @@ class KnowledgeBase:
             department=department,
         )
 
+    def list_catalog(self) -> list:
+        """Return lightweight catalog entries (titles + tags, no content)."""
+        from src.platform.knowledge_loader import KnowledgeCatalogEntry
+        return [
+            KnowledgeCatalogEntry(
+                id=e.id,
+                title=e.title,
+                category=e.category,
+                tags=e.tags,
+                department=e.department,
+            )
+            for e in self._entries.values()
+        ]
+
+    def get_by_id(self, entry_id: str) -> dict | None:
+        """Retrieve a single knowledge entry by id or title."""
+        entry = self._entries.get(entry_id)
+        if entry:
+            return self.get(entry_id)
+        for e in self._entries.values():
+            if e.title == entry_id:
+                return self.get(e.id)
+        return None
+
 
 # ---------------------------------------------------------------------------
 # 4. Metrics Tools

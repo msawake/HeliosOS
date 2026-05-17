@@ -2,6 +2,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.kernel
+
 from stacks.openclaw.adapter import OpenClawAdapter, ToolProxyServer
 from stacks.sandbox.adapter import get_token_store
 from stacks.base import AgentDefinition, ExecutionType, OwnershipType

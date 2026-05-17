@@ -41,8 +41,8 @@ hitl:
     data_deletion: 24.0
 
 models:
-  orchestrator_default: "claude-opus-4-6"
-  doer_default: "claude-sonnet-4-5-20250514"
+  orchestrator_default: "claude-haiku-4-5-20251001"
+  doer_default: "claude-haiku-4-5-20251001"
   classifier_default: "claude-haiku-4-5-20251001"
 
 polling_intervals:

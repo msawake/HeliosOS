@@ -26,7 +26,7 @@ def test_ownership_type_values():
 
 
 def test_stack_names():
-    assert set(STACK_NAMES) == {"forgeos", "crewai", "adk", "openclaw", "sandbox"}
+    assert set(STACK_NAMES) == {"forgeos", "crewai", "adk", "openclaw", "sandbox", "anthropic-agent-sdk", "anthropic-managed", "openai-agents"}
 
 
 def test_llm_config_defaults():

@@ -1,0 +1,119 @@
+# ============================================================================
+# ADK Agent: Marketing Agency (from google/adk-samples)
+# ============================================================================
+#
+# Multi-agent team: coordinator delegates to 4 specialist sub-agents.
+# Tests ForgeOS governance: team deployment, A2A delegation, sequential pipeline.
+#
+# Original: https://github.com/google/adk-samples/tree/main/python/agents/marketing-agency
+#
+# DEPLOY:  forgeos deploy examples/adk-agents/marketing-agency.yaml
+# INVOKE:  forgeos invoke marketing-coordinator "Create an online presence for a pet grooming business called PawPerfect"
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Team
+metadata:
+  name: marketing-agency
+  namespace: marketing
+  description: "Marketing agency team — domain, website, marketing strategy, logo creation"
+spec:
+  orchestration: supervisor
+
+  defaults:
+    stack: forgeos
+    llm:
+      chat_model: gemini-2.5-flash
+      provider: vertex
+    boundaries:
+      budgets:
+        daily_usd: 3.00
+        per_task_usd: 0.50
+
+  agents:
+    - name: marketing-coordinator
+      role: supervisor
+      description: "Orchestrates the marketing team — delegates to domain, website, marketing, and logo specialists"
+      llm:
+        chat_model: gemini-2.5-flash
+        provider: vertex
+      execution_type: reflex
+      tools:
+        - agent__call
+        - agent__list_available
+        - memory__read
+        - memory__write
+      system_prompt: |
+        You are a marketing coordinator agent. Help users establish their
+        online presence by delegating to your team of specialists:
+
+        1. First, call domain-creator to find and suggest domain names
+        2. Then call website-creator to design website structure
+        3. Then call marketing-strategist for marketing campaign ideas
+        4. Finally call logo-creator for brand logo concepts
+
+        Always follow this sequence. Synthesize all results into a
+        comprehensive marketing package for the user.
+
+    - name: domain-creator
+      role: worker
+      description: "Suggests and validates domain names for businesses"
+      execution_type: reflex
+      tools:
+        - memory__read
+        - memory__write
+      system_prompt: |
+        You are a domain name specialist. When asked to find domains for a
+        business, suggest 5 creative domain names that are:
+        - Memorable and brandable
+        - Short (under 15 characters)
+        - Available as .com, .io, or .co
+        Include reasoning for each suggestion.
+
+    - name: website-creator
+      role: worker
+      description: "Designs website structure and content plan"
+      execution_type: reflex
+      tools:
+        - memory__read
+        - memory__write
+      system_prompt: |
+        You are a website designer. Create a website structure with:
+        - Homepage layout and hero section copy
+        - 4-5 key pages (About, Services, Contact, etc.)
+        - Content strategy for each page
+        - SEO-friendly page titles and meta descriptions
+
+    - name: marketing-strategist
+      role: worker
+      description: "Creates digital marketing campaign strategies"
+      execution_type: reflex
+      tools:
+        - memory__read
+        - memory__write
+      system_prompt: |
+        You are a digital marketing strategist. Create a marketing plan with:
+        - Target audience definition
+        - 3 campaign ideas with channels (Google Ads, social, email)
+        - Budget allocation recommendations
+        - KPIs and success metrics
+
+    - name: logo-creator
+      role: worker
+      description: "Designs brand logo concepts and visual identity"
+      execution_type: reflex
+      tools:
+        - memory__read
+        - memory__write
+      system_prompt: |
+        You are a brand designer. Create logo concepts with:
+        - 3 logo concept descriptions (detailed enough for a designer)
+        - Color palette recommendations (hex codes)
+        - Typography suggestions
+        - Brand voice and style guidelines
+
+  shared_context:
+    namespace: marketing
+    shared_tools:
+      - company__publish_event

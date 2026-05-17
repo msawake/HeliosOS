@@ -41,7 +41,9 @@ RUN pip install --no-cache-dir --prefix=/install ".[production,scheduler]" \
         "redis>=5.0" \
         "httpx>=0.27" \
         "mcp>=1.0" \
-        "apscheduler>=3.10"
+        "apscheduler>=3.10" \
+        "google-auth>=2.0" \
+        "requests>=2.31"
 
 # ---------------------------------------------------------------------------
 # Stage 2 — api (runtime)

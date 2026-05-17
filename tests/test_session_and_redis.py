@@ -5,6 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+pytestmark = pytest.mark.kernel
+
 from src.core.session_store import AgentSession, InMemorySessionStore
 from src.core.redis_rate_limiter import RedisRateLimiter
 from src.core.hooks import AgentContext
