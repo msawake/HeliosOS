@@ -299,40 +299,25 @@ class ClaudeClient:
 
                 # Pre-tool-use governance hook
                 if self._hooks and hook_context:
-<<<<<<< HEAD
                     from src.core.hooks import HookDecision
                     pre_result = self._hooks.pre_tool_use(
                         hook_context, tool_call.name, tool_call.input,
                     )
                     if pre_result.decision == HookDecision.BLOCK:
-=======
-                    from src.platform.kernel import KernelDecision
-                    pre_result = self._hooks.pre_tool_use(
-                        hook_context, tool_call.name, tool_call.input,
-                    )
-                    if pre_result.action == "deny":
->>>>>>> origin/main
                         tool_results.append(self._llm_client.format_tool_result(
                             tool_call.id,
                             json.dumps({"error": f"BLOCKED by governance: {pre_result.reason}"}),
                             is_error=True,
                         ))
                         continue
-<<<<<<< HEAD
                     elif pre_result.decision == HookDecision.ASK_HUMAN:
-=======
-                    elif pre_result.action == "ask_human":
->>>>>>> origin/main
+                        metadata = getattr(pre_result, "metadata", None) or getattr(pre_result, "details", None) or {}
                         tool_results.append(self._llm_client.format_tool_result(
                             tool_call.id,
                             json.dumps({
                                 "status": "awaiting_human_approval",
                                 "reason": pre_result.reason,
-<<<<<<< HEAD
-                                "approval_request_id": pre_result.metadata.get("approval_request_id"),
-=======
-                                "approval_request_id": (pre_result.details or {}).get("approval_request_id"),
->>>>>>> origin/main
+                                "approval_request_id": metadata.get("approval_request_id"),
                             }),
                             is_error=True,
                         ))

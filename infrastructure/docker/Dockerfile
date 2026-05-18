@@ -29,11 +29,7 @@ COPY pyproject.toml .
 # `[production,scheduler]` pulls openai + mcp + apscheduler + psycopg[binary,pool]
 # + redis + GCP libs + stripe + otel. Fallback keeps a minimal install for
 # environments that can't read the optional extras.
-<<<<<<< HEAD
 RUN pip install --no-cache-dir --prefix=/install ".[production,scheduler]" docker kubernetes \
-=======
-RUN pip install --no-cache-dir --prefix=/install ".[production,scheduler]" \
->>>>>>> origin/main
     || pip install --no-cache-dir --prefix=/install \
         "pyyaml>=6.0" \
         "fastapi>=0.115" \
@@ -45,13 +41,9 @@ RUN pip install --no-cache-dir --prefix=/install ".[production,scheduler]" \
         "redis>=5.0" \
         "httpx>=0.27" \
         "mcp>=1.0" \
-<<<<<<< HEAD
         "apscheduler>=3.10" \
         "docker>=7.0" \
         "kubernetes>=28.0"
-=======
-        "apscheduler>=3.10"
->>>>>>> origin/main
 
 # ---------------------------------------------------------------------------
 # Stage 2 — api (runtime)
@@ -75,22 +67,14 @@ COPY --chown=forgeos:forgeos stacks/ stacks/
 COPY --chown=forgeos:forgeos config/ config/
 COPY --chown=forgeos:forgeos infrastructure/database/ infrastructure/database/
 COPY --chown=forgeos:forgeos resources/ resources/
-<<<<<<< HEAD
 COPY --chown=forgeos:forgeos scripts/ scripts/
 COPY --chown=forgeos:forgeos files/ files/
-=======
->>>>>>> origin/main
 COPY --chown=forgeos:forgeos pyproject.toml .
 
 # Create writable runtime dirs. K8s mounts PVCs at these paths; local `docker run`
 # uses these directly. fsGroup 1000 on K8s matches the user below.
-<<<<<<< HEAD
 RUN mkdir -p /app/agents /app/files/knowledge /home/forgeos/.openclaw-forgeos \
     && chown -R forgeos:forgeos /app/agents /app/files /home/forgeos/.openclaw-forgeos
-=======
-RUN mkdir -p /app/agents /home/forgeos/.openclaw-forgeos \
-    && chown -R forgeos:forgeos /app/agents /home/forgeos/.openclaw-forgeos
->>>>>>> origin/main
 
 USER forgeos
 

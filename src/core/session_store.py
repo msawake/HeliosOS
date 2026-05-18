@@ -123,18 +123,13 @@ class PostgresSessionStore:
                     session.session_id, session.status, session.started_at,
                     session.model, session.workflow_id, session.task_id,
                     json.dumps({
-<<<<<<< HEAD
                         "messages": session.messages,
-=======
->>>>>>> origin/main
                         "system_prompt": session.system_prompt,
                         "checkpoint_data": session.checkpoint_data,
                     }),
                 ),
             )
-<<<<<<< HEAD
-=======
-            
+
             # Save initial messages to the new table
             if session.messages:
                 for i, msg in enumerate(session.messages):
@@ -143,7 +138,6 @@ class PostgresSessionStore:
                         "VALUES (%s, %s, %s, %s)",
                         (session.session_id, msg.get("role", ""), json.dumps(msg.get("content", "")), i)
                     )
->>>>>>> origin/main
             conn.commit()
 
     def get(self, session_id: str) -> AgentSession | None:
@@ -154,10 +148,7 @@ class PostgresSessionStore:
             )
             if not row:
                 return None
-<<<<<<< HEAD
-            return self._row_to_session(row)
-=======
-                
+
             # Fetch messages from the new table
             msg_rows = conn.execute(
                 "SELECT role, content FROM session_messages WHERE session_id = %s ORDER BY turn_number",
@@ -173,11 +164,11 @@ class PostgresSessionStore:
                         except json.JSONDecodeError:
                             pass
                     messages.append({"role": r.get("role", ""), "content": content})
-                    
+
             session = self._row_to_session(row)
-            session.messages = messages
+            if messages:
+                session.messages = messages
             return session
->>>>>>> origin/main
 
     def update(self, session: AgentSession) -> None:
         with self._db.tenant(self._tenant_id) as conn:
@@ -191,10 +182,7 @@ class PostgresSessionStore:
                     session.cost_usd, session.tool_calls_completed,
                     session.completed_at,
                     json.dumps({
-<<<<<<< HEAD
                         "messages": session.messages,
-=======
->>>>>>> origin/main
                         "system_prompt": session.system_prompt,
                         "checkpoint_data": session.checkpoint_data,
                         "error": session.error,
@@ -207,29 +195,8 @@ class PostgresSessionStore:
     def append_messages(self, session_id: str, messages: list[dict]) -> None:
         """Append messages incrementally without rewriting the full blob.
 
-<<<<<<< HEAD
-        Uses PostgreSQL ``jsonb_set`` + ``||`` to append to the messages
-        array in-place.  Falls back to a full rewrite if the column is not
-        jsonb or the query fails.
-        """
-        with self._db.tenant(self._tenant_id) as conn:
-            try:
-                conn.execute(
-                    "UPDATE agent_sessions "
-                    "SET metadata = jsonb_set("
-                    "  metadata::jsonb, '{messages}',"
-                    "  (metadata::jsonb->'messages') || %s::jsonb"
-                    ") WHERE session_id = %s",
-                    (json.dumps(messages), session_id),
-                )
-                conn.commit()
-            except Exception:
-                session = self.get(session_id)
-                if session:
-                    session.messages.extend(messages)
-                    self.update(session)
-=======
         Uses the normalized session_messages table to prevent write amplification.
+        Falls back to PostgreSQL jsonb_set if the table doesn't exist yet.
         """
         with self._db.tenant(self._tenant_id) as conn:
             try:
@@ -258,7 +225,6 @@ class PostgresSessionStore:
                     conn.commit()
                 except Exception:
                     pass
->>>>>>> origin/main
 
     def list_active(self, agent_id: str | None = None) -> list[AgentSession]:
         with self._db.tenant(self._tenant_id) as conn:

@@ -55,10 +55,7 @@ class ClientMCPManager:
         tenant_id: str = "",
         max_connections: int = 50,
         ttl_seconds: int = 1800,
-<<<<<<< HEAD
-=======
         secrets_manager: Any | None = None,
->>>>>>> origin/main
     ):
         self._db = db_client
         self._tenant_id = tenant_id
@@ -71,10 +68,7 @@ class ClientMCPManager:
         # Cooldown: track failed connections to avoid retry storms
         self._connect_cooldowns: dict[tuple[str, str], float] = {}  # key → earliest_retry_time
         self._COOLDOWN_SECONDS = 60.0
-<<<<<<< HEAD
-=======
         self._secrets_manager = secrets_manager
->>>>>>> origin/main
 
     def register_client_config(self, client_id: str, configs: list[dict]) -> None:
         """Register MCP configs for a client (in-memory, for dev/no-DB mode)."""
@@ -248,12 +242,6 @@ class ClientMCPManager:
             command = "uvx"
             args = [package] + extra_args
 
-<<<<<<< HEAD
-        server_params = StdioServerParameters(
-            command=command,
-            args=args,
-            env=env_vars or None,
-=======
         # Resolve environment variables securely at runtime
         resolved_env = None
         if env_vars:
@@ -264,7 +252,7 @@ class ClientMCPManager:
                     secret_name = v[7:]
                     if self._secrets_manager:
                         resolved_val = self._secrets_manager.get(
-                            secret_name, 
+                            secret_name,
                             caller=f"client_mcp_{client_id}_{server_name}",
                             reason="client_mcp_boot"
                         )
@@ -285,7 +273,6 @@ class ClientMCPManager:
             command=command,
             args=args,
             env=resolved_env,
->>>>>>> origin/main
         )
 
         transport = stdio_client(server_params)

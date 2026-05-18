@@ -78,10 +78,7 @@ class AgentDefinition:
     metadata: dict[str, Any] = field(default_factory=dict)
     system_prompt: str = ""
     namespace: str = "default"  # AgentOS kernel: logical isolation group (k8s-style)
-<<<<<<< HEAD
     environment_id: str | None = None
-=======
->>>>>>> origin/main
 
     def __post_init__(self):
         if self.stack not in STACK_NAMES:
@@ -110,10 +107,7 @@ class AgentDefinition:
             "created_at": self.created_at.isoformat(),
             "metadata": self.metadata,
             "system_prompt": self.system_prompt,
-<<<<<<< HEAD
             "environment_id": self.environment_id,
-=======
->>>>>>> origin/main
         }
 
 
@@ -201,11 +195,9 @@ class AgentStackAdapter(ABC):
         """
         return 0
 
-<<<<<<< HEAD
-=======
     async def _check_kernel_gate(self, tool_name: str, tool_input: dict) -> dict | None:
         """Standardized kernel permission check for all adapters.
-        
+
         Returns None if allowed, or an error dict if denied.
         Adapters should call this before executing any tool.
         """
@@ -228,7 +220,7 @@ class AgentStackAdapter(ABC):
             return {"success": False, "error": f"Kernel check failed: {e}"}
         return None
 
->>>>>>> origin/main
+
 
 def build_agent_context(agent_def: AgentDefinition, agent_id: str) -> dict:
     """Shared helper: build the per-invocation agent_context dict.
@@ -251,10 +243,7 @@ def build_agent_context(agent_def: AgentDefinition, agent_id: str) -> dict:
         "tenant_id": metadata.get("tenant_id", "default"),
         "plan": metadata.get("plan", "starter"),
         "monthly_limit_usd": metadata.get("monthly_limit_usd"),
-<<<<<<< HEAD
         "workspace": metadata.get("workspace"),
         "source_files": metadata.get("source_files", []),
         "readable_dirs": metadata.get("readable_dirs", []),
-=======
->>>>>>> origin/main
     }

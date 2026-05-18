@@ -38,11 +38,7 @@ services:
       interval: 5s
       retries: 5
 
-<<<<<<< HEAD
   forgeos:
-=======
-  app:
->>>>>>> origin/main
     build:
       context: ../..
       dockerfile: infrastructure/docker/Dockerfile
@@ -52,22 +48,17 @@ services:
     environment:
       - DATABASE_URL=postgresql://leadforge_admin:${DB_PASSWORD:?}@postgres:5432/leadforge
       - REDIS_URL=redis://redis:6379
-<<<<<<< HEAD
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - FORGEOS_API_URL=http://forgeos:5000
       - FORGEOS_SANDBOX_NETWORK=docker_forgeos-internal
-=======
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY not set — add it to .env}
->>>>>>> origin/main
       - PYTHONPATH=/app
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-<<<<<<< HEAD
     group_add:
       - "0"
     volumes:
@@ -81,9 +72,6 @@ services:
 networks:
   forgeos-internal:
     driver: bridge
-=======
-    command: ["python", "-m", "src.bootstrap", "--dashboard", "--loop"]
->>>>>>> origin/main
 
 volumes:
   postgres_data:

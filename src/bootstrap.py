@@ -33,12 +33,6 @@ from src.platform.event_bus import EventBus
 from src.platform.llm_router import LLMRouter
 
 from src.config.agent_configs import load_company_config, load_company_module, load_company_demo
-<<<<<<< HEAD
-from src.core.claude_client import ClaudeClient
-from src.core.database import create_database_client
-from src.core.model_client import ModelProvider, create_llm_client, get_provider
-from src.core.hooks import create_hook_chain
-=======
 from src.core.database import create_database_client
 from src.core.model_client import ModelProvider, create_llm_client, get_provider
 
@@ -49,7 +43,6 @@ try:
 except ImportError:
     ClaudeClient = None
     create_hook_chain = None
->>>>>>> origin/main
 from src.mcp.custom_tools import CompanySystem
 from src.mcp.server_manager import MCPServerManager
 from src.mcp.tool_executor import ToolExecutor
@@ -254,11 +247,6 @@ class PlatformBootstrap:
             self._tool_executor._kernel = self._kernel
             logger.info("  Kernel: wired into ToolExecutor (policy enforcement active)")
 
-            # Wire A2H gateway into tool executor so agents can use human__* tools
-            if self._a2h_gateway:
-                self._tool_executor._a2h_gateway = self._a2h_gateway
-                logger.info("  A2H: wired into ToolExecutor (human__ask/notify/check available)")
-
             try:
                 from src.forgeos_sdk.kernel import Kernel as SDKKernel
                 SDKKernel.register_local_instance(self._kernel)
@@ -274,6 +262,11 @@ class PlatformBootstrap:
                 logger.info("  A2H Gateway: initialized")
             except Exception as e:
                 logger.debug("  A2H Gateway initialization skipped: %s", e)
+
+            # Wire A2H gateway into tool executor so agents can use human__* tools
+            if self._a2h_gateway:
+                self._tool_executor._a2h_gateway = self._a2h_gateway
+                logger.info("  A2H: wired into ToolExecutor (human__ask/notify/check available)")
 
             try:
                 from src.forgeos_sdk.runtime import runtime as sdk_runtime
@@ -381,12 +374,9 @@ class PlatformBootstrap:
         openai_key = os.environ.get("OPENAI_API_KEY", "")
         if openai_key:
             api_keys["openai"] = openai_key
-<<<<<<< HEAD
         google_key = os.environ.get("GOOGLE_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
         if google_key:
             api_keys["google"] = google_key
-=======
->>>>>>> origin/main
         atlas_key = os.environ.get("ATLAS_GATEWAY_KEY", "")
         if atlas_key:
             api_keys["atlas"] = atlas_key
@@ -419,164 +409,6 @@ class PlatformBootstrap:
             description="Three-step email plus LinkedIn touch; 40 contacts in target list.",
             risk_assessment="medium",
             context={"deal_id": "demo-001", "sequence": "techcorp-q1"},
-<<<<<<< HEAD
-        )
-        hitl.request_approval(
-            requesting_agent="fin-ar",
-            department="finance",
-            category="financial",
-            title="Waive late fee for renewal partner",
-            description="Strategic account DataFlow Inc — one-time goodwill adjustment.",
-            risk_assessment="low",
-            context={"invoice_id": "demo-inv-99"},
-        )
-        logger.info("Seeded 2 demo HITL approvals (disable: FORGEOS_SEED_HITL=0)")
-
-    async def _init_legacy_subsystems(self):
-        """Initialize the existing ForgeOS company subsystems for backward compat."""
-        self._init_stages.add("db_init")
-        self._db = create_database_client()
-        if self._db.is_connected:
-            logger.info("  Database: CONNECTED (PostgreSQL)")
-            if os.environ.get("FORGEOS_SKIP_MIGRATIONS", "").lower() not in ("1", "true", "yes"):
-                try:
-                    from src.core.migrations import run_migrations
-                    result = run_migrations(self._db)
-                    logger.info(
-                        "  Migrations: %d applied, %d skipped (of %d total)",
-                        result.get("applied", 0),
-                        result.get("skipped", 0),
-                        result.get("total", 0),
-                    )
-                except Exception as e:
-                    logger.error("  Migrations failed: %s", e)
-                    raise
-        else:
-            logger.info("  Database: IN-MEMORY (set DATABASE_URL for persistence)")
-
-        self.system = CompanySystem(
-            config=self.config, company_id=self.company_id, db_client=self._db,
-        )
-        redis_url = os.environ.get("REDIS_URL", "")
-        hook_chain = create_hook_chain(
-            config=self.config, hitl_gateway=self.system.hitl, redis_url=redis_url,
-        )
-
-        self._mcp_manager = MCPServerManager(self.config, secrets_manager=getattr(self, 'secrets', None))
-        self._init_stages.add("mcp_manager")
-        try:
-            mcp_clients = await asyncio.wait_for(
-                self._mcp_manager.connect_all(),
-                timeout=float(os.environ.get("FORGEOS_MCP_BOOT_TIMEOUT", "30")),
-            )
-            self._init_stages.add("mcp_connected")
-        except asyncio.TimeoutError:
-            logger.warning("MCP connect_all() timed out after 30s — continuing with partial MCP")
-            mcp_clients = self._mcp_manager.get_clients()
-
-        from src.mcp.client_mcp_manager import ClientMCPManager
-        self._client_mcp_manager = ClientMCPManager(
-            db_client=self._db,
-            tenant_id=self.tenant_id,
-            secrets_manager=getattr(self, 'secrets', None),
-        )
-        # AgentOS A2A handler (bound to platform_executor later in boot sequence)
-        from src.platform.a2a import A2AHandler
-        self._a2a_handler = A2AHandler()
-
-        tool_executor = ToolExecutor(
-            company_system=self.system,
-            mcp_clients=mcp_clients,
-            client_mcp_manager=self._client_mcp_manager,
-            a2a_handler=self._a2a_handler,
-        )
-
-        # Attach UsageEnforcer so the agentic loop can record tokens/cost.
-        try:
-            from src.billing.plans import UsageEnforcer
-            self._usage_enforcer = UsageEnforcer(self._db)
-            tool_executor._usage_enforcer = self._usage_enforcer
-            logger.info("  Usage enforcer: wired to tool executor")
-        except Exception as e:
-            logger.warning("  Usage enforcer not wired: %s", e)
-            self._usage_enforcer = None
-
-        for server_name, schemas in self._mcp_manager.get_all_tool_schemas().items():
-            tool_executor.register_mcp_tools(server_name, schemas)
-
-        # Register platform-level tool stubs (CRM, HTTP, ads, MLS, etc.)
-        try:
-            from src.mcp.platform_tools import register_platform_tools
-            register_platform_tools(tool_executor)
-            logger.info("  Platform tools: registered")
-        except ImportError:
-            logger.debug("  Platform tools: not available (src.mcp.platform_tools missing)")
-
-        default_model = self.config.get("models", {}).get("orchestrator_default", "claude-opus-4-6")
-        try:
-            orchestrator_provider = get_provider(default_model)
-        except ValueError:
-            orchestrator_provider = ModelProvider.ANTHROPIC
-        if orchestrator_provider == ModelProvider.OPENAI:
-            orchestrator_key = os.environ.get("OPENAI_API_KEY") or None
-        else:
-            orchestrator_key = os.environ.get("ANTHROPIC_API_KEY") or None
-        llm_client = create_llm_client(default_model, api_key=orchestrator_key)
-
-        claude_client = ClaudeClient(
-            tool_executor=tool_executor, hook_chain=hook_chain, llm_client=llm_client,
-        )
-
-        company_mod = load_company_module(self.company_id)
-        self.legacy_registry = company_mod.build_registry(
-            company_name=self.config.get("company", {}).get("name", "Digital AI Corp")
-        )
-        from src.core.agent_invoker import AgentInvoker
-        self.legacy_invoker = AgentInvoker(
-            registry=self.legacy_registry,
-            hook_chain=hook_chain,
-            config=self.config,
-            tool_executor=tool_executor,
-            claude_client=claude_client,
-        )
-
-        self._tool_executor = tool_executor
-
-    def _register_adapters(self):
-        te = self._tool_executor
-        self._adapters = {
-            "forgeos": ForgeOSAdapter(llm_router=self.llm_router, tool_executor=te),
-            "crewai": CrewAIAdapter(llm_router=self.llm_router, tool_executor=te),
-            "adk": ADKAdapter(llm_router=self.llm_router, tool_executor=te),
-            "openclaw": OpenClawAdapter(
-                llm_router=self.llm_router,
-                tool_executor=te,
-                openclaw_dir=os.environ.get("OPENCLAW_DIR", str(Path(__file__).resolve().parents[1] / "openclaw2")),
-            ),
-            "sandbox": self._create_sandbox_adapter(te),
-        }
-        for name, adapter in self._adapters.items():
-            logger.info("  Stack registered: %s", name)
-
-    def _create_sandbox_adapter(self, te):
-        api_url = os.environ.get("FORGEOS_API_URL", f"http://localhost:{os.environ.get('PORT', '5000')}")
-        if os.environ.get("KUBERNETES_SERVICE_HOST"):
-            try:
-                from stacks.sandbox.k8s_adapter import K8sSandboxAdapter
-                logger.info("  Using K8s sandbox adapter (in-cluster)")
-                return K8sSandboxAdapter(llm_router=self.llm_router, tool_executor=te, api_url=api_url)
-            except Exception as e:
-                logger.warning("  K8s sandbox adapter failed (%s), falling back to Docker", e)
-        from stacks.sandbox.adapter import SandboxAdapter
-        return SandboxAdapter(llm_router=self.llm_router, tool_executor=te, api_url=api_url)
-
-    async def deploy_agent(self, agent_def: AgentDefinition) -> str:
-        """Deploy an agent through the platform executor."""
-        if not self.executor:
-            raise RuntimeError("Platform not booted yet")
-        return await self.executor.deploy(agent_def)
-
-=======
         )
         hitl.request_approval(
             requesting_agent="fin-ar",
@@ -719,22 +551,28 @@ class PlatformBootstrap:
                 tool_executor=te,
                 openclaw_dir=os.environ.get("OPENCLAW_DIR", str(Path(__file__).resolve().parents[1] / "openclaw2")),
             ),
-            "sandbox": SandboxAdapter(
-                llm_router=self.llm_router,
-                tool_executor=te,
-                api_url=f"http://localhost:{os.environ.get('PORT', '5000')}",
-            ),
+            "sandbox": self._create_sandbox_adapter(te),
         }
         for name, adapter in self._adapters.items():
             logger.info("  Stack registered: %s", name)
+
+    def _create_sandbox_adapter(self, te):
+        api_url = os.environ.get("FORGEOS_API_URL", f"http://localhost:{os.environ.get('PORT', '5000')}")
+        if os.environ.get("KUBERNETES_SERVICE_HOST"):
+            try:
+                from stacks.sandbox.k8s_adapter import K8sSandboxAdapter
+                logger.info("  Using K8s sandbox adapter (in-cluster)")
+                return K8sSandboxAdapter(llm_router=self.llm_router, tool_executor=te, api_url=api_url)
+            except Exception as e:
+                logger.warning("  K8s sandbox adapter failed (%s), falling back to Docker", e)
+        from stacks.sandbox.adapter import SandboxAdapter
+        return SandboxAdapter(llm_router=self.llm_router, tool_executor=te, api_url=api_url)
 
     async def deploy_agent(self, agent_def: AgentDefinition) -> str:
         """Deploy an agent through the platform executor."""
         if not self.executor:
             raise RuntimeError("Platform not booted yet")
         return await self.executor.deploy(agent_def)
-
->>>>>>> origin/main
     async def run_main_loop(self, tick_interval: float = 30.0, app=None):
         logger.info("Starting main loop (tick every %.0fs)...", tick_interval)
         tick_count = 0

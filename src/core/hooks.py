@@ -171,12 +171,8 @@ class RateLimiter:
         return self._agent_counts
 
     def check(self, context: AgentContext) -> HookResult:
-<<<<<<< HEAD
-        key = context.session_id or context.agent_id
-=======
         session_key = f"session:{context.session_id}" if context.session_id else f"agent:{context.agent_id}"
         agent_key = f"agent:{context.agent_id}"
->>>>>>> origin/main
 
         # Cleanup when dict grows too large (prevents unbounded memory growth)
         self._check_count += 1
@@ -184,29 +180,6 @@ class RateLimiter:
             self._cleanup_stale_agents()
 
         # Per-session total count
-<<<<<<< HEAD
-        self._agent_counts.setdefault(key, 0)
-        self._agent_counts[key] += 1
-        if self._agent_counts[key] > self.max_per_session:
-            return HookResult(
-                decision=HookDecision.BLOCK,
-                reason=f"Session {key} exceeded {self.max_per_session} tool calls",
-                metadata={"count": self._agent_counts[key]},
-            )
-
-        # Per-minute sliding window
-        now = time.time()
-        self._minute_windows.setdefault(key, [])
-        window = self._minute_windows[key]
-        window.append(now)
-        # Trim to last 60 seconds
-        self._minute_windows[key] = [t for t in window if now - t < 60]
-        if len(self._minute_windows[key]) > self.max_per_minute:
-            return HookResult(
-                decision=HookDecision.BLOCK,
-                reason=f"Agent {key} exceeded {self.max_per_minute} calls/minute",
-                metadata={"calls_in_window": len(self._minute_windows[key])},
-=======
         self._agent_counts.setdefault(session_key, 0)
         self._agent_counts[session_key] += 1
         if self._agent_counts[session_key] > self.max_per_session:
@@ -228,39 +201,30 @@ class RateLimiter:
                 decision=HookDecision.BLOCK,
                 reason=f"Agent {agent_key} exceeded {self.max_per_minute} calls/minute",
                 metadata={"calls_in_window": len(self._minute_windows[agent_key])},
->>>>>>> origin/main
             )
 
         return HookResult(decision=HookDecision.ALLOW)
 
     def reset_session(self, session_id: str):
         """Reset rate limits. Accepts session_id for backward compat but also works as agent_id."""
-<<<<<<< HEAD
-        self._agent_counts.pop(session_id, None)
-=======
         session_key = f"session:{session_id}"
         agent_key = f"agent:{session_id}"
-        
+
         # Try both formats for backward compatibility
         self._agent_counts.pop(session_key, None)
         self._agent_counts.pop(session_id, None)
-        
+
         self._minute_windows.pop(agent_key, None)
->>>>>>> origin/main
         self._minute_windows.pop(session_id, None)
 
     def reset_agent(self, agent_id: str):
         """Reset rate limits for a specific agent."""
-<<<<<<< HEAD
-        self._agent_counts.pop(agent_id, None)
-=======
         agent_key = f"agent:{agent_id}"
-        
+
         self._agent_counts.pop(agent_key, None)
         self._agent_counts.pop(agent_id, None)
-        
+
         self._minute_windows.pop(agent_key, None)
->>>>>>> origin/main
         self._minute_windows.pop(agent_id, None)
 
     def _cleanup_stale_agents(self):

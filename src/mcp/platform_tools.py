@@ -13,21 +13,15 @@ handlers take (tool_input: dict, agent_context: dict | None) -> dict.
 from __future__ import annotations
 
 import logging
-<<<<<<< HEAD
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-=======
-import uuid
-from datetime import datetime, timedelta, timezone
->>>>>>> origin/main
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-<<<<<<< HEAD
 # Path helpers for file-tool workspace isolation
 # ---------------------------------------------------------------------------
 
@@ -47,8 +41,6 @@ def _is_within(child: Path, parent: Path) -> bool:
 
 
 # ---------------------------------------------------------------------------
-=======
->>>>>>> origin/main
 # In-memory mailbox store for inter-agent messaging
 # ---------------------------------------------------------------------------
 
@@ -761,23 +753,16 @@ def handle_read_messages(tool_input: dict, agent_context: dict | None) -> dict:
     Bridges to EventBus.query when a company_system is available via
     agent_context, otherwise reads from the in-memory mailbox.
     """
-<<<<<<< HEAD
     ctx = agent_context or {}
     agent_id = ctx.get("agent_id", tool_input.get("agent_id", "unknown"))
     agent_name = ctx.get("agent_name", "")
-=======
-    agent_id = (agent_context or {}).get("agent_id", tool_input.get("agent_id", "unknown"))
->>>>>>> origin/main
     unread_only = tool_input.get("unread_only", False)
     limit = tool_input.get("limit", 20)
     mark_read = tool_input.get("mark_read", True)
 
     mailbox = _agent_mailboxes.get(agent_id, [])
-<<<<<<< HEAD
     if not mailbox and agent_name:
         mailbox = _agent_mailboxes.get(agent_name, [])
-=======
->>>>>>> origin/main
 
     if unread_only:
         messages = [m for m in mailbox if not m["read"]]
@@ -801,7 +786,6 @@ def handle_read_messages(tool_input: dict, agent_context: dict | None) -> dict:
     }
 
 
-<<<<<<< HEAD
 # ── File Tools ───────────────────────────────────────────────────────────
 
 
@@ -902,8 +886,6 @@ def handle_file_list(tool_input: dict, agent_context: dict | None) -> dict:
         return {"error": f"Failed to list {directory}: {exc}"}
 
 
-=======
->>>>>>> origin/main
 # ===========================================================================
 # Tool Definitions (Anthropic tool format)
 # ===========================================================================
@@ -1257,7 +1239,6 @@ PLATFORM_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
         },
     },
-<<<<<<< HEAD
     # ── File Tools ────────────────────────────────────────────────────
     {
         "name": "platform__file_read",
@@ -1301,8 +1282,6 @@ PLATFORM_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
         },
     },
-=======
->>>>>>> origin/main
 ]
 
 # ===========================================================================
@@ -1326,12 +1305,9 @@ _SIMULATED_HANDLERS: dict[str, Any] = {
     "platform__github_create_review": handle_github_create_review,
     "platform__send_message": handle_send_message,
     "platform__read_messages": handle_read_messages,
-<<<<<<< HEAD
     "platform__file_read": handle_file_read,
     "platform__file_write": handle_file_write,
     "platform__file_list": handle_file_list,
-=======
->>>>>>> origin/main
 }
 
 
@@ -1385,7 +1361,6 @@ def register_platform_tools(tool_executor) -> list[dict[str, Any]]:
         tool_defs = register_platform_tools(tool_executor)
         # tool_defs is the list of Anthropic-format tool schemas
     """
-<<<<<<< HEAD
     if hasattr(tool_executor, "register_platform_tools"):
         tool_executor.register_platform_tools(
             dict(_HANDLER_MAP), list(PLATFORM_TOOL_DEFINITIONS)
@@ -1394,11 +1369,6 @@ def register_platform_tools(tool_executor) -> list[dict[str, Any]]:
         for tool_name, handler_fn in _HANDLER_MAP.items():
             tool_executor._custom_handlers[tool_name] = handler_fn
         logger.debug("Fallback: wrote %d handlers to _custom_handlers", len(_HANDLER_MAP))
-=======
-    for tool_name, handler_fn in _HANDLER_MAP.items():
-        tool_executor._custom_handlers[tool_name] = handler_fn
-        logger.debug("Registered platform tool: %s", tool_name)
->>>>>>> origin/main
 
     logger.info("Registered %d platform tools", len(_HANDLER_MAP))
     return list(PLATFORM_TOOL_DEFINITIONS)

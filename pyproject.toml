@@ -9,6 +9,7 @@ dependencies = [
     "uvicorn[standard]>=0.34",
     "anthropic>=0.52",
     "python-dotenv>=1.0",
+    "jsonschema>=4.0",
 ]
 
 [project.optional-dependencies]

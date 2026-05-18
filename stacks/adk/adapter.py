@@ -157,28 +157,17 @@ def _build_adk_tools(tool_executor, agent_def: AgentDefinition, agent_context: d
             async def _wrapper(**kwargs):
                 """Run the ForgeOS tool and return the raw result dict."""
                 # Kernel gate: check permissions before executing
-<<<<<<< HEAD
                 try:
                     from src.forgeos_sdk.runtime import runtime as _rt
                     if _rt.is_registered and _rt.is_bound:
                         decision = await _rt.check_tool(name_captured, kwargs)
                         if decision.denied:
                             return {"success": False, "error": f"Kernel denied: {decision.reason}"}
-                except Exception:
-                    pass
-=======
-                from src.forgeos_sdk.runtime import runtime as _rt
-                if _rt.is_registered and _rt.is_bound:
-                    try:
-                        decision = await _rt.check_tool(name_captured, kwargs)
-                        if decision.denied:
-                            return {"success": False, "error": f"Kernel denied: {decision.reason}"}
                         if hasattr(decision, "action") and decision.action == "rate_limit":
                             return {"success": False, "error": f"Rate limited: {decision.reason}"}
-                    except Exception as e:
-                        logger.error("Kernel check failed for %s: %s", name_captured, e)
-                        return {"success": False, "error": f"Kernel check failed: {e}"}
->>>>>>> origin/main
+                except Exception as e:
+                    logger.error("Kernel check failed for %s: %s", name_captured, e)
+                    return {"success": False, "error": f"Kernel check failed: {e}"}
 
                 try:
                     result = await tool_executor.execute(

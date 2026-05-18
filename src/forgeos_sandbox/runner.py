@@ -1,30 +1,21 @@
 """
-<<<<<<< HEAD
-Sandbox agent runtime — runs inside an isolated container.
-=======
 Sandbox agent runtime — runs inside an isolated Docker container.
->>>>>>> origin/main
 
 Executes an agentic loop (LLM -> tool_use -> proxy to API -> tool_result -> LLM).
 All tool calls are proxied through the ForgeOS API where the Kernel validates
 permissions before executing.
 
-<<<<<<< HEAD
 Can be configured via environment variables (single-agent legacy mode) or via
 a config dict (multi-agent environment mode).
-=======
+
 Environment variables:
   AGENT_ID, AGENT_TOKEN, FORGEOS_API_URL, AGENT_MODEL, AGENT_PROVIDER,
   AGENT_SYSTEM_PROMPT, AGENT_TOOLS (JSON), AGENT_PROMPT, AGENT_MAX_TURNS
->>>>>>> origin/main
 """
 
 from __future__ import annotations
 
-<<<<<<< HEAD
 import asyncio
-=======
->>>>>>> origin/main
 import json
 import logging
 import os
@@ -40,7 +31,6 @@ logger = logging.getLogger("forgeos_sandbox")
 class SandboxRunner:
     """Agentic loop running inside a sandboxed container."""
 
-<<<<<<< HEAD
     def __init__(self, config: dict | None = None):
         if config:
             self.agent_id = config["agent_id"]
@@ -67,32 +57,16 @@ class SandboxRunner:
             self.loop_mode = os.environ.get("AGENT_LOOP_MODE", "false").lower() == "true"
             self.loop_interval = int(os.environ.get("AGENT_LOOP_INTERVAL", "120"))
             try:
-                self.allowed_tools = json.loads(os.environ.get("AGENT_TOOLS", "[]"))
+                self.allowed_tools: list[str] = json.loads(os.environ.get("AGENT_TOOLS", "[]"))
             except json.JSONDecodeError:
                 self.allowed_tools = []
             self._log = logger
-=======
-    def __init__(self):
-        self.agent_id = os.environ.get("AGENT_ID", "")
-        self.token = os.environ.get("AGENT_TOKEN", "")
-        self.api_url = os.environ.get("FORGEOS_API_URL", "http://localhost:5000")
-        self.model = os.environ.get("AGENT_MODEL", "gpt-4o-mini")
-        self.provider = os.environ.get("AGENT_PROVIDER", "openai")
-        self.system_prompt = os.environ.get("AGENT_SYSTEM_PROMPT", "You are a helpful agent.")
-        self.prompt = os.environ.get("AGENT_PROMPT", "")
-        self.max_turns = int(os.environ.get("AGENT_MAX_TURNS", "15"))
-        try:
-            self.allowed_tools: list[str] = json.loads(os.environ.get("AGENT_TOOLS", "[]"))
-        except json.JSONDecodeError:
-            self.allowed_tools = []
->>>>>>> origin/main
 
         self._http = httpx.Client(
             base_url=self.api_url,
             headers={"X-Agent-Token": self.token, "Content-Type": "application/json"},
             timeout=120,
         )
-<<<<<<< HEAD
         self._async_http: httpx.AsyncClient | None = None
         self._stopped = False
 
@@ -108,17 +82,7 @@ class SandboxRunner:
 
     def run(self) -> dict:
         if not self.prompt:
-            return {"status": "failed", "error": "No prompt"}
-=======
-        if not self.agent_id or not self.token:
-            logger.error("Missing AGENT_ID or AGENT_TOKEN")
-            sys.exit(1)
-        logger.info("Sandbox starting: agent=%s model=%s tools=%d", self.agent_id, self.model, len(self.allowed_tools))
-
-    def run(self) -> dict:
-        if not self.prompt:
             return {"status": "failed", "error": "No AGENT_PROMPT"}
->>>>>>> origin/main
 
         tool_schemas = self._build_tool_schemas()
         messages = [{"role": "user", "content": self.prompt}]
@@ -127,13 +91,9 @@ class SandboxRunner:
         start = time.time()
 
         for turn in range(self.max_turns):
-<<<<<<< HEAD
             if self._stopped:
                 return {"status": "stopped", "agent_id": self.agent_id}
             self._log.info("Turn %d/%d", turn + 1, self.max_turns)
-=======
-            logger.info("Turn %d/%d", turn + 1, self.max_turns)
->>>>>>> origin/main
             response = self._call_llm(messages, tool_schemas)
             if not response:
                 return {"status": "failed", "error": "LLM call failed"}
@@ -144,10 +104,7 @@ class SandboxRunner:
                 final_text = text
                 break
 
-<<<<<<< HEAD
-=======
             # Build assistant message
->>>>>>> origin/main
             assistant_content = []
             if text:
                 assistant_content.append({"type": "text", "text": text})
@@ -155,18 +112,11 @@ class SandboxRunner:
                 assistant_content.append({"type": "tool_use", "id": tc["id"], "name": tc["name"], "input": tc["input"]})
             messages.append({"role": "assistant", "content": assistant_content})
 
-<<<<<<< HEAD
-            tool_results = []
-            for tc in tool_calls:
-                all_tool_calls.append({"name": tc["name"], "input": tc["input"]})
-                self._log.info("  Tool: %s", tc["name"])
-=======
             # Execute tools via API proxy
             tool_results = []
             for tc in tool_calls:
                 all_tool_calls.append({"name": tc["name"], "input": tc["input"]})
-                logger.info("  Tool: %s", tc["name"])
->>>>>>> origin/main
+                self._log.info("  Tool: %s", tc["name"])
                 result = self._proxy_tool(tc["name"], tc["input"])
                 tool_results.append({"type": "tool_result", "tool_use_id": tc["id"], "content": json.dumps(result) if isinstance(result, dict) else str(result)})
             messages.append({"role": "user", "content": tool_results})
@@ -176,7 +126,6 @@ class SandboxRunner:
         elapsed = time.time() - start
         result = {"status": "completed", "agent_id": self.agent_id, "output": final_text, "tool_calls": all_tool_calls, "turns": min(turn + 1, self.max_turns), "elapsed_seconds": round(elapsed, 2)}
         self._report_result(result)
-<<<<<<< HEAD
         self._log.info("Done in %.1fs (%d turns, %d tools)", elapsed, result["turns"], len(all_tool_calls))
         return result
 
@@ -193,26 +142,16 @@ class SandboxRunner:
             return {"status": "stopped", "agent_id": self.agent_id}
         return await asyncio.to_thread(self.run)
 
-=======
-        logger.info("Done in %.1fs (%d turns, %d tools)", elapsed, result["turns"], len(all_tool_calls))
-        return result
 
->>>>>>> origin/main
     def _call_llm(self, messages, tools):
         try:
             if self.provider == "anthropic":
                 return self._call_anthropic(messages, tools)
-<<<<<<< HEAD
             if self.provider == "google":
                 return self._call_google(messages, tools)
             return self._call_openai(messages, tools)
         except Exception as e:
             self._log.error("LLM error: %s", e)
-=======
-            return self._call_openai(messages, tools)
-        except Exception as e:
-            logger.error("LLM error: %s", e)
->>>>>>> origin/main
             return None
 
     def _call_anthropic(self, messages, tools):
@@ -223,16 +162,10 @@ class SandboxRunner:
         tc = [{"id": b.id, "name": b.name, "input": b.input} for b in resp.content if b.type == "tool_use"]
         return {"text": " ".join(text_parts), "tool_calls": tc, "tokens": resp.usage.input_tokens + resp.usage.output_tokens}
 
-<<<<<<< HEAD
     def _call_openai(self, messages, tools, client=None):
         import openai
         if client is None:
             client = openai.OpenAI()
-=======
-    def _call_openai(self, messages, tools):
-        import openai
-        client = openai.OpenAI()
->>>>>>> origin/main
         oai_msgs = [{"role": "system", "content": self.system_prompt}]
         for msg in messages:
             if msg["role"] == "user" and isinstance(msg["content"], list):
@@ -258,7 +191,6 @@ class SandboxRunner:
             tc = [{"id": t.id, "name": t.function.name, "input": json.loads(t.function.arguments)} for t in choice.message.tool_calls]
         return {"text": choice.message.content or "", "tool_calls": tc, "tokens": resp.usage.total_tokens if resp.usage else 0}
 
-<<<<<<< HEAD
     def _call_google(self, messages, tools):
         import openai
         client = openai.OpenAI(
@@ -267,8 +199,6 @@ class SandboxRunner:
         )
         return self._call_openai(messages, tools, client=client)
 
-=======
->>>>>>> origin/main
     def _proxy_tool(self, tool_name, tool_input):
         try:
             resp = self._http.post("/api/sandbox/tool", json={"tool_name": tool_name, "tool_input": tool_input})
@@ -296,7 +226,6 @@ class SandboxRunner:
 
 def main():
     runner = SandboxRunner()
-<<<<<<< HEAD
 
     if not runner.loop_mode:
         result = runner.run()
@@ -309,10 +238,6 @@ def main():
         except Exception as e:
             logger.error("Loop iteration failed: %s", e)
         time.sleep(runner.loop_interval)
-=======
-    result = runner.run()
-    sys.exit(0 if result.get("status") == "completed" else 1)
->>>>>>> origin/main
 
 if __name__ == "__main__":
     main()

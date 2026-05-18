@@ -348,7 +348,6 @@ ALL_AGENTS += [
         ],
         "metadata": {"loop_interval_seconds": 60},
     },
-<<<<<<< HEAD
     # ── Knowledge Scholar & Examiner (coordinating pair) ──────────────
     {
         "name": "knowledge-scholar",
@@ -484,8 +483,6 @@ ALL_AGENTS += [
             "readable_dirs": ["files/knowledge/scholar"],
         },
     },
-=======
->>>>>>> origin/main
 ]
 
 # =========================================================================

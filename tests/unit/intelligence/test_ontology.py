@@ -21,7 +21,7 @@ from src.intelligence.tools import OntologyTools
 # Helpers
 # ---------------------------------------------------------------------------
 
-SCHEMA_DIR = Path(__file__).resolve().parent.parent / "src" / "intelligence" / "schemas"
+SCHEMA_DIR = Path(__file__).resolve().parents[3] / "src" / "intelligence" / "schemas"
 
 
 def _make_ontology_with_data() -> InMemoryOntology:

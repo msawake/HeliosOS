@@ -6,25 +6,16 @@ RUN pip install --no-cache-dir httpx anthropic openai pyyaml
 COPY src/forgeos_sandbox/ /app/src/forgeos_sandbox/
 COPY src/forgeos_sdk/client.py /app/src/forgeos_sdk/client.py
 COPY src/forgeos_sdk/__init__.py /app/src/forgeos_sdk/__init__.py
-<<<<<<< HEAD
 COPY files/ /app/files/
 
 RUN groupadd -g 1000 sandbox && useradd -u 1000 -g sandbox -m sandbox \
     && mkdir -p /app/files/knowledge/scholar /app/files/knowledge/examiner \
     && chown -R 1000:1000 /app/files/knowledge
-=======
-
-RUN groupadd -g 1000 sandbox && useradd -u 1000 -g sandbox -m sandbox
->>>>>>> origin/main
 USER 1000
 WORKDIR /app
 ENV PYTHONPATH=/app PYTHONUNBUFFERED=1
 
-<<<<<<< HEAD
 EXPOSE 8080
 
 # ENV_ID set → environment manager mode (multi-agent); unset → legacy single-agent runner
 CMD ["python", "-m", "src.forgeos_sandbox.env_manager"]
-=======
-CMD ["python", "-m", "src.forgeos_sandbox.runner"]
->>>>>>> origin/main

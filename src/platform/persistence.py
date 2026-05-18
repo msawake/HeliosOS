@@ -39,13 +39,10 @@ class PostgresAgentRegistry:
     # -- write -----------------------------------------------------------
 
     def register(self, agent_def: AgentDefinition) -> str:
-<<<<<<< HEAD
         # Embed system_prompt into metadata for persistence
         meta = dict(agent_def.metadata or {})
         if agent_def.system_prompt:
             meta["_system_prompt"] = agent_def.system_prompt
-=======
->>>>>>> origin/main
         with self._db.tenant(self._tenant_id) as conn:
             conn.execute(
                 """INSERT INTO platform_agents
@@ -55,10 +52,7 @@ class PostgresAgentRegistry:
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'idle',%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT (agent_id) DO UPDATE SET
                      name=EXCLUDED.name, stack=EXCLUDED.stack, status='idle',
-<<<<<<< HEAD
                      metadata=EXCLUDED.metadata,
-=======
->>>>>>> origin/main
                      updated_at=NOW()""",
                 (
                     agent_def.agent_id, self._tenant_id, agent_def.name,
@@ -68,11 +62,7 @@ class PostgresAgentRegistry:
                     agent_def.schedule, agent_def.event_triggers,
                     agent_def.tools, agent_def.config_path,
                     json.dumps(agent_def.llm_config.to_dict()),
-<<<<<<< HEAD
                     json.dumps(meta),
-=======
-                    json.dumps(agent_def.metadata),
->>>>>>> origin/main
                 ),
             )
             conn.commit()
@@ -316,11 +306,8 @@ def _row_to_definition(row: dict) -> AgentDefinition:
     if isinstance(meta, str):
         meta = json.loads(meta)
 
-<<<<<<< HEAD
     system_prompt = meta.pop("_system_prompt", "")
 
-=======
->>>>>>> origin/main
     return AgentDefinition(
         name=row["name"],
         stack=row["stack"],
@@ -341,8 +328,5 @@ def _row_to_definition(row: dict) -> AgentDefinition:
         description=row.get("description", ""),
         department=row.get("department", ""),
         metadata=meta,
-<<<<<<< HEAD
         system_prompt=system_prompt,
-=======
->>>>>>> origin/main
     )

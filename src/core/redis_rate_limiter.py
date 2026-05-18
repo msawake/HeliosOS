@@ -14,11 +14,7 @@ import logging
 import time
 from typing import Any
 
-<<<<<<< HEAD
 from src.core.hooks import AgentContext, HookDecision, HookResult
-=======
-from src.platform.kernel import KernelDecision
->>>>>>> origin/main
 
 logger = logging.getLogger(__name__)
 
@@ -65,80 +61,45 @@ class RedisRateLimiter:
     def is_distributed(self) -> bool:
         return self._client is not None
 
-<<<<<<< HEAD
     def check(self, context: AgentContext) -> HookResult:
         """Check rate limits using Redis atomic counters."""
         if not self._client:
             # Fall back to parent class behavior if Redis not available
             return HookResult(decision=HookDecision.ALLOW)
 
-        sid = context.session_id
-
-        # Session-level check
-        session_key = f"{self._prefix}:{sid}:total"
-=======
-    def check(self, context: Any) -> KernelDecision:
-        """Check rate limits using Redis atomic counters."""
-        if not self._client:
-            # Fall back to parent class behavior if Redis not available
-            return KernelDecision.allow(reason="redis unavailable")
-
         sid = getattr(context, "session_id", None)
         aid = getattr(context, "agent_id", None)
 
-        # Session-level check (per session)
+        # Session-level check (per session, fall back to agent key if no session)
         session_key = f"{self._prefix}:session:{sid}:total" if sid else f"{self._prefix}:agent:{aid}:total"
->>>>>>> origin/main
         count = self._client.incr(session_key)
         if count == 1:
             # First call — set TTL of 2 hours for cleanup
             self._client.expire(session_key, 7200)
 
         if count > self.max_per_session:
-<<<<<<< HEAD
             return HookResult(
                 decision=HookDecision.BLOCK,
-                reason=f"Session {sid} exceeded {self.max_per_session} tool calls",
-                metadata={"count": count},
-            )
-
-        # Per-minute check using minute bucket
-        minute_bucket = int(time.time() // 60)
-        minute_key = f"{self._prefix}:{sid}:min:{minute_bucket}"
-=======
-            return KernelDecision(
-                action="rate_limit",
                 reason=f"Session {sid or aid} exceeded {self.max_per_session} tool calls",
-                details={"count": count},
+                metadata={"count": count},
             )
 
         # Per-minute check using minute bucket (per agent to prevent abuse across sessions)
         minute_bucket = int(time.time() // 60)
-        minute_key = f"{self._prefix}:agent:{aid}:min:{minute_bucket}"
->>>>>>> origin/main
+        minute_key = f"{self._prefix}:agent:{aid}:min:{minute_bucket}" if aid else f"{self._prefix}:session:{sid}:min:{minute_bucket}"
         minute_count = self._client.incr(minute_key)
         if minute_count == 1:
             # Expire after 2 minutes (covers current + next minute)
             self._client.expire(minute_key, 120)
 
         if minute_count > self.max_per_minute:
-<<<<<<< HEAD
             return HookResult(
                 decision=HookDecision.BLOCK,
-                reason=f"Session {sid} exceeded {self.max_per_minute} calls/minute",
+                reason=f"Agent {aid or sid} exceeded {self.max_per_minute} calls/minute",
                 metadata={"calls_in_window": minute_count},
             )
 
         return HookResult(decision=HookDecision.ALLOW)
-=======
-            return KernelDecision(
-                action="rate_limit",
-                reason=f"Agent {aid} exceeded {self.max_per_minute} calls/minute",
-                details={"calls_in_window": minute_count},
-            )
-
-        return KernelDecision.allow(reason="within rate limits")
->>>>>>> origin/main
 
     def reset_session(self, session_id: str):
         """Reset rate limits for a session."""
