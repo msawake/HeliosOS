@@ -66,15 +66,62 @@ def cmd_validate(args) -> int:
 
 
 def cmd_deploy(args) -> int:
-    """Deploy an agent from a manifest file."""
+    """Deploy an agent or team from a manifest file."""
     path = Path(args.file)
     try:
+        import yaml
+        data = yaml.safe_load(path.read_text())
+        kind = data.get("kind", "Agent")
+
+        if kind == "Team":
+            return _deploy_team(args, data)
+
         with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
             agent_id = client.deploy(path)
             _print_ok(f"Deployed agent: {agent_id}")
             return 0
     except (ForgeOSError, FileNotFoundError, ValueError) as e:
         _print_err(f"Deploy failed: {e}")
+        return 1
+
+
+def _deploy_team(args, data: dict) -> int:
+    """Deploy a team manifest via the API."""
+    from .manifest import TeamManifest
+    team = TeamManifest.from_dict(data)
+    with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
+        resp = client._session.post(f"{client._base_url}/api/platform/teams", json=data)
+        if resp.status_code in (200, 201):
+            result = resp.json()
+            agent_ids = result.get("agent_ids", [])
+            _print_ok(f"Team '{team.metadata.name}' deployed: {len(agent_ids)} agents")
+            for aid in agent_ids:
+                print(f"  - {aid}")
+            return 0
+        else:
+            _print_err(f"Team deploy failed: {resp.status_code} — {resp.text}")
+            return 1
+
+
+def cmd_undeploy_team(args) -> int:
+    """Undeploy all agents in a team."""
+    try:
+        with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
+            resp = client._session.delete(
+                f"{client._base_url}/api/platform/teams/{args.namespace}/{args.name}"
+            )
+            if resp.status_code == 200:
+                result = resp.json()
+                _print_ok(f"Team '{args.name}' undeployed: {result.get('removed', 0)} agents removed")
+                return 0
+            elif resp.status_code == 404:
+                _print_err(f"Team '{args.namespace}/{args.name}' not found")
+                return 1
+            else:
+                _print_err(f"Undeploy failed: {resp.status_code} — {resp.text}")
+                return 1
+    except ForgeOSError as e:
+        _print_err(str(e))
         return 1
 
 
@@ -170,6 +217,11 @@ def main(argv: list[str] | None = None) -> int:
 
     p_health = sub.add_parser("health", help="Platform health check")
     p_health.set_defaults(func=cmd_health)
+
+    p_undeploy_team = sub.add_parser("undeploy-team", help="Undeploy all agents in a team")
+    p_undeploy_team.add_argument("name", help="Team name")
+    p_undeploy_team.add_argument("--namespace", default="default", help="Team namespace")
+    p_undeploy_team.set_defaults(func=cmd_undeploy_team)
 
     args = parser.parse_args(argv)
     return args.func(args)

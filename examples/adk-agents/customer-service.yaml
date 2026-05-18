@@ -1,0 +1,84 @@
+# ============================================================================
+# ADK Agent: Customer Service (from google/adk-samples)
+# ============================================================================
+#
+# A single-agent customer service bot with 12 tools (all mocked).
+# Tests ForgeOS governance: tool ACLs, HITL for discounts, PII masking.
+#
+# Original: https://github.com/google/adk-samples/tree/main/python/agents/customer-service
+#
+# DEPLOY:  forgeos deploy examples/adk-agents/customer-service.yaml
+# INVOKE:  forgeos invoke customer-service "I want to return my order and get a 15% discount"
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: customer-service
+  namespace: support
+  description: "Customer service agent — handles orders, cart, discounts, planting services"
+  labels:
+    source: adk-samples
+    category: customer-service
+spec:
+  stack: forgeos
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - send_call_companion_link
+    - approve_discount
+    - sync_ask_for_approval
+    - update_salesforce_crm
+    - access_cart_information
+    - modify_cart
+    - get_product_recommendations
+    - check_product_availability
+    - schedule_planting_service
+    - get_available_planting_times
+    - send_care_instructions
+    - generate_qr_code
+  capabilities:
+    tools:
+      allowed:
+        - send_call_companion_link
+        - access_cart_information
+        - modify_cart
+        - get_product_recommendations
+        - check_product_availability
+        - schedule_planting_service
+        - get_available_planting_times
+        - generate_qr_code
+        - memory__*
+      denied:
+        - update_salesforce_crm
+        - send_care_instructions
+        - delete_*
+  boundaries:
+    budgets:
+      daily_usd: 5.00
+      per_task_usd: 0.50
+    data:
+      pii_policy: mask
+  governance:
+    audit_level: full
+    human_in_loop:
+      - event: approve_discount
+        approvers: [manager]
+        sla_hours: 1
+  system_prompt: |
+    You are Cymbal Home & Garden's AI customer service agent. You help
+    customers with orders, returns, product recommendations, and garden
+    planning.
+
+    Key policies:
+    - Discounts above 10% require manager approval (use sync_ask_for_approval)
+    - Always check product availability before recommending
+    - Schedule planting services only during available times
+    - Send care instructions after every plant purchase
+    - Generate QR codes for order tracking
+
+    Be friendly, helpful, and proactive about garden care tips.

@@ -556,44 +556,44 @@ TOOL_PERMISSIONS = {
 
 AGENT_DEFINITIONS: list[dict] = [
     # Executive
-    {"id": "exec-ceo", "name": "Chief Executive Orchestrator", "dept": "executive", "tier": AgentTier.EXECUTIVE, "model": "claude-opus-4-6", "max_turns": 50},
-    {"id": "exec-coo", "name": "Chief Operations Orchestrator", "dept": "executive", "tier": AgentTier.EXECUTIVE, "model": "claude-opus-4-6", "max_turns": 40},
-    {"id": "exec-cfo", "name": "Chief Financial Orchestrator", "dept": "executive", "tier": AgentTier.EXECUTIVE, "model": "claude-opus-4-6", "max_turns": 40},
+    {"id": "exec-ceo", "name": "Chief Executive Orchestrator", "dept": "executive", "tier": AgentTier.EXECUTIVE, "model": "claude-haiku-4-5-20251001", "max_turns": 50},
+    {"id": "exec-coo", "name": "Chief Operations Orchestrator", "dept": "executive", "tier": AgentTier.EXECUTIVE, "model": "claude-haiku-4-5-20251001", "max_turns": 40},
+    {"id": "exec-cfo", "name": "Chief Financial Orchestrator", "dept": "executive", "tier": AgentTier.EXECUTIVE, "model": "claude-haiku-4-5-20251001", "max_turns": 40},
 
     # Sales / Lead Gen
-    {"id": "sales-lead", "name": "Lead Gen Operations Lead", "dept": "sales", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 40},
-    {"id": "sales-sdr", "name": "Outbound SDR Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 30},
-    {"id": "sales-ae", "name": "Account Executive Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-opus-4-6", "max_turns": 25},
-    {"id": "sales-ops", "name": "Pipeline Operations Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
-    {"id": "sales-researcher", "name": "Lead Researcher Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 30},
-    {"id": "sales-scorer", "name": "Lead Scoring Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
-    {"id": "sales-nurture", "name": "Lead Nurture Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 25},
+    {"id": "sales-lead", "name": "Lead Gen Operations Lead", "dept": "sales", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-haiku-4-5-20251001", "max_turns": 40},
+    {"id": "sales-sdr", "name": "Outbound SDR Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 30},
+    {"id": "sales-ae", "name": "Account Executive Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 25},
+    {"id": "sales-ops", "name": "Pipeline Operations Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 20},
+    {"id": "sales-researcher", "name": "Lead Researcher Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 30},
+    {"id": "sales-scorer", "name": "Lead Scoring Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 20},
+    {"id": "sales-nurture", "name": "Lead Nurture Agent", "dept": "sales", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 25},
 
     # Marketing / Demand Gen
-    {"id": "mkt-lead", "name": "Marketing Lead Orchestrator", "dept": "marketing", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 30},
-    {"id": "mkt-content", "name": "Content Marketing Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 40},
-    {"id": "mkt-seo", "name": "SEO Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 25},
-    {"id": "mkt-email", "name": "Email Marketing Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 25},
-    {"id": "mkt-analytics", "name": "Marketing Analytics Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 25},
-    {"id": "mkt-demandgen", "name": "Demand Generation Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 30},
-    {"id": "mkt-ppc", "name": "PPC/Google Ads Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 25},
+    {"id": "mkt-lead", "name": "Marketing Lead Orchestrator", "dept": "marketing", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-haiku-4-5-20251001", "max_turns": 30},
+    {"id": "mkt-content", "name": "Content Marketing Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 40},
+    {"id": "mkt-seo", "name": "SEO Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 25},
+    {"id": "mkt-email", "name": "Email Marketing Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 25},
+    {"id": "mkt-analytics", "name": "Marketing Analytics Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 25},
+    {"id": "mkt-demandgen", "name": "Demand Generation Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 30},
+    {"id": "mkt-ppc", "name": "PPC/Google Ads Agent", "dept": "marketing", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 25},
 
     # Finance
-    {"id": "fin-lead", "name": "Finance Lead Orchestrator", "dept": "finance", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 30},
-    {"id": "fin-ar", "name": "Accounts & Billing Agent", "dept": "finance", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
+    {"id": "fin-lead", "name": "Finance Lead Orchestrator", "dept": "finance", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-haiku-4-5-20251001", "max_turns": 30},
+    {"id": "fin-ar", "name": "Accounts & Billing Agent", "dept": "finance", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 20},
 
     # HR
-    {"id": "hr-lead", "name": "HR & People Lead", "dept": "hr", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 25},
+    {"id": "hr-lead", "name": "HR & People Lead", "dept": "hr", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-haiku-4-5-20251001", "max_turns": 25},
 
     # Legal
-    {"id": "legal-lead", "name": "Legal Lead Orchestrator", "dept": "legal", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 30},
-    {"id": "legal-compliance", "name": "Compliance Agent", "dept": "legal", "tier": AgentTier.WORKER, "model": "claude-opus-4-6", "max_turns": 25},
+    {"id": "legal-lead", "name": "Legal Lead Orchestrator", "dept": "legal", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-haiku-4-5-20251001", "max_turns": 30},
+    {"id": "legal-compliance", "name": "Compliance Agent", "dept": "legal", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 25},
 
     # Operations
-    {"id": "ops-lead", "name": "Operations Lead Orchestrator", "dept": "operations", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-opus-4-6", "max_turns": 25},
-    {"id": "ops-vendor", "name": "Vendor Management Agent", "dept": "operations", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 20},
+    {"id": "ops-lead", "name": "Operations Lead Orchestrator", "dept": "operations", "tier": AgentTier.DEPARTMENT_LEAD, "model": "claude-haiku-4-5-20251001", "max_turns": 25},
+    {"id": "ops-vendor", "name": "Vendor Management Agent", "dept": "operations", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 20},
     {"id": "ops-monitoring", "name": "System Monitoring Agent", "dept": "operations", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 15},
-    {"id": "client-success", "name": "Client Success Agent", "dept": "operations", "tier": AgentTier.WORKER, "model": "claude-sonnet-4-5-20250514", "max_turns": 25},
+    {"id": "client-success", "name": "Client Success Agent", "dept": "operations", "tier": AgentTier.WORKER, "model": "claude-haiku-4-5-20251001", "max_turns": 25},
 ]
 
 
@@ -638,7 +638,7 @@ def build_registry(company_name: str = "LeadForge AI") -> AgentRegistry:
                         "description": f"{sub_defn['name']} - {sub_defn['dept']} department",
                         "prompt": SYSTEM_PROMPTS.get(sub_id, f"You are the {sub_defn['name']}."),
                         "tools": TOOL_PERMISSIONS.get(sub_id, ["Read"]),
-                        "model": sub_defn.get("model", "claude-sonnet-4-5-20250514"),
+                        "model": sub_defn.get("model", "claude-haiku-4-5-20251001"),
                         "max_turns": sub_defn.get("max_turns", 30),
                     }
 
@@ -649,7 +649,7 @@ def build_registry(company_name: str = "LeadForge AI") -> AgentRegistry:
             tier=defn["tier"],
             system_prompt=system_prompt,
             allowed_tools=TOOL_PERMISSIONS.get(agent_id, ["Read"]),
-            model=defn.get("model", "claude-sonnet-4-5-20250514"),
+            model=defn.get("model", "claude-haiku-4-5-20251001"),
             max_turns=defn.get("max_turns", 50),
             subagents=subagents,
         )

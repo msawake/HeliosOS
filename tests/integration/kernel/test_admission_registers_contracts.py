@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+pytestmark = pytest.mark.kernel
+
 from src.platform.a2a_contracts import (
     A2AContract,
     ContractRegistry,

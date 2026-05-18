@@ -1,6 +1,6 @@
 # ForgeOS
 
-**An operating system for AI agents.** Deploy, orchestrate, and govern agents across five framework adapters with a kernel, syscall pipeline, runtime SDK, and inter-agent protocols.
+**An operating system for AI agents.** Deploy, orchestrate, and govern agents across eight framework adapters with a kernel, syscall pipeline, runtime SDK, and inter-agent protocols.
 
 ForgeOS is the **OS**. Agents are the **processes** that run inside it.
 
@@ -15,7 +15,7 @@ ForgeOS (the operating system)
 Agents (the processes)
   Defined by: manifest (name, framework, lifecycle, tools, boundaries)
   Deployed via: API, CLI, or SDK
-  Run on: one of 5 framework adapters (ForgeOS, CrewAI, ADK, OpenClaw, Sandbox)
+  Run on: one of 8 framework adapters (ForgeOS, CrewAI, ADK, OpenClaw, Sandbox, Anthropic SDK, Anthropic Managed, OpenAI Agents)
   Governed by: kernel enforcement on every tool call, budget check, and agent call
 ```
 
@@ -67,15 +67,18 @@ Agents (the processes)
     +------------------+-------------------+               |
                        |                                   |
     +------------------v-----------------------------------+--------+
-    |                    STACK ADAPTERS                              |
+    |                      STACK ADAPTERS (8)                        |
     |                                                               |
-    |  +---------+ +---------+ +---------+ +----------+ +---------+ |
-    |  | ForgeOS | |  CrewAI |  |  ADK  |  | OpenClaw | | Sandbox | |
-    |  | (native)| | (crews) |  |(Google|  |(gateway) | | (Docker)| |
-    |  +----+----+ +----+----+  +---+---+  +----+-----+ +----+----+ |
-    |       |           |          |            |             |      |
-    |       +-----+-----+----+----+-----+------+------+------+      |
-    |             |          |          |              |              |
+    |  +---------+ +--------+ +------+ +----------+ +---------+    |
+    |  | ForgeOS | | CrewAI | |  ADK | | OpenClaw | | Sandbox |    |
+    |  | (native)| |(crews) | |(Goog)| |(gateway) | | (Docker)|    |
+    |  +---------+ +--------+ +------+ +----------+ +---------+    |
+    |  +-------------+ +--------------+ +--------------+           |
+    |  | Anthropic    | | Anthropic    | | OpenAI       |           |
+    |  | Agent SDK    | | Managed      | | Agents SDK   |           |
+    |  |(PreToolUse)  | |(REST API)    | |(on_tool_start)|          |
+    |  +-------------+ +--------------+ +--------------+           |
+    |                                                               |
     |        each adapter gets runtime bound per invocation          |
     +----------------------------------------------------------------+
                        |
@@ -169,7 +172,20 @@ The runtime is a module-level singleton bound per-invocation via `contextvars`, 
 | **OpenClaw** | HTTP gateway subprocess | Node.js + openclaw2 | Markdown-driven, SOUL/HEARTBEAT pattern |
 | **Sandbox** | Docker container | Docker | Untrusted code, isolated execution |
 
-All adapters implement the same `AgentStackAdapter` interface. All adapters have kernel gates -- every tool call is checked through `runtime.check_tool()` regardless of which framework runs the agent. External SDK adapters fall back to the platform agentic loop when their SDK is not installed.
+**External SDK Adapters** (agents can also run on separate infrastructure, governed by ForgeOS kernel via HTTP):
+
+| Stack | Runtime | SDK Required | Governance Hook |
+|-------|---------|-------------|----------------|
+| **Anthropic Agent SDK** | Claude SDK `query()` | `pip install claude-agent-sdk` | `PreToolUse` hook — one hook gates ALL tools |
+| **Anthropic Managed** | Anthropic hosted sandbox | None (REST API) | Session-level gate (no per-tool interception) |
+| **OpenAI Agents** | OpenAI Agents SDK `Runner.run()` | `pip install openai-agents` | `AgentHooks.on_tool_start()` hook |
+
+All 8 adapters implement the same `AgentStackAdapter` interface. All adapters have kernel gates — every tool call is checked through `runtime.check_tool()` regardless of which framework runs the agent. External SDK adapters fall back to the platform agentic loop when their SDK is not installed.
+
+The Anthropic and OpenAI adapters support three deployment modes:
+- **Mode A** (in-process): agent runs inside ForgeOS, kernel check is a direct Python call (~0.1ms)
+- **Mode B** (pure): agent runs standalone, no governance
+- **Mode C** (remote HTTP): agent runs on separate Cloud Run, kernel checked via HTTP (~50ms)
 
 ---
 
@@ -341,13 +357,16 @@ Dashboard at http://localhost:3000. API at http://localhost:5000/docs.
 |   +-- workflows/                  # DAG workflow engine
 |   +-- forgeos_sandbox/            # Sandbox runner (Docker container primitives)
 |
-+-- stacks/                         # Stack adapter layer
++-- stacks/                         # Stack adapter layer (8 adapters)
 |   +-- base.py                     # AgentStackAdapter ABC, AgentDefinition, enums
 |   +-- forgeos/adapter.py          # Native ForgeOS adapter
 |   +-- crewai/adapter.py           # CrewAI adapter
 |   +-- adk/adapter.py              # Google ADK adapter
 |   +-- openclaw/adapter.py         # OpenClaw gateway adapter
 |   +-- sandbox/adapter.py          # Docker sandbox adapter
+|   +-- anthropic_agent/adapter.py  # Anthropic Agent SDK (PreToolUse hook)
+|   +-- anthropic_managed/adapter.py # Anthropic Managed Agents (REST API)
+|   +-- openai_agents/adapter.py    # OpenAI Agents SDK (on_tool_start hook)
 |
 +-- a2h/                            # A2H protocol (standalone package)
 |   +-- a2h/                        # Gateway, models, store, channels, registry

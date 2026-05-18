@@ -9,6 +9,10 @@ the actual cost is known.
 
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.kernel
+
 import asyncio
 
 import pytest

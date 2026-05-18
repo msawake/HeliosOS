@@ -1,0 +1,134 @@
+# ============================================================================
+# ADK Agent: Financial Advisor (from google/adk-samples)
+# ============================================================================
+#
+# Multi-agent team: coordinator delegates to 4 analyst sub-agents.
+# Tests ForgeOS governance: budget enforcement, data boundaries, audit trail.
+#
+# Original: https://github.com/google/adk-samples/tree/main/python/agents/financial-advisor
+#
+# DEPLOY:  forgeos deploy examples/adk-agents/financial-advisor.yaml
+# INVOKE:  forgeos invoke financial-coordinator "Analyze AAPL stock and recommend a strategy"
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Team
+metadata:
+  name: financial-advisor
+  namespace: finance
+  description: "Financial advisory team — data analysis, trading strategy, execution, risk assessment"
+spec:
+  orchestration: supervisor
+
+  defaults:
+    stack: forgeos
+    llm:
+      chat_model: gemini-2.5-flash
+      provider: vertex
+    boundaries:
+      budgets:
+        daily_usd: 5.00
+        per_task_usd: 1.00
+      data:
+        allowed_namespaces:
+          - finance
+          - shared
+        pii_policy: mask
+
+  agents:
+    - name: financial-coordinator
+      role: supervisor
+      description: "Orchestrates financial analysis — delegates to data, trading, execution, and risk analysts"
+      llm:
+        chat_model: gemini-2.5-flash
+        provider: vertex
+      execution_type: reflex
+      tools:
+        - agent__call
+        - agent__list_available
+        - memory__read
+        - memory__write
+        - memory__search
+      system_prompt: |
+        You are a financial coordinator. Guide users through structured
+        investment analysis by orchestrating your team:
+
+        1. First, call data-analyst to analyze market data for the ticker
+        2. Then call trading-analyst to develop trading strategies
+        3. Then call execution-analyst to define execution plans
+        4. Finally call risk-analyst to evaluate overall risk
+
+        Always follow this sequence. Each analyst builds on the previous
+        one's output. Present a comprehensive investment recommendation
+        at the end with clear risk/reward assessment.
+
+        IMPORTANT: Never provide specific buy/sell recommendations.
+        Always include disclaimers about financial risk.
+
+    - name: data-analyst
+      role: worker
+      description: "Analyzes market data, trends, and fundamentals"
+      execution_type: reflex
+      tools:
+        - memory__read
+        - memory__write
+      system_prompt: |
+        You are a financial data analyst. When given a stock ticker:
+        - Analyze recent price trends and key technical indicators
+        - Review fundamental metrics (P/E, revenue growth, margins)
+        - Identify market sentiment and news catalysts
+        - Provide a data-driven market outlook
+        Present findings in a structured format with clear data points.
+
+    - name: trading-analyst
+      role: worker
+      description: "Develops trading strategies based on analysis"
+      execution_type: reflex
+      tools:
+        - memory__read
+        - memory__write
+      system_prompt: |
+        You are a trading strategy analyst. Based on data analysis:
+        - Propose 2-3 trading strategies (long, short, options)
+        - Define entry/exit points with reasoning
+        - Set position sizing recommendations
+        - Include stop-loss levels
+        Always emphasize risk management.
+
+    - name: execution-analyst
+      role: worker
+      description: "Plans trade execution and timing"
+      execution_type: reflex
+      tools:
+        - memory__read
+        - memory__write
+      system_prompt: |
+        You are an execution analyst. For each proposed strategy:
+        - Plan optimal execution timing
+        - Recommend order types (limit, market, VWAP)
+        - Consider liquidity and market impact
+        - Define execution timeline and milestones
+
+    - name: risk-analyst
+      role: worker
+      description: "Evaluates portfolio risk and compliance"
+      execution_type: reflex
+      tools:
+        - memory__read
+        - memory__write
+      system_prompt: |
+        You are a risk analyst. Evaluate the overall investment plan:
+        - Calculate potential risk/reward ratios
+        - Identify key risk factors and mitigation strategies
+        - Check regulatory compliance considerations
+        - Provide a risk score (1-10) with justification
+        - Include clear disclaimers about investment risks
+
+  shared_context:
+    namespace: finance
+    shared_tools:
+      - company__publish_event
+
+  governance:
+    audit_level: full

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
 import time
 from typing import Any
+
+pytestmark = pytest.mark.kernel
 
 
 from src.core.secrets import SecretsManager

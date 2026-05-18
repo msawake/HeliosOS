@@ -43,7 +43,9 @@ RUN pip install --no-cache-dir --prefix=/install ".[production,scheduler]" docke
         "mcp>=1.0" \
         "apscheduler>=3.10" \
         "docker>=7.0" \
-        "kubernetes>=28.0"
+        "kubernetes>=28.0" \
+        "google-auth>=2.0" \
+        "requests>=2.31"
 
 # ---------------------------------------------------------------------------
 # Stage 2 — api (runtime)

@@ -1,0 +1,28 @@
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: research-agent-openai
+  namespace: research
+  description: "Research agent on OpenAI Responses API"
+spec:
+  stack: openai-agents
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gpt-4o-mini
+    provider: openai
+  tools:
+    - web_search
+    - memory__write
+  boundaries:
+    budgets:
+      daily_usd: 5.00
+      per_task_usd: 0.50
+  governance:
+    audit_level: full
+  system_prompt: |
+    You are a research analyst. When given a question:
+    1. Search the web for relevant information
+    2. Analyze and synthesize findings
+    3. Return a structured answer with sources
+    Be concise. Use markdown formatting.

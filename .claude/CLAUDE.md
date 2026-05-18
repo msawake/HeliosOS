@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-**ForgeOS v3.0** — A multi-stack AI agent platform that deploys, orchestrates, and manages AI agents across five framework adapters (ForgeOS, CrewAI, Google ADK, OpenClaw, Sandbox) with five execution lifecycles and a Next.js dashboard.
+**ForgeOS v3.0** — A multi-stack AI agent platform that deploys, orchestrates, and manages AI agents across eight framework adapters (ForgeOS, CrewAI, Google ADK, OpenClaw, Sandbox, Anthropic Agent SDK, Anthropic Managed, OpenAI Agents) with five execution lifecycles and a Next.js dashboard.
 
 **Key distinction:** ForgeOS is the *framework* (the operating system). Agents are the *programs* that run inside it. The framework provides scheduling, tool execution, LLM routing, persistence, and monitoring. Agents define what work gets done.
 
@@ -18,18 +18,28 @@ Five company packages ship as fixtures: **LeadForge AI** (B2B sales), **DealForg
 # Install (Python 3.11+)
 pip install -e ".[dev]"
 
-# Run all tests (~1238 tests, 65 files)
+# Run all tests
 PYTHONPATH=. python3 -m pytest
 
 # Run a single test file / pattern
-PYTHONPATH=. python3 -m pytest tests/test_platform_executor.py
+PYTHONPATH=. python3 -m pytest tests/integration/agent_execution/test_platform_executor.py
 PYTHONPATH=. python3 -m pytest -k "test_deploy"
 
 # Run by category
-PYTHONPATH=. python3 -m pytest tests/unit/          # pure domain tests
-PYTHONPATH=. python3 -m pytest tests/integration/   # real behaviour tests
-PYTHONPATH=. python3 -m pytest tests/conformance/   # A2A / A2H / H2A protocol contracts
-PYTHONPATH=. python3 -m pytest tests/e2e/           # full API flows and chaos
+PYTHONPATH=. python3 -m pytest tests/unit/                                 # pure domain tests
+PYTHONPATH=. python3 -m pytest tests/integration/                          # real behaviour tests
+PYTHONPATH=. python3 -m pytest tests/integration/agent_execution/          # adapters + execution
+PYTHONPATH=. python3 -m pytest tests/integration/kernel/                   # kernel, syscall, RBAC, policies
+PYTHONPATH=. python3 -m pytest tests/integration/scheduling/               # scheduler, task queue, webhooks
+PYTHONPATH=. python3 -m pytest tests/integration/workflow_execution/       # workflow agents, team manifests
+PYTHONPATH=. python3 -m pytest tests/integration/observability/            # audit, metrics, fleet monitor
+PYTHONPATH=. python3 -m pytest tests/integration/multi_tenancy/            # RLS, sessions, secrets
+PYTHONPATH=. python3 -m pytest tests/integration/tool_execution/           # MCP, tool executor
+PYTHONPATH=. python3 -m pytest tests/integration/intelligence/             # knowledge loader, connectors
+PYTHONPATH=. python3 -m pytest tests/integration/agent_communication/      # HITL
+PYTHONPATH=. python3 -m pytest tests/integration/verticals/                # company-pack integration
+PYTHONPATH=. python3 -m pytest tests/conformance/                          # A2A / A2H / H2A protocol contracts
+PYTHONPATH=. python3 -m pytest tests/e2e/                                  # full API flows and chaos
 
 # Lint / type check
 ruff check src/ tests/
@@ -70,6 +80,9 @@ Notes:
 | ADK | `stacks/adk/adapter.py` | Google ADK Runner | Platform loop |
 | OpenClaw | `stacks/openclaw/adapter.py` | HTTP gateway subprocess | Platform loop |
 | Sandbox | `stacks/sandbox/adapter.py` | Docker container sandbox | Platform loop |
+| Anthropic Agent SDK | `stacks/anthropic_agent/adapter.py` | Anthropic Agent SDK | Platform loop |
+| Anthropic Managed | `stacks/anthropic_managed/adapter.py` | Anthropic Managed API | Platform loop |
+| OpenAI Agents | `stacks/openai_agents/adapter.py` | OpenAI Agents SDK | Platform loop |
 
 Each provides: `create_agent()`, `invoke()`, `start_loop()`, `stop()`, `scaffold_files()`.
 

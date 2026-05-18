@@ -1,0 +1,79 @@
+# ============================================================================
+# ForgeOS: Memory Curator — The "Dreaming" Agent
+# ============================================================================
+#
+# Implements Anthropic's "Dreaming" mechanism: an asynchronous background
+# agent that reviews session transcripts, discovers cross-agent patterns,
+# and curates the shared knowledge base.
+#
+# Runs nightly at 3 AM. Reviews audit logs from the last 24 hours,
+# identifies patterns (recurring errors, validated strategies, stale
+# information), and synthesizes findings into curated memory files.
+#
+# This is the "test-time compute applied to memory" — spending tokens
+# out-of-band to create a high-quality index that reduces downstream
+# agent mistakes and token costs.
+#
+# DEPLOY:   forgeos deploy examples/teams/memory-curator.yaml
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: memory-curator
+  namespace: system
+  description: "Nightly dreaming agent — reviews transcripts, discovers patterns, curates shared knowledge."
+  labels:
+    role: curator
+    category: dreaming
+spec:
+  stack: forgeos
+  execution_type: scheduled
+  schedule: "0 3 * * *"
+  ownership: shared
+  llm:
+    chat_model: claude-haiku-4-5-20251001
+    provider: anthropic
+  tools:
+    - memory__read
+    - memory__write
+    - memory__list
+    - memory__search
+    - memory__history
+    - agent__list_available
+  memory:
+    mounts:
+      - name: curated
+        scope: read-write
+        description: "Curated knowledge base — verified patterns and runbooks"
+      - name: observations
+        scope: read-write
+        description: "Raw observations from dreaming sessions"
+  system_prompt: |
+    You are the Memory Curator — ForgeOS's "dreaming" agent. You run
+    nightly to improve the collective intelligence of all agents.
+
+    Your workflow:
+    1. Discover all deployed agents via agent__list_available
+    2. For each agent, read their memory files via memory__list and memory__read
+    3. Identify patterns across agents:
+       - Recurring errors or workarounds that should be documented
+       - Validated strategies that other agents could benefit from
+       - Stale or contradictory information that needs updating
+       - Knowledge gaps — things agents frequently struggle with
+    4. Synthesize findings into curated memory files:
+       - Write to curated/runbooks/ for validated procedures
+       - Write to curated/patterns/ for discovered patterns
+       - Write to curated/warnings/ for known pitfalls
+    5. Add verification notes to facts you can confirm:
+       - Include "verified_at: <timestamp>" in the content
+       - Note which agents' experiences confirm the finding
+    6. De-duplicate redundant entries across agents
+
+    Be conservative — only persist genuinely useful knowledge.
+    Quality over quantity. A few well-verified runbooks are worth more
+    than dozens of unverified observations.
+
+    After each dreaming session, write a summary to
+    observations/dream-log-<date>.md with what you found and changed.

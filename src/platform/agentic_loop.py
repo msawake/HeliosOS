@@ -15,11 +15,13 @@ import os
 from typing import Any
 
 from stacks.base import AgentDefinition, AgentResult, AgentStatus, LLMConfig
+from src.platform.callbacks import CallbackDecision, CallbackContext, CallbackLevel, CallbackRegistry, CallbackTiming
 from src.platform.llm_router import LLMResponse, LLMRouter
 
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_TURNS = 25  # safety cap on tool-use iterations
+MAX_GUIDANCE_RETRIES = 3  # max times a tool can be GUIDE'd before escalating to DENY
 
 # Tool execution hardening
 TOOL_DEFAULT_TIMEOUT_SECONDS = float(os.environ.get("FORGEOS_TOOL_TIMEOUT", "60.0"))
@@ -36,6 +38,48 @@ def _tool_timeout_for(tool_name: str, tool_definitions: list[dict] | None) -> fl
     return TOOL_DEFAULT_TIMEOUT_SECONDS
 
 
+async def _check_guidance(
+    callback_registry: CallbackRegistry | None,
+    tool_name: str,
+    tool_input: dict,
+    agent_context: dict | None,
+    guidance_counts: dict[str, int],
+) -> dict | None:
+    """Check callbacks before tool execution. Returns guidance dict or None.
+
+    If the same tool has been GUIDE'd MAX_GUIDANCE_RETRIES times, escalates
+    to a DENY to prevent infinite retry loops.
+    """
+    if not callback_registry:
+        return None
+
+    agent_id = (agent_context or {}).get("agent_id", "")
+    namespace = (agent_context or {}).get("namespace", "default")
+
+    ctx = CallbackContext(
+        agent_id=agent_id,
+        namespace=namespace,
+        level=CallbackLevel.TOOL,
+        timing=CallbackTiming.BEFORE,
+        event_name="tool.execute",
+        args={"tool_name": tool_name, "tool_input": tool_input},
+    )
+    result = await callback_registry.dispatch(ctx)
+
+    if result.decision == CallbackDecision.GUIDE:
+        count = guidance_counts.get(tool_name, 0) + 1
+        guidance_counts[tool_name] = count
+        if count >= MAX_GUIDANCE_RETRIES:
+            # Escalate to deny after too many guidance retries
+            return {"error": f"Denied: tool '{tool_name}' guided {count} times without correction. Last guidance: {result.reason}", "denied": True}
+        return {"error": f"Guidance: {result.reason}", "guidance": True}
+
+    if result.decision == CallbackDecision.DENY:
+        return {"error": f"Denied: {result.reason}", "denied": True}
+
+    return None
+
+
 async def run_agentic_loop(
     llm_router: LLMRouter,
     llm_config: LLMConfig,
@@ -48,6 +92,7 @@ async def run_agentic_loop(
     context: dict | None = None,
     history: list[dict] | None = None,
     goal: str | None = None,
+    callback_registry: CallbackRegistry | None = None,
 ) -> AgentResult:
     """Run an agentic tool-use loop.
 
@@ -130,6 +175,9 @@ async def run_agentic_loop(
             except Exception as e:
                 logger.warning("Usage enforcer check_monthly_cost failed: %s", e)
 
+    # -- Guidance retry tracking -----------------------------------------------
+    guidance_counts: dict[str, int] = {}
+
     for turn in range(max_turns):
         response: LLMResponse = await llm_router.chat(llm_config, messages, tools=tools)
 
@@ -187,21 +235,32 @@ async def run_agentic_loop(
             # that _call_vertex can parse. Simpler: build Vertex-native parts directly.
             messages[-1] = {"role": "model", "parts": assistant_parts} if assistant_parts else {"role": "model", "parts": [{"text": ""}]}
 
-            # Execute tools in parallel
+            # Execute tools in parallel (with GUIDE steering check)
             response_parts = []
             tasks = []
-            for tc in response.tool_calls:
+            guided_indices: dict[int, dict] = {}
+            for i, tc in enumerate(response.tool_calls):
                 all_tool_calls.append({"name": tc.name, "input": tc.input})
-                tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
-                tasks.append(_execute_tool(
-                    tc.name, tc.input, tool_executor, agent_context,
-                    timeout=tool_timeout,
-                ))
+                # Check callback guidance before execution
+                guidance = await _check_guidance(
+                    callback_registry, tc.name, tc.input, agent_context, guidance_counts,
+                )
+                if guidance:
+                    guided_indices[i] = guidance
+                    tasks.append(asyncio.sleep(0))  # placeholder
+                else:
+                    tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
+                    tasks.append(_execute_tool(
+                        tc.name, tc.input, tool_executor, agent_context,
+                        timeout=tool_timeout,
+                    ))
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            for tc, result_data in zip(response.tool_calls, results):
-                if isinstance(result_data, Exception):
+            for i, (tc, result_data) in enumerate(zip(response.tool_calls, results)):
+                if i in guided_indices:
+                    result_data = guided_indices[i]
+                elif isinstance(result_data, Exception):
                     result_data = {"error": str(result_data)}
                 content = json.dumps(result_data) if isinstance(result_data, dict) else str(result_data)
                 response_parts.append({
@@ -231,20 +290,31 @@ async def run_agentic_loop(
             }
             messages.append(assistant_msg)
 
-            # Execute tools in parallel
+            # Execute tools in parallel (with GUIDE steering check)
             tasks = []
-            for tc in response.tool_calls:
+            guided_indices: dict[int, dict] = {}
+            for i, tc in enumerate(response.tool_calls):
                 all_tool_calls.append({"name": tc.name, "input": tc.input})
-                tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
-                tasks.append(_execute_tool(
-                    tc.name, tc.input, tool_executor, agent_context,
-                    timeout=tool_timeout,
-                ))
+                # Check callback guidance before execution
+                guidance = await _check_guidance(
+                    callback_registry, tc.name, tc.input, agent_context, guidance_counts,
+                )
+                if guidance:
+                    guided_indices[i] = guidance
+                    tasks.append(asyncio.sleep(0))  # placeholder
+                else:
+                    tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
+                    tasks.append(_execute_tool(
+                        tc.name, tc.input, tool_executor, agent_context,
+                        timeout=tool_timeout,
+                    ))
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            for tc, result_data in zip(response.tool_calls, results):
-                if isinstance(result_data, Exception):
+            for i, (tc, result_data) in enumerate(zip(response.tool_calls, results)):
+                if i in guided_indices:
+                    result_data = guided_indices[i]
+                elif isinstance(result_data, Exception):
                     result_data = {"error": str(result_data)}
                 content = json.dumps(result_data) if isinstance(result_data, dict) else str(result_data)
                 messages.append({
@@ -268,18 +338,29 @@ async def run_agentic_loop(
 
             tool_results = []
             tasks = []
-            for tc in response.tool_calls:
+            guided_indices: dict[int, dict] = {}
+            for i, tc in enumerate(response.tool_calls):
                 all_tool_calls.append({"name": tc.name, "input": tc.input})
-                tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
-                tasks.append(_execute_tool(
-                    tc.name, tc.input, tool_executor, agent_context,
-                    timeout=tool_timeout,
-                ))
+                # Check callback guidance before execution
+                guidance = await _check_guidance(
+                    callback_registry, tc.name, tc.input, agent_context, guidance_counts,
+                )
+                if guidance:
+                    guided_indices[i] = guidance
+                    tasks.append(asyncio.sleep(0))  # placeholder
+                else:
+                    tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
+                    tasks.append(_execute_tool(
+                        tc.name, tc.input, tool_executor, agent_context,
+                        timeout=tool_timeout,
+                    ))
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            for tc, result_data in zip(response.tool_calls, results):
-                if isinstance(result_data, Exception):
+            for i, (tc, result_data) in enumerate(zip(response.tool_calls, results)):
+                if i in guided_indices:
+                    result_data = guided_indices[i]
+                elif isinstance(result_data, Exception):
                     result_data = {"error": str(result_data)}
                 tool_results.append({
                     "type": "tool_result",

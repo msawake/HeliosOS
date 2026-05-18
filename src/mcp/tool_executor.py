@@ -30,13 +30,14 @@ class ToolExecutor:
     Custom company tools are routed to the CompanySystem subsystems.
     """
 
-    def __init__(self, company_system=None, mcp_clients: dict | None = None, client_mcp_manager=None, a2a_handler=None, kernel=None, a2h_gateway=None):
+    def __init__(self, company_system=None, mcp_clients: dict | None = None, client_mcp_manager=None, a2a_handler=None, kernel=None, a2h_gateway=None, memory_store=None):
         self._system = company_system
         self._mcp_clients = mcp_clients or {}
         self._client_mcp_manager = client_mcp_manager
         self._a2a_handler = a2a_handler
         self._kernel = kernel  # AgentOS kernel for policy enforcement
         self._a2h_gateway = a2h_gateway
+        self._memory_store = memory_store
         self._custom_handlers = self._register_custom_tools()
         self._mcp_tool_definitions: dict[str, list[dict]] = {}
 
@@ -57,6 +58,14 @@ class ToolExecutor:
             handlers["human__notify"] = self._handle_human_notify
             handlers["human__check"] = self._handle_human_check
             handlers["human__list_available"] = self._handle_human_list
+
+        # Memory tools (always available — uses in-memory store as fallback)
+        handlers["memory__read"] = self._handle_memory_read
+        handlers["memory__write"] = self._handle_memory_write
+        handlers["memory__list"] = self._handle_memory_list
+        handlers["memory__search"] = self._handle_memory_search
+        handlers["memory__history"] = self._handle_memory_history
+        handlers["memory__delete"] = self._handle_memory_delete
 
         if not self._system:
             return handlers
@@ -92,8 +101,12 @@ class ToolExecutor:
 
         # A2H tools (agent-to-human interaction)
         if self._a2h_gateway:
-            from src.platform.a2h import H2A_TOOL_SCHEMAS
-            schemas.extend(H2A_TOOL_SCHEMAS)
+            from src.platform.a2h import A2H_TOOL_SCHEMAS
+            schemas.extend(A2H_TOOL_SCHEMAS)
+
+        # Memory tools (always available)
+        from src.platform.memory_store import MEMORY_TOOL_SCHEMAS
+        schemas.extend(MEMORY_TOOL_SCHEMAS)
 
         if not self._system:
             return schemas
@@ -647,3 +660,85 @@ class ToolExecutor:
             return {"humans": []}
         humans = self._a2h_gateway.list_humans(namespace=input.get("namespace"))
         return {"humans": [h.to_discovery_dict() for h in humans]}
+
+    # -- Memory tools -------------------------------------------------------
+
+    def _get_memory_store(self):
+        if self._memory_store is None:
+            from src.platform.memory_store import InMemoryMemoryStore
+            self._memory_store = InMemoryMemoryStore()
+        return self._memory_store
+
+    def _memory_agent_id(self, ctx: dict | None) -> str:
+        if ctx and ctx.get("agent_id"):
+            return ctx["agent_id"]
+        return "anonymous"
+
+    def _handle_memory_read(self, input: dict, ctx: dict | None) -> dict:
+        store = self._get_memory_store()
+        agent_id = self._memory_agent_id(ctx)
+        entry = store.read(agent_id, input["path"])
+        if entry is None:
+            return {"found": False, "path": input["path"]}
+        return {
+            "found": True,
+            "path": entry.path,
+            "content": entry.content,
+            "content_hash": entry.content_hash,
+            "version": entry.version,
+            "updated_at": entry.updated_at,
+            "author": entry.author_agent_id,
+        }
+
+    def _handle_memory_write(self, input: dict, ctx: dict | None) -> dict:
+        from src.platform.memory_store import ConcurrencyError, MemoryMutation
+        store = self._get_memory_store()
+        agent_id = self._memory_agent_id(ctx)
+        mutation = MemoryMutation(
+            path=input["path"],
+            content=input["content"],
+            author_agent_id=agent_id,
+            precondition_hash=input.get("precondition_hash"),
+        )
+        try:
+            entry = store.write(agent_id, mutation)
+        except ConcurrencyError as e:
+            return {"error": str(e), "type": "concurrency_conflict"}
+        return {
+            "written": True,
+            "path": entry.path,
+            "content_hash": entry.content_hash,
+            "version": entry.version,
+        }
+
+    def _handle_memory_list(self, input: dict, ctx: dict | None) -> dict:
+        store = self._get_memory_store()
+        agent_id = self._memory_agent_id(ctx)
+        prefix = input.get("prefix", "")
+        files = store.list_files(agent_id, prefix)
+        return {"files": files, "count": len(files)}
+
+    def _handle_memory_search(self, input: dict, ctx: dict | None) -> dict:
+        store = self._get_memory_store()
+        agent_id = self._memory_agent_id(ctx)
+        results = store.search(agent_id, input["query"])
+        return {
+            "results": [
+                {"path": e.path, "content_hash": e.content_hash,
+                 "snippet": e.content[:200]}
+                for e in results
+            ],
+            "count": len(results),
+        }
+
+    def _handle_memory_history(self, input: dict, ctx: dict | None) -> dict:
+        store = self._get_memory_store()
+        agent_id = self._memory_agent_id(ctx)
+        entries = store.history(agent_id, input["path"])
+        return {"path": input["path"], "history": entries}
+
+    def _handle_memory_delete(self, input: dict, ctx: dict | None) -> dict:
+        store = self._get_memory_store()
+        agent_id = self._memory_agent_id(ctx)
+        deleted = store.delete(agent_id, input["path"])
+        return {"deleted": deleted, "path": input["path"]}

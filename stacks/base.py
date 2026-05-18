@@ -39,7 +39,7 @@ class AgentStatus(Enum):
     QUARANTINED = "quarantined"
 
 
-STACK_NAMES = ("forgeos", "crewai", "adk", "openclaw", "sandbox")
+STACK_NAMES = ("forgeos", "crewai", "adk", "openclaw", "sandbox", "anthropic-agent-sdk", "anthropic-managed", "openai-agents")
 
 
 @dataclass

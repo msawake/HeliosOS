@@ -64,6 +64,57 @@ class A2APermissionError(Exception):
     """Raised when an agent lacks permission to call another."""
 
 
+@dataclass
+class IsolationPolicy:
+    """Controls what context flows between caller and callee."""
+
+    inherit_history: bool = False
+    inherit_context: bool = False
+    max_result_chars: int = 50_000
+    pass_structured_only: bool = True
+
+    @classmethod
+    def from_manifest(cls, agent_def) -> "IsolationPolicy":
+        from src.forgeos_sdk.manifest import read_v2_section
+        caps = read_v2_section(agent_def, "capabilities", {})
+        a2a_config = caps.get("a2a", {}) if isinstance(caps, dict) else {}
+        isolation = a2a_config.get("isolation", {})
+        if not isolation:
+            return cls._legacy()
+        return cls(
+            inherit_history=isolation.get("inherit_history", False),
+            inherit_context=isolation.get("inherit_context", False),
+            max_result_chars=isolation.get("max_result_chars", 50_000),
+            pass_structured_only=isolation.get("pass_structured_only", True),
+        )
+
+    @classmethod
+    def _legacy(cls) -> "IsolationPolicy":
+        """Legacy mode: pass everything through (backward compat)."""
+        return cls(
+            inherit_history=True,
+            inherit_context=True,
+            max_result_chars=0,
+            pass_structured_only=False,
+        )
+
+    @classmethod
+    def isolated(cls) -> "IsolationPolicy":
+        """Full isolation mode."""
+        return cls()
+
+
+@dataclass
+class IsolatedResult:
+    """What returns to the caller from an isolated A2A call."""
+
+    output: str
+    status: str
+    tokens_used: int
+    error: str | None = None
+    structured_data: dict | None = None
+
+
 class A2AHandler:
     """
     Routes agent-to-agent calls. Wired into ToolExecutor as 'agent__*' tools.
@@ -114,6 +165,7 @@ class A2AHandler:
         task: str,
         context: dict | None = None,
         timeout: float = DEFAULT_CALL_TIMEOUT_SECONDS,
+        isolated: bool | None = None,
     ) -> dict:
         """Synchronous agent-to-agent call. Returns the callee's AgentResult as dict."""
         if not self._executor:
@@ -200,31 +252,60 @@ class A2AHandler:
             )
         )
 
-        merged_context = dict(context or {})
-        merged_context["_delegation"] = asdict(child_delegation)
-        merged_context["_caller"] = {
+        # 5b. Determine isolation policy
+        if isolated is True:
+            isolation = IsolationPolicy.isolated()
+        elif isolated is False:
+            isolation = IsolationPolicy._legacy()
+        else:
+            isolation = IsolationPolicy.from_manifest(callee_def)
+
+        # Build callee context based on isolation policy
+        if isolation.inherit_context:
+            callee_context = dict(context or {})
+        else:
+            callee_context = {}
+
+        # Always include delegation metadata
+        callee_context["_delegation"] = asdict(child_delegation)
+        callee_context["_caller"] = {
             "namespace": caller_namespace,
             "agent_name": caller_agent_name,
         }
 
+        # Session inheritance: only pass session_id when inheriting history
+        session_id = None
+        if isolation.inherit_history:
+            session_id = (caller_context or {}).get("session_id")
+
         # 6. Invoke the callee
         try:
             result = await asyncio.wait_for(
-                self._executor.invoke(callee_def.agent_id, task, merged_context),
+                self._executor.invoke(
+                    callee_def.agent_id, task, callee_context,
+                    session_id=session_id,
+                ),
                 timeout=timeout,
             )
             logger.info(
-                "A2A call: %s/%s -> %s/%s (depth=%d, status=%s)",
+                "A2A call: %s/%s -> %s/%s (depth=%d, status=%s, isolated=%s)",
                 caller_namespace, caller_agent_name,
                 target_namespace, target_name,
                 child_delegation.depth,
                 result.status.value if hasattr(result.status, "value") else result.status,
+                not isolation.inherit_context,
             )
+
+            # Apply result truncation per isolation policy
+            output = result.output or ""
+            if isolation.max_result_chars > 0 and len(output) > isolation.max_result_chars:
+                output = output[:isolation.max_result_chars] + "\n... [truncated]"
+
             return {
                 "success": True,
                 "agent_id": callee_def.agent_id,
                 "status": result.status.value if hasattr(result.status, "value") else str(result.status),
-                "output": result.output,
+                "output": output,
                 "tokens_used": result.tokens_used,
                 "tool_calls": [
                     {"name": tc.get("name"), "input": tc.get("input")}
@@ -247,6 +328,7 @@ class A2AHandler:
         target_name: str,
         task: str,
         context: dict | None = None,
+        isolated: bool | None = None,
     ) -> dict:
         """Fire-and-forget variant. Returns a job_id immediately."""
         job_id = str(uuid.uuid4())[:12]
@@ -256,6 +338,7 @@ class A2AHandler:
             target_name=target_name,
             task=task,
             context=context,
+            isolated=isolated,
         )
         self._jobs[job_id] = asyncio.create_task(task_coro, name=f"a2a-{job_id}")
         return {"success": True, "job_id": job_id}

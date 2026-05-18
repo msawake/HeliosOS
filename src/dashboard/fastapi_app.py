@@ -34,6 +34,76 @@ logger = logging.getLogger(__name__)
 # Pydantic Models
 # ---------------------------------------------------------------------------
 
+class ToolCheckRequest(BaseModel):
+    agent_id: str
+    tool_name: str
+    tool_input: dict = {}
+    estimated_cost_usd: float | None = None
+
+class A2ACheckRequest(BaseModel):
+    caller_agent_id: str
+    target_namespace: str
+    target_name: str
+
+class DataCheckRequest(BaseModel):
+    agent_id: str
+    target_namespace: str
+
+class AuditRequest(BaseModel):
+    agent_id: str
+    event: str
+    details: dict = {}
+
+class UsageReport(BaseModel):
+    agent_id: str
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cost_usd: float = 0.0
+    tool_calls: int = 0
+
+class HeartbeatRequest(BaseModel):
+    agent_id: str
+
+class TaskSubmitRequest(BaseModel):
+    caller_id: str
+    callee_namespace: str
+    callee_name: str
+    task: str
+    context: dict = {}
+    timeout_seconds: float = 300
+
+class TaskResultRequest(BaseModel):
+    job_id: str
+    result: str
+
+class TaskFailRequest(BaseModel):
+    job_id: str
+    error: str
+
+class A2HAskRequest(BaseModel):
+    to_namespace: str = "default"
+    to_name: str = ""
+    question: str = ""
+    response_type: str = "text"
+    options: list[dict] | None = None
+    context: dict | None = None
+    priority: str = "medium"
+    deadline: str | None = None
+    from_agent: str = ""
+
+class A2HRespondRequest(BaseModel):
+    response: dict = {}
+    channel: str = "dashboard"
+    responded_by: str = ""
+
+class A2HNotifyRequest(BaseModel):
+    to_namespace: str = "default"
+    to_name: str = ""
+    message: str = ""
+    priority: str = "low"
+    context: dict | None = None
+    from_agent: str = ""
+
 class ChatRequest(BaseModel):
     message: str
     session_id: str = "default"
@@ -870,6 +940,74 @@ def create_fastapi_app(
             await platform_executor.undeploy(agent_id)
         _audit("agent.undeploy", resource_type="agent", resource_id=agent_id)
         return {"ok": True}
+
+    # ------------------------------------------------------------------
+    # Teams
+    # ------------------------------------------------------------------
+
+    @app.post("/api/platform/teams", tags=["teams"], status_code=201)
+    async def deploy_team(request: Request, _auth=Depends(check_auth)):
+        """Deploy a team of agents from a TeamManifest."""
+        data = await request.json()
+        try:
+            from src.forgeos_sdk.manifest import TeamManifest
+            team = TeamManifest.from_dict(data)
+        except Exception as e:
+            return JSONResponse({"error": f"Invalid team manifest: {e}"}, status_code=400)
+
+        if not platform_executor:
+            return JSONResponse({"error": "Platform not initialized"}, status_code=503)
+
+        try:
+            agent_ids = await platform_executor.deploy_team(team)
+            _audit("team.deploy", resource_type="team", resource_id=team.metadata.name,
+                   details={"namespace": team.metadata.namespace, "orchestration": team.spec.orchestration,
+                            "agent_count": len(agent_ids)})
+            return JSONResponse({
+                "team": team.metadata.name,
+                "namespace": team.metadata.namespace,
+                "orchestration": team.spec.orchestration,
+                "agent_ids": agent_ids,
+                "count": len(agent_ids),
+            }, status_code=201)
+        except Exception as e:
+            logger.exception("Team deploy failed: %s", e)
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+    @app.get("/api/platform/teams", tags=["teams"])
+    async def list_teams():
+        """List deployed teams grouped by team metadata."""
+        if not platform_executor:
+            return JSONResponse({"error": "Platform not initialized"}, status_code=503)
+
+        teams: dict[str, dict] = {}
+        for agent in platform_executor.registry.list_all():
+            meta = getattr(agent, "metadata", {}) or {}
+            if isinstance(meta, dict) and "_team" in meta:
+                team_name = meta["_team"]
+                ns = getattr(agent, "namespace", "default")
+                key = f"{ns}/{team_name}"
+                if key not in teams:
+                    teams[key] = {"name": team_name, "namespace": ns, "agents": []}
+                teams[key]["agents"].append({
+                    "name": getattr(agent, "name", ""),
+                    "agent_id": getattr(agent, "agent_id", ""),
+                    "role": meta.get("_team_role", "worker"),
+                })
+        return {"teams": list(teams.values())}
+
+    @app.delete("/api/platform/teams/{namespace}/{name}", tags=["teams"])
+    async def undeploy_team(namespace: str, name: str, _auth=Depends(check_auth)):
+        """Undeploy all agents in a team."""
+        if not platform_executor:
+            return JSONResponse({"error": "Platform not initialized"}, status_code=503)
+
+        count = await platform_executor.undeploy_team(name, namespace)
+        if count == 0:
+            return JSONResponse({"error": f"Team {namespace}/{name} not found"}, status_code=404)
+        _audit("team.undeploy", resource_type="team", resource_id=name,
+               details={"namespace": namespace, "removed": count})
+        return {"team": name, "namespace": namespace, "removed": count}
 
     # ------------------------------------------------------------------
     # Events
@@ -2010,26 +2148,6 @@ def create_fastapi_app(
     # AgentOS Kernel — policy decision endpoints
     # ------------------------------------------------------------------
 
-    class ToolCheckRequest(BaseModel):
-        agent_id: str
-        tool_name: str
-        tool_input: dict = {}
-        estimated_cost_usd: float | None = None
-
-    class A2ACheckRequest(BaseModel):
-        caller_agent_id: str
-        target_namespace: str
-        target_name: str
-
-    class DataCheckRequest(BaseModel):
-        agent_id: str
-        target_namespace: str
-
-    class AuditRequest(BaseModel):
-        agent_id: str
-        event: str
-        details: dict = {}
-
     def _require_kernel():
         if kernel is None:
             raise HTTPException(503, "Kernel not initialized")
@@ -2091,6 +2209,109 @@ def create_fastapi_app(
         k = _require_kernel()
         k.audit(req.agent_id, req.event, req.details)
         return {"ok": True}
+
+    # ------------------------------------------------------------------
+    # Remote Agent Governance (usage reporting, heartbeat, task queue)
+    # ------------------------------------------------------------------
+
+    @app.post("/api/platform/kernel/usage", tags=["remote-governance"])
+    async def report_usage(req: UsageReport):
+        """Remote agents POST token/cost usage so budgets work."""
+        if platform_executor:
+            platform_executor.process_table.record_usage(
+                req.agent_id,
+                tokens_in=req.tokens_in,
+                tokens_out=req.tokens_out,
+                dollars=req.cost_usd,
+                tool_calls=req.tool_calls,
+            )
+        return {"recorded": True, "agent_id": req.agent_id}
+
+    @app.post("/api/platform/agents/{agent_id}/heartbeat", tags=["remote-governance"])
+    async def agent_heartbeat(agent_id: str):
+        """Remote agents report liveness. Fleet monitor checks staleness."""
+        if platform_executor:
+            platform_executor.process_table.heartbeat(agent_id)
+        return {"ok": True, "agent_id": agent_id}
+
+    @app.post("/api/platform/a2a/submit", tags=["remote-governance"])
+    async def submit_a2a_task(req: TaskSubmitRequest):
+        """Submit an async A2A task to the queue. Returns job_id."""
+        from src.platform.task_queue import InMemoryTaskQueue
+        if not hasattr(app.state, "task_queue"):
+            app.state.task_queue = InMemoryTaskQueue()
+        queue = app.state.task_queue
+
+        if kernel:
+            decision = kernel.check_a2a_call(
+                req.caller_id, req.callee_namespace, req.callee_name,
+            )
+            if hasattr(decision, "denied") and decision.denied:
+                return {"error": f"A2A denied: {decision.reason}", "allowed": False}
+
+        job_id = await queue.submit(
+            caller_id=req.caller_id,
+            callee_namespace=req.callee_namespace,
+            callee_name=req.callee_name,
+            task=req.task,
+            context=req.context,
+            timeout_seconds=req.timeout_seconds,
+        )
+        return {"job_id": job_id, "status": "pending"}
+
+    @app.get("/api/platform/a2a/jobs/{job_id}", tags=["remote-governance"])
+    async def get_a2a_job(job_id: str):
+        """Poll for task result."""
+        if not hasattr(app.state, "task_queue"):
+            raise HTTPException(404, "No task queue")
+        task = await app.state.task_queue.get_task(job_id)
+        if not task:
+            raise HTTPException(404, f"Job {job_id} not found")
+        return task.to_dict()
+
+    @app.post("/api/platform/a2a/result", tags=["remote-governance"])
+    async def submit_a2a_result(req: TaskResultRequest):
+        """Worker submits completed result."""
+        if not hasattr(app.state, "task_queue"):
+            raise HTTPException(404, "No task queue")
+        await app.state.task_queue.submit_result(req.job_id, req.result)
+        return {"ok": True, "job_id": req.job_id}
+
+    @app.post("/api/platform/a2a/fail", tags=["remote-governance"])
+    async def fail_a2a_task(req: TaskFailRequest):
+        """Worker reports task failure (will retry if attempts remain)."""
+        if not hasattr(app.state, "task_queue"):
+            raise HTTPException(404, "No task queue")
+        await app.state.task_queue.mark_failed(req.job_id, req.error)
+        return {"ok": True, "job_id": req.job_id}
+
+    @app.get("/api/platform/a2a/tasks/pending", tags=["remote-governance"])
+    async def get_pending_tasks(namespace: str = "", name: str = ""):
+        """Worker pulls pending tasks (pull mode alternative to webhooks)."""
+        if not hasattr(app.state, "task_queue"):
+            return {"tasks": []}
+        tasks = await app.state.task_queue.get_pending_by_name(namespace, name)
+        return {"tasks": [t.to_dict() for t in tasks]}
+
+    @app.get("/api/platform/fleet", tags=["remote-governance"])
+    async def fleet_status():
+        """Fleet-wide health summary for dashboard."""
+        if not platform_executor:
+            return {"error": "Platform not initialized"}
+        summary = platform_executor.process_table.summary()
+        agents = []
+        for proc in platform_executor.process_table.list_all():
+            agents.append({
+                "pid": proc.identity.pid,
+                "name": proc.identity.qualified_name,
+                "namespace": proc.identity.namespace,
+                "phase": proc.phase.value,
+                "dollars": round(proc.resource_usage.dollars, 4),
+                "tokens": proc.resource_usage.total_tokens,
+                "tool_calls": proc.resource_usage.tool_calls,
+                "last_heartbeat": proc.resource_usage.last_heartbeat_at,
+            })
+        return {"summary": summary, "agents": agents}
 
     # ------------------------------------------------------------------
     # Sandbox Tool Proxy
@@ -2410,30 +2631,6 @@ def create_fastapi_app(
     # ------------------------------------------------------------------
     # A2H Protocol Endpoints (Agent-to-Human)
     # ------------------------------------------------------------------
-
-    class A2HAskRequest(BaseModel):
-        to_namespace: str = "default"
-        to_name: str
-        question: str
-        response_type: str = "text"
-        options: list[dict] | None = None
-        context: dict | None = None
-        priority: str = "medium"
-        deadline: str | None = None
-        from_agent: str = ""
-
-    class A2HRespondRequest(BaseModel):
-        response: dict
-        channel: str = "dashboard"
-        responded_by: str = ""
-
-    class A2HNotifyRequest(BaseModel):
-        to_namespace: str = "default"
-        to_name: str
-        message: str
-        priority: str = "low"
-        context: dict | None = None
-        from_agent: str = ""
 
     @app.post("/api/a2h/requests", tags=["a2h"], status_code=201)
     async def a2h_create_request(req: A2HAskRequest):

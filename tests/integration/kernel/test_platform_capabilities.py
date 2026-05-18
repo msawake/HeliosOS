@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
 import time
+
+pytestmark = pytest.mark.kernel
 from datetime import datetime, timedelta, timezone
 
 

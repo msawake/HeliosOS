@@ -3,6 +3,9 @@ and validates contracts at call time."""
 
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.kernel
 
 from src.platform.a2a import A2AHandler
 from src.platform.a2a_contracts import A2AContract, A2AMethod, ContractRegistry

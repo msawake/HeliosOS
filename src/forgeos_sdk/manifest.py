@@ -45,7 +45,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # Enumerated primitives
 # ---------------------------------------------------------------------------
 
-STACKS = Literal["forgeos", "crewai", "adk", "openclaw"]
+STACKS = Literal["forgeos", "crewai", "adk", "openclaw", "anthropic-agent-sdk", "anthropic-managed", "openai-agents"]
 EXECUTION_TYPES = Literal["always_on", "scheduled", "event_driven", "reflex", "autonomous"]
 OWNERSHIP_TYPES = Literal["personal", "shared", "client"]
 PROVIDERS = Literal["anthropic", "openai", "google", "openclaw", "atlas", "vertex"]
@@ -66,7 +66,7 @@ class LLMConfig(BaseModel):
 
 
 class MemoryBlock(BaseModel):
-    """A single memory block on an agent."""
+    """A single memory block on an agent (legacy — prefer MemoryMount)."""
 
     name: str = Field(..., description="Block identifier")
     type: MEMORY_BLOCK_TYPES = Field("persistent")
@@ -76,10 +76,36 @@ class MemoryBlock(BaseModel):
     update_policy: Literal["on_demand", "on_completion", "never"] = "on_demand"
 
 
+MEMORY_SCOPE = Literal["read-only", "read-write"]
+
+
+class MemoryMount(BaseModel):
+    """A mount point in the agent's file-system memory hierarchy.
+
+    Follows Anthropic's Frontier Memory Architecture: agents work with a
+    hierarchical file system they can navigate with familiar tools. Mounts
+    define permission scopes (read-only for org knowledge, read-write for
+    working memory).
+    """
+
+    name: str = Field(..., description="Mount name (becomes a directory in the memory hierarchy)")
+    scope: MEMORY_SCOPE = Field("read-write", description="read-only for curated knowledge, read-write for working memory")
+    source: str | None = Field(None, description="For read-only mounts: source path or org knowledge ID")
+    max_size_kb: int | None = Field(None, description="Optional size limit for this mount")
+    description: str = ""
+
+
 class MemoryConfig(BaseModel):
-    """Structured memory for the agent (separate from session history)."""
+    """Agent memory configuration.
+
+    Supports both legacy blocks (v1) and file-system mounts (v2).
+    When mounts are specified, the agent gets memory__* tools for
+    file-system-based knowledge management.
+    """
 
     blocks: list[MemoryBlock] = Field(default_factory=list)
+    mounts: list[MemoryMount] = Field(default_factory=list)
+    dreaming: bool = Field(False, description="Enable async dreaming — memory curation by a background agent")
 
 
 class Guardrails(BaseModel):
@@ -611,6 +637,113 @@ class AgentManifest(BaseModel):
             "system_prompt": prompt_text,
             "metadata": extra_metadata,
         }
+
+
+# ---------------------------------------------------------------------------
+# Team Manifest — deploy multi-agent teams from a single YAML
+# ---------------------------------------------------------------------------
+
+TEAM_ROLES = Literal["supervisor", "worker", "specialist", "curator"]
+TEAM_ORCHESTRATION = Literal["supervisor", "parallel", "sequential", "mesh"]
+
+
+class TeamAgentSpec(BaseModel):
+    """One agent within a team. Inherits defaults from the team spec."""
+
+    name: str = Field(..., min_length=2, max_length=64)
+    role: TEAM_ROLES = "worker"
+    description: str = ""
+
+    stack: STACKS | None = None
+    execution_type: EXECUTION_TYPES | None = None
+    llm: LLMConfig | None = None
+    tools: list[str] = Field(default_factory=list)
+    system_prompt: str | None = None
+    schedule: str | None = None
+    event_triggers: list[str] = Field(default_factory=list)
+    goal: str = ""
+    boundaries: Boundaries | None = None
+    guardrails: Guardrails | None = None
+    memory: MemoryConfig | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TeamDefaults(BaseModel):
+    """Default values applied to every agent in the team unless overridden."""
+
+    stack: STACKS = "forgeos"
+    llm: LLMConfig | None = None
+    boundaries: Boundaries | None = None
+    guardrails: Guardrails | None = None
+
+
+class SharedContext(BaseModel):
+    """Shared context available to all agents in the team."""
+
+    namespace: str = "default"
+    shared_tools: list[str] = Field(default_factory=list)
+
+
+class TeamSpec(BaseModel):
+    """Team specification — orchestration pattern + agent list."""
+
+    defaults: TeamDefaults = Field(default_factory=TeamDefaults)
+    orchestration: TEAM_ORCHESTRATION = "supervisor"
+    agents: list[TeamAgentSpec] = Field(..., min_length=1)
+    shared_context: SharedContext | None = None
+
+    @model_validator(mode="after")
+    def _validate_supervisor(self):
+        if self.orchestration == "supervisor":
+            supervisors = [a for a in self.agents if a.role == "supervisor"]
+            if len(supervisors) == 0:
+                raise ValueError(
+                    "supervisor orchestration requires at least one agent "
+                    "with role: supervisor"
+                )
+            if len(supervisors) > 1:
+                raise ValueError(
+                    "supervisor orchestration allows only one supervisor"
+                )
+        return self
+
+
+class TeamManifest(BaseModel):
+    """Deploy a team of agents from a single YAML file.
+
+    Supports four orchestration patterns:
+    - supervisor: boss delegates to workers via A2A
+    - parallel: all agents deploy independently, shared namespace
+    - sequential: pipeline — each agent feeds the next
+    - mesh: full-mesh A2A ACLs, everyone can call everyone
+    """
+
+    apiVersion: Literal["forgeos/v1", "agentos/v1"] = "forgeos/v1"
+    kind: Literal["Team"] = "Team"
+    metadata: Metadata
+    spec: TeamSpec
+
+    @classmethod
+    def from_yaml(cls, path: str | Path) -> "TeamManifest":
+        import yaml
+        path = Path(path)
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return cls.model_validate(data)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "TeamManifest":
+        return cls.model_validate(data)
+
+
+def load_manifest(path: str | Path) -> AgentManifest | TeamManifest:
+    """Load a manifest YAML and return the correct type based on 'kind'."""
+    import yaml
+    path = Path(path)
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    kind = data.get("kind", "Agent")
+    if kind == "Team":
+        return TeamManifest.model_validate(data)
+    return AgentManifest.model_validate(data)
 
 
 # ---------------------------------------------------------------------------

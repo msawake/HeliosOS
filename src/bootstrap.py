@@ -223,12 +223,35 @@ class PlatformBootstrap:
             self._session_store = InMemorySessionStore()
             logger.info("  Session store: IN-MEMORY")
 
+            # Use PostgreSQL process table if DATABASE_URL is set
+            _process_table = None
+            if hasattr(self, '_db') and self._db and self._db.pool:
+                try:
+                    from src.platform.postgres_process_table import PostgresProcessTable
+                    _process_table = PostgresProcessTable(
+                        db_pool=self._db.pool,
+                        registry=self.platform_registry,
+                    )
+                    logger.info("  Process table: POSTGRESQL (durable)")
+                except Exception as e:
+                    logger.warning("  PostgreSQL process table failed: %s — using in-memory", e)
+
             self.executor = PlatformExecutor(
                 registry=self.platform_registry,
                 scheduler=self.scheduler,
                 event_bus=self.event_bus,
+                process_table=_process_table,
             )
             self.executor._session_store = self._session_store
+
+            # Load persisted processes from PostgreSQL
+            if _process_table and hasattr(_process_table, 'load_all'):
+                try:
+                    loaded = await _process_table.load_all()
+                    if loaded:
+                        logger.info("  Restored %d agent processes from PostgreSQL", loaded)
+                except Exception as e:
+                    logger.debug("  Process restore skipped: %s", e)
             # AgentOS: bind executor to A2A handler so agents can call each other
             if hasattr(self, "_a2a_handler") and self._a2a_handler:
                 self._a2a_handler.bind_executor(self.executor)
@@ -267,6 +290,7 @@ class PlatformBootstrap:
             if self._a2h_gateway:
                 self._tool_executor._a2h_gateway = self._a2h_gateway
                 logger.info("  A2H: wired into ToolExecutor (human__ask/notify/check available)")
+
 
             try:
                 from src.forgeos_sdk.runtime import runtime as sdk_runtime
@@ -686,6 +710,18 @@ class PlatformBootstrap:
         thread = threading.Thread(target=server.run, daemon=True)
         thread.start()
 
+    async def run_api_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):
+        """Run uvicorn in the main asyncio loop (for Cloud Run / containers)."""
+        app = self.create_api_app(auth_enabled=auth_enabled)
+        if not app:
+            logger.warning("API server not available")
+            return
+        logger.info("API server starting on http://%s:%d (FastAPI + Uvicorn, async)", host, port)
+        import uvicorn
+        config = uvicorn.Config(app, host=host, port=port, log_level="warning")
+        server = uvicorn.Server(config)
+        await server.serve()
+
     def get_platform_summary(self) -> dict:
         return {
             "company_id": self.company_id,
@@ -772,8 +808,8 @@ async def main():
 
     # Store app reference for liveness tick tracking
     _api_app = None
-    if args.dashboard:
-        auth_on = not args.no_auth and not os.environ.get("FORGEOS_AUTH_DISABLED")
+    auth_on = not args.no_auth and not os.environ.get("FORGEOS_AUTH_DISABLED") if args.dashboard else True
+    if args.dashboard and args.loop:
         _api_app = bootstrap.create_api_app(auth_enabled=auth_on)
         bootstrap.start_api_server(port=api_port, auth_enabled=auth_on)
 
@@ -793,7 +829,7 @@ async def main():
     elif args.dashboard:
         logger.info("API server running on http://0.0.0.0:%d — Ctrl+C to stop.", api_port)
         try:
-            await asyncio.Future()
+            await bootstrap.run_api_server(port=api_port, auth_enabled=auth_on)
         except (KeyboardInterrupt, asyncio.CancelledError):
             pass
         finally:

@@ -299,3 +299,31 @@ class _HTTPBackend(_KernelBackend):
             "/api/platform/kernel/audit",
             {"agent_id": agent_id, "event": event, "details": details or {}},
         )
+
+    async def record_usage(self, agent_id, tokens_in=0, tokens_out=0, cost_usd=0.0, tool_calls=0):
+        await self._post(
+            "/api/platform/kernel/usage",
+            {"agent_id": agent_id, "tokens_in": tokens_in, "tokens_out": tokens_out,
+             "cost_usd": cost_usd, "tool_calls": tool_calls},
+        )
+
+    async def heartbeat(self, agent_id):
+        await self._post(f"/api/platform/agents/{agent_id}/heartbeat", {})
+
+    async def submit_task(self, caller_id, callee_namespace, callee_name,
+                          task, context=None, timeout_seconds=300):
+        data = await self._post("/api/platform/a2a/submit", {
+            "caller_id": caller_id, "callee_namespace": callee_namespace,
+            "callee_name": callee_name, "task": task,
+            "context": context or {}, "timeout_seconds": timeout_seconds,
+        })
+        return data.get("job_id")
+
+    async def get_task_result(self, job_id):
+        return await self._get(f"/api/platform/a2a/jobs/{job_id}")
+
+    async def submit_result(self, job_id, result):
+        await self._post("/api/platform/a2a/result", {"job_id": job_id, "result": result})
+
+    async def get_pending_tasks(self, namespace, name):
+        return await self._get(f"/api/platform/a2a/tasks/pending?namespace={namespace}&name={name}")

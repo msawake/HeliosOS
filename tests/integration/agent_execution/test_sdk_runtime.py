@@ -2,6 +2,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.kernel
+
 from src.forgeos_sdk.runtime import (
     BudgetSnapshot,
     CapabilityToken,

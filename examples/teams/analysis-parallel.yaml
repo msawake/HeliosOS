@@ -1,0 +1,44 @@
+apiVersion: forgeos/v1
+kind: Team
+metadata:
+  name: analysis-parallel
+  namespace: analytics
+  description: "Three parallel analysts working on different data domains"
+spec:
+  defaults:
+    stack: forgeos
+    llm:
+      chat_model: claude-haiku-4-5-20251001
+      provider: anthropic
+    boundaries:
+      budgets:
+        daily_usd: 5.00
+
+  orchestration: parallel
+
+  agents:
+    - name: market-analyst
+      role: specialist
+      tools:
+        - company__search_knowledge
+        - company__record_metric
+      system_prompt: "Analyze market trends and competitive landscape."
+
+    - name: financial-analyst
+      role: specialist
+      tools:
+        - company__search_knowledge
+        - company__record_metric
+      system_prompt: "Analyze financial metrics, revenue trends, and cost structure."
+
+    - name: customer-analyst
+      role: specialist
+      tools:
+        - company__search_knowledge
+        - company__record_metric
+      system_prompt: "Analyze customer behavior, churn patterns, and satisfaction scores."
+
+  shared_context:
+    namespace: analytics
+    shared_tools:
+      - company__publish_event

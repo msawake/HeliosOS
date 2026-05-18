@@ -113,7 +113,7 @@ class TestRegistry:
         assert ceo is not None
         assert ceo.name == "Chief Executive Orchestrator"
         assert ceo.tier == AgentTier.EXECUTIVE
-        assert ceo.model == "claude-opus-4-6"
+        assert ceo.model == "claude-haiku-4-5-20251001"
 
     def test_registry_by_department(self):
         registry = build_registry()
