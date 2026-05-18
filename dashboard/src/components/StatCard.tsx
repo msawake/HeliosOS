@@ -17,7 +17,7 @@ const COLOR_MAP: Record<string, string> = {
 
 export function StatCard({ title, value, subtitle, color = 'default' }: StatCardProps) {
   return (
-    <div className="card">
+    <div className="card" data-testid={`stat-${title.toLowerCase().replace(/\s+/g, '-')}`}>
       <p className="text-[13px] font-medium text-[#6e6e80]">{title}</p>
       <p className={`text-3xl font-semibold mt-1 ${COLOR_MAP[color] || COLOR_MAP.default}`}>
         {value}

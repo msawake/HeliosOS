@@ -132,6 +132,7 @@ function CreateAgentForm() {
           <button
             key={i}
             onClick={() => setStep(i)}
+            data-testid={`wizard-step-${i + 1}`}
             className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium text-center transition-colors ${
               i === step ? 'bg-[#10A37F] text-white' : i < step ? 'bg-[#f0fdf8] text-[#0a7a5e]' : 'bg-gray-100 text-gray-400'
             }`}
@@ -150,6 +151,7 @@ function CreateAgentForm() {
                 <button
                   key={s}
                   onClick={() => { update('stack', s); setStep(1); }}
+                  data-testid={`stack-option-${s}`}
                   className={`p-4 rounded-xl border-2 text-left transition-all ${
                     form.stack === s ? 'border-[#10A37F] bg-[#f0fdf8]' : 'border-gray-200 hover:border-gray-300'
                   }`}
@@ -175,6 +177,7 @@ function CreateAgentForm() {
                 <button
                   key={t}
                   onClick={() => { update('execution_type', t); setStep(2); }}
+                  data-testid={`exec-type-${t}`}
                   className={`w-full p-3 rounded-lg border-2 text-left transition-all ${
                     form.execution_type === t ? 'border-[#10A37F] bg-[#f0fdf8]' : 'border-gray-200 hover:border-gray-300'
                   }`}

@@ -44,7 +44,7 @@ export default function AgentsPage() {
         <div>
           <h1 className="text-2xl font-bold">Agents</h1>
           <p className="text-xs text-gray-500 mt-1 flex items-center gap-2">
-            <span className={`inline-block w-2 h-2 rounded-full ${live.connected ? 'bg-green-500' : 'bg-gray-400'}`} />
+            <span data-testid="live-indicator" className={`inline-block w-2 h-2 rounded-full ${live.connected ? 'bg-green-500' : 'bg-gray-400'}`} />
             {live.connected ? (
               <>Live — {live.running}/{live.total} running</>
             ) : (
@@ -119,6 +119,7 @@ export default function AgentsPage() {
               <Link
                 key={agent.agent_id}
                 href={`/agents/${agent.agent_id}`}
+                data-testid={`agent-row-${agent.name}`}
                 className="card flex items-center gap-4 hover:shadow-md transition-shadow cursor-pointer"
               >
                 <div className="flex-1 min-w-0">

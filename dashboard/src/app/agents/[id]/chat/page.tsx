@@ -272,7 +272,7 @@ export default function AgentChatPage() {
             + New conversation
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto scrollbar-hide p-2 space-y-1">
+        <div data-testid="session-list" className="flex-1 overflow-y-auto scrollbar-hide p-2 space-y-1">
           {sessions.map(s => (
             <button key={s.session_id} onClick={() => loadSession(s.session_id)}
               className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors ${
@@ -301,7 +301,7 @@ export default function AgentChatPage() {
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div data-testid="chat-messages" className="flex-1 overflow-y-auto p-4 space-y-3">
           {messages.length === 0 && (
             <div className="text-center py-16">
               <p className="text-[#8e8ea0] text-sm">Start a conversation with {agentName || 'this agent'}.</p>
@@ -310,7 +310,7 @@ export default function AgentChatPage() {
           )}
 
           {messages.map(msg => (
-            <div key={msg.id}>
+            <div key={msg.id} data-role={msg.role}>
               {msg.role === 'user' && (
                 <div className="flex justify-end">
                   <div className="max-w-[70%] bg-[#10A37F] text-white rounded-xl px-4 py-3 text-sm whitespace-pre-wrap">
@@ -386,6 +386,7 @@ export default function AgentChatPage() {
         <div className="px-4 py-3 border-t border-[#e5e5e5] bg-white">
           <div className="flex gap-3">
             <input
+              data-testid="chat-input"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && send()}

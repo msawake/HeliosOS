@@ -69,6 +69,7 @@ export default function ClientsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {clients.map((c) => (
             <Link key={c.id} href={`/clients/${c.id}`}
+              data-testid={`client-row-${c.id}`}
               className="bg-white border border-[#e5e5e5] rounded-xl p-5 hover:border-teal-500 transition-colors block">
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-[#0d0d0d] font-medium text-lg">{c.name}</span>

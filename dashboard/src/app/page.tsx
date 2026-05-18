@@ -35,7 +35,7 @@ export default function OverviewPage() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Platform Overview</h1>
         <div className="flex items-center gap-2 text-xs">
-          <span className={`inline-block w-2 h-2 rounded-full ${live.connected ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+          <span data-testid="live-indicator" className={`inline-block w-2 h-2 rounded-full ${live.connected ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
           <span className="text-gray-500">
             {live.connected ? 'Live' : 'Offline'}
           </span>

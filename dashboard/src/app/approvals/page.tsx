@@ -42,7 +42,7 @@ export default function ApprovalsPage() {
       ) : (
         <div className="space-y-3">
           {items.map((item) => (
-            <div key={item.id} className="card flex items-center gap-4">
+            <div key={item.id} data-testid={`approval-row-${item.title}`} className="card flex items-center gap-4">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">{item.title}</span>

@@ -197,7 +197,7 @@ export default function AgentDetailPage() {
         </div>
       </div>
 
-      <div className="card mb-6">
+      <div className="card mb-6" data-testid="invoke-panel">
         <h2 className="font-semibold mb-3">Test invoke</h2>
         <p className="text-sm text-gray-500 mb-3">
           Sends a one-off prompt through the platform executor (<code className="text-xs bg-gray-100 px-1 rounded">POST /api/platform/agents/…/invoke</code>
@@ -224,7 +224,7 @@ export default function AgentDetailPage() {
           </div>
         </form>
         {invokeResult && (
-          <div className="mt-4 space-y-2">
+          <div className="mt-4 space-y-2" data-testid="invoke-result">
             <div className="flex flex-wrap gap-2 text-xs">
               <Badge label={invokeResult.status} variant={invokeResult.status} />
               {invokeResult.tokens_used > 0 && (
@@ -263,6 +263,7 @@ export default function AgentDetailPage() {
             <button
               key={t.key}
               onClick={() => setActiveTab(t.key)}
+              data-testid={`tab-${t.key}`}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === t.key
                   ? 'border-[#10A37F] text-[#10A37F]'
