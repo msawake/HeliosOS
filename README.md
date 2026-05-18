@@ -262,19 +262,30 @@ See [Agent Manifest Reference](docs/reference/agent-manifest.md) for the full sc
 
 ## Quick Start
 
-```bash
-# Install (Python 3.11+)
-pip install -e ".[dev]"
+### Using Make (recommended)
 
-# Configure
+```bash
+# 1. Install Python deps + dashboard Node modules
+make install-all
+
+# 2. Configure
 echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env
 
-# Boot the platform
-PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
+# 3. Boot the platform (terminal 1) — no-auth mode, port 5000
+make run
 
-# Start the dashboard (separate terminal)
-cd dashboard && npm install && npm run dev
+# 4. Start the dashboard (terminal 2)
+make dashboard
 
+# 5. Run tests
+make test                              # all ~1249 tests
+make test-file FILE=tests/test_x.py   # single file
+make test-match K=test_deploy         # by pattern
+```
+
+Two terminals are required: one for the backend (`make run`) and one for the frontend (`make dashboard`). Both must be running to use the full UI at http://localhost:3000. The API is available at http://localhost:5000/docs even without the dashboard.
+
+```bash
 # Deploy an agent
 curl -s -X POST http://localhost:5000/api/platform/agents \
   -H "Content-Type: application/json" \
@@ -290,6 +301,22 @@ curl -s -X POST http://localhost:5000/api/platform/agents \
 forgeos deploy agent.yaml
 forgeos list
 forgeos invoke <agent-id> "Hello, what can you do?"
+```
+
+### Manual
+
+```bash
+# Install (Python 3.11+)
+pip install -e ".[dev]"
+
+# Configure
+echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env
+
+# Boot the platform
+PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
+
+# Start the dashboard (separate terminal)
+cd dashboard && npm install && npm run dev
 ```
 
 Dashboard at http://localhost:3000. API at http://localhost:5000/docs.

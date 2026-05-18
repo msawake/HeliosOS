@@ -5,9 +5,25 @@
        migrate \
        clean
 
-PYTHON   ?= /opt/homebrew/opt/python@3.11/bin/python3.11
-PIP      ?= $(PYTHON) -m pip
 PORT     ?= 5000
+
+# Use uv if available, otherwise fall back to plain venv + pip.
+# uv: creates .venv automatically and manages it.
+# venv: explicitly created at .venv/ and activated per-command via PYTHON/PIP.
+HAS_UV   := $(shell command -v uv 2>/dev/null)
+
+VENV       = .venv
+PYTHON     = $(VENV)/bin/python
+
+ifdef HAS_UV
+  INSTALL    = uv pip install
+else
+  PIP        = $(PYTHON) -m pip
+  INSTALL    = $(PIP) install
+endif
+
+RUN_PYTHON = $(PYTHON)
+RUN_PYTEST = $(PYTHON) -m pytest
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -17,14 +33,22 @@ help: ## Show this help
 # Installation
 # ──────────────────────────────────────────────
 
-install: ## Install base dependencies
-	$(PIP) install -e .
+ifdef HAS_UV
+.venv:
+	uv venv
+else
+.venv:
+	python3 -m venv .venv
+endif
 
-install-dev: ## Install with dev extras (pytest, ruff, mypy)
-	$(PIP) install -e ".[dev]"
+install: .venv ## Install base dependencies
+	$(INSTALL) -e .
 
-install-prod: ## Install with production extras
-	$(PIP) install -e ".[production]"
+install-dev: .venv ## Install with dev extras (pytest, ruff, mypy)
+	$(INSTALL) -e ".[dev]"
+
+install-prod: .venv ## Install with production extras
+	$(INSTALL) -e ".[production]"
 
 install-all: install-dev ## Install Python deps + dashboard Node modules
 	cd dashboard && npm install
@@ -34,10 +58,10 @@ install-all: install-dev ## Install Python deps + dashboard Node modules
 # ──────────────────────────────────────────────
 
 run: ## Boot the platform (port=$(PORT), no-auth mode)
-	PYTHONPATH=. $(PYTHON) -m src.bootstrap --no-auth --dashboard --port $(PORT)
+	PYTHONPATH=. $(RUN_PYTHON) -m src.bootstrap --no-auth --dashboard --port $(PORT)
 
 forgeos: ## ForgeOS CLI — define agents, manage Docker, deploy, chat, monitor
-	PYTHONPATH=. $(PYTHON) backend/forgeos
+	PYTHONPATH=. $(RUN_PYTHON) backend/forgeos
 
 dashboard: ## Start the Next.js dashboard (dev server)
 	cd dashboard && npm run dev
@@ -47,13 +71,13 @@ dashboard: ## Start the Next.js dashboard (dev server)
 # ──────────────────────────────────────────────
 
 test: ## Run all tests
-	PYTHONPATH=. $(PYTHON) -m pytest
+	PYTHONPATH=. $(RUN_PYTEST)
 
 test-file: ## Run a single test file (FILE=tests/test_xxx.py)
-	PYTHONPATH=. $(PYTHON) -m pytest $(FILE)
+	PYTHONPATH=. $(RUN_PYTEST) $(FILE)
 
 test-match: ## Run tests matching a pattern (K=pattern)
-	PYTHONPATH=. $(PYTHON) -m pytest -k "$(K)"
+	PYTHONPATH=. $(RUN_PYTEST) -k "$(K)"
 
 # ──────────────────────────────────────────────
 # Code quality
@@ -72,13 +96,14 @@ check: lint typecheck ## Run lint + typecheck
 # ──────────────────────────────────────────────
 
 migrate: ## Run database migrations
-	PYTHONPATH=. $(PYTHON) -m src.core.migrations
+	PYTHONPATH=. $(RUN_PYTHON) -m src.core.migrations
 
 # ──────────────────────────────────────────────
 # Cleanup
 # ──────────────────────────────────────────────
 
-clean: ## Remove Python caches and build artifacts
+clean: ## Remove venv, Python caches, and build artifacts
+	rm -rf .venv
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
