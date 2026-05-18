@@ -34,6 +34,13 @@ PYTHONPATH=. python3 -m pytest tests/e2e/           # full API flows and chaos
 # integration/ subdirectories: agent_execution, kernel, scheduling, workflow_execution,
 # observability, multi_tenancy, tool_execution, intelligence, agent_communication, verticals
 
+# Playwright browser e2e (slow — requires backend + dashboard running)
+# DO NOT run these automatically; only when explicitly asked
+cd e2e && npm test                        # all specs, headless
+cd e2e && npm run test:headed             # headed (visible browser)
+cd e2e && npm run test:agents             # specs/agents/ only
+cd e2e && npm run test:flows              # specs/flows/ only (cross-cutting journeys)
+
 # Lint / type check
 ruff check src/ tests/
 mypy src/
