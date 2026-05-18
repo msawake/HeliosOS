@@ -52,12 +52,20 @@ export default function AgentsPage() {
             )}
           </p>
         </div>
-        <Link
-          href="/agents/create"
-          className="px-4 py-2 bg-[#10A37F] text-white rounded-lg text-sm font-medium hover:bg-[#0d8c6d] transition-colors"
-        >
-          + Create Agent
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/agents/create/ai"
+            className="px-4 py-2 border border-[#10A37F] text-[#10A37F] rounded-lg text-sm font-medium hover:bg-[#10A37F]/10 transition-colors"
+          >
+            AI Wizard
+          </Link>
+          <Link
+            href="/agents/create"
+            className="px-4 py-2 bg-[#10A37F] text-white rounded-lg text-sm font-medium hover:bg-[#0d8c6d] transition-colors"
+          >
+            + Create Agent
+          </Link>
+        </div>
       </div>
 
       <div className="flex gap-3 mb-6">
