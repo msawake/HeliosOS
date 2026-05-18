@@ -2,7 +2,7 @@
 
 Two flavors:
 1. **Unit tests** (always run) — verify that `DatabaseClient.tenant()` emits
-   the `SET app.current_tenant = %s` statement and wraps the connection in
+   the `set_config('app.current_tenant', ...)` call and wraps the connection in
    a `TenantConnection` properly. These don't require a real Postgres.
 2. **Integration tests** (run when `DATABASE_URL` is set) — spin up a real
    connection, insert rows under tenant A, query under tenant B, assert 0
@@ -57,9 +57,9 @@ class TestTenantContextManagerEmitsSet:
             assert isinstance(tc, TenantConnection)
             assert tc.tenant_id == "tenant-abc"
 
-        # The context manager must have emitted exactly one SET statement
+        # The context manager must have emitted the transaction-local set_config call
         conn.execute.assert_any_call(
-            "SET app.current_tenant = %s", ("tenant-abc",),
+            "SELECT set_config('app.current_tenant', %s, true)", ("tenant-abc",),
         )
 
     def test_admin_resets_current_tenant(self):
@@ -75,7 +75,7 @@ class TestTenantContextManagerEmitsSet:
         with client.admin() as tc:
             assert tc.tenant_id is None
 
-        conn.execute.assert_any_call("RESET app.current_tenant")
+        conn.execute.assert_any_call("SELECT set_config('app.current_tenant', '', true)")
 
     def test_tenant_raises_without_pool(self):
         client = DatabaseClient(pool=None)

@@ -4,22 +4,14 @@ escalation chains, behavior profiles, budget multipliers, handoff protocol."""
 import pytest
 from datetime import datetime, timezone
 
-<<<<<<< HEAD
-from src.platform.h2a import (
-=======
 from src.platform.a2h import (
->>>>>>> origin/main
     BehaviorProfile,
     BudgetMultiplierRule,
     BudgetPolicy,
     DEFAULT_STATES,
     EscalationChain,
     EscalationLevel,
-<<<<<<< HEAD
-    H2AGateway,
-=======
     A2HGateway,
->>>>>>> origin/main
     HandoffItem,
     HandoffRequest,
     HumanAgent,
@@ -161,11 +153,7 @@ class TestUnifiedRegistry:
 
 class TestStateAwareRouting:
     async def test_reroutes_when_human_offline(self):
-<<<<<<< HEAD
-        gw = H2AGateway()
-=======
         gw = A2HGateway()
->>>>>>> origin/main
         alice = HumanAgent(pid="h:alice", name="alice", namespace="eng")
         bob = HumanAgent(pid="h:bob", name="bob", namespace="eng")
         gw.register_human(alice)
@@ -185,11 +173,7 @@ class TestStateAwareRouting:
         assert req.to_human_name == "bob"
 
     async def test_queues_when_human_busy(self):
-<<<<<<< HEAD
-        gw = H2AGateway()
-=======
         gw = A2HGateway()
->>>>>>> origin/main
         alice = HumanAgent(pid="h:alice", name="alice", namespace="eng")
         gw.register_human(alice)
         alice.set_state("busy")
