@@ -57,11 +57,15 @@ const SETTINGS_ITEM: NavItem = { href: '/settings', label: 'Settings' };
 
 function NavLink({ href, label, count }: { href: string; label: string; count?: number }) {
   const pathname = usePathname();
-  const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
+  const active =
+    href === '/'
+      ? pathname === '/'
+      : pathname === href || pathname.startsWith(href + '/');
   return (
     <Link
       href={href}
       aria-current={active ? 'page' : undefined}
+      data-testid={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
       className={cn(
         'flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] transition-all duration-150',
         active
