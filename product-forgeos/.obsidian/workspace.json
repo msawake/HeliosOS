@@ -27,12 +27,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "03-tech/architecture.md",
+                "file": "03-tech/capabilities.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "architecture"
+              "title": "capabilities"
             }
           }
         ],
@@ -171,13 +171,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "03-tech/architecture.md",
+                "file": "03-tech/capabilities.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of architecture"
+              "title": "Outline of capabilities"
             }
           }
         ],
@@ -198,11 +198,19 @@
       "bases:Create new base": false
     }
   },
-  "active": "60a2cb5c5765730f",
+  "active": "bdc57301e687107f",
   "lastOpenFiles": [
+    "00-standards/BRANDING.md",
+    "00-standards/BRANDING (1).md",
+    "00-standards",
+    "untitled folder",
+    "03-tech/use_cases.md",
+    "03-tech/usage.md",
+    "03-tech/capabilities.md",
+    "03-tech/docs.md",
     "03-tech/architecture-old.md",
     "03-tech/architecture.md",
-    "03-tech/callgraph.md",
-    "03-tech/usage.md"
+    "01-strategy/glossary.md",
+    "03-tech/callgraph.md"
   ]
 }
