@@ -1,10 +1,6 @@
 'use client';
 
-<<<<<<< HEAD
 import { useEffect, useState, useRef, useCallback } from 'react';
-=======
-import { useEffect, useState } from 'react';
->>>>>>> origin/main
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Badge } from '@/components/Badge';
@@ -22,7 +18,6 @@ interface InvokeResult {
   elapsed_ms: number;
 }
 
-<<<<<<< HEAD
 interface ActivityEntry {
   ts: string;
   event: string;
@@ -38,8 +33,7 @@ interface LogsData {
 
 type Tab = 'activity' | 'logs' | 'config';
 
-=======
->>>>>>> origin/main
+
 export default function AgentDetailPage() {
   const params = useParams();
   const agentId = typeof params.id === 'string' ? params.id : params.id?.[0] ?? '';
@@ -47,22 +41,15 @@ export default function AgentDetailPage() {
   const [agent, setAgent] = useState<AgentSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [invokePrompt, setInvokePrompt] = useState(
-<<<<<<< HEAD
-    'Summarize the agent\u2019s role in one paragraph and suggest one next action.'
-=======
     'Summarize the agent’s role in one paragraph and suggest one next action.'
->>>>>>> origin/main
   );
   const [invokeLoading, setInvokeLoading] = useState(false);
   const [invokeError, setInvokeError] = useState('');
   const [invokeResult, setInvokeResult] = useState<InvokeResult | null>(null);
-<<<<<<< HEAD
   const [activeTab, setActiveTab] = useState<Tab>('activity');
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [logsData, setLogsData] = useState<LogsData | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
-=======
->>>>>>> origin/main
 
   useEffect(() => {
     if (!agentId) return;
@@ -73,7 +60,6 @@ export default function AgentDetailPage() {
       .finally(() => setLoading(false));
   }, [agentId]);
 
-<<<<<<< HEAD
   const fetchActivity = useCallback(() => {
     if (!agentId) return;
     fetch(`/api/platform/agents/${agentId}/activity`)
@@ -111,8 +97,7 @@ export default function AgentDetailPage() {
     }
   }, [logsData, activeTab]);
 
-=======
->>>>>>> origin/main
+
   async function handleStop() {
     await fetch(`/api/platform/agents/${agentId}/stop`, { method: 'POST' });
     const r = await fetch(`/api/platform/agents/${agentId}`);
@@ -157,15 +142,12 @@ export default function AgentDetailPage() {
   if (loading) return <div className="text-gray-400">Loading...</div>;
   if (!agent) return <div className="text-gray-400">Agent not found</div>;
 
-<<<<<<< HEAD
   const tabs: { key: Tab; label: string }[] = [
     { key: 'activity', label: 'Activity' },
     { key: 'logs', label: 'Logs' },
     { key: 'config', label: 'Config' },
   ];
 
-=======
->>>>>>> origin/main
   return (
     <div>
       <button onClick={() => router.push('/agents')} className="text-sm text-gray-400 hover:text-gray-600 mb-4">
@@ -236,11 +218,7 @@ export default function AgentDetailPage() {
               disabled={invokeLoading || !invokePrompt.trim()}
               className="px-4 py-2 bg-[#10A37F] text-white rounded-lg text-sm font-medium hover:bg-[#0d8c6d] disabled:opacity-50"
             >
-<<<<<<< HEAD
-              {invokeLoading ? 'Running\u2026' : 'Run invoke'}
-=======
               {invokeLoading ? 'Running…' : 'Run invoke'}
->>>>>>> origin/main
             </button>
             {invokeError && <span className="text-sm text-red-600">{invokeError}</span>}
           </div>
@@ -278,7 +256,6 @@ export default function AgentDetailPage() {
         )}
       </div>
 
-<<<<<<< HEAD
       {/* Tab bar */}
       <div className="border-b border-gray-200 mb-4">
         <div className="flex gap-0">
@@ -367,14 +344,6 @@ export default function AgentDetailPage() {
           </pre>
         </div>
       )}
-=======
-      <div className="card">
-        <h2 className="font-semibold mb-3">Agent Configuration</h2>
-        <pre className="bg-gray-50 rounded-lg p-4 text-xs overflow-auto">
-          {JSON.stringify(agent, null, 2)}
-        </pre>
-      </div>
->>>>>>> origin/main
     </div>
   );
 }

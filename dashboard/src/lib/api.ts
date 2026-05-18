@@ -26,27 +26,21 @@ function getAuthHeaders(): Record<string, string> {
   return {};
 }
 
-<<<<<<< HEAD
-async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
-=======
 const requestCache = new Map<string, { promise: Promise<any>; timestamp: number }>();
-const CACHE_TTL_MS = 5000; // 5 seconds default TTL
+const CACHE_TTL_MS = 5000;
 
 async function fetchJSON<T>(path: string, options?: RequestInit & { skipCache?: boolean }): Promise<T> {
   const isGet = !options?.method || options.method.toUpperCase() === 'GET';
   const skipCache = options?.skipCache === true;
-  
-  // Only cache GET requests
+
   if (isGet && !skipCache) {
     const cacheKey = `${path}`;
     const cached = requestCache.get(cacheKey);
-    
-    // Return cached promise if it exists and hasn't expired
+
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
       return cached.promise;
     }
-    
-    // Create new request and cache the promise
+
     const promise = (async () => {
       try {
         const res = await fetch(`${apiBase()}${path}`, {
@@ -59,18 +53,16 @@ async function fetchJSON<T>(path: string, options?: RequestInit & { skipCache?: 
         if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
         return await res.json();
       } catch (error) {
-        // Remove from cache on error so next request tries again
         requestCache.delete(cacheKey);
         throw error;
       }
     })();
-    
+
     requestCache.set(cacheKey, { promise, timestamp: Date.now() });
     return promise;
   }
 
-  // Non-GET requests or skipCache=true
->>>>>>> origin/main
+
   const res = await fetch(`${apiBase()}${path}`, {
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders(), ...options?.headers },
     ...options,
@@ -302,7 +294,6 @@ export const api = {
     }),
   getClientAgents: (clientId: string) =>
     fetchJSON<AgentSummary[]>(`/api/clients/${encodeURIComponent(clientId)}/agents`),
-<<<<<<< HEAD
 
   // Environments
   getEnvironments: () =>
@@ -342,6 +333,4 @@ export const api = {
     fetchJSON<{ agent_id: string; logs: string; pod_name: string; status: string }>(
       `/api/platform/agents/${id}/logs?tail=${tail}`
     ),
-=======
->>>>>>> origin/main
 };

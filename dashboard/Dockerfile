@@ -14,12 +14,8 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY dashboard/ ./
 ENV NEXT_TELEMETRY_DISABLED=1
-<<<<<<< HEAD
 ENV INTERNAL_API_URL=http://forgeos-api.forgeos.svc.cluster.local:5000
 ENV FORGEOS_API_URL=http://forgeos-api.forgeos.svc.cluster.local:5000
-=======
-ENV FORGEOS_API_URL=http://127.0.0.1:5000
->>>>>>> origin/main
 RUN npm run build
 
 FROM node:22-alpine AS runner
