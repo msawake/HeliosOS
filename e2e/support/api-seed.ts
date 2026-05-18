@@ -39,7 +39,7 @@ export async function seedClient(id: string, name: string): Promise<void> {
   const res = await fetch(`${API}/api/clients`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client_id: `__e2e__${id}`, name: `__e2e__ ${name}` }),
+    body: JSON.stringify({ id: `__e2e__${id}`, name: `__e2e__ ${name}` }),
   });
   if (!res.ok && res.status !== 409) {
     throw new Error(`seedClient → ${res.status}: ${await res.text()}`);
@@ -76,10 +76,10 @@ export async function deleteAllE2EEntities(): Promise<void> {
   }
   const clientsRes = await fetch(`${API}/api/clients`);
   if (clientsRes.ok) {
-    const clients = (await clientsRes.json()) as Array<{ client_id: string; name: string }>;
+    const clients = (await clientsRes.json()) as Array<{ id: string; name: string }>;
     for (const c of clients) {
-      if (c.client_id?.startsWith('__e2e__') || c.name?.startsWith('__e2e__')) {
-        await del(`/api/clients/${c.client_id}`);
+      if (c.id?.startsWith('__e2e__') || c.name?.startsWith('__e2e__')) {
+        await del(`/api/clients/${c.id}`);
       }
     }
   }
