@@ -18,12 +18,18 @@ Five company packages ship as fixtures: **LeadForge AI** (B2B sales), **DealForg
 # Install (Python 3.11+)
 pip install -e ".[dev]"
 
-# Run all tests (~1132 tests, 63 files)
+# Run all tests (~1238 tests, 65 files)
 PYTHONPATH=. python3 -m pytest
 
 # Run a single test file / pattern
 PYTHONPATH=. python3 -m pytest tests/test_platform_executor.py
 PYTHONPATH=. python3 -m pytest -k "test_deploy"
+
+# Run by category
+PYTHONPATH=. python3 -m pytest tests/unit/          # pure domain tests
+PYTHONPATH=. python3 -m pytest tests/integration/   # real behaviour tests
+PYTHONPATH=. python3 -m pytest tests/conformance/   # A2A / A2H / H2A protocol contracts
+PYTHONPATH=. python3 -m pytest tests/e2e/           # full API flows and chaos
 
 # Lint / type check
 ruff check src/ tests/
