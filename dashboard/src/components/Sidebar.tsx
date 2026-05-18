@@ -2,33 +2,60 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 
-const NAV_ITEMS = [
-  { href: '/', label: 'Overview' },
-  { href: '/agents', label: 'Agents' },
-  { href: '/agents/create/ai', label: 'AI Wizard' },
-  { href: '/agents/create', label: 'Create Agent' },
-  { href: '/environments', label: 'Environments' },
-  { href: '/workflows', label: 'Workflows' },
-  { href: '/approvals', label: 'Approvals' },
-  { href: '/clients', label: 'Clients' },
+interface NavItem {
+  href: string;
+  label: string;
+  /** When true, this item receives the live pending-count badge (Approvals). */
+  badge?: boolean;
+}
+
+interface NavGroup {
+  /** Section label rendered above the group in uppercase. Omit for the top unlabeled group. */
+  label?: string;
+  items: NavItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    items: [{ href: '/', label: 'Overview' }],
+  },
+  {
+    label: 'Agents',
+    items: [
+      { href: '/agents', label: 'Agents' },
+      { href: '/environments', label: 'Environments' },
+      { href: '/workflows', label: 'Workflows' },
+    ],
+  },
+  {
+    label: 'Operations',
+    items: [
+      { href: '/approvals', label: 'Approvals', badge: true },
+      { href: '/intelligence', label: 'Intelligence' },
+      { href: '/clients', label: 'Clients' },
+    ],
+  },
+  {
+    label: 'Platform',
+    items: [
+      { href: '/admin', label: 'System Health' },
+      { href: '/admin/jobs', label: 'Scheduler' },
+      { href: '/admin/events', label: 'Events' },
+      { href: '/admin/mcps', label: 'MCP Registry' },
+      { href: '/admin/skills', label: 'Skills' },
+      { href: '/admin/knowledge', label: 'Knowledge Base' },
+      { href: '/admin/audit', label: 'Audit Log' },
+      { href: '/admin/chat', label: 'Platform Chat' },
+    ],
+  },
 ];
 
-const ADMIN_ITEMS = [
-  { href: '/admin', label: 'System Health' },
-  { href: '/admin/chat', label: 'Admin Chat' },
-  { href: '/intelligence', label: 'Intelligence' },
-  { href: '/admin/skills', label: 'Skills Library' },
-  { href: '/admin/mcps', label: 'MCP Registry' },
-  { href: '/admin/events', label: 'Events' },
-  { href: '/admin/knowledge', label: 'Knowledge Base' },
-  { href: '/admin/jobs', label: 'Scheduler' },
-  { href: '/admin/audit', label: 'Audit Log' },
-  { href: '/settings', label: 'Settings' },
-];
+const SETTINGS_ITEM: NavItem = { href: '/settings', label: 'Settings' };
 
-function NavLink({ href, label }: { href: string; label: string }) {
+function NavLink({ href, label, count }: { href: string; label: string; count?: number }) {
   const pathname = usePathname();
   const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
   return (
@@ -41,12 +68,33 @@ function NavLink({ href, label }: { href: string; label: string }) {
           : 'text-[#8e8ea0] hover:bg-white/[0.06] hover:text-white/90'
       )}
     >
-      {label}
+      <span className="flex-1">{label}</span>
+      {count != null && count > 0 && (
+        <span className="min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-amber-500 text-white text-[10px] font-bold px-1">
+          {count > 99 ? '99+' : count}
+        </span>
+      )}
     </Link>
   );
 }
 
 export function Sidebar() {
+  const [pendingApprovals, setPendingApprovals] = useState(0);
+
+  useEffect(() => {
+    function fetchCount() {
+      fetch('/api/approvals')
+        .then((r) => (r.ok ? r.json() : []))
+        .then((items: unknown) => {
+          setPendingApprovals(Array.isArray(items) ? items.length : 0);
+        })
+        .catch(() => {});
+    }
+    fetchCount();
+    const iv = setInterval(fetchCount, 30_000);
+    return () => clearInterval(iv);
+  }, []);
+
   return (
     <aside className="w-[240px] bg-[#0d0d0d] text-white flex flex-col shrink-0 select-none">
       {/* Logo */}
@@ -63,19 +111,30 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto scrollbar-hide">
-        {NAV_ITEMS.map((item) => (
-          <NavLink key={item.href} {...item} />
+      <nav className="flex-1 py-3 px-2 overflow-y-auto scrollbar-hide">
+        {NAV_GROUPS.map((group, gi) => (
+          <div key={gi} className={gi > 0 ? 'mt-4' : undefined}>
+            {group.label && (
+              <p className="px-3 text-[10px] uppercase tracking-widest text-[#6e6e80] mb-1.5">
+                {group.label}
+              </p>
+            )}
+            <div className="space-y-0.5">
+              {group.items.map((item) => (
+                <NavLink
+                  key={item.href}
+                  href={item.href}
+                  label={item.label}
+                  count={item.badge ? pendingApprovals : undefined}
+                />
+              ))}
+            </div>
+          </div>
         ))}
 
-        <div className="my-3 border-t border-white/[0.08]" />
-        <p className="px-3 text-[10px] uppercase tracking-widest text-[#6e6e80] mb-1.5 mt-1">
-          Admin
-        </p>
-
-        {ADMIN_ITEMS.map((item) => (
-          <NavLink key={item.href} {...item} />
-        ))}
+        <div className="mt-4 pt-3 border-t border-white/[0.08]">
+          <NavLink href={SETTINGS_ITEM.href} label={SETTINGS_ITEM.label} />
+        </div>
       </nav>
 
       {/* Footer */}
