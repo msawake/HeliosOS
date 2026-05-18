@@ -1,6 +1,7 @@
 .PHONY: help install install-dev install-prod install-all \
        run forgeos dashboard \
        test test-file test-match \
+       e2e e2e-headed e2e-report \
        lint typecheck check \
        migrate \
        clean
@@ -78,6 +79,15 @@ test-file: ## Run a single test file (FILE=tests/test_xxx.py)
 
 test-match: ## Run tests matching a pattern (K=pattern)
 	PYTHONPATH=. $(RUN_PYTEST) -k "$(K)"
+
+e2e: ## Run Playwright e2e suite (headless)
+	cd e2e && npx playwright test
+
+e2e-headed: ## Run Playwright e2e suite (headed browser)
+	cd e2e && npx playwright test --headed
+
+e2e-report: ## Open the last Playwright HTML report
+	cd e2e && npx playwright show-report
 
 # ──────────────────────────────────────────────
 # Code quality
