@@ -61,6 +61,7 @@ function NavLink({ href, label, count }: { href: string; label: string; count?: 
   return (
     <Link
       href={href}
+      aria-current={active ? 'page' : undefined}
       className={cn(
         'flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] transition-all duration-150',
         active
@@ -96,7 +97,7 @@ export function Sidebar() {
   }, []);
 
   return (
-    <aside className="w-[240px] bg-[#0d0d0d] text-white flex flex-col shrink-0 select-none">
+    <aside aria-label="Main navigation" className="w-[240px] bg-[#0d0d0d] text-white flex flex-col shrink-0 select-none">
       {/* Logo */}
       <div className="px-4 py-5 border-b border-white/[0.08]">
         <div className="flex items-center gap-2">
@@ -111,9 +112,9 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-3 px-2 overflow-y-auto scrollbar-hide">
+      <nav aria-label="Site" className="flex-1 py-3 px-2 overflow-y-auto scrollbar-hide">
         {NAV_GROUPS.map((group, gi) => (
-          <div key={gi} className={gi > 0 ? 'mt-4' : undefined}>
+          <div key={group.label ?? 'top'} className={gi > 0 ? 'mt-4' : undefined}>
             {group.label && (
               <p className="px-3 text-[10px] uppercase tracking-widest text-[#6e6e80] mb-1.5">
                 {group.label}
