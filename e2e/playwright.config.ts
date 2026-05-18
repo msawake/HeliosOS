@@ -11,7 +11,7 @@ export default defineConfig({
   workers: 1,
   reporter: [['html', { outputFolder: 'playwright-report' }], ['list']],
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: process.env.BASE_URL ?? 'http://localhost:3000',
     screenshot: 'only-on-failure',
     trace: 'on-first-retry',
   },
@@ -34,7 +34,8 @@ export default defineConfig({
   outputDir: 'test-results/',
   webServer: [
     {
-      command: 'cd .. && PYTHONPATH=. python3 -m src.bootstrap --dashboard --port 5000',
+      command: 'PYTHONPATH=. python3 -m src.bootstrap --dashboard --port 5000',
+      cwd: '..',
       url: 'http://localhost:5000/api/health',
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
