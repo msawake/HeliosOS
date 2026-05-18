@@ -1,8 +1,5 @@
 import { test as setup, expect } from '@playwright/test';
-import path from 'path';
-import fs from 'fs';
-
-const AUTH_FILE = path.join(__dirname, '.auth/state.json');
+import { AUTH_FILE } from './playwright.config';
 
 setup('authenticate', async ({ page }) => {
   await page.goto('/login');
@@ -12,6 +9,6 @@ setup('authenticate', async ({ page }) => {
   );
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.waitForURL('/');
-  fs.mkdirSync(path.dirname(AUTH_FILE), { recursive: true });
+  await expect(page.getByRole('main')).toBeVisible();
   await page.context().storageState({ path: AUTH_FILE });
 });
