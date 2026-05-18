@@ -14,7 +14,7 @@ export class AdminChatPage extends BasePage {
     await responsePromise;
   }
 
-  async waitForResponse(): Promise<void> {
+  async waitForAssistantMessage(): Promise<void> {
     const assistantMsg = this.page.locator('[data-role="assistant"], .assistant-message').last();
     await expect(assistantMsg).not.toBeEmpty({ timeout: 15_000 });
   }
