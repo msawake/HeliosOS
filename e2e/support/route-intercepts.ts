@@ -11,7 +11,7 @@ export async function interceptConnectorSync(page: Page): Promise<void> {
 }
 
 export async function interceptExternalMCP(page: Page): Promise<void> {
-  await page.route(/^(?!http:\/\/localhost).*\/(mcp|tools)/, async (route) => {
+  await page.route(/^(?!http:\/\/localhost).*\/mcp/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
