@@ -26,20 +26,13 @@ PYTHONPATH=. python3 -m pytest tests/integration/agent_execution/test_platform_e
 PYTHONPATH=. python3 -m pytest -k "test_deploy"
 
 # Run by category
-PYTHONPATH=. python3 -m pytest tests/unit/                                 # pure domain tests
-PYTHONPATH=. python3 -m pytest tests/integration/                          # real behaviour tests
-PYTHONPATH=. python3 -m pytest tests/integration/agent_execution/          # adapters + execution
-PYTHONPATH=. python3 -m pytest tests/integration/kernel/                   # kernel, syscall, RBAC, policies
-PYTHONPATH=. python3 -m pytest tests/integration/scheduling/               # scheduler, task queue, webhooks
-PYTHONPATH=. python3 -m pytest tests/integration/workflow_execution/       # workflow agents, team manifests
-PYTHONPATH=. python3 -m pytest tests/integration/observability/            # audit, metrics, fleet monitor
-PYTHONPATH=. python3 -m pytest tests/integration/multi_tenancy/            # RLS, sessions, secrets
-PYTHONPATH=. python3 -m pytest tests/integration/tool_execution/           # MCP, tool executor
-PYTHONPATH=. python3 -m pytest tests/integration/intelligence/             # knowledge loader, connectors
-PYTHONPATH=. python3 -m pytest tests/integration/agent_communication/      # HITL
-PYTHONPATH=. python3 -m pytest tests/integration/verticals/                # company-pack integration
-PYTHONPATH=. python3 -m pytest tests/conformance/                          # A2A / A2H / H2A protocol contracts
-PYTHONPATH=. python3 -m pytest tests/e2e/                                  # full API flows and chaos
+PYTHONPATH=. python3 -m pytest tests/unit/          # pure domain tests
+PYTHONPATH=. python3 -m pytest tests/integration/   # real behaviour tests
+PYTHONPATH=. python3 -m pytest tests/conformance/   # A2A / A2H / H2A protocol contracts
+PYTHONPATH=. python3 -m pytest tests/e2e/           # full API flows and chaos
+
+# integration/ subdirectories: agent_execution, kernel, scheduling, workflow_execution,
+# observability, multi_tenancy, tool_execution, intelligence, agent_communication, verticals
 
 # Lint / type check
 ruff check src/ tests/
