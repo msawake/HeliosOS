@@ -68,17 +68,20 @@ cp .env.example .env
 The platform degrades gracefully: no DB → in-memory, no Redis → in-memory, no API key → simulation.
 
 ```bash
-# 1. Install Python deps
+# 1. Install Python deps + dashboard Node modules
 pip install -e ".[dev]"
+# or: make install-dev && make install-all (also runs npm install in dashboard/)
 
 # 2. Set at minimum your Anthropic key
 echo "ANTHROPIC_API_KEY=sk-ant-..." >> .env
 
 # 3. Boot the platform (no auth, in-memory, port 5000)
 PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
+# or: make run
 
 # 4. In a separate terminal — start the Next.js dashboard
-cd dashboard && npm install && npm run dev
+cd dashboard && npm run dev
+# or: make dashboard
 # → http://localhost:3000
 ```
 
@@ -132,6 +135,8 @@ Install only what you need:
 
 ```bash
 pip install -e ".[dev]"               # pytest, ruff, mypy — local development
+# or: make install-dev
+
 pip install -e ".[dev,openai]"        # + OpenAI GPT/o3 routing
 pip install -e ".[dev,mcp]"           # + MCP protocol client
 pip install -e ".[dev,crewai]"        # + CrewAI stack adapter
@@ -140,6 +145,7 @@ pip install -e ".[dev,scheduler]"     # + APScheduler (cron jobs)
 pip install -e ".[dev,database]"      # + psycopg3 + redis (real DB/cache)
 pip install -e ".[dev,observability]" # + Prometheus + OpenTelemetry
 pip install -e ".[production]"        # all production extras (no dev tools)
+# or: make install-prod
 pip install -e ".[dev,all-providers]" # dev + openai + mcp
 ```
 
@@ -151,6 +157,8 @@ pip install -e ".[dev,all-providers]" # dev + openai + mcp
 
 ```bash
 PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
+# or: make run
+# or with custom port: make run PORT=5001
 ```
 
 Flags:
@@ -175,7 +183,9 @@ PYTHONPATH=. python3 -m src.bootstrap --company leadforge --dashboard --loop --p
 ### Next.js Dashboard
 
 ```bash
-cd dashboard && npm run dev   # http://localhost:3000
+cd dashboard && npm run dev
+# or: make dashboard
+# → http://localhost:3000
 ```
 
 Communicates with the backend via `FORGEOS_API_URL` (default `http://localhost:5000`).
@@ -187,7 +197,7 @@ cd infrastructure/docker
 docker compose up postgres redis
 ```
 
-Then set:
+Then set in `.env`:
 
 ```bash
 DATABASE_URL=postgresql://leadforge_admin:<DB_PASSWORD>@localhost:5433/leadforge
@@ -198,8 +208,7 @@ REDIS_URL=redis://localhost:6379
 
 ```bash
 PYTHONPATH=. python3 -m src.core.migrations
-# or via Make:
-make migrate
+# or: make migrate
 ```
 
 There are 7 SQL migrations in `infrastructure/database/` (001–007). The migration runner applies them in order on boot if `DATABASE_URL` is set.
@@ -207,6 +216,80 @@ There are 7 SQL migrations in `infrastructure/database/` (001–007). The migrat
 ---
 
 ## CLI
+
+- environment
+	- pod de kubernetes
+		- medio giga de ram
+	- pueden correr varios agentes
+		- pueden tener diferentes permisos y comunicarse
+		- hacer que el agente se encarge de los ficheros de la agencia y de otra agencia
+		- hablan para transmitir tecnicas sin compartir cosas confidenciales
+			- 3 agentes con cosas confidenciales
+			- 
+- agente
+	- puede estar en 2 environments?
+		- con en ambos manifests.
+	- 
+	- manifest.mf que guia el behaviour del agente
+		- (cosas hechas y que no cuadran, pero deberia te3ner)
+		- modelo al que va
+		- system prompt
+		- otros datos de sistema operativo
+		- memoria
+		- always-on ( siempre corre)
+			- se enciente reactivamente
+			- cada media hora se enciente y todos los archivos
+			- un archivo , haces un analisis
+			- always on
+				- tuneando archivo para que responda a preguntas concretas y todo el rato
+				- 
+	- memoria
+	- sytem policy
+		- a que acede en el ordenador
+		- permisos de syscall - sdk runtime
+			- budget tengo o permiso a un humano
+- agent to human protocol
+	- acceder a mi tal o enviar correo
+		- preguntar al humano
+		- human in the loop
+		- approvals, no aplica agentic human
+	- revisar implementacion A2H (TAREA)
+		- agent to human
+		- define agente y si se puede desplegar en 1 agente
+		- desplegar que comentaba en jira
+		- a2h publico
+	- (TAREA) 1er caso de uso
+		- MatIAs
+			- compartir clave jira y crear manifest que tenga
+				- jira token
+				- encargarse de hacer reactivo
+					- o cron
+				- colgar o publicar ticket de ally partner que asigne a cada una de las personas de ally partner
+					- y revisar 
+				- rotar tickets:
+					- hector
+					- laura
+					- dani
+					- toni
+				- Extra: puntos de estilo
+					- agente envia correo
+					- GWS mediante MCP
+					- asignar correo a hector, que el agente le mande correo a hector
+					- que es automatizado y que se le ha asignado
+						- se explica
+						- que se explique un resumen del 
+					- Creo que he resuelto la incidencia
+						- A2H pedir permiso para contestarle
+					- no me funciona el modelo x y saber que el modelo se enciente a las 5pm
+				- Tener memoria y referencias
+				- si lo escribes a opus va a hardcodear cosas
+			- desde UI hacer sencillo para hacer diferentes acciones
+	- progresivo
+		- he visto este ticket
+			- reactivo y que puede ver acciones como notificaciones
+			- cambiar el autor del ticket
+			- ir a por el token de matias
+- http://35.240.72.99/environments
 
 The `forgeos` CLI is installed as a console script by `pyproject.toml`:
 
@@ -218,6 +301,12 @@ forgeos list                 # list deployed agents
 forgeos invoke <id> "prompt" # invoke an agent
 forgeos undeploy <id>        # remove an agent
 forgeos health               # platform health check
+```
+
+The Makefile also exposes the CLI runner for local use (without installing the package globally):
+
+```bash
+make forgeos   # PYTHONPATH=. python3 backend/forgeos
 ```
 
 ---
@@ -233,12 +322,15 @@ The ForgeOS MCP server lives in `tools/forgeos-mcp-server.py`. It is loaded at p
 ```bash
 # All tests (~1132 tests)
 PYTHONPATH=. python3 -m pytest
+# or: make test
 
 # Single file
 PYTHONPATH=. python3 -m pytest tests/test_platform_executor.py
+# or: make test-file FILE=tests/test_platform_executor.py
 
 # Pattern
 PYTHONPATH=. python3 -m pytest -k "test_kernel"
+# or: make test-match K=test_kernel
 
 # A2H protocol conformance
 PYTHONPATH=. python3 -m pytest a2h/tests/
@@ -253,9 +345,15 @@ k6 run tests/load/smoke.js
 ### Code quality
 
 ```bash
-ruff check src/ tests/    # lint
-mypy src/                 # type check
-make check                # both
+ruff check src/ tests/    # lint        — or: make lint
+mypy src/                 # type check  — or: make typecheck
+make check                # both (lint + typecheck)
+```
+
+### Cleanup
+
+```bash
+make clean   # removes __pycache__, .pytest_cache, .mypy_cache, .ruff_cache, build/, dist/
 ```
 
 ---
