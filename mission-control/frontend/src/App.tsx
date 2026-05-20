@@ -19,6 +19,7 @@ import { CostTab } from "@/tabs/CostTab";
 import { FleetTab } from "@/tabs/FleetTab";
 import { GovernanceTab } from "@/tabs/GovernanceTab";
 import { ManifestTab } from "@/tabs/ManifestTab";
+import { MCPTab } from "@/tabs/MCPTab";
 import { TopologyTab } from "@/tabs/TopologyTab";
 
 function unwrap<T>(
@@ -142,6 +143,9 @@ export default function App() {
             ☰ Manifest
             <Count v={agentList.length} />
           </TabsTrigger>
+          <TabsTrigger value="mcp">
+            ⚙ MCP
+          </TabsTrigger>
           <TabsTrigger value="billing">
             € Billing
             <Count v={billing?.companies?.length ? `€${billing.total_revenue_eur}` : "0"} />
@@ -177,6 +181,9 @@ export default function App() {
               selected={manifestSelected}
               onSelect={setManifestSelected}
             />
+          </TabsContent>
+          <TabsContent value="mcp">
+            <MCPTab />
           </TabsContent>
           <TabsContent value="billing">
             <BillingTab billing={billing} />

@@ -1,7 +1,7 @@
 """
 Audit log writer for the ForgeOS platform.
 
-Writes immutable action records to the `audit_log` table with tenant
+Writes immutable action records to the `platform_audit_log` table with tenant
 isolation (RLS). When no database is available, falls back to a bounded
 in-memory ring buffer so tests and dev mode still work.
 
@@ -167,7 +167,7 @@ class AuditLog:
         try:
             with self._db.tenant(self._tenant_id) as conn:
                 row = conn.execute_one(
-                    "SELECT entry_hash FROM audit_log "
+                    "SELECT entry_hash FROM platform_audit_log "
                     "WHERE tenant_id = %s AND entry_hash IS NOT NULL "
                     "ORDER BY created_at DESC LIMIT 1",
                     (self._tenant_id,),
@@ -216,7 +216,7 @@ class AuditLog:
             try:
                 with self._db.tenant(self._tenant_id) as conn:
                     conn.execute(
-                        "INSERT INTO audit_log "
+                        "INSERT INTO platform_audit_log "
                         "(id, tenant_id, actor, action, resource_type, resource_id, "
                         "outcome, details, prev_hash, entry_hash) "
                         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)",
@@ -254,7 +254,7 @@ class AuditLog:
                 sql = (
                     "SELECT id, tenant_id, actor, action, resource_type, resource_id, "
                     "outcome, details, created_at "
-                    "FROM audit_log WHERE tenant_id = %s"
+                    "FROM platform_audit_log WHERE tenant_id = %s"
                 )
                 params: list[Any] = [self._tenant_id]
                 if resource_type:
@@ -309,7 +309,7 @@ class AuditLog:
             try:
                 with self._db.tenant(self._tenant_id) as conn:
                     row = conn.execute_one(
-                        "SELECT COUNT(*) AS n FROM audit_log WHERE tenant_id = %s",
+                        "SELECT COUNT(*) AS n FROM platform_audit_log WHERE tenant_id = %s",
                         (self._tenant_id,),
                     )
                     return int(row["n"]) if row else 0

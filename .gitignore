@@ -38,3 +38,5 @@ infrastructure/docker/.env
 
 # MkDocs build output
 /site/
+.venv-mc-test/
+.venv-platform/

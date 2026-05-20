@@ -30,6 +30,7 @@ export interface Agent {
   execution_type?: string;
   namespace?: string;
   model?: string;
+  llm_config?: { chat_model?: string; provider?: string };
   tools?: string[];
   system_prompt?: string;
   metadata?: Record<string, unknown>;
@@ -83,6 +84,13 @@ export interface BillingCompany {
   }>;
 }
 
+export interface MCPServerConfig {
+  server_name: string;
+  package: string;
+  env_vars?: Record<string, string>;
+  args?: string[];
+}
+
 export interface BillingMetering {
   companies?: BillingCompany[];
   total_companies?: number;
@@ -127,7 +135,85 @@ export const api = {
   billing: () => getJSON<BillingMetering>("/api/billing/metering"),
   approve: (id: string) => postJSON(`/api/approvals/${id}/approve`),
   reject: (id: string) => postJSON(`/api/approvals/${id}/reject`),
-  stop: (name: string) => postJSON(`/api/platform/agents/${name}/stop`),
-  remove: (name: string) =>
-    fetch(`/api/platform/agents/${name}`, { method: "DELETE" }),
+  invoke: async (
+    pid: string,
+    prompt: string,
+  ): Promise<{
+    ok: boolean;
+    status: number;
+    body: {
+      result?: string;
+      error?: string | null;
+      status?: string;
+      warnings?: string[] | null;
+      duration?: number;
+      tokens_used?: number;
+      tool_calls?: number;
+    } | null;
+  }> => {
+    const r = await fetch(`/api/platform/agents/${pid}/invoke`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, context: {} }),
+    });
+    let body: unknown = null;
+    try {
+      body = await r.json();
+    } catch {
+      body = null;
+    }
+    return { ok: r.ok, status: r.status, body: body as never };
+  },
+  stop: (pid: string) => postJSON(`/api/platform/agents/${pid}/stop`),
+  remove: (pid: string) =>
+    fetch(`/api/platform/agents/${pid}`, { method: "DELETE" }),
+  // MCP server CRUD (platform-scoped, persisted to Postgres).
+  // Changes require a platform restart to take effect.
+  mcpList: () =>
+    getJSON<MCPServerConfig[] | { items?: MCPServerConfig[] }>(
+      "/api/platform/mcp/servers",
+    ),
+  mcpAdd: async (
+    cfg: MCPServerConfig,
+  ): Promise<{ ok: boolean; status: number; body: unknown }> => {
+    const r = await fetch("/api/platform/mcp/servers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cfg),
+    });
+    let body: unknown = null;
+    try { body = await r.json(); } catch { body = null; }
+    return { ok: r.ok, status: r.status, body };
+  },
+  mcpUpdate: async (
+    name: string,
+    cfg: MCPServerConfig,
+  ): Promise<{ ok: boolean; status: number; body: unknown }> => {
+    const r = await fetch(`/api/platform/mcp/servers/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cfg),
+    });
+    let body: unknown = null;
+    try { body = await r.json(); } catch { body = null; }
+    return { ok: r.ok, status: r.status, body };
+  },
+  mcpDelete: (name: string) =>
+    fetch(`/api/platform/mcp/servers/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  uploadYaml: async (
+    yaml: string,
+  ): Promise<{ ok: boolean; status: number; body: unknown }> => {
+    const r = await fetch("/api/platform/agents/from-yaml", {
+      method: "POST",
+      headers: { "Content-Type": "text/yaml" },
+      body: yaml,
+    });
+    let body: unknown = null;
+    try {
+      body = await r.json();
+    } catch {
+      body = null;
+    }
+    return { ok: r.ok, status: r.status, body };
+  },
 };

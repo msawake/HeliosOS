@@ -328,6 +328,22 @@ class PlatformBootstrap:
                             logger.info("  Created default tenant: %s", self.tenant_id)
                         else:
                             logger.info("  Tenant %s already exists", self.tenant_id)
+
+                        # Synthetic '_platform' client used as the namespace for
+                        # platform-wide MCP server configurations managed via the
+                        # Mission Control UI. Persisting under client_mcp_configs
+                        # avoids duplicating the schema / RLS / CRUD layer.
+                        existing_platform = conn.execute_one(
+                            "SELECT id FROM clients WHERE id = %s", ("_platform",)
+                        )
+                        if not existing_platform:
+                            conn.execute(
+                                "INSERT INTO clients (id, tenant_id, name, status) "
+                                "VALUES (%s, %s, 'Platform (system)', 'active')",
+                                ("_platform", self.tenant_id),
+                            )
+                            conn.commit()
+                            logger.info("  Created synthetic _platform client")
                 except Exception as e:
                     logger.error(
                         "  Failed to ensure tenant '%s': %s. "

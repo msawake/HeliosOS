@@ -681,6 +681,41 @@ def create_fastapi_app(
                    resource_id=req.name, details={"error": str(e)})
             raise HTTPException(400, "Agent deployment failed")
 
+    @app.post("/api/platform/agents/from-yaml", tags=["agents"], status_code=201)
+    async def create_agent_from_yaml(request: Request, _auth=Depends(check_auth)):
+        """Deploy an agent from a raw YAML manifest body (Content-Type: text/yaml).
+
+        Accepts an AgentContract manifest (apiVersion: agentos/v1 or forgeos/v1),
+        validates it via AgentManifest, converts to the flat deploy request shape,
+        and routes through the normal create_agent path so packaging + audit are
+        unchanged.
+        """
+        try:
+            import yaml
+            from src.forgeos_sdk.manifest import AgentManifest
+            body = (await request.body()).decode("utf-8")
+            if not body.strip():
+                raise HTTPException(400, "Empty manifest body")
+            data = yaml.safe_load(body)
+            if not isinstance(data, dict):
+                raise HTTPException(400, "Manifest must be a YAML mapping")
+            manifest = AgentManifest.from_dict(data)
+            deploy_body = manifest.to_deploy_request()
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(400, f"Invalid manifest: {e}")
+        # to_deploy_request packs namespace into metadata._namespace; lift it
+        # back onto the top-level field so AgentCreateRequest sees it.
+        ns = (deploy_body.get("metadata") or {}).get("_namespace")
+        if ns and "namespace" not in deploy_body:
+            deploy_body["namespace"] = ns
+        try:
+            req = AgentCreateRequest(**deploy_body)
+        except Exception as e:
+            raise HTTPException(400, f"Manifest did not match deploy schema: {e}")
+        return await create_agent(req, _auth=_auth)
+
     @app.post("/api/platform/agents/{agent_id}/invoke", tags=["agents"])
     async def invoke_agent(agent_id: str, req: InvokeRequest, _auth=Depends(check_auth)):
         """Invoke an agent with a prompt.
@@ -1932,6 +1967,55 @@ def create_fastapi_app(
         _refresh_client_mcp_cache(client_id)
         _audit("client_mcp.delete", resource_type="client_mcp",
                resource_id=f"{client_id}:{server_name}")
+        return {"ok": True}
+
+    # ------------------------------------------------------------------
+    # Platform-wide MCP servers (managed from Mission Control)
+    #
+    # Reuses the existing client_mcp_configs persistence under the synthetic
+    # client_id "_platform" (seeded by bootstrap). Changes require a platform
+    # restart to be picked up by MCPServerManager — the API surface exists so
+    # the UI can persist configs ahead of the next boot.
+    # ------------------------------------------------------------------
+    PLATFORM_CLIENT_ID = "_platform"
+
+    @app.get("/api/platform/mcp/servers", tags=["mcp"])
+    async def list_platform_mcp(_auth=Depends(check_auth)):
+        """List platform-scoped MCP server configs (secrets redacted)."""
+        return client_mcp_store.list_for_client(PLATFORM_CLIENT_ID, redact_secrets=True)
+
+    @app.post("/api/platform/mcp/servers", tags=["mcp"], status_code=201)
+    async def add_platform_mcp(req: ClientMCPConfigRequest, _auth=Depends(check_auth)):
+        """Add a platform-scoped MCP server."""
+        try:
+            config = client_mcp_store.add(
+                PLATFORM_CLIENT_ID, req.server_name, req.package, req.env_vars, req.args,
+            )
+        except ValueError as e:
+            logger.warning("Platform MCP conflict: %s", e)
+            raise HTTPException(409, "MCP server configuration conflict")
+        _audit("platform_mcp.add", resource_type="platform_mcp",
+               resource_id=req.server_name, details={"package": req.package})
+        return config
+
+    @app.put("/api/platform/mcp/servers/{server_name}", tags=["mcp"])
+    async def update_platform_mcp(server_name: str, req: ClientMCPConfigRequest, _auth=Depends(check_auth)):
+        """Update a platform-scoped MCP server."""
+        updated = client_mcp_store.update(
+            PLATFORM_CLIENT_ID, server_name, req.package, req.env_vars, req.args,
+        )
+        if not updated:
+            raise HTTPException(404, f"Platform MCP server '{server_name}' not found")
+        _audit("platform_mcp.update", resource_type="platform_mcp",
+               resource_id=server_name, details={"package": req.package})
+        return updated
+
+    @app.delete("/api/platform/mcp/servers/{server_name}", tags=["mcp"])
+    async def delete_platform_mcp(server_name: str, _auth=Depends(check_auth)):
+        """Remove a platform-scoped MCP server."""
+        if not client_mcp_store.delete(PLATFORM_CLIENT_ID, server_name):
+            raise HTTPException(404, f"Platform MCP server '{server_name}' not found")
+        _audit("platform_mcp.delete", resource_type="platform_mcp", resource_id=server_name)
         return {"ok": True}
 
     @app.get("/api/clients/{client_id}/agents", tags=["clients"])

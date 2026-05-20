@@ -1,14 +1,17 @@
+import { useState } from "react";
 import type { AgentProcess } from "@/lib/api";
 import { api } from "@/lib/api";
 import { ago, fmt, shortName, usd } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { UploadAgentDialog } from "@/components/UploadAgentDialog";
 import { PhaseBadge } from "@/components/PhaseBadge";
 import { StackBadge } from "@/components/StackBadge";
 import { Table, Tbody, Td, Th, Thead, Tr } from "@/components/ui/table";
 
 interface Props {
   procs: AgentProcess[];
-  onSelect: (name: string) => void;
+  onSelect: (pid: string) => void;
   onChange: () => void;
 }
 
@@ -19,6 +22,9 @@ interface Alert {
 }
 
 export function FleetTab({ procs, onSelect, onChange }: Props) {
+  const [pending, setPending] = useState<{ pid: string; label: string } | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
+
   const alerts: Alert[] = [];
   procs.forEach((p) => {
     const sn = shortName(p.name);
@@ -42,28 +48,60 @@ export function FleetTab({ procs, onSelect, onChange }: Props) {
       });
   });
 
-  const onStop = async (name: string) => {
-    if (!confirm(`Stop and remove ${name}?`)) return;
-    await api.stop(name);
-    await api.remove(name);
+  const requestStop = (pid: string, label: string) => {
+    if (!pid) return;
+    setPending({ pid, label });
+  };
+
+  const confirmStop = async () => {
+    if (!pending) return;
+    const { pid } = pending;
+    setPending(null);
+    await api.stop(pid);
+    await api.remove(pid);
     onChange();
   };
 
+  const toolbar = (
+    <div className="flex items-center justify-between border-b border-border bg-bg px-[14px] py-2">
+      <span className="text-[10px] uppercase tracking-widest text-dim">
+        Fleet · {procs.length} process{procs.length === 1 ? "" : "es"}
+      </span>
+      <Button variant="ok" onClick={() => setUploadOpen(true)}>
+        ↑ UPLOAD AGENT
+      </Button>
+    </div>
+  );
+
+  const uploadDialog = (
+    <UploadAgentDialog
+      open={uploadOpen}
+      onClose={() => setUploadOpen(false)}
+      onDeployed={onChange}
+    />
+  );
+
   if (!procs.length) {
     return (
-      <div className="p-10 text-center text-dim">
-        No agent processes. Deploy agents to see them here.
+      <div>
+        {toolbar}
+        <div className="p-10 text-center text-dim">
+          No agent processes. Deploy agents to see them here.
+        </div>
+        {uploadDialog}
       </div>
     );
   }
 
   return (
     <div>
+      {toolbar}
       <Table>
         <Thead>
           <Tr>
             <Th>Stack</Th>
             <Th>Name</Th>
+            <Th>PID</Th>
             <Th>Phase</Th>
             <Th>Namespace</Th>
             <Th>Tokens</Th>
@@ -75,14 +113,16 @@ export function FleetTab({ procs, onSelect, onChange }: Props) {
           </Tr>
         </Thead>
         <Tbody>
-          {procs.map((p) => {
+          {procs.map((p, i) => {
             const sn = shortName(p.name);
+            const pid = p.pid != null ? String(p.pid) : "";
             return (
-              <Tr key={sn} onClick={() => onSelect(sn)}>
+              <Tr key={pid || `${sn}-${i}`} onClick={() => onSelect(pid)}>
                 <Td>
                   <StackBadge stack={p.stack} />
                 </Td>
                 <Td className="text-bright">{sn}</Td>
+                <Td className="font-mono text-[10px] text-dim">{pid || "-"}</Td>
                 <Td>
                   <PhaseBadge phase={p.phase ?? "unknown"} />
                 </Td>
@@ -97,7 +137,7 @@ export function FleetTab({ procs, onSelect, onChange }: Props) {
                     variant="danger"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onStop(sn);
+                      requestStop(pid, sn);
                     }}
                   >
                     STOP
@@ -130,6 +170,34 @@ export function FleetTab({ procs, onSelect, onChange }: Props) {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!pending}
+        destructive
+        title="Stop & remove agent"
+        confirmLabel="STOP & REMOVE"
+        cancelLabel="CANCEL"
+        message={
+          pending && (
+            <div className="space-y-2">
+              <div>
+                <span className="text-dim">name: </span>
+                <span className="text-bright">{pending.label}</span>
+              </div>
+              <div>
+                <span className="text-dim">pid:  </span>
+                <span className="text-bright">{pending.pid}</span>
+              </div>
+              <div className="pt-2 text-danger">
+                This stops the process and unregisters it. Permanent.
+              </div>
+            </div>
+          )
+        }
+        onConfirm={confirmStop}
+        onCancel={() => setPending(null)}
+      />
+      {uploadDialog}
     </div>
   );
 }

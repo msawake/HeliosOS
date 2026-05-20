@@ -10,6 +10,10 @@
 
 BACKEND_PORT      ?= 5055
 DASH_PORT         ?= 3000
+MC_PLATFORM_PORT  ?= 5099
+MC_VENV           ?= .venv-platform
+MC_PY             ?= python3.11
+MC_COMPANY        ?= leadforge
 PG_PORT           ?= 5432
 PG_CONTAINER      ?= forgeos-pg-local
 PG_USER           ?= forgeos
@@ -34,6 +38,10 @@ help:
 	@echo "  make psql     Interactive psql shell"
 	@echo "  make reset    Stop, delete pg volume, restart fresh"
 	@echo "  make status   Show what's running"
+	@echo ""
+	@echo "Mission Control workflow (no Postgres, in-memory):"
+	@echo "  make mc-platform   Boot platform on $(MC_PLATFORM_PORT) — pair with 'cd mission-control && make dev-local'"
+	@echo "  make mc-setup      Create $(MC_VENV) and install platform deps (run once)"
 
 # ---------------------------------------------------------------------------
 # Stop targets — always safe to run, never errors on "nothing to kill"
@@ -129,3 +137,32 @@ status:
 	@echo "── Postgres ──"; docker ps --filter "name=$(PG_CONTAINER)" --format '{{.Names}}  {{.Status}}' | sed 's/^/  /' || echo "  not running"
 	@echo "── Backend  ──"; lsof -nP -iTCP:$(BACKEND_PORT) -sTCP:LISTEN 2>/dev/null | tail -n +2 | awk '{print "  "$$1" PID="$$2}' || echo "  not running"
 	@echo "── Dashboard ─"; lsof -nP -iTCP:$(DASH_PORT) -sTCP:LISTEN 2>/dev/null | tail -n +2 | awk '{print "  "$$1" PID="$$2}' || echo "  not running"
+
+# ---------------------------------------------------------------------------
+# Mission Control workflow — boots a lightweight platform (in-memory,
+# no Postgres) on $(MC_PLATFORM_PORT). Pair with `cd mission-control &&
+# make dev-local` in another terminal.
+# ---------------------------------------------------------------------------
+.PHONY: mc-setup mc-platform
+
+mc-setup:
+	@command -v $(MC_PY) >/dev/null || { echo "✗ $(MC_PY) not found — install Python 3.11+"; exit 1; }
+	@[ -d $(MC_VENV) ] || { echo "→ creating $(MC_VENV)"; $(MC_PY) -m venv $(MC_VENV); $(MC_VENV)/bin/pip install -q --upgrade pip; }
+	@echo "→ installing platform deps into $(MC_VENV)"
+	@$(MC_VENV)/bin/pip install -q -e ".[dev]"
+	@echo "→ installing optional deps (psycopg, jsonschema)"
+	@$(MC_VENV)/bin/pip install -q 'psycopg[binary]' psycopg_pool jsonschema
+	@echo "✓ ready. Run: make pg (once) then: make mc-platform"
+
+mc-platform:
+	@[ -x $(MC_VENV)/bin/python ] || { echo "✗ $(MC_VENV) missing — run 'make mc-setup' first"; exit 1; }
+	@if docker exec $(PG_CONTAINER) pg_isready -U $(PG_USER) -d $(PG_DB) >/dev/null 2>&1; then \
+		echo "→ Postgres detected on :$(PG_PORT) — wiring DATABASE_URL for persistence"; \
+		DB_URL="$(DATABASE_URL)"; \
+	else \
+		echo "→ no Postgres on :$(PG_PORT) — booting IN-MEMORY (run 'make pg' first for persistence)"; \
+		DB_URL=""; \
+	fi; \
+	echo "→ booting platform on $(MC_PLATFORM_PORT) (company=$(MC_COMPANY))"; \
+	echo "  pair with: cd mission-control && make dev-local"; \
+	DATABASE_URL="$$DB_URL" PYTHONPATH=. $(MC_VENV)/bin/python -m src.bootstrap --no-auth --dashboard --port $(MC_PLATFORM_PORT) --company $(MC_COMPANY)

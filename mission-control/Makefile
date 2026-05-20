@@ -14,6 +14,10 @@ API_TOKEN_SECRET ?= forgeos-api-token
 BACKEND_PORT  ?= 8888
 FRONTEND_PORT ?= 5173
 
+# Local-platform target used by `make serve-local` / `make dev-local`.
+# Override with `make dev-local LOCAL_API=http://localhost:5000`.
+LOCAL_API ?= http://localhost:5099
+
 # Default to the newest Python available on PATH (>=3.10 required for PEP 604 unions).
 PYTHON ?= $(shell command -v python3.13 || command -v python3.12 || command -v python3.11 || command -v python3.10 || echo python3)
 VENV   := .venv
@@ -21,7 +25,7 @@ VPY    := $(VENV)/bin/python
 VPIP   := $(VENV)/bin/pip
 
 .PHONY: help install venv backend-install frontend-install serve serve-prod \
-        dev frontend build clean check-gcloud
+        serve-local dev dev-local frontend build clean check-gcloud
 
 help:
 	@echo "Mission Control — make targets"
@@ -29,7 +33,9 @@ help:
 	@echo "  make install       Create .venv and install backend + frontend deps."
 	@echo "  make serve         Run backend (no password gate) against the deployed ForgeOS API."
 	@echo "  make serve-prod    Same as serve, but pulls the operator password from Secret Manager."
+	@echo "  make serve-local   Run backend against a LOCAL ForgeOS API ($(LOCAL_API)). No gcloud."
 	@echo "  make dev           Run backend AND vite dev server in parallel."
+	@echo "  make dev-local     Same as dev, but against a local ForgeOS API (no gcloud)."
 	@echo "  make frontend      Run only the vite dev server on :$(FRONTEND_PORT)."
 	@echo "  make build         Build the React bundle into frontend/dist."
 	@echo "  make clean         Remove .venv, node_modules, dist, __pycache__."
@@ -94,8 +100,19 @@ serve-prod: check-gcloud backend-install backend/static/index.html
 	  PORT=$(BACKEND_PORT) \
 	  ../$(VPY) -m uvicorn main:app --reload --port $(BACKEND_PORT)
 
+serve-local: backend-install backend/static/index.html
+	@echo "→ serving against LOCAL ForgeOS API at $(LOCAL_API) (override with LOCAL_API=...)"
+	FORGEOS_API_URL="$(LOCAL_API)" \
+	  FORGEOS_API_TOKEN="" \
+	  FORGEOS_MC_PASSWORD="" \
+	  PORT=$(BACKEND_PORT) \
+	  $(VPY) -m uvicorn backend.main:app --reload --port $(BACKEND_PORT)
+
 dev: frontend-install
 	@$(MAKE) -j2 serve frontend
+
+dev-local: frontend-install
+	@$(MAKE) -j2 serve-local frontend
 
 frontend: frontend-install
 	cd frontend && npm run dev -- --port $(FRONTEND_PORT)
