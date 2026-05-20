@@ -1,0 +1,83 @@
+# ============================================================================
+# Anthropic Agent SDK: Customer Service
+# ============================================================================
+#
+# Same customer-service agent, running on the Anthropic Agent SDK runtime.
+# Uses Claude's built-in tools + ForgeOS governance via PreToolUse hooks.
+#
+# When claude-agent-sdk is installed: runs real SDK with query()
+# When not installed: falls back to ForgeOS agentic loop (same behavior)
+#
+# DEPLOY:  forgeos deploy examples/anthropic-agent/customer-service.yaml
+# INVOKE:  forgeos invoke anthropic-customer-service "Help me with my plant"
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: anthropic-customer-service
+  namespace: support
+  description: "Customer service via Anthropic Agent SDK — same governance, different runtime"
+  labels:
+    stack: anthropic-agent-sdk
+    source: adk-samples-adapted
+spec:
+  stack: anthropic-agent-sdk
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: claude-haiku-4-5-20251001
+    provider: anthropic
+  tools:
+    - send_call_companion_link
+    - access_cart_information
+    - modify_cart
+    - get_product_recommendations
+    - check_product_availability
+    - schedule_planting_service
+    - get_available_planting_times
+    - send_care_instructions
+    - generate_qr_code
+  capabilities:
+    tools:
+      allowed:
+        - send_call_companion_link
+        - access_cart_information
+        - modify_cart
+        - get_product_recommendations
+        - check_product_availability
+        - schedule_planting_service
+        - get_available_planting_times
+        - send_care_instructions
+        - generate_qr_code
+        - memory__*
+      denied:
+        - approve_discount
+        - update_salesforce_crm
+        - delete_*
+  boundaries:
+    budgets:
+      daily_usd: 5.00
+      per_task_usd: 0.50
+    data:
+      pii_policy: mask
+  governance:
+    audit_level: full
+    human_in_loop:
+      - event: approve_discount
+        approvers: [manager]
+        sla_hours: 1
+  system_prompt: |
+    You are Cymbal Home & Garden's AI customer service agent. You help
+    customers with orders, returns, product recommendations, and garden
+    planning.
+
+    Key policies:
+    - Discounts above 10% require manager approval
+    - Always check product availability before recommending
+    - Schedule planting services only during available times
+    - Send care instructions after every plant purchase
+    - Generate QR codes for order tracking
+
+    Be friendly, helpful, and proactive about garden care tips.

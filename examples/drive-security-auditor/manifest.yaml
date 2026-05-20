@@ -1,0 +1,73 @@
+apiVersion: agentos/v1
+kind: AgentContract
+metadata:
+  name: drive-security-auditor
+  namespace: security
+  labels:
+    team: security
+    scope: org-wide
+    framework: adk
+  annotations:
+    description: "Daily read-only audit of Google Drive sharing permissions — flags public files, external sharing, credential exposure"
+    owner: security-engineering
+spec:
+  runtime:
+    framework: adk
+    image: forgeos-drive-security-auditor:latest
+  lifecycle:
+    type: scheduled
+    schedule: "0 7 * * *"   # 7:00 AM UTC daily
+    restart_policy: on_failure
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: google
+  capabilities:
+    tools:
+      allowed:
+        # Read-only Drive tools
+        - drive.list_org_users
+        - drive.search_files
+        - drive.get_permissions
+        - drive.check_file_risks
+        - drive.list_shared_files
+        - drive.search_sensitive_files
+      denied:
+        # Explicitly deny ALL write operations
+        - drive.share_file
+        - drive.remove_permission
+        - drive.set_permissions
+        - drive.update_file
+        - drive.batch_share
+        - drive.transfer_ownership
+        # Deny other workspace tools
+        - gmail.*
+        - calendar.*
+        - contacts.*
+        - sheets.*
+        - docs.*
+    a2a:
+      canCall:
+        - security/admin-notifier
+        - notifications/slack-bot
+      canBeCalledBy: []
+      max_depth: 1
+  boundaries:
+    budgets:
+      daily_usd: 3.00
+      per_task_usd: 0.50
+    data:
+      allowed_namespaces:
+        - security
+      pii_policy: redact
+  governance:
+    human_in_loop:
+      required_for:
+        - risk.critical              # publicly shared credentials/contracts
+        - public_sensitive_file       # NDA, salary, financial docs public
+    policies:
+      - read_only_drive              # custom: only Drive read APIs
+    audit_level: full
+  dependencies:
+    mcp_servers: []
+    agents:
+      - security/admin-notifier

@@ -1,0 +1,19 @@
+{
+  "type": "mcp-server",
+  "name": "CashPilot MCP",
+  "packageName": "cashpilot-mcp",
+  "description": "MCP server for CashPilot, enabling LLMs to monitor passive income, bandwidth sharing, and DePIN earnings from a self-hosted dashboard.",
+  "url": "https://github.com/GeiserX/cashpilot-mcp",
+  "runtime": "node",
+  "license": "gpl-3.0",
+  "env": {
+    "CASHPILOT_URL": {
+      "description": "CashPilot instance URL (e.g. http://localhost:8080)",
+      "required": true
+    },
+    "CASHPILOT_API_KEY": {
+      "description": "CashPilot admin API key",
+      "required": true
+    }
+  }
+}

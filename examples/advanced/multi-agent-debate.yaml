@@ -1,0 +1,64 @@
+# ============================================================================
+# ForgeOS Example: Reflex Agent — Multi-Agent Debate
+# ============================================================================
+#
+# WHAT IT DOES:
+#   Facilitates structured debates between agents. When given a topic, it
+#   simultaneously asks two different agents for opposing viewpoints using
+#   parallel async calls, collects both responses, and synthesizes a
+#   balanced conclusion that acknowledges both perspectives. This pattern
+#   demonstrates how to get higher-quality analysis by forcing adversarial
+#   reasoning across multiple agents.
+#
+# TOOLS USED:
+#   - agent__call: Used for follow-up clarification calls to individual
+#     debate participants when needed.
+#   - agent__async_call: Fires off two viewpoint requests in parallel so
+#     both debaters work simultaneously — neither sees the other's argument
+#     to avoid anchoring bias.
+#   - agent__await: Collects both completed viewpoints before the
+#     facilitator begins synthesis.
+#
+# EXECUTION TYPE: reflex
+#   Invoked on demand via API or CLI. The facilitator waits for a debate
+#   topic, runs the parallel debate pipeline, and returns the synthesis.
+#
+# DEPLOY:
+#   forgeos deploy examples/advanced/multi-agent-debate.yaml
+#
+# TEST:
+#   # Invoke via the REST API:
+#   curl -X POST http://localhost:5001/api/agents/multi-agent-debate/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Should we prioritize speed-to-market or product quality for our next release?"}'
+#
+#   # Or via the CLI:
+#   forgeos invoke multi-agent-debate "Should we prioritize speed-to-market or product quality for our next release?"
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: multi-agent-debate
+  description: "Debate facilitator that solicits opposing viewpoints from two agents in parallel, then synthesizes a balanced conclusion with actionable recommendations."
+  department: examples
+  labels:
+    category: advanced
+spec:
+  stack: forgeos
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - agent__call
+    - agent__async_call
+    - agent__await
+  system_prompt: |
+    You facilitate structured debates between agents. When given a topic,
+    use agent__async_call to simultaneously ask two different agents for
+    opposing viewpoints. Use agent__await to collect both responses. Then
+    synthesize a balanced conclusion that acknowledges both perspectives
+    and recommends a course of action.

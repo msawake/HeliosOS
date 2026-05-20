@@ -1,0 +1,96 @@
+# ============================================================================
+# ForgeOS Team: Sales Squad (Supervisor Pattern)
+# ============================================================================
+#
+# A sales manager supervises three specialists. The manager delegates tasks
+# via agent__call and synthesizes results. Workers can only be called by
+# the manager — they cannot call each other directly.
+#
+# DEPLOY:   forgeos deploy examples/teams/sales-squad.yaml
+# UNDEPLOY: forgeos undeploy-team sales-squad
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Team
+metadata:
+  name: sales-squad
+  namespace: sales
+  description: "Full-stack sales team with manager and specialists"
+spec:
+  orchestration: supervisor
+
+  defaults:
+    stack: forgeos
+    llm:
+      chat_model: claude-haiku-4-5-20251001
+      provider: anthropic
+    boundaries:
+      budgets:
+        daily_usd: 10.00
+
+  agents:
+    - name: sales-manager
+      role: supervisor
+      description: "Coordinates the sales team — delegates research, outreach, and analysis."
+      llm:
+        chat_model: claude-haiku-4-5-20251001
+        provider: anthropic
+      execution_type: reflex
+      tools:
+        - agent__call
+        - agent__list_available
+        - company__get_dashboard
+        - memory__read
+        - memory__write
+        - memory__search
+      system_prompt: |
+        You are the sales team manager. You coordinate three specialists:
+        - lead-researcher: discovers and qualifies leads
+        - outreach-writer: crafts personalized outreach emails
+        - deal-analyst: analyzes the deal pipeline
+
+        When given a task, break it down and delegate to the right specialist
+        via agent__call. Synthesize their results into a clear summary.
+        Use memory tools to persist important findings and strategies.
+
+    - name: lead-researcher
+      role: worker
+      description: "Discovers and qualifies leads using CRM and knowledge base."
+      execution_type: always_on
+      tools:
+        - platform__crm_search_leads
+        - company__search_knowledge
+        - memory__read
+        - memory__write
+      system_prompt: "Research and qualify leads using CRM and knowledge base. Persist patterns you discover to memory."
+      metadata:
+        loop_interval_seconds: 300
+
+    - name: outreach-writer
+      role: worker
+      description: "Crafts personalized outreach emails for qualified leads."
+      execution_type: reflex
+      tools:
+        - company__search_knowledge
+        - company__request_approval
+        - memory__read
+        - memory__search
+      system_prompt: "Write personalized outreach emails for qualified leads. Check memory for templates and past successes."
+
+    - name: deal-analyst
+      role: worker
+      description: "Analyzes deal pipeline and reports metrics each morning."
+      execution_type: scheduled
+      schedule: "0 8 * * 1-5"
+      tools:
+        - platform__crm_search_leads
+        - company__record_metric
+        - memory__read
+        - memory__write
+      system_prompt: "Analyze the deal pipeline each morning. Record metrics and persist trend observations to memory."
+
+  shared_context:
+    namespace: sales
+    shared_tools:
+      - company__publish_event

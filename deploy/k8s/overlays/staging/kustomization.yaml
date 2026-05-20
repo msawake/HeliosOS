@@ -1,0 +1,32 @@
+# Staging overlay — 2 replicas per tier, LetsEncrypt staging issuer,
+# staging hostname. Image tags pinned from CI.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: forgeos
+
+resources:
+  - ../../base
+
+patches:
+  - path: hostname-patch.yaml
+    target:
+      kind: Ingress
+      name: forgeos
+  - path: hpa-patch.yaml
+    target:
+      kind: HorizontalPodAutoscaler
+      name: forgeos-api
+
+configMapGenerator:
+  - name: forgeos-config
+    behavior: merge
+    literals:
+      - COMPANY_ID=leadforge
+      - FORGEOS_SEED_HITL=0
+
+images:
+  - name: forgeos-api
+    newTag: staging
+  - name: forgeos-web
+    newTag: staging

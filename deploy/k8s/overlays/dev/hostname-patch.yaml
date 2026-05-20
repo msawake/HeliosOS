@@ -1,0 +1,10 @@
+# Dev: use an internal-only hostname and skip cert-manager (dev doesn't
+# need real certs — use a self-signed or skip TLS entirely).
+- op: replace
+  path: /spec/rules/0/host
+  value: forgeos-dev.internal
+- op: replace
+  path: /spec/tls/0/hosts/0
+  value: forgeos-dev.internal
+- op: remove
+  path: /metadata/annotations/cert-manager.io~1cluster-issuer

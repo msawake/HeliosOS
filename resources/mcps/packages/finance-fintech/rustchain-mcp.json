@@ -1,0 +1,10 @@
+{
+  "type": "mcp-server",
+  "packageName": "rustchain-mcp",
+  "description": "MCP server for RustChain blockchain and BoTTube video platform \u2014 AI agent tools for earning RTC tokens through mining, wallet management, bounty hunting, and video publishing",
+  "url": "https://github.com/Scottcjn/rustchain-mcp",
+  "runtime": "python",
+  "license": "MIT",
+  "env": {},
+  "name": "RustChain MCP"
+}

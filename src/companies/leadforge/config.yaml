@@ -1,0 +1,30 @@
+company:
+  name: "LeadForge AI"
+  domain: "leadforge.ai"
+  mission: "AI-powered B2B lead generation agency."
+
+budgets:
+  daily_token_budget: 1_000_000
+  per_session_cost_limit_usd: 5.00
+
+agent_defaults:
+  max_retries: 3
+
+rate_limits:
+  max_tool_calls_per_session: 50
+  max_api_calls_per_minute: 30
+
+models:
+  orchestrator_default: "gemini-2.0-flash"
+  doer_default: "gemini-2.0-flash"
+
+mcp_servers:
+  tier1:
+    - name: "atlassian"
+      package: "mcp-atlassian"
+      required: false
+      env_vars:
+        JIRA_URL: "secret:jira-url"
+        JIRA_USERNAME: "secret:jira-username"
+        JIRA_API_TOKEN: "secret:jira-api-token"
+        READ_ONLY_MODE: "secret:jira-read-only-mode"

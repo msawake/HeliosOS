@@ -1,0 +1,46 @@
+# Prod overlay — 3 replicas per tier, LetsEncrypt prod issuer,
+# production hostname. Image tags pinned from release tag.
+# Tighter network policy and PDB minAvailable: 2.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: forgeos
+
+resources:
+  - ../../base
+
+patches:
+  - path: hostname-patch.yaml
+    target:
+      kind: Ingress
+      name: forgeos
+  - path: hpa-patch.yaml
+    target:
+      kind: HorizontalPodAutoscaler
+      name: forgeos-api
+  - path: pdb-patch.yaml
+    target:
+      kind: PodDisruptionBudget
+      name: forgeos-api
+  - path: pdb-patch.yaml
+    target:
+      kind: PodDisruptionBudget
+      name: forgeos-web
+  - path: replicas-patch.yaml
+
+configMapGenerator:
+  - name: forgeos-config
+    behavior: merge
+    literals:
+      - COMPANY_ID=leadforge
+      - FORGEOS_SEED_HITL=0
+      - FORGEOS_ALLOW_DEV_LOGIN=0
+      - NEXT_PUBLIC_REQUIRE_AUTH=1
+
+# Image tags MUST be pinned to a specific release SHA or semver.
+# CI should run: kustomize edit set image forgeos-api=ghcr.io/org/forgeos-api:v1.2.3
+images:
+  - name: forgeos-api
+    newTag: PLACEHOLDER_SET_BY_CI
+  - name: forgeos-web
+    newTag: PLACEHOLDER_SET_BY_CI

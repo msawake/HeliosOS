@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeos.dev/a2h/v1/request.json",
+  "title": "A2H Request",
+  "description": "A structured request from an agent to a human participant.",
+  "type": "object",
+  "required": ["from", "to", "content"],
+  "properties": {
+    "protocol": {
+      "type": "string",
+      "const": "a2h/v1"
+    },
+    "id": {
+      "type": "string",
+      "description": "Server-generated unique ID"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["request", "notification"],
+      "default": "request"
+    },
+    "from": { "$ref": "#/$defs/participant" },
+    "to": { "$ref": "#/$defs/participant" },
+    "content": { "$ref": "#/$defs/content" },
+    "priority": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low"],
+      "default": "medium"
+    },
+    "deadline": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp. Request expires after this time."
+    },
+    "escalation": { "$ref": "#/$defs/escalation" },
+    "status": {
+      "type": "string",
+      "enum": ["created", "pending", "answered", "expired", "cancelled", "escalated", "auto_delegated"],
+      "default": "created"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "participant": {
+      "type": "object",
+      "required": ["name", "namespace"],
+      "properties": {
+        "name": { "type": "string" },
+        "namespace": { "type": "string", "default": "default" },
+        "participant_type": {
+          "type": "string",
+          "enum": ["human", "agent"]
+        }
+      }
+    },
+    "content": {
+      "type": "object",
+      "required": ["question", "response_type"],
+      "properties": {
+        "question": {
+          "type": "string",
+          "description": "The question or prompt for the human"
+        },
+        "response_type": {
+          "type": "string",
+          "enum": ["choice", "approval", "text", "number", "confirm", "form"],
+          "description": "Type of response expected"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["label", "value"],
+            "properties": {
+              "label": { "type": "string", "description": "Display text" },
+              "value": { "type": "string", "description": "Machine-readable value" },
+              "description": { "type": "string", "description": "Help text" }
+            }
+          },
+          "description": "Required for 'choice' response_type"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "type"],
+            "properties": {
+              "name": { "type": "string" },
+              "type": { "type": "string", "enum": ["text", "number", "boolean", "date"] },
+              "label": { "type": "string" },
+              "required": { "type": "boolean", "default": false }
+            }
+          },
+          "description": "Required for 'form' response_type"
+        },
+        "context": {
+          "type": "object",
+          "description": "Structured data to help the human decide. Rendered as a context card in the UI.",
+          "additionalProperties": true
+        }
+      }
+    },
+    "escalation": {
+      "type": "object",
+      "properties": {
+        "chain": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["target"],
+            "properties": {
+              "target": { "type": "string", "description": "namespace/name of the escalation target" },
+              "timeout_minutes": { "type": "integer", "default": 10 },
+              "priority_override": { "type": "string", "enum": ["critical", "high", "medium", "low"] }
+            }
+          }
+        },
+        "current_level": {
+          "type": "integer",
+          "default": 0
+        }
+      }
+    }
+  }
+}

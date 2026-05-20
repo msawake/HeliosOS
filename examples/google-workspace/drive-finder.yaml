@@ -1,0 +1,131 @@
+# ============================================================================
+# Drive Document Finder
+# ============================================================================
+#
+# WHAT IT DOES:
+#   On-demand agent you can ask to find documents across your Google Drive.
+#   Searches by keywords, file type, date range, or owner. Returns summaries
+#   with shareable links. Can also read document content for deeper analysis.
+#
+# EXECUTION TYPE: reflex
+#   Invoked on demand — you ask it a question, it finds documents.
+#   No schedule, no events. Just invoke via API or chat.
+#
+# TOOLS USED:
+#   - mcp__google-workspace__search_drive_files — search Drive by query
+#   - mcp__google-workspace__get_drive_file_content — read document text
+#   - mcp__google-workspace__get_drive_shareable_link — get sharing link
+#   - mcp__google-workspace__list_drive_items — browse folder contents
+#   - mcp__google-workspace__get_drive_file_permissions — check who has access
+#   - company__add_decision — record important findings
+#   - company__search_knowledge — check if doc is already known
+#
+# EXAMPLES:
+#   "Find all spreadsheets about Q4 budget"
+#   "What documents did Laura share with me last week?"
+#   "Find the latest project proposal for TechCorp"
+#   "Show me all PDFs in the Finance folder"
+#   "Find any document mentioning 'migration plan'"
+#
+# DEPLOY:
+#   forgeos deploy examples/google-workspace/drive-finder.yaml
+#
+# TEST:
+#   curl -X POST http://localhost:5000/api/platform/agents/drive-finder/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Find all documents about Q4 planning"}'
+#
+#   # Or use streaming chat for interactive search:
+#   curl -N http://localhost:5000/api/platform/agents/drive-finder/chat/stream \
+#     -H "Content-Type: application/json" \
+#     -d '{"message": "Find spreadsheets shared with me in the last month"}'
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: drive-finder
+  description: >
+    On-demand Google Drive search agent. Ask it to find documents by
+    keyword, type, date, or owner. Returns summaries with links.
+    Can read document content for deeper analysis.
+  department: productivity
+  labels:
+    category: google-workspace
+    service: drive
+spec:
+  stack: forgeos
+  execution_type: reflex
+  ownership: personal
+  owner_id: jama
+
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+
+  tools:
+    # Drive
+    - mcp__google-workspace__search_drive_files
+    - mcp__google-workspace__get_drive_file_content
+    - mcp__google-workspace__get_drive_shareable_link
+    - mcp__google-workspace__list_drive_items
+    - mcp__google-workspace__get_drive_file_permissions
+    - mcp__google-workspace__list_docs_in_folder
+    # Knowledge
+    - company__add_decision
+    - company__search_knowledge
+
+  system_prompt: |
+    You are a Google Drive document finder. Users ask you to find documents,
+    and you search Drive to locate them.
+
+    ## How to Search
+
+    When the user asks to find something, translate their request into a
+    Drive search query. Use search_drive_files with appropriate parameters:
+
+    **Search by content/name:**
+    - "Find budget documents" → query: "budget"
+    - "Find the TechCorp proposal" → query: "TechCorp proposal"
+
+    **Search by file type:**
+    - "Find spreadsheets" → add mimeType filter for sheets
+    - "Find PDFs" → add mimeType filter for PDF
+    - "Find presentations" → add mimeType filter for slides
+
+    **Search by recency:**
+    - "Recent documents" → sort by modifiedTime desc
+    - "Documents from last week" → add modifiedTime filter
+
+    **Search by owner/sharing:**
+    - "Documents Laura shared" → search with sharedWithMe + owner filter
+
+    ## Response Format
+
+    For each found document, present:
+
+    **[Document Title]** (type: Spreadsheet/Doc/PDF/etc.)
+    - Last modified: [date]
+    - Owner: [name]
+    - Link: [shareable link]
+    - Preview: [first 100 chars of content if readable]
+
+    ## Deep Analysis
+
+    If the user asks to "read" or "analyze" a specific document:
+    1. Use get_drive_file_content to read the full text
+    2. Provide a summary of key points
+    3. If it's important, record findings via company__add_decision
+
+    ## Rules
+    - Always provide shareable links (use get_drive_shareable_link)
+    - Limit results to 10 documents unless the user asks for more
+    - If no results found, suggest alternative search terms
+    - For large documents, summarize rather than dumping all content
+    - Check knowledge base first — the document might already be cataloged
+    - Be conversational — ask clarifying questions if the search is too broad
+
+  metadata:
+    max_results: 10
+    include_shared: true

@@ -1,0 +1,9 @@
+{
+  "name": "no_deploy_during_incident",
+  "description": "Block production deployments during active P0/P1 incidents",
+  "deny_if": {
+    "op": "equals",
+    "field": "active_p0_p1_incidents",
+    "value": true
+  }
+}

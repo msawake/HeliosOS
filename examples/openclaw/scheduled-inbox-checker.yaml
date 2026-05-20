@@ -1,0 +1,44 @@
+# ---------------------------------------------------------------
+# Scheduled Agent — OpenClaw Inbox Checker
+# ---------------------------------------------------------------
+# Execution type : scheduled
+#   A scheduled agent runs automatically on a cron schedule.  The
+#   platform scheduler fires the agent at the configured time,
+#   the agent performs its task, and then exits until the next run.
+#
+# When it runs  : Every 30 minutes during business hours
+#                  (Mon-Fri 08:00-18:00 UTC).
+#                  Cron: "*/30 8-18 * * 1-5"
+#
+# Deploy        : forgeos deploy examples/openclaw/scheduled-inbox-checker.yaml
+# Test          : forgeos invoke scheduled-inbox-checker --trigger-now
+# ---------------------------------------------------------------
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: scheduled-inbox-checker
+  description: "Business-hours inbox monitor. Checks for actionable items every 30 minutes and publishes events for downstream agents."
+  department: operations
+spec:
+  stack: openclaw
+  execution_type: scheduled
+  ownership: shared
+  schedule: "*/30 8-18 * * 1-5"
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - company__publish_event
+    - company__record_metric
+  system_prompt: |
+    You are an inbox monitoring agent running on the OpenClaw stack.
+    Every 30 minutes during business hours you:
+    1. Check for new actionable items (messages, tasks, requests).
+    2. Classify each item by urgency: critical, normal, low.
+    3. For critical items, publish an event so downstream agents can
+       respond immediately.
+    4. Record a metric with the count of items processed and their
+       urgency breakdown.
+    Produce a brief status line: "[HH:MM] Checked — X new items
+    (C critical, N normal, L low)."

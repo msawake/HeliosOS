@@ -1,0 +1,9 @@
+{
+  "name": "email_daily_limit",
+  "description": "CAN-SPAM compliance: max 50 outreach emails per day",
+  "deny_if": {
+    "op": "gt",
+    "field": "emails_today",
+    "value": 50
+  }
+}

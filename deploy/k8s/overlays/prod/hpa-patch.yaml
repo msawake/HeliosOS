@@ -1,0 +1,7 @@
+# Prod: scale up generously (3-10 replicas)
+- op: replace
+  path: /spec/minReplicas
+  value: 3
+- op: replace
+  path: /spec/maxReplicas
+  value: 10

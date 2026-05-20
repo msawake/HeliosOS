@@ -1,0 +1,72 @@
+apiVersion: agentos/v1
+kind: AgentContract
+metadata:
+  name: sre-gcp-auditor
+  namespace: ops
+  labels:
+    team: sre
+    scope: org-wide
+    framework: adk
+  annotations:
+    description: "Daily read-only audit of all GCP projects — infrastructure, security, billing"
+    owner: platform-engineering
+spec:
+  runtime:
+    framework: adk
+    image: forgeos-sre-gcp-auditor:latest
+  lifecycle:
+    type: scheduled
+    schedule: "0 6 * * *"   # 6:00 AM UTC daily
+    restart_policy: on_failure
+  llm:
+    chat_model: gemini-2.0-flash
+    provider: google
+  capabilities:
+    tools:
+      allowed:
+        # Infrastructure (read-only)
+        - gcp.list_projects
+        - gcp.list_cloud_run_services
+        - gcp.list_cloud_sql_instances
+        - gcp.list_gke_clusters
+        # Security (read-only)
+        - gcp.list_firewall_rules
+        - gcp.list_service_accounts
+        - gcp.list_storage_buckets
+        - gcp.list_secrets
+        - gcp.list_iam_bindings
+        # Billing (read-only)
+        - gcp.get_billing_info
+      denied:
+        # Explicitly deny any write operations
+        - gcp.create_*
+        - gcp.delete_*
+        - gcp.update_*
+        - gcp.set_*
+        - bash.*
+    a2a:
+      canCall:
+        - ops/oncall-router
+        - notifications/slack-bot
+      canBeCalledBy: []   # no one calls the auditor
+      max_depth: 1
+  boundaries:
+    budgets:
+      daily_usd: 3.00       # Gemini Flash is cheap — $3/day is generous
+      per_task_usd: 0.30    # per-project budget cap
+    data:
+      allowed_namespaces:
+        - ops
+        - security
+      pii_policy: redact
+  governance:
+    human_in_loop:
+      required_for:
+        - severity.critical   # public DB IPs, external owner bindings
+    policies:
+      - read_only_gcp        # custom policy: only gcloud list/describe/get
+    audit_level: full
+  dependencies:
+    mcp_servers: []
+    agents:
+      - ops/oncall-router

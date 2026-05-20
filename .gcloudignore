@@ -1,0 +1,13 @@
+.git
+.venv
+__pycache__
+*.pyc
+adk-samples/
+openclaw2/
+dashboard/node_modules/
+dashboard/.next/
+mission-control/frontend/node_modules/
+.bagentpro/
+tests/
+docs/
+*.md

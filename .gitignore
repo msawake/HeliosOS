@@ -1,0 +1,40 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+*.previous
+node_modules/
+.next/
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+agents/personal/
+agents/shared/
+
+# Local secrets — never commit
+.env
+.env.local
+.env.*.local
+config/google/credentials.json
+
+# Large third-party runtimes
+openclaw2/
+
+# Downloaded reference files
+*.pdf
+Types of AI Agents*/
+forgeos-conversation-transcript.md
+
+# Local tool state
+.bagentpro/
+.codegraph/
+
+# Docker-generated env
+infrastructure/docker/.env
+
+# MkDocs build output
+/site/

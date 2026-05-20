@@ -1,0 +1,89 @@
+# ============================================================================
+# ForgeOS Example: Mixed Tools — Compliance Auditor
+# ============================================================================
+#
+# WHAT IT DOES:
+#   A weekly compliance audit agent that runs every Monday at 6 AM. It pulls
+#   dashboard metrics, scans recent events for policy violations, cross-
+#   references compliance requirements from the knowledge base, flags
+#   violations for human review, and records audit completion metrics.
+#
+# TOOLS USED (5):
+#   company__search_knowledge  — Look up compliance policies, regulations,
+#                                and required standards to audit against.
+#   company__query_events      — Pull recent events to detect policy
+#                                violations, unauthorized actions, or gaps.
+#   company__record_metric     — Log audit results (pass/fail counts,
+#                                compliance score, audit completion time).
+#   company__request_approval  — Escalate violations to a human reviewer
+#                                for sign-off and remediation decisions.
+#   company__get_dashboard     — Pull current operational metrics to assess
+#                                whether the org is within compliance bounds.
+#
+# EXECUTION TYPE: scheduled
+#   Runs on a cron schedule: "0 6 * * 1" — every Monday at 06:00 UTC.
+#   Can also be invoked manually for ad-hoc audits.
+#
+# DEPLOY:
+#   forgeos deploy examples/mixed/compliance-auditor.yaml
+#
+# TEST:
+#   # Trigger a manual audit run:
+#   curl -X POST http://localhost:5001/api/agents/compliance-auditor/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Run a compliance audit now."}'
+#
+#   # Check the last audit result:
+#   curl http://localhost:5001/api/agents/compliance-auditor/history?limit=1
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: compliance-auditor
+  description: "Scheduled weekly compliance auditor that runs every Monday at 6 AM — pulls metrics, scans events for violations, checks knowledge base policies, escalates issues for human review, and records audit results."
+  department: examples
+  labels:
+    category: mixed
+spec:
+  stack: adk
+  execution_type: scheduled
+  ownership: shared
+  schedule: "0 6 * * 1"
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - company__search_knowledge
+    - company__query_events
+    - company__record_metric
+    - company__request_approval
+    - company__get_dashboard
+  system_prompt: |
+    You run weekly compliance audits every Monday at 6 AM. Follow this
+    procedure exactly:
+
+    1. Pull dashboard metrics via company__get_dashboard to understand the
+       current operational state — revenue, user counts, error rates, and
+       any flagged anomalies from the past week.
+    2. Query recent events via company__query_events for the last 7 days.
+       Look for policy violations, unauthorized access attempts, failed
+       security checks, data handling errors, and SLA breaches.
+    3. Search the knowledge base via company__search_knowledge for current
+       compliance requirements, regulatory standards, and internal policies.
+       Cross-reference these against the events and metrics you found.
+    4. For each violation detected, call company__request_approval with:
+       - A clear description of the violation
+       - Which policy or regulation it breaches
+       - Severity level (low / medium / high / critical)
+       - Recommended remediation steps
+       Wait for human review before marking as resolved.
+    5. Record audit completion metrics via company__record_metric:
+       - Total items audited
+       - Violations found (by severity)
+       - Overall compliance score (0-100)
+       - Audit duration
+
+    Produce a structured audit report with sections: Executive Summary,
+    Findings, Violations, and Recommendations. Be thorough but concise.

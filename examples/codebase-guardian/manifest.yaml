@@ -1,0 +1,62 @@
+apiVersion: agentos/v1
+kind: AgentContract
+metadata:
+  name: codebase-guardian
+  namespace: engineering
+  labels:
+    team: security
+    type: always-on
+    framework: forgeos
+spec:
+  runtime:
+    framework: forgeos
+  lifecycle:
+    type: always_on
+    restart_policy: always
+  llm:
+    chat_model: claude-sonnet-4-5-20250514
+    provider: anthropic
+  capabilities:
+    tools:
+      allowed:
+        # Read-only GitHub tools
+        - github.list_open_prs
+        - github.get_pr_details
+        - github.get_pr_diff
+        - github.list_pr_comments
+        - github.list_recent_commits
+        - github.get_commit_details
+        - github.list_security_alerts
+        - github.check_branch_protection
+        - github.list_open_issues
+        - github.list_workflow_runs
+        - github.get_failed_runs
+        - github.scan_diff_for_security
+      denied:
+        # Never modify the repo
+        - github.merge_pr
+        - github.close_pr
+        - github.close_issue
+        - github.create_release
+        - github.delete_branch
+        - github.push
+        - bash.*
+    a2a:
+      canCall:
+        - engineering/security-lead
+        - notifications/slack-bot
+      canBeCalledBy: []
+  boundaries:
+    budgets:
+      daily_usd: 10.00
+      per_task_usd: 2.00      # per PR review
+    data:
+      allowed_namespaces:
+        - engineering
+      pii_policy: redact
+  governance:
+    human_in_loop:
+      required_for:
+        - security.critical     # private keys, credentials in code
+        - security.high         # injection, XSS
+    audit_level: full

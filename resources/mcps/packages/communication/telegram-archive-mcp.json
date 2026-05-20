@@ -1,0 +1,23 @@
+{
+  "type": "mcp-server",
+  "name": "Telegram Archive MCP",
+  "packageName": "telegram-archive-mcp",
+  "description": "MCP server for Telegram Archive, enabling LLMs to search messages, browse chats, and access archived Telegram history.",
+  "url": "https://github.com/GeiserX/telegram-archive-mcp",
+  "runtime": "node",
+  "license": "gpl-3.0",
+  "env": {
+    "TELEGRAM_ARCHIVE_URL": {
+      "description": "Telegram Archive instance URL (e.g. http://localhost:3000)",
+      "required": true
+    },
+    "TELEGRAM_ARCHIVE_USER": {
+      "description": "Telegram Archive login username",
+      "required": false
+    },
+    "TELEGRAM_ARCHIVE_PASS": {
+      "description": "Telegram Archive login password",
+      "required": false
+    }
+  }
+}

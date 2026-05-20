@@ -1,0 +1,35 @@
+# ----------------------------------------------------------------------------
+# Chaos Mesh: Database Connection Drop
+#
+# Blocks egress from the API pods to the Postgres service for 2 minutes.
+# Simulates a DB outage. Tests that:
+#   1. Client + MCP stores fall back to in-memory cleanly (Phase 1 behavior)
+#   2. The `db.connection_lost` alert fires
+#   3. API pods don't OOM or crash-loop
+#   4. Recovery is clean once the partition heals
+#
+# NOTE: Adjust `externalTargets` to match your Postgres host if you're using
+# an external Cloud SQL instance instead of an in-cluster pod.
+#
+# Apply:  kubectl apply -f deploy/k8s/chaos/db-connection-kill.yaml
+# Remove: kubectl delete -f deploy/k8s/chaos/db-connection-kill.yaml
+# ----------------------------------------------------------------------------
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: forgeos-db-partition
+  namespace: forgeos
+spec:
+  action: partition
+  mode: all
+  selector:
+    namespaces:
+      - forgeos
+    labelSelectors:
+      app.kubernetes.io/name: forgeos
+      app.kubernetes.io/component: api
+  direction: to
+  externalTargets:
+    # Replace with your actual DB host if external
+    - postgres.forgeos.svc.cluster.local
+  duration: "2m"

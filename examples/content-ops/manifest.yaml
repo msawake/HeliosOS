@@ -1,0 +1,53 @@
+apiVersion: agentos/v1
+kind: AgentContract
+metadata:
+  name: content-ops-pipeline
+  namespace: content-ops
+  labels:
+    team: marketing
+    type: multi-client
+spec:
+  runtime:
+    framework: forgeos
+  lifecycle:
+    type: scheduled
+    schedule: "0 8 * * 1-5"   # 8 AM weekdays
+  llm:
+    chat_model: gemini-2.5-flash     # Producer (cheap, fast)
+    provider: google
+  capabilities:
+    tools:
+      allowed:
+        - content.draft
+        - content.review
+        - web.search
+        - brand.read_guidelines
+        - image.generate          # allowed globally, denied per-client via namespace policy
+      denied:
+        - content.publish         # never auto-publish — always HITL or manual
+        - email.send              # no direct email sending
+        - social.post             # no direct social posting
+    a2a:
+      canCall:
+        - ${namespace}/editor     # producer can only call its own client's editor
+      canBeCalledBy: []
+      max_depth: 2
+  boundaries:
+    budgets:
+      daily_usd: 50.00           # all clients combined
+      per_task_usd: 2.00         # per content piece
+    data:
+      allowed_namespaces:
+        - ${namespace}            # only current client's namespace
+      pii_policy: redact
+  governance:
+    human_in_loop:
+      required_for:
+        - compliance.healthcare   # HIPAA content
+        - compliance.financial    # SEC/FINRA content
+        - risk.high               # editor flagged high risk
+        - risk.critical           # editor flagged critical risk
+    audit_level: full
+  dependencies:
+    agents:
+      - content-ops/editor

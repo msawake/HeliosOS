@@ -1,0 +1,101 @@
+# ============================================================================
+# ForgeOS Example: Mixed Tools — Budget Guardian
+# ============================================================================
+#
+# WHAT IT DOES:
+#   A continuous-loop budget monitoring agent that checks spending against
+#   budget thresholds every 5 minutes. It detects overspend trends early,
+#   publishes warning events at 80% utilization, escalates for emergency
+#   human approval at 95%, and records budget health metrics each cycle.
+#
+# TOOLS USED (5):
+#   company__get_dashboard     — Pull current spending figures, burn rate,
+#                                and financial overview from the dashboard.
+#   company__get_metric        — Retrieve specific budget thresholds and
+#                                historical spending data for comparison.
+#   company__publish_event     — Broadcast "budget.warning" events when
+#                                spending exceeds 80% so other agents and
+#                                teams can adjust behavior proactively.
+#   company__request_approval  — Trigger emergency human approval when
+#                                spending exceeds 95% of budget, requiring
+#                                immediate executive decision.
+#   company__record_metric     — Log budget health metrics each cycle:
+#                                utilization percentage, burn rate, runway.
+#
+# EXECUTION TYPE: always_on
+#   Runs in a continuous loop, sleeping 300 seconds (5 minutes) between
+#   iterations. Provides near-real-time budget oversight.
+#
+# DEPLOY:
+#   forgeos deploy examples/mixed/budget-guardian.yaml
+#
+# TEST:
+#   # Check that the agent is running:
+#   curl http://localhost:5001/api/agents/budget-guardian/status
+#
+#   # View recent budget checks:
+#   curl http://localhost:5001/api/agents/budget-guardian/history?limit=5
+#
+#   # Stop the loop:
+#   curl -X POST http://localhost:5001/api/agents/budget-guardian/stop
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: budget-guardian
+  description: "Always-on budget monitoring agent that checks spending every 5 minutes — warns at 80% utilization, escalates at 95%, and records budget health metrics each cycle."
+  department: examples
+  labels:
+    category: mixed
+spec:
+  stack: forgeos
+  execution_type: always_on
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - company__get_dashboard
+    - company__publish_event
+    - company__request_approval
+    - company__record_metric
+    - company__get_metric
+  metadata:
+    loop_interval_seconds: 300
+  system_prompt: |
+    You monitor company budgets continuously. Every cycle (every 5 minutes),
+    follow this procedure:
+
+    1. Check dashboard metrics via company__get_dashboard for current spending
+       figures, burn rate, and financial overview across all departments.
+    2. Retrieve budget thresholds and historical spending data via
+       company__get_metric. Pull metrics for:
+       - Total budget allocation
+       - Department-level budgets
+       - Monthly and quarterly caps
+       - Historical burn rate trends
+    3. Calculate utilization percentage for each budget category:
+       utilization = (current_spend / budget_allocation) * 100
+    4. Apply threshold rules:
+       - Below 80%: Healthy. No action needed beyond recording metrics.
+       - 80%-94%: WARNING. Call company__publish_event with event type
+         "budget.warning" including the department, current utilization
+         percentage, projected overage date, and recommended actions
+         (freeze discretionary spend, defer non-critical purchases).
+       - 95% and above: CRITICAL. Call company__request_approval with an
+         emergency approval request. Include: which budget is at risk,
+         current spend vs. allocation, projected overage, and options
+         (increase budget, freeze spending, reallocate from another dept).
+         This requires immediate executive decision.
+    5. Record budget health metrics via company__record_metric every cycle:
+       - Overall utilization percentage
+       - Per-department utilization
+       - Current burn rate ($/day)
+       - Estimated runway (days until budget exhaustion)
+       - Number of warnings and escalations triggered
+
+    Be precise with numbers. Always show spend vs. budget as both absolute
+    values and percentages. Do not raise false alarms — only trigger warnings
+    and escalations when thresholds are genuinely breached.

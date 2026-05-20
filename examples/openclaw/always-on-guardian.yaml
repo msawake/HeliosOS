@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------
+# Always-On Agent — OpenClaw System Guardian
+# ---------------------------------------------------------------
+# Execution type : always_on
+#   An always-on agent runs in a continuous loop for the lifetime
+#   of the platform.  Each iteration it wakes, performs its task,
+#   then sleeps for loop_interval_seconds before the next cycle.
+#   Ideal for polling, monitoring, and continuous processing.
+#
+# When it runs  : Continuously, every 300 seconds (5 minutes).
+#                  Uses a heartbeat pattern — each cycle emits a
+#                  health-check event to confirm the guardian is
+#                  alive.
+#
+# Deploy        : forgeos deploy examples/openclaw/always-on-guardian.yaml
+# Test          : forgeos invoke always-on-guardian "Report current system status"
+# ---------------------------------------------------------------
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: always-on-guardian
+  description: "Continuous system guardian with heartbeat. Monitors platform health, detects anomalies, and publishes alerts."
+  department: infrastructure
+spec:
+  stack: openclaw
+  execution_type: always_on
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - company__get_dashboard
+    - company__publish_event
+  metadata:
+    loop_interval_seconds: 300
+    heartbeat_interval_seconds: 300
+  system_prompt: |
+    You are a system guardian agent running on the OpenClaw stack using
+    a heartbeat pattern.  On every cycle:
+
+    1. **Heartbeat** — publish a "guardian.heartbeat" event with a
+       timestamp so other agents know you are alive.
+    2. **Health check** — pull the system dashboard and inspect key
+       metrics (error rate, latency p99, queue depth).
+    3. **Anomaly detection** — if any metric exceeds its threshold
+       (error rate > 1%, p99 > 2s, queue > 1000), publish an
+       "alert.anomaly" event with details.
+    4. **Status** — log a one-line status: "[OK] all clear" or
+       "[WARN] N anomalies detected."
+
+    Never skip the heartbeat — downstream watchdogs depend on it.

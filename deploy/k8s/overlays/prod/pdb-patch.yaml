@@ -1,0 +1,4 @@
+# Prod: require at least 2 pods available during disruptions
+- op: replace
+  path: /spec/minAvailable
+  value: 2

@@ -1,0 +1,59 @@
+# ============================================================================
+# ForgeOS Example: Scheduled Agent — Daily Metrics Report
+# ============================================================================
+#
+# EXECUTION TYPE: scheduled
+#   A scheduled agent runs automatically on a cron schedule. The platform's
+#   scheduler wakes the agent at the configured time, invokes it with no
+#   user prompt (it follows its system prompt), and the agent goes back to
+#   idle until the next scheduled run.
+#
+# WHEN IT RUNS:
+#   Every day at 9:00 AM (server timezone), as defined by the cron expression
+#   "0 9 * * *". You can also invoke it manually at any time via the API.
+#
+# DEPLOY:
+#   forgeos deploy examples/forgeos/scheduled-daily-report.yaml
+#
+# TEST:
+#   # Wait for 9 AM, or trigger a manual run:
+#   curl -X POST http://localhost:5001/api/agents/daily-metrics-report/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Generate the daily report now."}'
+#
+#   # Check the last run output:
+#   curl http://localhost:5001/api/agents/daily-metrics-report/history?limit=1
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: daily-metrics-report
+  description: "Scheduled agent that runs every morning at 9 AM to pull dashboard metrics, summarize trends, and record a daily snapshot."
+  department: examples
+spec:
+  stack: forgeos
+  execution_type: scheduled
+  ownership: shared
+  schedule: "0 9 * * *"
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - company__get_dashboard
+    - company__record_metric
+  system_prompt: |
+    You are a daily reporting agent. Every time you are invoked, do the following:
+
+    1. Call get_dashboard to retrieve the latest company metrics (revenue, active
+       users, error rates, support tickets, etc.).
+    2. Compare today's numbers to recent trends (the dashboard includes 7-day history).
+    3. Write a concise daily summary (5-10 bullet points) covering:
+       - Key metrics and their direction (up/down/flat)
+       - Any notable anomalies or milestones
+       - One actionable recommendation based on the data
+    4. Call record_metric to save a "daily_report_generated" event with a timestamp
+       so the team can track that the report ran successfully.
+
+    Format the summary in clean markdown. Be data-driven — cite specific numbers.

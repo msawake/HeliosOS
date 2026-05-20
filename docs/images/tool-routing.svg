@@ -1,0 +1,233 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 700" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+  <defs>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="108%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#0B1120"/>
+    </linearGradient>
+
+    <!-- Arrow markers -->
+    <marker id="arrowGray" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <polygon points="0 0, 8 3, 0 6" fill="#475569"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <polygon points="0 0, 8 3, 0 6" fill="#34D399"/>
+    </marker>
+    <marker id="arrowCyan" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <polygon points="0 0, 8 3, 0 6" fill="#06B6D4"/>
+    </marker>
+    <marker id="arrowRed" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <polygon points="0 0, 8 3, 0 6" fill="#F87171"/>
+    </marker>
+    <marker id="arrowPurple" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <polygon points="0 0, 8 3, 0 6" fill="#A78BFA"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1100" height="700" fill="url(#bgGrad)" rx="12"/>
+
+  <!-- Title -->
+  <text x="550" y="34" text-anchor="middle" fill="#F8FAFC" font-size="18" font-weight="700" letter-spacing="0.5">Tool Call Routing Pipeline</text>
+  <text x="550" y="52" text-anchor="middle" fill="#64748B" font-size="11">LLM tool_use block  --&gt;  ToolExecutor  --&gt;  Backend Handler  --&gt;  tool_result</text>
+
+  <!-- ================================================================ -->
+  <!-- LEFT: LLM Output box                                             -->
+  <!-- ================================================================ -->
+  <rect x="28" y="105" width="215" height="180" rx="8" fill="#1E293B" stroke="#60A5FA" stroke-width="2" filter="url(#shadow)"/>
+  <!-- Header bar -->
+  <rect x="28" y="105" width="215" height="28" rx="8" fill="#1E3A5F"/>
+  <rect x="28" y="121" width="215" height="12" fill="#1E3A5F"/>
+  <text x="135" y="124" text-anchor="middle" fill="#60A5FA" font-size="12" font-weight="700">LLM Output</text>
+
+  <!-- JSON content (monospace) -->
+  <text x="44" y="156" fill="#F8FAFC" font-size="11" font-weight="600" font-family="'SF Mono',SFMono-Regular,Menlo,monospace">tool_use</text>
+  <text x="44" y="174" fill="#94A3B8" font-size="9.5" font-family="'SF Mono',SFMono-Regular,Menlo,monospace">name:</text>
+  <text x="86" y="174" fill="#FBBF24" font-size="9.5" font-family="'SF Mono',SFMono-Regular,Menlo,monospace">"mcp__filesystem</text>
+  <text x="86" y="188" fill="#FBBF24" font-size="9.5" font-family="'SF Mono',SFMono-Regular,Menlo,monospace">  __read_file"</text>
+  <text x="44" y="208" fill="#94A3B8" font-size="9.5" font-family="'SF Mono',SFMono-Regular,Menlo,monospace">input:</text>
+  <text x="44" y="224" fill="#94A3B8" font-size="9.5" font-family="'SF Mono',SFMono-Regular,Menlo,monospace">  {</text>
+  <text x="56" y="238" fill="#94A3B8" font-size="9.5" font-family="'SF Mono',SFMono-Regular,Menlo,monospace">"path":</text>
+  <text x="112" y="238" fill="#FBBF24" font-size="9.5" font-family="'SF Mono',SFMono-Regular,Menlo,monospace">"/tmp/data.txt"</text>
+  <text x="44" y="252" fill="#94A3B8" font-size="9.5" font-family="'SF Mono',SFMono-Regular,Menlo,monospace">  }</text>
+
+  <!-- JSON badge -->
+  <rect x="36" y="264" width="44" height="14" rx="3" fill="#1E3A5F"/>
+  <text x="58" y="274" text-anchor="middle" fill="#60A5FA" font-size="8" font-weight="600">JSON</text>
+
+  <!-- ================================================================ -->
+  <!-- Arrow: LLM -> _execute_tool                                      -->
+  <!-- ================================================================ -->
+  <line x1="243" y1="195" x2="292" y2="195" stroke="#475569" stroke-width="1.5" marker-end="url(#arrowGray)"/>
+
+  <!-- ================================================================ -->
+  <!-- CENTER: Processing Pipeline                                      -->
+  <!-- ================================================================ -->
+
+  <!-- _execute_tool() box -->
+  <rect x="304" y="158" width="174" height="74" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="391" y="183" text-anchor="middle" fill="#F8FAFC" font-size="12" font-weight="600">_execute_tool()</text>
+  <line x1="316" y1="191" x2="466" y2="191" stroke="#334155" stroke-width="0.8"/>
+  <text x="391" y="208" text-anchor="middle" fill="#94A3B8" font-size="9">retry: 2 attempts</text>
+  <text x="391" y="221" text-anchor="middle" fill="#94A3B8" font-size="9">backoff: 0.5 * 2^n</text>
+
+  <!-- Arrow: _execute_tool -> ToolExecutor -->
+  <line x1="391" y1="232" x2="391" y2="260" stroke="#475569" stroke-width="1.5" marker-end="url(#arrowGray)"/>
+
+  <!-- ToolExecutor.execute() box -->
+  <rect x="304" y="272" width="174" height="40" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="391" y="297" text-anchor="middle" fill="#F8FAFC" font-size="11.5" font-weight="600">ToolExecutor.execute()</text>
+
+  <!-- Arrow: ToolExecutor -> Whitelist diamond -->
+  <line x1="391" y1="312" x2="391" y2="343" stroke="#475569" stroke-width="1.5" marker-end="url(#arrowGray)"/>
+
+  <!-- Whitelist Check diamond -->
+  <polygon points="391,347 445,385 391,423 337,385" fill="#1E293B" stroke="#FB923C" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="391" y="382" text-anchor="middle" fill="#FB923C" font-size="10" font-weight="600">Whitelist</text>
+  <text x="391" y="394" text-anchor="middle" fill="#FB923C" font-size="10" font-weight="600">Check</text>
+
+  <!-- Fail path: right from whitelist diamond -->
+  <line x1="445" y1="385" x2="488" y2="385" stroke="#F87171" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowRed)"/>
+  <text x="468" y="378" text-anchor="middle" fill="#F87171" font-size="9" font-weight="600">FAIL</text>
+
+  <!-- Rejection box (compact, positioned between diamonds and target boxes) -->
+  <rect x="500" y="370" width="116" height="30" rx="6" fill="#1E293B" stroke="#F87171" stroke-width="1.5"/>
+  <text x="558" y="384" text-anchor="middle" fill="#F87171" font-size="9.5" font-weight="600">Rejected</text>
+  <text x="558" y="395" text-anchor="middle" fill="#94A3B8" font-size="8">not in allowed tools</text>
+
+  <!-- Arrow: Whitelist pass -> Route diamond -->
+  <line x1="391" y1="423" x2="391" y2="452" stroke="#475569" stroke-width="1.5" marker-end="url(#arrowGray)"/>
+  <text x="380" y="442" text-anchor="end" fill="#34D399" font-size="9" font-weight="600">PASS</text>
+
+  <!-- Route by prefix diamond -->
+  <polygon points="391,456 451,496 391,536 331,496" fill="#1E293B" stroke="#334155" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="391" y="493" text-anchor="middle" fill="#F8FAFC" font-size="10" font-weight="600">Route by</text>
+  <text x="391" y="505" text-anchor="middle" fill="#F8FAFC" font-size="10" font-weight="600">prefix</text>
+
+  <!-- ================================================================ -->
+  <!-- RIGHT: Three execution targets (branching from Route diamond)    -->
+  <!-- ================================================================ -->
+
+  <!-- ---- Branch 1: company__* (green) ---- -->
+  <!-- Path: diamond top-right -> right -> up -> right to box -->
+  <path d="M 451,480 L 540,480 L 540,150 L 620,150" fill="none" stroke="#34D399" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+  <!-- Label pill on the horizontal segment -->
+  <rect x="455" y="466" width="78" height="16" rx="4" fill="#064E3B"/>
+  <text x="494" y="478" text-anchor="middle" fill="#34D399" font-size="9" font-weight="700">company__*</text>
+
+  <!-- In-Process Handler box -->
+  <rect x="632" y="85" width="225" height="130" rx="8" fill="#1E293B" stroke="#34D399" stroke-width="1.5" filter="url(#shadow)"/>
+  <!-- Header -->
+  <rect x="632" y="85" width="225" height="28" rx="8" fill="#064E3B"/>
+  <rect x="632" y="101" width="225" height="12" fill="#064E3B"/>
+  <text x="744" y="104" text-anchor="middle" fill="#34D399" font-size="12" font-weight="700">In-Process Handler</text>
+  <!-- Body -->
+  <text x="744" y="134" text-anchor="middle" fill="#94A3B8" font-size="10">Python function, sync execution</text>
+  <line x1="648" y1="146" x2="841" y2="146" stroke="#334155" stroke-width="0.8"/>
+  <text x="648" y="164" fill="#64748B" font-size="9">Examples:</text>
+  <text x="648" y="179" fill="#94A3B8" font-size="9.5" font-family="'SF Mono',SFMono-Regular,Menlo,monospace">publish_event</text>
+  <text x="648" y="193" fill="#94A3B8" font-size="9.5" font-family="'SF Mono',SFMono-Regular,Menlo,monospace">request_approval</text>
+  <text x="648" y="207" fill="#94A3B8" font-size="9.5" font-family="'SF Mono',SFMono-Regular,Menlo,monospace">search_knowledge</text>
+
+  <!-- ---- Branch 2: mcp__* (cyan) ---- -->
+  <!-- Path: diamond right -> right then up to MCP box center -->
+  <path d="M 451,496 L 570,496 L 570,325 L 622,325" fill="none" stroke="#06B6D4" stroke-width="1.5" marker-end="url(#arrowCyan)"/>
+  <!-- Label pill on the vertical segment -->
+  <rect x="575" y="400" width="52" height="16" rx="4" fill="#083344"/>
+  <text x="601" y="412" text-anchor="middle" fill="#06B6D4" font-size="9" font-weight="700">mcp__*</text>
+
+  <!-- MCP Server Session box -->
+  <rect x="632" y="250" width="225" height="150" rx="8" fill="#1E293B" stroke="#06B6D4" stroke-width="1.5" filter="url(#shadow)"/>
+  <!-- Header -->
+  <rect x="632" y="250" width="225" height="28" rx="8" fill="#083344"/>
+  <rect x="632" y="266" width="225" height="12" fill="#083344"/>
+  <text x="744" y="269" text-anchor="middle" fill="#06B6D4" font-size="12" font-weight="700">MCP Server Session</text>
+  <!-- Body -->
+  <text x="744" y="300" text-anchor="middle" fill="#94A3B8" font-size="10">session.call_tool() via stdio</text>
+  <line x1="648" y1="312" x2="841" y2="312" stroke="#334155" stroke-width="0.8"/>
+  <!-- Timeout badge -->
+  <rect x="648" y="322" width="82" height="18" rx="4" fill="#164E63"/>
+  <text x="689" y="335" text-anchor="middle" fill="#06B6D4" font-size="9" font-weight="600">120s timeout</text>
+  <!-- Client MCP sub-box -->
+  <rect x="648" y="352" width="195" height="38" rx="6" fill="#0C2D3F" stroke="#0E7490" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="745" y="368" text-anchor="middle" fill="#67E8F9" font-size="10" font-weight="600">Client MCP</text>
+  <text x="745" y="382" text-anchor="middle" fill="#94A3B8" font-size="8.5">alternative path for client-scoped agents</text>
+
+  <!-- ---- Branch 3: unknown (red) ---- -->
+  <!-- Path: diamond bottom-right -> right then down to Error box center -->
+  <path d="M 451,512 L 600,512 L 600,485 L 622,485" fill="none" stroke="#F87171" stroke-width="1.5" marker-end="url(#arrowRed)"/>
+  <!-- Label pill on the horizontal segment -->
+  <rect x="455" y="516" width="60" height="16" rx="4" fill="#3B1111"/>
+  <text x="485" y="528" text-anchor="middle" fill="#F87171" font-size="9" font-weight="700">unknown</text>
+
+  <!-- Error Handler box -->
+  <rect x="632" y="435" width="225" height="100" rx="8" fill="#1E293B" stroke="#F87171" stroke-width="1.5" filter="url(#shadow)"/>
+  <!-- Header -->
+  <rect x="632" y="435" width="225" height="28" rx="8" fill="#3B1111"/>
+  <rect x="632" y="451" width="225" height="12" fill="#3B1111"/>
+  <text x="744" y="454" text-anchor="middle" fill="#F87171" font-size="12" font-weight="700">Error Handler</text>
+  <!-- Body -->
+  <text x="744" y="484" text-anchor="middle" fill="#94A3B8" font-size="10">Returns error response</text>
+  <line x1="648" y1="496" x2="841" y2="496" stroke="#334155" stroke-width="0.8"/>
+  <text x="744" y="520" text-anchor="middle" fill="#FBBF24" font-size="9.5" font-family="'SF Mono',SFMono-Regular,Menlo,monospace">{"error": "Unknown tool"}</text>
+
+  <!-- ================================================================ -->
+  <!-- BOTTOM: Return path convergence                                  -->
+  <!-- ================================================================ -->
+
+  <!-- From In-Process Handler (right edge -> down -> left to Serialize) -->
+  <path d="M 857,150 L 895,150 L 895,620 L 438,620" fill="none" stroke="#A78BFA" stroke-width="1.5" marker-end="url(#arrowPurple)"/>
+  <!-- From MCP Server Session -->
+  <path d="M 857,325 L 920,325 L 920,620 L 900,620" fill="none" stroke="#A78BFA" stroke-width="1.5"/>
+  <circle cx="900" cy="620" r="3" fill="#A78BFA"/>
+  <!-- From Error Handler -->
+  <path d="M 857,485 L 945,485 L 945,620 L 925,620" fill="none" stroke="#A78BFA" stroke-width="1.5"/>
+  <circle cx="925" cy="620" r="3" fill="#A78BFA"/>
+  <!-- From Rejection box (dashed -- it also returns) -->
+  <path d="M 558,400 L 558,420 L 970,420 L 970,620 L 950,620" fill="none" stroke="#A78BFA" stroke-width="1" stroke-dasharray="4,3"/>
+  <circle cx="950" cy="620" r="2.5" fill="#A78BFA" opacity="0.6"/>
+
+  <!-- Horizontal convergence line -->
+  <line x1="895" y1="620" x2="950" y2="620" stroke="#A78BFA" stroke-width="1.5"/>
+
+  <!-- Serialize to JSON box -->
+  <rect x="268" y="600" width="170" height="40" rx="8" fill="#1E293B" stroke="#A78BFA" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="353" y="625" text-anchor="middle" fill="#A78BFA" font-size="11" font-weight="600">Serialize to JSON</text>
+
+  <!-- Arrow: Serialize -> Append -->
+  <line x1="268" y1="620" x2="210" y2="620" stroke="#A78BFA" stroke-width="1.5" marker-end="url(#arrowPurple)"/>
+
+  <!-- Append as tool_result box -->
+  <rect x="42" y="596" width="168" height="48" rx="8" fill="#1E293B" stroke="#A78BFA" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="126" y="617" text-anchor="middle" fill="#A78BFA" font-size="11" font-weight="600">Append as</text>
+  <text x="126" y="633" text-anchor="middle" fill="#F8FAFC" font-size="11" font-weight="600" font-family="'SF Mono',SFMono-Regular,Menlo,monospace">tool_result</text>
+
+  <!-- Arrow: Append -> Return to agentic loop (left edge, back up to LLM) -->
+  <path d="M 42,620 L 16,620 L 16,195 L 28,195" fill="none" stroke="#A78BFA" stroke-width="1.5" marker-end="url(#arrowPurple)"/>
+
+  <!-- Return label on the left vertical -->
+  <rect x="4" y="385" width="24" height="90" rx="4" fill="#1E1338"/>
+  <text x="16" y="440" text-anchor="middle" fill="#A78BFA" font-size="9" font-weight="600" writing-mode="tb">Return to LLM</text>
+
+  <!-- ================================================================ -->
+  <!-- Legend (bottom right)                                            -->
+  <!-- ================================================================ -->
+  <rect x="960" y="590" width="128" height="100" rx="6" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="1024" y="608" text-anchor="middle" fill="#94A3B8" font-size="9" font-weight="700" letter-spacing="1">LEGEND</text>
+  <line x1="972" y1="614" x2="1076" y2="614" stroke="#334155" stroke-width="0.6"/>
+
+  <line x1="974" y1="630" x2="998" y2="630" stroke="#34D399" stroke-width="2"/>
+  <text x="1004" y="634" fill="#94A3B8" font-size="8.5">In-process</text>
+
+  <line x1="974" y1="648" x2="998" y2="648" stroke="#06B6D4" stroke-width="2"/>
+  <text x="1004" y="652" fill="#94A3B8" font-size="8.5">MCP stdio</text>
+
+  <line x1="974" y1="666" x2="998" y2="666" stroke="#F87171" stroke-width="2"/>
+  <text x="1004" y="670" fill="#94A3B8" font-size="8.5">Error</text>
+
+  <line x1="974" y1="684" x2="998" y2="684" stroke="#A78BFA" stroke-width="2"/>
+  <text x="1004" y="688" fill="#94A3B8" font-size="8.5">Return path</text>
+
+</svg>

@@ -1,0 +1,112 @@
+# ============================================================================
+# ForgeOS Example: Mixed Tools — Onboarding Assistant
+# ============================================================================
+#
+# WHAT IT DOES:
+#   An event-driven onboarding agent that activates when new employees join
+#   or are assigned roles. It looks up role-specific onboarding procedures,
+#   sends welcome messages with key resources, publishes lifecycle events
+#   for other agents, and tracks onboarding metrics.
+#
+# TOOLS USED (4):
+#   company__search_knowledge  — Look up onboarding procedures, training
+#                                materials, and role-specific checklists
+#                                from the company knowledge base.
+#   platform__send_message     — Send welcome messages, resource links, and
+#                                role-specific training materials directly
+#                                to the new employee.
+#   company__publish_event     — Broadcast lifecycle events like
+#                                "onboarding.started" and "onboarding.step_completed"
+#                                so other agents (IT provisioning, buddy
+#                                assignment) can coordinate.
+#   company__record_metric     — Track onboarding metrics: time-to-first-day,
+#                                materials sent, completion rates per role.
+#
+# EXECUTION TYPE: event_driven
+#   Subscribes to "employee.joined" and "employee.role_assigned" events.
+#   Sits idle until one of these events fires, then processes the employee
+#   onboarding flow and returns to waiting.
+#
+# DEPLOY:
+#   forgeos deploy examples/mixed/onboarding-assistant.yaml
+#
+# TEST:
+#   # Publish a test employee.joined event:
+#   curl -X POST http://localhost:5001/api/events \
+#     -H "Content-Type: application/json" \
+#     -d '{
+#       "event_type": "employee.joined",
+#       "payload": {
+#         "employee_id": "E-5678",
+#         "name": "Jane Smith",
+#         "role": "Software Engineer",
+#         "department": "Engineering",
+#         "start_date": "2026-04-20"
+#       }
+#     }'
+#
+#   # Check the agent's response:
+#   curl http://localhost:5001/api/agents/onboarding-assistant/history?limit=1
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: onboarding-assistant
+  description: "Event-driven onboarding agent that activates on employee.joined and employee.role_assigned events — delivers role-specific resources, sends welcome messages, publishes lifecycle events, and tracks onboarding metrics."
+  department: examples
+  labels:
+    category: mixed
+spec:
+  stack: crewai
+  execution_type: event_driven
+  event_triggers:
+    - employee.joined
+    - employee.role_assigned
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - company__search_knowledge
+    - platform__send_message
+    - company__publish_event
+    - company__record_metric
+  system_prompt: |
+    You guide new employees through onboarding. Your behavior depends on
+    which event triggered you:
+
+    ON employee.joined:
+    1. Extract the employee's name, role, department, and start date from
+       the event payload.
+    2. Search the knowledge base via company__search_knowledge for onboarding
+       procedures specific to their role and department. Look for:
+       - Day-1 checklists
+       - Required training modules
+       - Key contacts and team leads
+       - Tool access and setup guides
+    3. Send the new employee a welcome message via platform__send_message.
+       Include: a warm greeting, their day-1 checklist, links to key
+       resources, and who to contact for help.
+    4. Publish an "onboarding.started" event via company__publish_event
+       with the employee details so other agents (IT provisioning, buddy
+       matching, equipment ordering) can take coordinated action.
+    5. Record onboarding metrics via company__record_metric: employee role,
+       department, materials sent, and timestamp.
+
+    ON employee.role_assigned:
+    1. Extract the employee ID and new role from the event payload.
+    2. Search the knowledge base for role-specific training materials,
+       certifications, and skill requirements for the new role.
+    3. Send role-specific training materials and expectations via
+       platform__send_message. Include any required certifications,
+       recommended learning paths, and role-specific tooling.
+    4. Record a metric tracking the role assignment and materials delivered.
+
+    Be warm and helpful. Starting a new job is stressful — make the
+    employee feel supported and informed.
+  metadata:
+    crewai_role: "Onboarding Coordinator"
+    crewai_goal: "Ensure every new employee has a smooth, well-resourced onboarding experience"
+    crewai_backstory: "You are an experienced HR operations specialist who has onboarded hundreds of employees across every department. You know exactly what each role needs on day one, and you never let a new hire feel lost or unsupported."

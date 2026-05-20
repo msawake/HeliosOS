@@ -1,0 +1,135 @@
+company:
+  name: "LeadForge AI"
+  domain: "leadforge.ai"
+  mission: "Deliver qualified B2B sales pipeline to clients through AI-powered prospect research, multi-channel outreach, and data-driven lead scoring."
+
+budgets:
+  daily_token_budget: 10_000_000
+  critical_reserve_pct: 10
+  per_session_cost_limit_usd: 50.00
+  monthly_infrastructure_budget_usd: 5000
+
+  department_daily_tokens:
+    sales: 3_000_000
+    marketing: 2_500_000
+    finance: 500_000
+    hr: 100_000
+    legal: 300_000
+    operations: 600_000
+
+agent_defaults:
+  max_retries: 3
+  stale_task_threshold_minutes: 60
+  checkpoint_interval_minutes: 10
+  review_sample_rate: 0.20
+  canary_duration_hours: 24
+
+rate_limits:
+  max_tool_calls_per_session: 100
+  max_api_calls_per_minute: 30
+  max_concurrent_agents_per_type: 10
+
+circuit_breakers:
+  task_failure_threshold: 3
+  system_failure_rate_threshold: 0.20
+  system_failure_window_minutes: 60
+  external_service_error_threshold: 5
+  external_service_window_minutes: 10
+
+escalation_timers:
+  reminder_at_pct: 50
+  urgent_at_pct: 90
+  auto_escalate_at_pct: 100
+
+hitl:
+  financial_approval_threshold_usd: 1000
+  financial_approval_sla_hours: 24
+  content_approval_sla_hours: 4
+  contract_approval_sla_hours: 48
+  client_agreement_sla_hours: 48
+  outreach_compliance_sla_hours: 4
+  ad_spend_approval_sla_hours: 12
+  security_exception_sla_hours: 4
+
+  default_denials:
+    financial: true
+    content_publish: false
+    contract_sign: true
+    data_deletion: true
+
+  audit_sampling:
+    outreach_emails: 0.10
+    ad_spend_changes: 0.15
+    client_reports: 1.00
+    nurture_sequences: 0.20
+
+models:
+  orchestrator_default: "claude-opus-4-6"
+  doer_default: "claude-sonnet-4-5-20250514"
+  classifier_default: "claude-haiku-4-5-20251001"
+
+polling_intervals:
+  executive_cycle_minutes: 30
+  department_cycle_minutes: 15
+  dispatcher_cycle_minutes: 5
+  watchdog_cycle_minutes: 60
+  monitoring_cycle_minutes: 2
+
+swarm_types:
+  standing:
+    description: "Always-on agents for continuous workloads"
+    examples: ["sales-sdr", "ops-monitoring"]
+    session_type: "persistent"
+  sprint:
+    description: "Project-duration agent teams"
+    examples: ["outbound-campaign", "client-onboarding"]
+    session_type: "team"
+    max_teammates: 8
+  burst:
+    description: "Dynamic per-task agent groups"
+    examples: ["lead-research", "compliance-audit"]
+    session_type: "stateless"
+
+database:
+  event_bus_table: "events"
+  audit_log_table: "audit_log"
+  agent_configs_table: "agent_configs"
+  task_graph_table: "task_graph"
+
+mcp_servers:
+  tier1:
+    - name: "github"
+      package: "@modelcontextprotocol/server-github"
+      required: true
+    - name: "google-workspace"
+      package: "google-workspace-mcp"
+      required: true
+    - name: "slack"
+      package: "@anthropic/mcp-server-slack"
+      required: true
+    - name: "postgres"
+      package: "@modelcontextprotocol/server-postgres"
+      required: true
+    - name: "stripe"
+      package: "@stripe/mcp"
+      required: true
+  tier2:
+    - name: "crm"
+      package: "crm-mcp"
+      required: false
+    - name: "google-ads"
+      package: "google-ads-mcp"
+      required: false
+    - name: "pinecone"
+      package: "pinecone-mcp"
+      required: false
+    - name: "linkedin"
+      package: "linkedin-mcp"
+      required: false
+  tier3:
+    - name: "datadog"
+      package: "datadog-mcp"
+      required: false
+    - name: "aws"
+      package: "aws-mcp"
+      required: false

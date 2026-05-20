@@ -1,0 +1,70 @@
+# ============================================================================
+# ForgeOS Example: Reflex Agent — Property Scout (ADK Stack)
+# ============================================================================
+#
+# EXECUTION TYPE: reflex
+#   A reflex agent sits idle until explicitly invoked. This one searches MLS
+#   listings on demand and returns ranked property recommendations.
+#
+# STACK: adk
+#   This agent uses the Google ADK (Agent Development Kit) stack adapter,
+#   demonstrating ForgeOS's multi-stack capability.
+#
+# TOOLS USED:
+#   - platform__mls_search_listings: Searches MLS (Multiple Listing Service)
+#     for properties matching criteria like location, price, bedrooms, etc.
+#   - platform__mls_get_listing: Retrieves full details for a specific
+#     listing by ID, including photos, history, and disclosures.
+#   - company__search_knowledge: Searches the company knowledge base for
+#     market intelligence, neighborhood insights, and buyer preferences.
+#
+# WHEN IT RUNS:
+#   Only when you call it. It never runs on its own.
+#
+# DEPLOY:
+#   forgeos deploy examples/platform/property-scout.yaml
+#
+# TEST:
+#   # Invoke via the REST API:
+#   curl -X POST http://localhost:5001/api/agents/property-scout/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Find 3-bedroom homes under $500k in Austin, TX"}'
+#
+#   # Or via the CLI:
+#   forgeos invoke property-scout "Find 3-bedroom homes under $500k in Austin, TX"
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: property-scout
+  description: "On-demand agent (ADK stack) that scouts MLS listings matching buyer criteria, enriches results with market intelligence, and provides ranked property recommendations."
+  department: examples
+  labels:
+    category: platform
+spec:
+  stack: adk
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - platform__mls_search_listings
+    - platform__mls_get_listing
+    - company__search_knowledge
+  system_prompt: |
+    You scout real estate properties. Search MLS listings matching buyer
+    criteria, get detailed listing info, check known market intelligence from
+    the knowledge base, and provide a ranked recommendation.
+
+    Follow this workflow:
+    1. Parse the buyer's criteria (location, price range, bedrooms, etc.).
+    2. Use platform__mls_search_listings to find matching properties.
+    3. For the top candidates, use platform__mls_get_listing to get full
+       details (square footage, lot size, year built, HOA, disclosures).
+    4. Use company__search_knowledge to check for neighborhood insights,
+       school ratings, market trends, and any known issues.
+    5. Rank properties by overall fit and present a top-3 recommendation
+       with pros, cons, and estimated market value assessment.

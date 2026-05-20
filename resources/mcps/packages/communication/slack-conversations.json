@@ -1,0 +1,23 @@
+{
+  "type": "mcp-server",
+  "packageName": "slack-mcp-server",
+  "description": "The most powerful MCP Slack server — supports Stdio and SSE transports, proxy settings, DMs, Group DMs, Smart History fetch (by date or count), may work via OAuth or in complete stealth mode with no permissions and scopes in Workspace. ",
+  "url": "https://github.com/korotovsky/slack-mcp-server",
+  "runtime": "node",
+  "license": "mit",
+  "env": {
+    "SLACK_MCP_XOXC_TOKEN": {
+      "description": "your XOXC token",
+      "required": true
+    },
+    "SLACK_MCP_XOXD_TOKEN": {
+      "description": "your XOXD token",
+      "required": true
+    },
+    "SLACK_MCP_XOXP_TOKEN": {
+      "description": "your XOXP token",
+      "required": true
+    }
+  },
+  "name": "Slack MCP Server"
+}

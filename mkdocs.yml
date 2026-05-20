@@ -1,0 +1,115 @@
+site_name: ForgeOS
+site_description: The agentic harness — deploy, orchestrate, and govern AI agents across framework adapters.
+repo_url: https://github.com/makingscience-awake/forgeos
+repo_name: makingscience-awake/forgeos
+edit_uri: edit/leadforge/docs/
+
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.tabs
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - awesome-pages
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+nav:
+  - Home: index.md
+  - Guides:
+      - Quickstart: guides/quickstart.md
+      - Defining Agents: guides/defining-agents.md
+      - Runtime & Deployment: guides/runtime-and-deployment.md
+      - Creating Agents (legacy): guides/creating-agents.md
+      - Agent Tools: guides/agent-tools.md
+      - SDK Guide: guides/sdk.md
+      - SDK Developer Guide: guides/sdk-developer-guide.md
+      - Example Agents: guides/example-agents.md
+      - Call Center Deployment: guides/call-center-deployment.md
+  - Reference:
+      - Agent Manifest: reference/agent-manifest.md
+      - API Endpoints: reference/api-endpoints.md
+      - Configuration: reference/configuration.md
+      - Runtime API: runtime-api-reference.md
+      - Adapters Guide: adapters-guide.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - Kernel: architecture/kernel.md
+      - Syscall Pipeline: architecture/syscall-pipeline.md
+      - Platform Layer: architecture/platform-layer.md
+      - SDK Runtime: architecture/sdk-runtime.md
+      - Stack Adapters: architecture/stack-adapters.md
+      - Capability Tokens: architecture/capability-tokens.md
+      - Process Table: architecture/process-table.md
+      - Checkpoints: architecture/checkpoints.md
+      - Tool Enforcement: architecture/tool-enforcement.md
+      - A2A Protocol: architecture/a2a-protocol.md
+      - Kernel Architecture (deep dive): runtime-kernel-architecture.md
+      - Agentic Loop Integration: agentic-loop-integration.md
+      - Governance Code Trace: governance-code-trace.md
+      - ADK vs ForgeOS: adk-vs-forgeos-comparison.md
+  - Protocols:
+      - Overview: protocols/README.md
+      - A2H Spec: protocols/a2h-spec.md
+  - Operations:
+      - Deployment: operations/deployment.md
+      - Monitoring: operations/monitoring.md
+      - Runbooks Overview: runbooks/README.md
+      - DB Recovery: runbooks/db-recovery.md
+      - Incident Response: runbooks/incident-response.md
+  - Development:
+      - Contributing: development/contributing.md
+      - Project History: development/project-history.md
+  - Manifesto:
+      - Summary: manifesto-summary.md
+      - Full Text: manifesto.md

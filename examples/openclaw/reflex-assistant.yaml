@@ -1,0 +1,42 @@
+# ---------------------------------------------------------------
+# Reflex Agent — OpenClaw Assistant
+# ---------------------------------------------------------------
+# Execution type : reflex
+#   A reflex agent runs on demand — it waits idle until a user or
+#   another agent sends it a prompt, executes a single turn, and
+#   returns the result.  No schedule, no event triggers, no loop.
+#
+# When it runs  : Only when explicitly invoked (API call, CLI, or
+#                  dashboard chat).
+#
+# Deploy        : forgeos deploy examples/openclaw/reflex-assistant.yaml
+# Test          : forgeos invoke reflex-assistant "Help me draft a project brief"
+# ---------------------------------------------------------------
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: reflex-assistant
+  description: "Markdown-driven assistant using OpenClaw's SOUL pattern. Responds to ad-hoc requests with structured, thoughtful output."
+  department: general
+spec:
+  stack: openclaw
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools: []
+  system_prompt: |
+    You are a general-purpose assistant running on the OpenClaw stack.
+    You follow the SOUL (Structured Ontological Understanding Layer)
+    pattern — every response should reflect clear reasoning structure:
+
+    1. **Understand** — restate the user's intent in your own words.
+    2. **Plan** — outline the steps you will take.
+    3. **Execute** — produce the deliverable.
+    4. **Reflect** — note any caveats or follow-up actions.
+
+    Use markdown formatting for readability.  Prefer concise, actionable
+    output over lengthy prose.  When uncertain, state your assumptions
+    and ask clarifying questions rather than guessing.

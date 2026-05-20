@@ -1,0 +1,67 @@
+# ============================================================================
+# ForgeOS Example: Reflex Agent — Web Data Fetcher
+# ============================================================================
+#
+# EXECUTION TYPE: reflex
+#   A reflex agent sits idle until explicitly invoked. Given a URL or topic,
+#   it fetches web content, extracts insights, and stores findings.
+#
+# TOOLS USED:
+#   - platform__http_fetch: Fetches content from a URL. Used to retrieve web
+#     pages, APIs, or documents for analysis.
+#   - company__add_decision: Records a decision or finding as a knowledge
+#     precedent. Used to store extracted insights for future reference.
+#   - company__search_knowledge: Searches the company knowledge base. Used to
+#     check for existing information before adding duplicates.
+#
+# WHEN IT RUNS:
+#   Only when you call it. It never runs on its own.
+#
+# DEPLOY:
+#   forgeos deploy examples/platform/web-data-fetcher.yaml
+#
+# TEST:
+#   # Invoke via the REST API:
+#   curl -X POST http://localhost:5001/api/agents/web-data-fetcher/invoke \
+#     -H "Content-Type: application/json" \
+#     -d '{"prompt": "Fetch and summarize https://example.com/article"}'
+#
+#   # Or via the CLI:
+#   forgeos invoke web-data-fetcher "Fetch and summarize https://example.com/article"
+#
+# ============================================================================
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: web-data-fetcher
+  description: "On-demand agent that fetches web content, extracts key insights, cross-references with existing knowledge, and stores new findings as decision records."
+  department: examples
+  labels:
+    category: platform
+spec:
+  stack: forgeos
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - platform__http_fetch
+    - company__add_decision
+    - company__search_knowledge
+  system_prompt: |
+    You fetch and analyze web content. When given a URL or topic, use
+    platform__http_fetch to retrieve the content, extract key insights, check
+    existing knowledge via company__search_knowledge, and store new findings
+    via company__add_decision.
+
+    Follow this workflow:
+    1. Use platform__http_fetch to retrieve the content from the given URL.
+    2. Parse and extract the key insights, facts, and takeaways.
+    3. Use company__search_knowledge to check if similar information already
+       exists in the knowledge base.
+    4. If the information is new or substantially different, use
+       company__add_decision to store it with a clear title and summary.
+    5. Return a concise report of what was found, what was new, and what was
+       already known.

@@ -1,0 +1,14 @@
+# Dev: single replica per tier (PDB relaxed via hpa min=1)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgeos-api
+spec:
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgeos-web
+spec:
+  replicas: 1

@@ -1,0 +1,43 @@
+# ============================================================================
+# ForgeOS Example: LangChain / LangGraph Agent
+# ============================================================================
+#
+# WHAT IT DOES:
+#   A simple LangChain agent with ForgeOS governance. Uses the platform's
+#   agentic loop when LangChain is installed, with kernel permission checks
+#   on every tool call via ForgeOSKernelCallback.
+#
+# DEPLOY:  forgeos deploy examples/langchain/hello-world.yaml
+# INVOKE:  forgeos invoke langchain-assistant "Search for AI news"
+#
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: langchain-assistant
+  namespace: default
+  description: "LangChain agent with ForgeOS kernel governance"
+spec:
+  stack: langchain
+  execution_type: reflex
+  llm:
+    chat_model: gpt-4o
+    provider: openai
+  tools:
+    - company__search_knowledge
+    - company__record_metric
+  capabilities:
+    tools:
+      allowed:
+        - company__search_knowledge
+        - company__record_metric
+      denied:
+        - company__send_email
+  boundaries:
+    budgets:
+      daily_usd: 5.00
+      per_task_usd: 0.50
+  system_prompt: |
+    You are a helpful research assistant powered by LangChain.
+    Search the knowledge base to answer questions.
+    Record key findings as metrics.
+    You cannot send emails (this tool is denied by the kernel).

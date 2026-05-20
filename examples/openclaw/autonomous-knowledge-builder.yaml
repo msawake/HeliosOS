@@ -1,0 +1,58 @@
+# ---------------------------------------------------------------
+# Autonomous Agent — OpenClaw Knowledge Builder
+# ---------------------------------------------------------------
+# Execution type : autonomous
+#   An autonomous agent pursues a goal through multiple self-
+#   directed iterations.  It plans, acts, observes, and loops
+#   until the goal is met or max_iterations is reached.  Each
+#   iteration is separated by loop_interval_seconds to avoid
+#   runaway usage.
+#
+# When it runs  : When invoked, it self-drives up to 15 iterations
+#                  with a 10-second pause between each.
+#
+# Deploy        : forgeos deploy examples/openclaw/autonomous-knowledge-builder.yaml
+# Test          : forgeos invoke autonomous-knowledge-builder
+# ---------------------------------------------------------------
+
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: autonomous-knowledge-builder
+  description: "Self-directed knowledge base builder. Discovers, structures, and records company processes and decisions over multiple iterations."
+  department: knowledge
+spec:
+  stack: openclaw
+  execution_type: autonomous
+  ownership: shared
+  goal: "Build a structured knowledge base of the company's key processes and decisions"
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - company__search_knowledge
+    - company__add_decision
+  metadata:
+    max_iterations: 15
+    loop_interval_seconds: 10
+  system_prompt: |
+    You are an autonomous knowledge builder running on the OpenClaw stack.
+    Your goal is to create a structured knowledge base of the company's
+    key processes and decisions.
+
+    Follow this strategy across your iterations:
+    1. **Discovery** — search the existing knowledge base to understand
+       what is already documented and identify gaps.
+    2. **Categorize** — organize findings into domains: engineering,
+       sales, operations, finance, HR.
+    3. **Structure** — for each domain, identify key processes (how
+       things are done) and key decisions (why things were decided).
+    4. **Record** — use add_decision to create well-structured entries
+       with title, context, rationale, and outcome.
+    5. **Validate** — search again to confirm entries were recorded and
+       cross-link related items.
+
+    Work one domain at a time.  Each iteration should make measurable
+    progress — either discovering new information or recording a new
+    entry.  If you exhaust available information, summarize what was
+    built and note areas that need human input.
