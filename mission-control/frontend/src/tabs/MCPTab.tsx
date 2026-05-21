@@ -3,6 +3,8 @@ import type { MCPServerConfig } from "@/lib/api";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { MCPDetailSheet } from "@/components/MCPDetailSheet";
+import { MCPUploadDialog } from "@/components/MCPUploadDialog";
 import { Table, Tbody, Td, Th, Thead, Tr } from "@/components/ui/table";
 
 function unwrap<T>(raw: T[] | { items?: T[] } | null): T[] {
@@ -21,6 +23,8 @@ export function MCPTab({ onChange }: Props) {
   const [isNew, setIsNew] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedServer, setSelectedServer] = useState<MCPServerConfig | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const refresh = async () => {
     const r = await api.mcpList();
@@ -55,8 +59,7 @@ export function MCPTab({ onChange }: Props) {
       : await api.mcpUpdate(editing.server_name, editing);
     if (!res.ok) {
       setError(
-        (res.body as { detail?: string } | null)?.detail ??
-          `HTTP ${res.status}`,
+        (res.body as { detail?: string } | null)?.detail ?? `HTTP ${res.status}`,
       );
       return;
     }
@@ -68,6 +71,7 @@ export function MCPTab({ onChange }: Props) {
     if (!pendingDelete) return;
     await api.mcpDelete(pendingDelete);
     setPendingDelete(null);
+    setSelectedServer(null);
     refresh();
   };
 
@@ -77,9 +81,14 @@ export function MCPTab({ onChange }: Props) {
         <span className="text-[10px] uppercase tracking-widest text-dim">
           MCP Servers · {servers.length} configured · restart required to apply
         </span>
-        <Button variant="ok" onClick={openNew}>
-          + ADD SERVER
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="ok" onClick={() => setUploadOpen(true)}>
+            ↑ UPLOAD YAML
+          </Button>
+          <Button variant="ok" onClick={openNew}>
+            + ADD SERVER
+          </Button>
+        </div>
       </div>
 
       {!servers.length ? (
@@ -94,34 +103,48 @@ export function MCPTab({ onChange }: Props) {
               <Th>Package</Th>
               <Th>Env vars</Th>
               <Th>Args</Th>
-              <Th>Actions</Th>
             </Tr>
           </Thead>
           <Tbody>
             {servers.map((s) => (
-              <Tr key={s.server_name}>
+              <Tr
+                key={s.server_name}
+                onClick={() => setSelectedServer(s)}
+                className={
+                  selectedServer?.server_name === s.server_name
+                    ? "bg-info/10"
+                    : undefined
+                }
+              >
                 <Td className="text-bright">{s.server_name}</Td>
                 <Td className="font-mono text-[10px]">{s.package}</Td>
                 <Td className="text-dim">
                   {Object.keys(s.env_vars ?? {}).length} vars
                 </Td>
                 <Td className="text-dim">{(s.args ?? []).length}</Td>
-                <Td>
-                  <div className="flex gap-1">
-                    <Button onClick={() => openEdit(s)}>EDIT</Button>
-                    <Button
-                      variant="danger"
-                      onClick={() => setPendingDelete(s.server_name)}
-                    >
-                      DELETE
-                    </Button>
-                  </div>
-                </Td>
               </Tr>
             ))}
           </Tbody>
         </Table>
       )}
+
+      <MCPDetailSheet
+        open={!!selectedServer}
+        onClose={() => setSelectedServer(null)}
+        server={selectedServer}
+        onEdit={() => {
+          if (selectedServer) openEdit(selectedServer);
+        }}
+        onDelete={() => {
+          if (selectedServer) setPendingDelete(selectedServer.server_name);
+        }}
+      />
+
+      <MCPUploadDialog
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onUploaded={refresh}
+      />
 
       {editing && (
         <MCPEditorDialog
