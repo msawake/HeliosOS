@@ -2,6 +2,7 @@ import type { Agent, AgentProcess } from "@/lib/api";
 import { ago, fmt, shortName, usd } from "@/lib/utils";
 import { PhaseBadge } from "@/components/PhaseBadge";
 import { StackBadge } from "@/components/StackBadge";
+import { ResizableSplit } from "@/components/ui/resizable-split";
 
 interface Props {
   agents: Agent[];
@@ -77,48 +78,52 @@ export function ManifestTab({ agents, procs, selected, onSelect }: Props) {
   const proc = current ? procs.find((p) => shortName(p.name) === current.name) : undefined;
 
   return (
-    <div className="grid h-full grid-cols-[300px_1fr]">
-      <div className="overflow-y-auto border-r border-border">
-        <div className="border-b border-border bg-surface px-[14px] py-2 text-[10px] uppercase tracking-widest text-dim">
-          Select Agent
-        </div>
-        {agents.length === 0 ? (
-          <div className="p-10 text-center text-dim">No agents.</div>
-        ) : (
-          agents.map((a) => {
-            const p = procs.find((x) => shortName(x.name) === a.name);
-            const isSelected = a.name === selected;
-            return (
-              <button
-                key={a.name}
-                onClick={() => onSelect(a.name)}
-                className={`block w-full cursor-pointer border-b border-border px-3 py-2 text-left ${
-                  isSelected ? "bg-info/10" : ""
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-bright">{a.name}</span>
-                  {p && <PhaseBadge phase={p.phase} className="text-[9px]" />}
-                </div>
-                <div className="mt-[2px] text-[10px] text-dim">
-                  <StackBadge stack={a.stack} /> · {a.execution_type ?? "-"} ·{" "}
-                  {(a.tools ?? []).length} tools
-                </div>
-              </button>
-            );
-          })
-        )}
-      </div>
-
-      <div className="overflow-y-auto p-4">
-        {current ? (
-          <ManifestDetail agent={current} proc={proc} />
-        ) : (
-          <div className="p-10 text-center text-dim">
-            Select an agent from the list to inspect its contract.
+    <ResizableSplit
+      defaultLeftPx={300}
+      left={
+        <div>
+          <div className="border-b border-border bg-surface px-[14px] py-2 text-[10px] uppercase tracking-widest text-dim">
+            Select Agent
           </div>
-        )}
-      </div>
-    </div>
+          {agents.length === 0 ? (
+            <div className="p-10 text-center text-dim">No agents.</div>
+          ) : (
+            agents.map((a) => {
+              const p = procs.find((x) => shortName(x.name) === a.name);
+              const isSelected = a.name === selected;
+              return (
+                <button
+                  key={a.name}
+                  onClick={() => onSelect(a.name)}
+                  className={`block w-full cursor-pointer border-b border-border px-3 py-2 text-left ${
+                    isSelected ? "bg-info/10" : ""
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-bright">{a.name}</span>
+                    {p && <PhaseBadge phase={p.phase} className="text-[9px]" />}
+                  </div>
+                  <div className="mt-[2px] text-[10px] text-dim">
+                    <StackBadge stack={a.stack} /> · {a.execution_type ?? "-"} ·{" "}
+                    {(a.tools ?? []).length} tools
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      }
+      right={
+        <div className="p-4">
+          {current ? (
+            <ManifestDetail agent={current} proc={proc} />
+          ) : (
+            <div className="p-10 text-center text-dim">
+              Select an agent from the list to inspect its contract.
+            </div>
+          )}
+        </div>
+      }
+    />
   );
 }

@@ -33,7 +33,7 @@ function unwrap<T>(
 export default function App() {
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState("fleet");
-  const [openAgent, setOpenAgent] = useState<string | undefined>();
+  const [openPid, setOpenPid] = useState<string | undefined>();
   const [manifestSelected, setManifestSelected] = useState<string | undefined>();
 
   const fleetQ = useQuery({ queryKey: ["fleet"], queryFn: () => api.fleet() });
@@ -156,7 +156,7 @@ export default function App() {
           <TabsContent value="fleet">
             <FleetTab
               procs={procs}
-              onSelect={(name) => setOpenAgent(name)}
+              onSelect={(pid) => setOpenPid(pid)}
               onChange={refreshAll}
             />
           </TabsContent>
@@ -170,7 +170,10 @@ export default function App() {
             <TopologyTab
               agents={agentList}
               procs={procs}
-              onSelect={(name) => setOpenAgent(name)}
+              onSelect={(name) => {
+                const match = procs.find((p) => shortName(p.name) === name);
+                setOpenPid(match?.pid != null ? String(match.pid) : undefined);
+              }}
               onOpenManifest={openManifestFor}
             />
           </TabsContent>
@@ -192,10 +195,20 @@ export default function App() {
       </Tabs>
 
       <AgentDetailSheet
-        open={!!openAgent}
-        onClose={() => setOpenAgent(undefined)}
-        agent={openAgent ? agentMap[openAgent] : undefined}
-        proc={openAgent ? procs.find((p) => shortName(p.name) === openAgent) : undefined}
+        open={!!openPid}
+        onClose={() => setOpenPid(undefined)}
+        agent={
+          openPid
+            ? agentMap[
+                shortName(procs.find((p) => String(p.pid) === openPid)?.name)
+              ]
+            : undefined
+        }
+        proc={openPid ? procs.find((p) => String(p.pid) === openPid) : undefined}
+        onChange={() => {
+          refreshAll();
+          setOpenPid(undefined);
+        }}
       />
     </div>
   );

@@ -4,6 +4,8 @@ export interface AgentProcess {
   name: string;
   pid?: string | number;
   phase: string;
+  display_phase?: string;
+  next_run_at?: string | null;
   namespace?: string;
   tokens?: number;
   dollars?: number;
@@ -12,6 +14,40 @@ export interface AgentProcess {
   last_error?: string;
   stack?: string;
   execution_type?: string;
+}
+
+export interface AgentRun {
+  id: string;
+  pid: string;
+  agent_id: string;
+  trigger: string;
+  started_at?: string;
+  ended_at?: string | null;
+  status: string;
+  prompt?: string | null;
+  output?: string | null;
+  error?: string | null;
+  tool_calls: number;
+  tokens_used: number;
+  duration_ms?: number | null;
+}
+
+export interface AgentLogEvent {
+  ts?: string;
+  agent_id?: string;
+  type: string;
+  description: string;
+  details?: Record<string, unknown>;
+}
+
+export interface HitlItem {
+  source: "approval" | "a2h";
+  id: string;
+  agent_id?: string;
+  priority?: string;
+  created_at?: string;
+  question?: string;
+  context?: Record<string, unknown>;
 }
 
 export interface FleetResponse {
@@ -26,6 +62,7 @@ export interface FleetResponse {
 
 export interface Agent {
   name: string;
+  agent_id?: string;
   stack?: string;
   execution_type?: string;
   namespace?: string;
@@ -33,6 +70,9 @@ export interface Agent {
   llm_config?: { chat_model?: string; provider?: string };
   tools?: string[];
   system_prompt?: string;
+  schedule?: string | null;
+  goal?: string;
+  event_triggers?: string[];
   metadata?: Record<string, unknown>;
 }
 
@@ -138,6 +178,7 @@ export const api = {
   invoke: async (
     pid: string,
     prompt: string,
+    opts?: { async?: boolean },
   ): Promise<{
     ok: boolean;
     status: number;
@@ -145,16 +186,19 @@ export const api = {
       result?: string;
       error?: string | null;
       status?: string;
+      detail?: string;
+      accepted?: boolean;
       warnings?: string[] | null;
       duration?: number;
       tokens_used?: number;
       tool_calls?: number;
     } | null;
   }> => {
-    const r = await fetch(`/api/platform/agents/${pid}/invoke`, {
+    const qs = opts?.async ? "?async_mode=true" : "";
+    const r = await fetch(`/api/platform/agents/${pid}/invoke${qs}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, context: {} }),
+      body: JSON.stringify({ prompt: prompt ?? "", context: {} }),
     });
     let body: unknown = null;
     try {
@@ -164,6 +208,17 @@ export const api = {
     }
     return { ok: r.ok, status: r.status, body: body as never };
   },
+  agentRuns: (agentId: string, limit = 20) =>
+    getJSON<{ runs: AgentRun[] }>(
+      `/api/platform/agents/${encodeURIComponent(agentId)}/runs?limit=${limit}`,
+    ),
+  agentLogs: (limit = 200, agentId?: string) =>
+    getJSON<{ events: AgentLogEvent[] }>(
+      `/api/platform/agent-logs?limit=${limit}${agentId ? `&agent_id=${encodeURIComponent(agentId)}` : ""}`,
+    ),
+  hitlPending: () => getJSON<{ items: HitlItem[] }>("/api/hitl/pending"),
+  a2hApprove: (id: string) => postJSON(`/api/a2h/requests/${encodeURIComponent(id)}/approve`),
+  a2hReject: (id: string) => postJSON(`/api/a2h/requests/${encodeURIComponent(id)}/reject`),
   stop: (pid: string) => postJSON(`/api/platform/agents/${pid}/stop`),
   remove: (pid: string) =>
     fetch(`/api/platform/agents/${pid}`, { method: "DELETE" }),
@@ -200,6 +255,28 @@ export const api = {
   },
   mcpDelete: (name: string) =>
     fetch(`/api/platform/mcp/servers/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  getAgent: async (agentId: string): Promise<Agent | null> => {
+    try {
+      const r = await fetch(`/api/platform/agents/${encodeURIComponent(agentId)}`);
+      if (!r.ok) return null;
+      return (await r.json()) as Agent;
+    } catch {
+      return null;
+    }
+  },
+  updateAgentYaml: async (
+    agentId: string,
+    yaml: string,
+  ): Promise<{ ok: boolean; status: number; body: unknown }> => {
+    const r = await fetch(`/api/platform/agents/${encodeURIComponent(agentId)}/from-yaml`, {
+      method: "PUT",
+      headers: { "Content-Type": "text/yaml" },
+      body: yaml,
+    });
+    let body: unknown = null;
+    try { body = await r.json(); } catch { body = null; }
+    return { ok: r.ok, status: r.status, body };
+  },
   uploadYaml: async (
     yaml: string,
   ): Promise<{ ok: boolean; status: number; body: unknown }> => {

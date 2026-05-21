@@ -3,9 +3,11 @@ import { cn } from "@/lib/utils";
 
 const PHASE_CLASSES: Record<string, string> = {
   running: "bg-ok/10 text-ok",
-  admitted: "bg-info/10 text-info",
+  scheduled: "bg-info/10 text-info",
+  admitted: "bg-dim/10 text-dim",
   starting: "bg-info/10 text-info",
   pending: "bg-info/10 text-info",
+  awaiting_human: "bg-warn/10 text-warn",
   draining: "bg-warn/10 text-warn",
   stopped: "bg-dim/10 text-dim",
   failed: "bg-danger/10 text-danger",
@@ -13,7 +15,19 @@ const PHASE_CLASSES: Record<string, string> = {
   evicted: "bg-purple/10 text-purple",
 };
 
-export function PhaseBadge({ phase, className }: { phase: string; className?: string }) {
+export function PhaseBadge({
+  phase,
+  className,
+  title,
+}: {
+  phase: string;
+  className?: string;
+  title?: string;
+}) {
   const cls = PHASE_CLASSES[phase] ?? "bg-dim/10 text-dim";
-  return <Badge className={cn(cls, className)}>{phase.toUpperCase()}</Badge>;
+  return (
+    <Badge className={cn(cls, className)} title={title}>
+      {phase.toUpperCase()}
+    </Badge>
+  );
 }

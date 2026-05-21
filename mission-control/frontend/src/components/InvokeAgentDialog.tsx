@@ -7,56 +7,29 @@ interface Props {
   onClose: () => void;
   pid: string;
   label: string;
+  onQueued?: (msg: string) => void;
 }
 
-interface Result {
-  ok: boolean;
-  status: number;
-  text: string;
-  warnings?: string[] | null;
-  durationMs?: number;
-  toolCalls?: number;
-  tokens?: number;
-}
-
-export function InvokeAgentDialog({ open, onClose, pid, label }: Props) {
+export function InvokeAgentDialog({ open, onClose, pid, label, onQueued }: Props) {
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<Result | null>(null);
 
   if (!open) return null;
 
-  const reset = () => {
-    setPrompt("");
-    setResult(null);
-  };
-
   const run = async () => {
     setBusy(true);
-    setResult(null);
-    const r = await api.invoke(pid, prompt);
+    const r = await api.invoke(pid, prompt, { async: true });
     setBusy(false);
-    const body = r.body;
-    if (!r.ok) {
-      setResult({
-        ok: false,
-        status: r.status,
-        text:
-          (body as { detail?: string; error?: string } | null)?.detail ||
-          (body as { error?: string } | null)?.error ||
-          `HTTP ${r.status}`,
-      });
-      return;
+    const accepted = r.ok && (r.body?.accepted || r.body?.status === "accepted");
+    if (accepted) {
+      onQueued?.(`Queued: ${label}`);
+      setPrompt("");
+      onClose();
+    } else {
+      const detail =
+        r.body?.error || r.body?.detail || `HTTP ${r.status} — invoke failed`;
+      onQueued?.(`Failed to queue: ${detail}`);
     }
-    setResult({
-      ok: !body?.error,
-      status: r.status,
-      text: body?.result ?? body?.error ?? "(no output)",
-      warnings: body?.warnings,
-      durationMs: body?.duration ? Math.round(body.duration * 1000) : undefined,
-      toolCalls: body?.tool_calls,
-      tokens: body?.tokens_used,
-    });
   };
 
   return (
@@ -93,54 +66,28 @@ export function InvokeAgentDialog({ open, onClose, pid, label }: Props) {
             </span>
           </div>
 
-          <label className="mb-1 block text-dim">Prompt</label>
+          <label className="mb-1 block text-dim">Prompt (optional)</label>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder='e.g. "DRY_RUN — just list the tickets you would comment on"'
+            placeholder='leave blank for default trigger, or e.g. "DRY_RUN — list tickets only"'
             spellCheck={false}
             rows={4}
             disabled={busy}
             className="w-full resize-y border border-border bg-bg p-2 font-mono text-[11px] text-text outline-none focus:border-info"
           />
-
-          {result && (
-            <div className="mt-3 border border-border bg-bg p-2">
-              <div className="mb-1 flex justify-between text-[10px] uppercase tracking-widest">
-                <span className={result.ok ? "text-ok" : "text-danger"}>
-                  {result.ok ? "✓ result" : "✕ failed"}
-                </span>
-                <span className="text-dim">
-                  {result.durationMs != null ? `${result.durationMs}ms` : ""}
-                  {result.toolCalls != null ? ` · ${result.toolCalls} tools` : ""}
-                  {result.tokens != null ? ` · ${result.tokens} tok` : ""}
-                </span>
-              </div>
-              <pre className="max-h-[260px] overflow-auto whitespace-pre-wrap break-words text-[11px] text-text">
-                {result.text}
-              </pre>
-              {result.warnings && result.warnings.length > 0 && (
-                <div className="mt-2 border-t border-border pt-2 text-warn">
-                  {result.warnings.map((w, i) => (
-                    <div key={i}>⚠ {w}</div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          <div className="mt-2 text-[10px] text-dim">
+            Fires the agent in the background. Watch RECENT RUNS or
+            Governance → AGENT LOGS for results.
+          </div>
         </div>
 
         <div className="flex justify-end gap-2 border-t border-border bg-bg px-3 py-2">
-          {result && (
-            <Button variant="ghost" onClick={reset} disabled={busy}>
-              CLEAR
-            </Button>
-          )}
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             CLOSE
           </Button>
           <Button variant="ok" onClick={run} disabled={busy}>
-            {busy ? "RUNNING…" : "RUN NOW"}
+            {busy ? "QUEUEING…" : "RUN NOW"}
           </Button>
         </div>
       </div>
