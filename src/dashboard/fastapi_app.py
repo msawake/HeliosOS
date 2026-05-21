@@ -115,7 +115,7 @@ class ChatResponse(BaseModel):
     turns: int
 
 class InvokeRequest(BaseModel):
-    prompt: str
+    prompt: str = ""
     context: dict = {}
 
 class AgentCreateRequest(BaseModel):
@@ -245,6 +245,35 @@ def create_fastapi_app(
     from src.platform.alerts import AlertDispatcher, ALERT_TRIGGER_ACTIONS
     audit = AuditLog(db_client=db_client, tenant_id=tenant_id)
     alert_dispatcher = AlertDispatcher.from_env()
+
+    def _resolve_a2h_gateway():
+        """Walk kernel → admission → tool_executor to reach the live
+        A2HGateway. Returns None if any link is missing."""
+        try:
+            adm = getattr(kernel, "admission", None) if kernel is not None else None
+            te = (
+                (getattr(adm, "_tool_executor", None) if adm else None)
+                or (getattr(kernel, "_tool_executor", None) if kernel else None)
+                or (getattr(kernel, "tool_executor", None) if kernel else None)
+            )
+            return getattr(te, "_a2h_gateway", None) if te else None
+        except Exception:
+            return None
+
+    # Make the AuditLog visible to ToolExecutor so per-tool-call rows are
+    # written even when the syscall pipeline is off.
+    try:
+        te = None
+        if kernel is not None:
+            adm = getattr(kernel, "admission", None)
+            if adm is not None:
+                te = getattr(adm, "_tool_executor", None)
+            te = te or getattr(kernel, "_tool_executor", None) or getattr(kernel, "tool_executor", None)
+        if te is not None:
+            te._audit_log = audit
+            logger.info("Tool executor wired to audit log for tool.call events")
+    except Exception:
+        pass
 
     def _safe_count(fn) -> int:
         """Call fn() and return len(result), or 0 on any error."""
@@ -717,7 +746,7 @@ def create_fastapi_app(
         return await create_agent(req, _auth=_auth)
 
     @app.post("/api/platform/agents/{agent_id}/invoke", tags=["agents"])
-    async def invoke_agent(agent_id: str, req: InvokeRequest, _auth=Depends(check_auth)):
+    async def invoke_agent(agent_id: str, req: InvokeRequest, async_mode: bool = False, _auth=Depends(check_auth)):
         """Invoke an agent with a prompt.
 
         Tries the platform executor first (agents deployed via the new
@@ -728,6 +757,16 @@ def create_fastapi_app(
         if platform_executor:
             agent_def = platform_executor.registry.get(agent_id)
             if agent_def:
+                if async_mode:
+                    import asyncio as _asyncio
+                    from datetime import datetime as _dt, timezone as _tz
+                    _asyncio.create_task(platform_executor.invoke(agent_id, req.prompt, req.context))
+                    return {
+                        "agent_id": agent_id,
+                        "status": "accepted",
+                        "accepted": True,
+                        "queued_at": _dt.now(_tz.utc).isoformat(),
+                    }
                 try:
                     result = await platform_executor.invoke(agent_id, req.prompt, req.context)
                     # Build warnings for simulation or missing tools
@@ -777,6 +816,33 @@ def create_fastapi_app(
     # ------------------------------------------------------------------
     # Agent Update (edit in-place)
     # ------------------------------------------------------------------
+
+    @app.put("/api/platform/agents/{agent_id}/from-yaml", tags=["agents"])
+    async def update_agent_from_yaml(agent_id: str, request: Request, _auth=Depends(check_auth)):
+        """Update an existing agent from a raw YAML manifest body (Content-Type: text/yaml)."""
+        try:
+            import yaml
+            from src.forgeos_sdk.manifest import AgentManifest
+            body = (await request.body()).decode("utf-8")
+            if not body.strip():
+                raise HTTPException(400, "Empty manifest body")
+            data = yaml.safe_load(body)
+            if not isinstance(data, dict):
+                raise HTTPException(400, "Manifest must be a YAML mapping")
+            manifest = AgentManifest.from_dict(data)
+            deploy_body = manifest.to_deploy_request()
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(400, f"Invalid manifest: {e}")
+        ns = (deploy_body.get("metadata") or {}).get("_namespace")
+        if ns and "namespace" not in deploy_body:
+            deploy_body["namespace"] = ns
+        try:
+            req = AgentCreateRequest(**deploy_body)
+        except Exception as e:
+            raise HTTPException(400, f"Manifest did not match deploy schema: {e}")
+        return await update_agent(agent_id, req, _auth=_auth)
 
     @app.put("/api/platform/agents/{agent_id}", tags=["agents"])
     async def update_agent(agent_id: str, req: AgentCreateRequest, _auth=Depends(check_auth)):
@@ -2407,18 +2473,197 @@ def create_fastapi_app(
             return {"error": "Platform not initialized"}
         summary = platform_executor.process_table.summary()
         agents = []
+        invoking = getattr(platform_executor, "_invoking_pids", set())
         for proc in platform_executor.process_table.list_all():
+            pid = proc.identity.pid
+            display_phase = proc.phase.value
+            next_run_at = None
+            execution_type = None
+            try:
+                agent_def = platform_executor.registry.get(pid)
+                if agent_def:
+                    execution_type = agent_def.execution_type.value
+                    # Only present SCHEDULED when the process is in a live
+                    # phase (admitted/running). Stopped/failed/quarantined
+                    # agents should keep their real phase so operators see
+                    # the actual state.
+                    live_phases = {"admitted", "running", "starting"}
+                    if (
+                        execution_type == "scheduled"
+                        and pid not in invoking
+                        and proc.phase.value in live_phases
+                    ):
+                        display_phase = "scheduled"
+                        try:
+                            nrf = getattr(platform_executor.scheduler, "next_run_for", None)
+                            if callable(nrf):
+                                nr = nrf(pid)
+                                if nr is not None:
+                                    next_run_at = nr.isoformat() if hasattr(nr, "isoformat") else str(nr)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
             agents.append({
-                "pid": proc.identity.pid,
+                "pid": pid,
                 "name": proc.identity.qualified_name,
                 "namespace": proc.identity.namespace,
                 "phase": proc.phase.value,
+                "display_phase": display_phase,
+                "execution_type": execution_type,
+                "next_run_at": next_run_at,
                 "dollars": round(proc.resource_usage.dollars, 4),
                 "tokens": proc.resource_usage.total_tokens,
                 "tool_calls": proc.resource_usage.tool_calls,
                 "last_heartbeat": proc.resource_usage.last_heartbeat_at,
             })
         return {"summary": summary, "agents": agents}
+
+    @app.get("/api/platform/agents/{agent_id}/runs", tags=["agents"])
+    async def list_agent_runs(agent_id: str, limit: int = 20, _auth=Depends(check_auth)):
+        """Per-agent invocation history (last N runs)."""
+        if not platform_executor or not getattr(platform_executor, "agent_runs", None):
+            return {"runs": []}
+        runs = await platform_executor.agent_runs.list_for_agent(agent_id, limit=limit)
+        return {"runs": runs}
+
+    @app.get("/api/platform/agent-logs", tags=["mission-control"])
+    async def agent_logs(limit: int = 200, agent_id: str | None = None, _auth=Depends(check_auth)):
+        """Unified agent activity feed: run start/end events + tool calls,
+        merged by timestamp. Powers the Governance 'AGENT LOGS' panel."""
+        events: list[dict] = []
+        if platform_executor and getattr(platform_executor, "agent_runs", None):
+            runs = await platform_executor.agent_runs.list_recent(limit=limit)
+            for r in runs:
+                if agent_id and r.get("agent_id") != agent_id:
+                    continue
+                events.append({
+                    "ts": r.get("started_at"),
+                    "agent_id": r.get("agent_id"),
+                    "type": "run.started",
+                    "description": f"run started ({r.get('trigger', 'manual')})",
+                    "details": {"pid": r.get("pid"), "trigger": r.get("trigger")},
+                })
+                if r.get("ended_at"):
+                    status = r.get("status") or "completed"
+                    cost = r.get("cost_usd") or 0.0
+                    desc = f"run {status} · {r.get('tool_calls', 0)} tools · {r.get('tokens_used', 0)} tok"
+                    if cost:
+                        desc += f" · ${cost:.4f}"
+                    if r.get("duration_ms"):
+                        desc += f" · {r['duration_ms']}ms"
+                    events.append({
+                        "ts": r.get("ended_at"),
+                        "agent_id": r.get("agent_id"),
+                        "type": f"run.{status}",
+                        "description": desc,
+                        "details": {
+                            "pid": r.get("pid"),
+                            "tool_calls": r.get("tool_calls"),
+                            "tokens_used": r.get("tokens_used"),
+                            "input_tokens": r.get("input_tokens"),
+                            "output_tokens": r.get("output_tokens"),
+                            "model": r.get("model"),
+                            "cost_usd": cost,
+                            "error": r.get("error"),
+                        },
+                    })
+        # Tool-call events from platform_audit_log (best-effort; ok if absent).
+        try:
+            tool_events = audit.query(resource_type="tool", limit=limit)
+            for ev in tool_events or []:
+                aid = (ev.get("details") or {}).get("agent_id") or ev.get("actor")
+                if agent_id and aid != agent_id:
+                    continue
+                events.append({
+                    "ts": ev.get("created_at"),
+                    "agent_id": aid,
+                    "type": ev.get("action") or "tool.call",
+                    "description": f"tool {ev.get('resource_id', '?')} → {ev.get('outcome', 'ok')}",
+                    "details": ev.get("details") or {},
+                })
+        except Exception:
+            pass
+        events.sort(key=lambda e: e.get("ts") or "", reverse=True)
+        return {"events": events[:limit]}
+
+    @app.get("/api/_debug/a2h", tags=["mission-control"])
+    async def _debug_a2h(_auth=Depends(check_auth)):
+        info = {"gw": None, "humans": [], "requests": []}
+        try:
+            gw = None
+            if kernel is not None:
+                adm = getattr(kernel, "admission", None)
+                te = (getattr(adm, "_tool_executor", None) if adm else None)
+                if te is not None:
+                    gw = getattr(te, "_a2h_gateway", None)
+            info["gw"] = repr(gw)
+            info["te_id"] = id(te) if te else None
+            info["gw_id"] = id(gw) if gw else None
+            if gw is not None:
+                humans = getattr(gw, "_humans", {})
+                info["humans"] = [{"pid": h.pid, "name": h.name, "ns": h.namespace, "state": h.current_state} for h in humans.values()]
+                store = getattr(gw, "_store", None)
+                if store is not None:
+                    reqs = getattr(store, "_requests", {})
+                    info["requests"] = [{"id": r.id, "status": r.status.value if hasattr(r.status, "value") else str(r.status), "ns": r.namespace, "to_human": r.to_human, "to_name": getattr(r, "to_human_name", None), "from": r.from_agent} for r in reqs.values()]
+        except Exception as e:
+            info["error"] = str(e)
+        return info
+
+    @app.get("/api/hitl/pending", tags=["mission-control"])
+    async def hitl_pending(_auth=Depends(check_auth)):
+        """Unified pending HITL inbox: both legacy hitl_approvals and the
+        newer a2h_requests stream. Returned items share a common shape so the
+        UI can render them uniformly."""
+        items: list[dict] = []
+        # Legacy approvals
+        try:
+            if company_system and getattr(company_system, "hitl", None):
+                pending = company_system.hitl.get_pending()
+                for a in pending or []:
+                    items.append({
+                        "source": "approval",
+                        "id": a.get("id"),
+                        "agent_id": a.get("agent"),
+                        "priority": a.get("risk", "medium"),
+                        "created_at": a.get("timestamp"),
+                        "question": a.get("title") or a.get("description"),
+                        "context": {"description": a.get("description"), "category": a.get("category"), "deadline": a.get("deadline")},
+                    })
+        except Exception:
+            pass
+        # A2H requests
+        try:
+            gw = None
+            if kernel is not None:
+                adm = getattr(kernel, "admission", None)
+                te = (getattr(adm, "_tool_executor", None) if adm else None) \
+                    or getattr(kernel, "_tool_executor", None) \
+                    or getattr(kernel, "tool_executor", None)
+                if te is not None:
+                    gw = getattr(te, "_a2h_gateway", None)
+            if gw and hasattr(gw, "list_pending"):
+                pend = gw.list_pending()
+                logger.debug("hitl/pending: a2h list_pending returned %d items", len(pend or []))
+                for it in pend or []:
+                    content = it.get("content") or {}
+                    frm = it.get("from") or {}
+                    items.append({
+                        "source": "a2h",
+                        "id": it.get("id"),
+                        "agent_id": frm.get("name") or it.get("from_agent") or it.get("agent_id"),
+                        "priority": it.get("priority", "medium"),
+                        "created_at": it.get("created_at"),
+                        "question": content.get("question") or it.get("question") or it.get("message"),
+                        "context": content.get("context") or it.get("context") or {},
+                    })
+            else:
+                logger.debug("hitl/pending: a2h gateway not reachable (gw=%s)", gw)
+        except Exception as e:
+            logger.warning("hitl/pending: a2h section failed: %s", e)
+        items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+        return {"items": items}
 
     # ------------------------------------------------------------------
     # Mission Control API
@@ -2699,9 +2944,10 @@ def create_fastapi_app(
     @app.post("/api/a2h/requests", tags=["a2h"], status_code=201)
     async def a2h_create_request(req: A2HAskRequest):
         """Create an A2H request (agent asks human)."""
-        if not hasattr(bootstrap, '_a2h_gateway') or not bootstrap._a2h_gateway:
+        _gw = _resolve_a2h_gateway()
+        if _gw is None:
             raise HTTPException(503, "A2H gateway not available")
-        result = await bootstrap._a2h_gateway.ask(
+        result = await _gw.ask(
             from_agent=req.from_agent or "api",
             from_agent_name=req.from_agent or "api",
             to_namespace=req.to_namespace,
@@ -2718,19 +2964,95 @@ def create_fastapi_app(
     @app.get("/api/a2h/requests/{request_id}", tags=["a2h"])
     async def a2h_get_request(request_id: str):
         """Get status of an A2H request."""
-        if not hasattr(bootstrap, '_a2h_gateway') or not bootstrap._a2h_gateway:
+        _gw = _resolve_a2h_gateway()
+        if _gw is None:
             raise HTTPException(503, "A2H gateway not available")
-        result = bootstrap._a2h_gateway.get_request(request_id)
+        result = _gw.get_request(request_id)
         if not result:
             raise HTTPException(404, "Request not found")
+        return result
+
+    async def _resume_after_human_response(request_id: str) -> None:
+        """When a human approves/rejects, the originating agent may have
+        deferred work (e.g. posting a Jira comment) waiting on that answer.
+        If we know who asked, and they have no more pending requests, flip
+        them back to RUNNING and fire an async resume invoke. The agent's
+        own state machine (memory / Jira comments / etc.) decides what to
+        do next.
+        """
+        gw = _resolve_a2h_gateway()
+        if gw is None or platform_executor is None:
+            return
+        req = gw.get_request_obj(request_id) if hasattr(gw, "get_request_obj") else None
+        from_agent = getattr(req, "from_agent", None) if req else None
+        if not from_agent:
+            return
+        # If more pending requests exist for this agent, leave it parked.
+        try:
+            still_pending = gw.list_pending_from(from_agent)
+        except Exception:
+            still_pending = []
+        try:
+            from src.platform.kernel._process import Phase
+            target = Phase.RUNNING if not still_pending else Phase.AWAITING_HUMAN
+            platform_executor.process_table.transition(
+                from_agent, target, force=True,
+                reason="human responded",
+            )
+        except Exception:
+            logger.debug("phase transition after human response failed", exc_info=True)
+        if still_pending:
+            return  # keep AWAITING_HUMAN; nothing to resume yet
+        try:
+            import asyncio as _asyncio
+            _asyncio.create_task(platform_executor.invoke(
+                from_agent,
+                "Resume: a human just responded to your A2H request. Continue any deferred work.",
+                {"_trigger": "a2h_resume"},
+            ))
+            logger.info("A2H resume invoke scheduled for %s after %s", from_agent, request_id)
+        except Exception:
+            logger.exception("resume invoke failed for %s", from_agent)
+
+    @app.post("/api/a2h/requests/{request_id}/approve", tags=["a2h"])
+    async def a2h_approve(request_id: str, responded_by: str = "operator"):
+        """Approve a pending A2H approval request."""
+        _gw = _resolve_a2h_gateway()
+        if _gw is None:
+            raise HTTPException(503, "A2H gateway not available")
+        result = _gw.respond(
+            request_id,
+            {"approved": True, "value": "approved"},
+            responded_by=responded_by, via="dashboard",
+        )
+        if not result.get("success"):
+            raise HTTPException(400, result.get("error", "Failed"))
+        await _resume_after_human_response(request_id)
+        return result
+
+    @app.post("/api/a2h/requests/{request_id}/reject", tags=["a2h"])
+    async def a2h_reject(request_id: str, responded_by: str = "operator", reason: str = ""):
+        """Reject a pending A2H approval request."""
+        _gw = _resolve_a2h_gateway()
+        if _gw is None:
+            raise HTTPException(503, "A2H gateway not available")
+        result = _gw.respond(
+            request_id,
+            {"approved": False, "value": "rejected", "text": reason},
+            responded_by=responded_by, via="dashboard",
+        )
+        if not result.get("success"):
+            raise HTTPException(400, result.get("error", "Failed"))
+        await _resume_after_human_response(request_id)
         return result
 
     @app.post("/api/a2h/requests/{request_id}/respond", tags=["a2h"])
     async def a2h_respond(request_id: str, req: A2HRespondRequest):
         """Human submits a response to a pending A2H request."""
-        if not hasattr(bootstrap, '_a2h_gateway') or not bootstrap._a2h_gateway:
+        _gw = _resolve_a2h_gateway()
+        if _gw is None:
             raise HTTPException(503, "A2H gateway not available")
-        result = bootstrap._a2h_gateway.respond(
+        result = _gw.respond(
             request_id, req.response,
             responded_by=req.responded_by, via=req.channel,
         )
@@ -2741,16 +3063,18 @@ def create_fastapi_app(
     @app.get("/api/a2h/pending", tags=["a2h"])
     async def a2h_list_pending(to: str | None = None):
         """List pending A2H requests for a human."""
-        if not hasattr(bootstrap, '_a2h_gateway') or not bootstrap._a2h_gateway:
+        _gw = _resolve_a2h_gateway()
+        if _gw is None:
             return {"requests": []}
-        return {"requests": bootstrap._a2h_gateway.list_pending(to)}
+        return {"requests": _gw.list_pending(to)}
 
     @app.post("/api/a2h/notifications", tags=["a2h"], status_code=201)
     async def a2h_notify(req: A2HNotifyRequest):
         """Send a notification to a human (no response needed)."""
-        if not hasattr(bootstrap, '_a2h_gateway') or not bootstrap._a2h_gateway:
+        _gw = _resolve_a2h_gateway()
+        if _gw is None:
             raise HTTPException(503, "A2H gateway not available")
-        notif = await bootstrap._a2h_gateway.notify(
+        notif = await _gw.notify(
             from_agent=req.from_agent or "api",
             from_agent_name=req.from_agent or "api",
             to_namespace=req.to_namespace,
@@ -2764,7 +3088,8 @@ def create_fastapi_app(
     @app.post("/api/a2h/humans", tags=["a2h"], status_code=201)
     async def a2h_register_human(request: Request):
         """Register a human participant."""
-        if not hasattr(bootstrap, '_a2h_gateway') or not bootstrap._a2h_gateway:
+        _gw = _resolve_a2h_gateway()
+        if _gw is None:
             raise HTTPException(503, "A2H gateway not available")
         body = await request.json()
         from src.platform.a2h import HumanAgent
@@ -2775,15 +3100,16 @@ def create_fastapi_app(
             role=body.get("role", ""),
             channels=body.get("channels", ["dashboard"]),
         )
-        pid = bootstrap._a2h_gateway.register_human(human)
+        pid = _gw.register_human(human)
         return {"pid": pid, "name": human.name, "namespace": human.namespace}
 
     @app.get("/api/a2h/humans", tags=["a2h"])
     async def a2h_list_humans(namespace: str | None = None):
         """List registered human participants."""
-        if not hasattr(bootstrap, '_a2h_gateway') or not bootstrap._a2h_gateway:
+        _gw = _resolve_a2h_gateway()
+        if _gw is None:
             return {"humans": []}
-        humans = bootstrap._a2h_gateway.list_humans(namespace)
+        humans = _gw.list_humans(namespace)
         return {"humans": [h.to_discovery_dict() for h in humans]}
 
     return app
