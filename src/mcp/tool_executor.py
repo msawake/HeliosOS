@@ -310,13 +310,17 @@ class ToolExecutor:
             if len(parts) >= 3:
                 server_name = parts[1]
                 method_name = parts[2]
-                
-                # Check company-level MCP tools
+
+                # `register_mcp_tools` stores schemas under the full
+                # `mcp__<server>__<method>` name; legacy callers may have
+                # stored just the method name. Accept either to avoid
+                # false-positive "not in cached schemas" warnings.
                 schemas = self._mcp_tool_definitions.get(server_name, [])
                 for schema in schemas:
-                    if schema.get("name") == method_name:
+                    sname = schema.get("name")
+                    if sname == tool_name or sname == method_name:
                         return schema
-                        
+
                 logger.warning(
                     "MCP tool %s not found in cached schemas for server %s — "
                     "execution will rely on server-side validation",
@@ -414,35 +418,63 @@ class ToolExecutor:
                 if not is_allowed:
                     return {"success": False, "error": f"Tool '{tool_name}' not in agent's allowed tools"}
 
-        # Custom company tools + platform tools (both in _custom_handlers)
-        if tool_name in self._custom_handlers:
-            try:
-                handler = self._custom_handlers[tool_name]
-                result = handler(tool_input, agent_context)
-                # Support async handlers (A2A tools are async)
-                if asyncio.iscoroutine(result):
-                    result = await result
-                # A2A handlers already return shaped {success, ...} dicts — pass through
-                if isinstance(result, dict) and "success" in result:
-                    return result
-                return {"success": True, "result": result}
-            except Exception as e:
-                logger.error("Custom tool %s failed: %s", tool_name, e)
-                return {"success": False, "error": str(e)}
+        import time as _time
+        _t0 = _time.monotonic()
+        _agent_id = (agent_context or {}).get("agent_id")
 
-        # MCP tools: mcp__<server>__<tool> — with timeout
-        if tool_name.startswith("mcp__"):
-            try:
-                return await asyncio.wait_for(
-                    self._execute_mcp_tool(tool_name, tool_input, agent_context),
-                    timeout=TOOL_TIMEOUT,
+        async def _dispatch() -> dict:
+            # Custom company tools + platform tools (both in _custom_handlers)
+            if tool_name in self._custom_handlers:
+                try:
+                    handler = self._custom_handlers[tool_name]
+                    result = handler(tool_input, agent_context)
+                    if asyncio.iscoroutine(result):
+                        result = await result
+                    if isinstance(result, dict) and "success" in result:
+                        return result
+                    return {"success": True, "result": result}
+                except Exception as e:
+                    logger.error("Custom tool %s failed: %s", tool_name, e)
+                    return {"success": False, "error": str(e)}
+
+            # MCP tools: mcp__<server>__<tool> — with timeout
+            if tool_name.startswith("mcp__"):
+                try:
+                    return await asyncio.wait_for(
+                        self._execute_mcp_tool(tool_name, tool_input, agent_context),
+                        timeout=TOOL_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    logger.error("MCP tool %s timed out after %ds", tool_name, TOOL_TIMEOUT)
+                    return {"success": False, "error": f"Tool {tool_name} timed out after {TOOL_TIMEOUT}s"}
+
+            return {"success": False, "error": f"Unknown tool: {tool_name}"}
+
+        result = await _dispatch()
+
+        # Record one audit row per tool call so the Mission Control "Agent
+        # Logs" feed can render activity even when the syscall pipeline is
+        # off. Best-effort; failures are swallowed.
+        try:
+            audit = getattr(self, "_audit_log", None)
+            if audit is not None and _agent_id:
+                outcome = "success" if (isinstance(result, dict) and result.get("success", True)) else "denied"
+                audit.record(
+                    actor=_agent_id,
+                    action="tool.call",
+                    resource_type="tool",
+                    resource_id=tool_name,
+                    outcome=outcome,
+                    details={
+                        "agent_id": _agent_id,
+                        "duration_ms": int((_time.monotonic() - _t0) * 1000),
+                        "error": (result or {}).get("error") if isinstance(result, dict) else None,
+                    },
                 )
-            except asyncio.TimeoutError:
-                logger.error("MCP tool %s timed out after %ds", tool_name, TOOL_TIMEOUT)
-                return {"success": False, "error": f"Tool {tool_name} timed out after {TOOL_TIMEOUT}s"}
+        except Exception:
+            pass
 
-        # Unknown tool
-        return {"success": False, "error": f"Unknown tool: {tool_name}"}
+        return result
 
     async def _execute_mcp_tool(
         self, tool_name: str, tool_input: dict, agent_context: dict | None = None,
