@@ -244,6 +244,15 @@ class PlatformBootstrap:
             )
             self.executor._session_store = self._session_store
 
+            # Wire per-invocation history store when Postgres is available.
+            if hasattr(self, '_db') and self._db and self._db.is_connected:
+                try:
+                    from src.platform.agent_runs_store import AgentRunsStore
+                    self.executor.agent_runs = AgentRunsStore(self._db._pool)
+                    logger.info("  Agent run history: POSTGRESQL")
+                except Exception as e:
+                    logger.warning("  Agent run history disabled: %s", e)
+
             # Load persisted processes from PostgreSQL
             if _process_table and hasattr(_process_table, 'load_all'):
                 try:
@@ -273,15 +282,36 @@ class PlatformBootstrap:
             # A2H Gateway — agent-to-human interaction
             self._a2h_gateway = None
             try:
-                from src.platform.a2h import A2HGateway
+                from src.platform.a2h import A2HGateway, HumanAgent
                 self._a2h_gateway = A2HGateway(kernel=self._kernel)
                 logger.info("  A2H Gateway: initialized")
+                # Seed a default approver in the operations namespace so example
+                # agents (jira-ticket-greeter-v2, etc.) that ask for
+                # operations/approver work out of the box. Operators can
+                # register additional humans via /api/a2h/humans.
+                default_human = HumanAgent(
+                    pid="operator-default",
+                    name="approver",
+                    namespace="operations",
+                    role="Operator",
+                    channels=["dashboard"],
+                )
+                self._a2h_gateway.register_human(default_human)
+                logger.info("  A2H: seeded default human operations/approver")
             except Exception as e:
                 logger.debug("  A2H Gateway initialization skipped: %s", e)
 
-            # Wire A2H gateway into tool executor so agents can use human__* tools
+            # Wire A2H gateway into tool executor so agents can use human__* tools.
+            # ToolExecutor.__init__ ran before A2H was constructed, so the
+            # custom-handlers map is missing the human__* entries — rebuild it.
             if self._a2h_gateway:
                 self._tool_executor._a2h_gateway = self._a2h_gateway
+                self._tool_executor._custom_handlers = self._tool_executor._register_custom_tools()
+                # Make the gateway visible to the executor too — used to
+                # park agents in AWAITING_HUMAN after invoke leaves
+                # outstanding A2H requests, and to auto-resume them on
+                # approve/reject.
+                self.executor._a2h_gateway = self._a2h_gateway
                 logger.info("  A2H: wired into ToolExecutor (human__ask/notify/check available)")
 
             try:
