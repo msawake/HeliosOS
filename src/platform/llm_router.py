@@ -135,6 +135,8 @@ class LLMResponse:
     model: str
     provider: str
     tokens_used: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
     finish_reason: str = "stop"
     tool_calls: list[ToolCall] | None = None
     raw: dict[str, Any] | None = None
@@ -283,6 +285,8 @@ class LLMRouter:
                         model=response.model,
                         provider=response.provider,
                         tokens_used=response.tokens_used,
+                        input_tokens=response.input_tokens,
+                        output_tokens=response.output_tokens,
                         finish_reason=response.finish_reason,
                         tool_calls=response.tool_calls,
                         raw=response.raw,
@@ -648,6 +652,8 @@ class LLMRouter:
             model=model,
             provider="anthropic",
             tokens_used=response.usage.input_tokens + response.usage.output_tokens,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
             finish_reason=response.stop_reason or "stop",
             tool_calls=tool_calls or None,
             raw={"id": response.id, "content": [{"type": b.type} for b in response.content]},
@@ -678,6 +684,8 @@ class LLMRouter:
             model=model,
             provider="openai",
             tokens_used=response.usage.total_tokens if response.usage else 0,
+            input_tokens=getattr(response.usage, "prompt_tokens", 0) if response.usage else 0,
+            output_tokens=getattr(response.usage, "completion_tokens", 0) if response.usage else 0,
             finish_reason=choice.finish_reason or "stop",
             tool_calls=tool_calls,
         )
@@ -749,6 +757,33 @@ class LLMRouter:
                 if parts:
                     contents.append({"role": vertex_role, "parts": parts})
 
+        # Same normalization as _call_google — merge adjacent same-role
+        # turns and bridge orphan functionCall turns so Vertex doesn't 400.
+        if not contents:
+            contents = [{"role": "user", "parts": [{"text": "Begin."}]}]
+        merged: list[dict] = []
+        for turn in contents:
+            if merged and merged[-1].get("role") == turn.get("role"):
+                merged[-1]["parts"] = merged[-1].get("parts", []) + turn.get("parts", [])
+            else:
+                merged.append(turn)
+        if merged and merged[0].get("role") == "model":
+            merged.insert(0, {"role": "user", "parts": [{"text": "Continue."}]})
+        bridged: list[dict] = []
+        for turn in merged:
+            parts = turn.get("parts", []) or []
+            has_fc = any("functionCall" in (p or {}) for p in parts)
+            if has_fc and turn.get("role") == "model":
+                prev = bridged[-1] if bridged else None
+                prev_parts = (prev or {}).get("parts", []) or []
+                prev_ok = prev and prev.get("role") == "user" and any(
+                    ("text" in p) or ("functionResponse" in p) for p in prev_parts
+                )
+                if not prev_ok:
+                    bridged.append({"role": "user", "parts": [{"text": "Continue."}]})
+            bridged.append(turn)
+        contents = bridged
+
         url = (
             f"https://{region}-aiplatform.googleapis.com/v1/"
             f"projects/{project_id}/locations/{region}/"
@@ -819,6 +854,8 @@ class LLMRouter:
             model=model,
             provider="vertex",
             tokens_used=input_tokens + output_tokens,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
             finish_reason=candidates[0].get("finishReason", "STOP") if candidates else "STOP",
             tool_calls=tool_calls_out or None,
             raw={
@@ -873,6 +910,52 @@ class LLMRouter:
                 if parts:
                     contents.append({"role": genai_role, "parts": parts})
 
+        # Gemini rejects requests with empty `contents`. If the caller only
+        # supplied a system message (or an empty user turn), drop in a single
+        # neutral user turn so the request is well-formed.
+        if not contents:
+            contents = [{"role": "user", "parts": [{"text": "Begin."}]}]
+
+        # Gemini also rejects consecutive same-role turns and requires every
+        # `functionCall` part to live in a model turn that immediately follows
+        # a user/functionResponse turn. Two failure modes produce 400s here:
+        #   1. An assistant message with empty content was dropped above,
+        #      leaving the next model turn (functionCall) adjacent to a
+        #      previous model turn.
+        #   2. The agentic loop appended two assistant turns in a row
+        #      (text-only followed by tool_use).
+        # Normalize by merging adjacent same-role turns. If the first turn
+        # is `model`, prepend a neutral user turn so the alternation starts
+        # correctly.
+        normalized: list[dict] = []
+        for turn in contents:
+            if normalized and normalized[-1].get("role") == turn.get("role"):
+                normalized[-1]["parts"] = (
+                    normalized[-1].get("parts", []) + turn.get("parts", [])
+                )
+            else:
+                normalized.append(turn)
+        if normalized and normalized[0].get("role") == "model":
+            normalized.insert(0, {"role": "user", "parts": [{"text": "Continue."}]})
+        # If a `functionCall` part still sits in a model turn whose
+        # preceding turn lacks a `functionResponse` (e.g. a fresh resume
+        # from history that begins mid-tool-loop), inject a synthetic user
+        # bridge so Gemini accepts the sequence.
+        bridged: list[dict] = []
+        for idx, turn in enumerate(normalized):
+            parts = turn.get("parts", []) or []
+            has_fc = any("functionCall" in (p or {}) for p in parts)
+            if has_fc and turn.get("role") == "model":
+                prev = bridged[-1] if bridged else None
+                prev_parts = (prev or {}).get("parts", []) or []
+                prev_ok = prev and prev.get("role") == "user" and (
+                    any(("text" in p) or ("functionResponse" in p) for p in prev_parts)
+                )
+                if not prev_ok:
+                    bridged.append({"role": "user", "parts": [{"text": "Continue."}]})
+            bridged.append(turn)
+        contents = bridged
+
         payload: dict[str, Any] = {"contents": contents}
         if system_text:
             payload["systemInstruction"] = {"parts": [{"text": system_text.strip()}]}
@@ -905,7 +988,11 @@ class LLMRouter:
                 headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
                 json=payload,
             )
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                detail = resp.text[:600]
+                raise RuntimeError(
+                    f"Gemini API {resp.status_code} for model={model}: {detail}"
+                )
             data = resp.json()
 
         candidates = data.get("candidates", [])
@@ -933,6 +1020,8 @@ class LLMRouter:
             model=model,
             provider="google",
             tokens_used=input_tokens + output_tokens,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
             finish_reason=candidates[0].get("finishReason", "STOP") if candidates else "STOP",
             tool_calls=tool_calls_out or None,
             raw={"input_tokens": input_tokens, "output_tokens": output_tokens},

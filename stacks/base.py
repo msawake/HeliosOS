@@ -117,6 +117,9 @@ class AgentResult:
     error: str | None = None
     tool_calls: list[dict] = field(default_factory=list)
     tokens_used: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    model: str | None = None
     elapsed_ms: float = 0.0
 
     def to_dict(self) -> dict:
@@ -127,6 +130,9 @@ class AgentResult:
             "error": self.error,
             "tool_calls": self.tool_calls,
             "tokens_used": self.tokens_used,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "model": self.model,
             "elapsed_ms": self.elapsed_ms,
         }
 
