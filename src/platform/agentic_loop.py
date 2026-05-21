@@ -141,6 +141,9 @@ async def run_agentic_loop(
 
     tools = tool_definitions if tool_definitions else None
     total_tokens = 0
+    total_input_tokens = 0
+    total_output_tokens = 0
+    last_model: str | None = None
     all_tool_calls: list[dict] = []
     final_text = ""
 
@@ -197,6 +200,14 @@ async def run_agentic_loop(
             )
 
         total_tokens += response.tokens_used
+        # Use real input/output split when the provider returns it; otherwise
+        # fall back to attributing everything to input (still correct in total).
+        turn_in = response.input_tokens or response.tokens_used
+        turn_out = response.output_tokens or 0
+        total_input_tokens += turn_in
+        total_output_tokens += turn_out
+        if response.model:
+            last_model = response.model
 
         # Record tokens + cost per turn
         if usage_enforcer and tenant_id and response.tokens_used > 0:
@@ -205,8 +216,8 @@ async def run_agentic_loop(
                 usage_enforcer.record_usage(tenant_id, "tokens", response.tokens_used)
                 cost = estimate_cost_usd(
                     response.model,
-                    input_tokens=int(response.tokens_used * 0.7),  # rough 70/30 split
-                    output_tokens=int(response.tokens_used * 0.3),
+                    input_tokens=turn_in,
+                    output_tokens=turn_out,
                 )
                 if cost > 0:
                     usage_enforcer.record_usage(tenant_id, "cost_usd", cost)
@@ -402,6 +413,9 @@ async def run_agentic_loop(
         output=final_text,
         tool_calls=all_tool_calls,
         tokens_used=total_tokens,
+        input_tokens=total_input_tokens,
+        output_tokens=total_output_tokens,
+        model=last_model,
     )
 
 
