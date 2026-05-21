@@ -550,9 +550,36 @@ class A2HGateway:
         return self._humans.get(pid)
 
     def resolve_human(self, namespace: str, name: str) -> HumanAgent | None:
+        # 1. Exact match.
         for h in self._humans.values():
             if h.name == name and h.namespace == namespace:
                 return h
+        # 2. Case-insensitive match (LLMs sometimes capitalise differently).
+        target = (name or "").strip().lower()
+        for h in self._humans.values():
+            if h.namespace == namespace and (h.name or "").strip().lower() == target:
+                return h
+        # 3. Namespace fallback — if any human is registered in the asked
+        # namespace, route to them.
+        ns_humans = [h for h in self._humans.values() if h.namespace == namespace]
+        if ns_humans:
+            chosen = ns_humans[0]
+            logger.info(
+                "A2H resolve_human: '%s/%s' not registered — routing to '%s/%s' (namespace fallback)",
+                namespace, name, chosen.namespace, chosen.name,
+            )
+            return chosen
+        # 4. Global fallback — when an LLM gets both namespace and name
+        # wrong (e.g. asks for default/jira-greeter), route to any
+        # registered operator instead of dropping the request. Logged so
+        # operators can tighten the agent's prompt later.
+        if self._humans:
+            chosen = next(iter(self._humans.values()))
+            logger.info(
+                "A2H resolve_human: '%s/%s' not registered — routing to '%s/%s' (global fallback)",
+                namespace, name, chosen.namespace, chosen.name,
+            )
+            return chosen
         return None
 
     def list_humans(self, namespace: str | None = None) -> list[HumanAgent]:
@@ -741,6 +768,18 @@ class A2HGateway:
 
     def list_pending(self, human_pid: str | None = None) -> list[dict]:
         return [r.to_dict() for r in self._store.list_pending(human_pid)]
+
+    def list_pending_from(self, from_agent: str) -> list:
+        """Return PENDING requests originally created by `from_agent`."""
+        out = []
+        for r in self._store.list_pending():
+            if getattr(r, "from_agent", None) == from_agent:
+                out.append(r)
+        return out
+
+    def get_request_obj(self, request_id: str):
+        """Return the raw HumanRequest object (not its dict form)."""
+        return self._store.get(request_id)
 
 
 # ---------------------------------------------------------------------------
