@@ -127,6 +127,19 @@ except ImportError:
         status_value_from_phase,
     )
 
+# -- License enforcement ---------------------------------------------------
+try:
+    from src.billing.license import LicenseManager, LicenseState  # noqa: F401
+except ImportError:
+    from src.billing.license_stub import LicenseManager, LicenseState  # type: ignore[assignment]  # noqa: F401
+
+# -- License stage ---------------------------------------------------------
+try:
+    from src.platform.kernel._license_stage import make_license_stage  # noqa: F401
+except ImportError:
+    def make_license_stage(*a, **kw):  # type: ignore[misc]  # noqa: F811
+        return None
+
 # -- Checkpoints -----------------------------------------------------------
 try:
     from src.platform.kernel._checkpoint import (  # noqa: F401

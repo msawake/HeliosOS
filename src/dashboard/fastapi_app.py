@@ -2376,6 +2376,14 @@ def create_fastapi_app(
         result = k.admit(contract)
         return result.to_dict()
 
+    @app.post("/api/platform/kernel/check-license", tags=["kernel"])
+    async def kernel_check_license(req: dict):
+        """Check if a tenant's license is valid."""
+        k = _require_kernel()
+        tenant_id = req.get("tenant_id", "default")
+        decision = k.check_license(tenant_id)
+        return decision.to_dict()
+
     @app.post("/api/platform/kernel/audit", tags=["kernel"])
     async def kernel_audit(req: AuditRequest):
         """Record a custom audit event from an agent."""

@@ -239,6 +239,9 @@ class Runtime:
     async def check_data(self, target_namespace: str) -> KernelDecision:
         return _ALLOW
 
+    async def check_license(self) -> KernelDecision:
+        return _ALLOW
+
     async def syscall(self, verb: str, target: str = "", args: dict | None = None,
                       dispatcher: Any = None) -> KernelDecision:
         return _ALLOW

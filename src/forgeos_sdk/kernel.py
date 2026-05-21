@@ -190,6 +190,10 @@ class Kernel:
         """Record a custom audit event from the agent."""
         await self._backend.audit(agent_id, event, details)
 
+    async def check_license(self, tenant_id: str) -> KernelDecision:
+        """Check if a tenant's license is valid."""
+        return await self._backend.check_license(tenant_id)
+
 
 # ---------------------------------------------------------------------------
 # Backends
@@ -200,6 +204,7 @@ class _KernelBackend:
     async def check_tool_call(self, agent_id, tool_name, tool_input, estimated_cost_usd): ...
     async def check_a2a_call(self, caller, ns, name): ...
     async def check_data_access(self, agent_id, target_ns): ...
+    async def check_license(self, tenant_id): ...
     async def get_contract(self, agent_id): ...
     async def admit(self, contract): ...
     async def audit(self, agent_id, event, details): ...
@@ -221,6 +226,10 @@ class _InProcessBackend(_KernelBackend):
 
     async def check_data_access(self, agent_id, target_ns):
         d = self._k.check_data_access(agent_id, target_ns)
+        return KernelDecision.from_dict(d.to_dict())
+
+    async def check_license(self, tenant_id):
+        d = self._k.check_license(tenant_id)
         return KernelDecision.from_dict(d.to_dict())
 
     async def get_contract(self, agent_id):
@@ -289,6 +298,13 @@ class _HTTPBackend(_KernelBackend):
         data = await self._post(
             "/api/platform/kernel/check-data",
             {"agent_id": agent_id, "target_namespace": target_ns},
+        )
+        return KernelDecision.from_dict(data)
+
+    async def check_license(self, tenant_id):
+        data = await self._post(
+            "/api/platform/kernel/check-license",
+            {"tenant_id": tenant_id},
         )
         return KernelDecision.from_dict(data)
 

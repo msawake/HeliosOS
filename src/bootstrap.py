@@ -266,6 +266,19 @@ class PlatformBootstrap:
                 self._a2a_handler.bind_executor(self.executor)
                 logger.info("  A2A handler: bound to platform executor")
 
+            # License enforcement
+            self._license_manager = None
+            try:
+                from src.billing.license import LicenseManager
+                self._license_manager = LicenseManager(
+                    db_client=self._db,
+                    cache_ttl_seconds=int(os.environ.get("FORGEOS_LICENSE_CACHE_TTL", "300")),
+                    grace_period_hours=int(os.environ.get("FORGEOS_LICENSE_GRACE_HOURS", "72")),
+                )
+                logger.info("  License manager: wired (cache_ttl=%ss)", os.environ.get("FORGEOS_LICENSE_CACHE_TTL", "300"))
+            except Exception as e:
+                logger.debug("  License manager initialization skipped: %s", e)
+
             # AgentOS: construct the Kernel facade + publish for in-process SDK use
             from src.platform.kernel import Kernel as PlatformKernel
             self._kernel = PlatformKernel(
@@ -274,6 +287,7 @@ class PlatformBootstrap:
                 a2a_handler=getattr(self, '_a2a_handler', None),
                 usage_enforcer=getattr(self, '_usage_enforcer', None),
                 audit_log=None,  # wired by FastAPI layer which owns the AuditLog
+                license_manager=self._license_manager,
             )
             # Wire kernel into tool executor for mandatory policy enforcement
             self._tool_executor._kernel = self._kernel

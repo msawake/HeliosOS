@@ -295,6 +295,17 @@ class Runtime:
         d = k.check_data_access(self.agent_id, target_namespace)
         return KernelDecision.from_dict(d.to_dict())
 
+    async def check_license(self) -> KernelDecision:
+        """Check if the current tenant's license is valid."""
+        k = self._require_kernel()
+        tenant_id = "default"
+        contract = k.get_contract(self.agent_id)
+        if contract:
+            metadata = contract.get("metadata") or {}
+            tenant_id = metadata.get("tenant_id", "default")
+        d = k.check_license(tenant_id)
+        return KernelDecision.from_dict(d.to_dict())
+
     # ---- Syscall (unified pipeline) -------------------------------------
 
     async def syscall(
