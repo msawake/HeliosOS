@@ -1,0 +1,23 @@
+ForgeOS is an agentic harness — an operating system for AI agents. It governs tool access, budgets, permissions, and human-in-the-loop across 9 framework adapters.
+
+Key directories:
+  src/platform/kernel/     — Kernel (permissions, budgets, policies, capabilities, syscall pipeline). BSL 1.1.
+  src/forgeos_sdk/         — SDK (runtime, kernel accessor, agent builder, manifest, CLI). Runtime is BSL 1.1, rest Apache 2.0.
+  src/platform/            — Platform layer (registry, executor, scheduler, event bus, LLM router, audit, A2A).
+  stacks/                  — 9 framework adapters (ForgeOS, CrewAI, ADK, LangChain, OpenClaw, Sandbox, Anthropic SDK, Anthropic Managed, OpenAI Agents).
+  examples/                — 8 gold-standard agents with raw vs governed comparisons.
+  mission-control/         — Fleet operations dashboard (React + FastAPI).
+  dashboard/               — Next.js 15 frontend (22 pages).
+  tests/                   — 78 test files, 1236 passing.
+
+Commands:
+  pip install -e ".[dev]"
+  PYTHONPATH=. python3 -m pytest
+  PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
+
+Conventions:
+  - Always use python3 and PYTHONPATH=.
+  - asyncio_mode = "auto" — no @pytest.mark.asyncio needed
+  - Manifests: apiVersion: forgeos/v1 or agentos/v1
+  - Tool names: company__*, mcp__server__tool, platform__*, agent__*
+  - Every tool call goes through runtime.check_tool() → kernel decision

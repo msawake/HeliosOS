@@ -1,7 +1,7 @@
 [project]
 name = "forgeos"
 version = "3.1.0"
-description = "ForgeOS — Multi-stack AI agent platform. Deploy agents on ForgeOS, CrewAI, ADK, or OpenClaw."
+description = "ForgeOS — The agentic harness. Govern what your AI agents can do, on any framework, without changing their code."
 license = "BUSL-1.1"
 requires-python = ">=3.11"
 dependencies = [

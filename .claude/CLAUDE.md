@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-**ForgeOS v3.0** — A multi-stack AI agent platform that deploys, orchestrates, and manages AI agents across five framework adapters (ForgeOS, CrewAI, Google ADK, OpenClaw, Sandbox) with five execution lifecycles and a Next.js dashboard.
+**ForgeOS v3.1** — An agentic harness that governs AI agents across nine framework adapters (ForgeOS, CrewAI, Google ADK, LangChain, OpenClaw, Sandbox, Anthropic SDK, Anthropic Managed, OpenAI Agents) with five execution lifecycles and a Next.js dashboard.
 
 **Key distinction:** ForgeOS is the *framework* (the operating system). Agents are the *programs* that run inside it. The framework provides scheduling, tool execution, LLM routing, persistence, and monitoring. Agents define what work gets done.
 
-Five company packages ship as fixtures: **LeadForge AI** (B2B sales), **DealForge AI** (M&A), **TravelForge AI** (travel), **InsureForge AI** (insurance), **HomeForge AI** (real estate). They are example workloads, not the framework itself.
+Eight gold-standard examples ship in `examples/` — each with a governed `agent.py` and an ungoverned `agent_raw.py` for side-by-side comparison. They are example workloads, not the framework itself.
 
-**Repo:** `forgeos` on GitHub, default branch `leadforge`. The experimental/research fork lives in a separate repo (`forgeos2`, branch `agentos-integration`) — features are developed there first, then cherry-picked here once stable.
+**Repo:** `forgeos` on GitHub, default branch `main`.
 
 ## Commands
 
@@ -18,7 +18,7 @@ Five company packages ship as fixtures: **LeadForge AI** (B2B sales), **DealForg
 # Install (Python 3.11+)
 pip install -e ".[dev]"
 
-# Run all tests (~900 tests, 49 files)
+# Run all tests (~1256 tests, 78 files)
 PYTHONPATH=. python3 -m pytest
 
 # Run a single test file / pattern
@@ -55,15 +55,19 @@ Notes:
 
 ### 1. Stack Adapters (`stacks/`)
 
-`AgentStackAdapter` ABC in `stacks/base.py`. Five implementations:
+`AgentStackAdapter` ABC in `stacks/base.py`. Nine implementations:
 
 | Adapter | File | Runtime | Fallback |
 |---------|------|---------|----------|
 | ForgeOS | `stacks/forgeos/adapter.py` | Native agentic loop | — |
 | CrewAI | `stacks/crewai/adapter.py` | CrewAI SDK (Crew.kickoff) | Platform loop |
 | ADK | `stacks/adk/adapter.py` | Google ADK Runner | Platform loop |
+| LangChain | `stacks/langchain/adapter.py` | LangChain AgentExecutor | Platform loop |
 | OpenClaw | `stacks/openclaw/adapter.py` | HTTP gateway subprocess | Platform loop |
 | Sandbox | `stacks/sandbox/adapter.py` | Docker container sandbox | Platform loop |
+| Anthropic SDK | `stacks/anthropic_agent/adapter.py` | Anthropic tool_use loop | Platform loop |
+| Anthropic Managed | `stacks/anthropic_managed/adapter.py` | Anthropic managed agents | Platform loop |
+| OpenAI Agents | `stacks/openai_agents/adapter.py` | OpenAI Agents SDK | Platform loop |
 
 Each provides: `create_agent()`, `invoke()`, `start_loop()`, `stop()`, `scaffold_files()`.
 
@@ -193,10 +197,6 @@ ACLs enforced via callee's `spec.capabilities.a2a.canBeCalledBy` at every call.
 - **`agents/` directory** is gitignored — personal/shared agent configs live there at runtime.
 - **Audit trail is hash-chained** — never mutate past audit records; only append.
 
-## Domain Context (LeadForge)
+## License
 
-- Lead scoring: BANT framework, SQL threshold >= 70 with >= 2 signals
-- Maximum 50 outreach emails per SDR per day per client
-- CAN-SPAM and GDPR compliance required for all outreach
-- Financial thresholds: <$1K dept lead, $1K-$5K CFO, $5K-$10K CEO, >$10K human board
-- Strict per-client data isolation
+Dual-licensed: BSL 1.1 (kernel at `src/platform/kernel/`, runtime at `src/forgeos_sdk/runtime.py`) + Apache 2.0 (adapters, SDK client libs, examples, docs). Community Edition: full Apache 2.0 with permissive stubs at `src/platform/kernel_stubs/`.
