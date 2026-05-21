@@ -68,6 +68,15 @@ class PlatformExecutor:
         self._autonomous_tasks: dict[str, asyncio.Task] = {}
         self._session_locks: dict[str, asyncio.Lock] = {}  # per-session_id locks
         self.callback_registry = None  # wired by bootstrap if callbacks module available
+        # PIDs whose invoke() is currently in flight. Drives the "scheduled vs
+        # actively running" distinction surfaced by the Fleet endpoint — a
+        # scheduled agent reports as SCHEDULED between cron ticks and only
+        # flips to RUNNING while one of its invocations is executing.
+        self._invoking_pids: set[str] = set()
+        # Optional per-invocation history store; bootstrap sets it when a DB
+        # pool exists. When None, all run-history writes are no-ops.
+        from src.platform.agent_runs_store import AgentRunsStore
+        self.agent_runs: AgentRunsStore = AgentRunsStore(None)
 
     def _register_process(self, agent_def: AgentDefinition) -> None:
         """Create a process-table entry for a freshly-registered agent."""
@@ -283,6 +292,9 @@ class PlatformExecutor:
         if session_id:
             session_lock = self._session_locks.setdefault(session_id, asyncio.Lock())
 
+        trigger = (context or {}).get("_trigger", "manual")
+        tenant_id = (context or {}).get("tenant_id", "default")
+
         async def _do_invoke():
             # Load conversation history from session store
             history: list[dict] | None = None
@@ -294,6 +306,13 @@ class PlatformExecutor:
 
             self.registry.set_status(agent_id, AgentStatus.RUNNING)
             self.process_table.heartbeat(agent_id)
+            self._invoking_pids.add(agent_id)
+            run_id = await self.agent_runs.start(
+                pid=agent_id, agent_id=agent_id, trigger=trigger,
+                prompt=prompt, tenant_id=tenant_id,
+            )
+            import time as _time
+            _t0 = _time.monotonic()
 
             # Bind the SDK runtime so agent code can use
             # ``from forgeos_sdk import runtime`` without passing agent_id.
@@ -313,14 +332,45 @@ class PlatformExecutor:
                 if self.callback_registry:
                     invoke_ctx["_callback_registry"] = self.callback_registry
                 result = await adapter.invoke(agent_id, prompt, invoke_ctx, history=history)
+                # Self-heal: if the adapter forgot the agent (e.g. a process
+                # restart before recovery wired adapters, or a stale stop),
+                # re-create from the registry definition and retry once. This
+                # makes RUN NOW work for previously-stopped agents without
+                # forcing the operator to re-upload the manifest.
+                if (
+                    result.status == AgentStatus.FAILED
+                    and result.error
+                    and "Agent not found" in result.error
+                ):
+                    try:
+                        await adapter.create_agent(agent_def)
+                        result = await adapter.invoke(agent_id, prompt, invoke_ctx, history=history)
+                    except Exception:
+                        logger.exception("Self-heal create_agent failed for %s", agent_id)
                 self.registry.set_status(agent_id, result.status)
 
                 # Record runtime accounting on the process. Invoke-level
                 # IDLE/COMPLETED/FAILED does not change the process phase —
                 # only start/stop/wire_execution do.
+                _in = getattr(result, "input_tokens", 0) or 0
+                _out = getattr(result, "output_tokens", 0) or 0
+                # If the provider didn't return a split, attribute the whole
+                # bill to tokens_out so the total still matches.
+                if not _in and not _out:
+                    _out = result.tokens_used or 0
+                _model = getattr(result, "model", None)
+                _dollars = 0.0
+                if _model and (_in or _out):
+                    try:
+                        from src.billing.plans import estimate_cost_usd
+                        _dollars = estimate_cost_usd(_model, _in, _out)
+                    except Exception:
+                        _dollars = 0.0
                 self.process_table.record_usage(
                     agent_id,
-                    tokens_out=result.tokens_used or 0,
+                    tokens_in=_in,
+                    tokens_out=_out,
+                    dollars=_dollars,
                     tool_calls=len(result.tool_calls or []),
                     wallclock_ms=result.elapsed_ms or 0.0,
                 )
@@ -357,17 +407,53 @@ class PlatformExecutor:
             except Exception as e:
                 self.registry.set_status(agent_id, AgentStatus.FAILED)
                 logger.exception("Agent %s invocation failed", agent_id)
-                return AgentResult(
+                result = AgentResult(
                     agent_id=agent_id,
                     status=AgentStatus.FAILED,
                     error=str(e),
                 )
+                return result
             finally:
                 if _rt_token is not None:
                     try:
                         _sdk_runtime.unbind(_rt_token)
                     except Exception:
                         pass
+                self._invoking_pids.discard(agent_id)
+                # If the agent left A2H requests pending, park it in
+                # AWAITING_HUMAN. The human's approve/reject endpoint will
+                # transition it back to RUNNING and (when needed) kick a
+                # resume invoke so any deferred tool calls finish.
+                try:
+                    gw = getattr(self, "_a2h_gateway", None)
+                    if gw is not None and hasattr(gw, "list_pending_from"):
+                        if gw.list_pending_from(agent_id):
+                            self.process_table.transition(
+                                agent_id, Phase.AWAITING_HUMAN, force=True,
+                                reason="pending A2H request(s)",
+                            )
+                except Exception:
+                    logger.debug("AWAITING_HUMAN transition failed", exc_info=True)
+                try:
+                    _final = locals().get("result")
+                    if _final is not None:
+                        _status = "completed" if _final.status == AgentStatus.COMPLETED else (
+                            "failed" if _final.status == AgentStatus.FAILED else str(_final.status.value)
+                        )
+                        await self.agent_runs.finish(
+                            run_id,
+                            status=_status,
+                            output=(_final.output or "")[:8000] if _final.output else None,
+                            error=_final.error,
+                            tool_calls=len(_final.tool_calls or []),
+                            tokens_used=_final.tokens_used or 0,
+                            input_tokens=getattr(_final, "input_tokens", 0) or 0,
+                            output_tokens=getattr(_final, "output_tokens", 0) or 0,
+                            model=getattr(_final, "model", None),
+                            duration_ms=int((_time.monotonic() - _t0) * 1000),
+                        )
+                except Exception:
+                    logger.debug("agent_runs.finish bookkeeping failed", exc_info=True)
 
         if session_lock:
             async with session_lock:
@@ -828,10 +914,22 @@ class PlatformExecutor:
                 continue
             if prev_status in (AgentStatus.FAILED, AgentStatus.STOPPED):
                 if not agent_def.metadata.get("restart_on_failure", False):
-                    logger.info(
-                        "Skipping recovery of %s (status=%s, restart_on_failure=false)",
-                        agent_def.agent_id, prev_status.value,
-                    )
+                    # Don't wire execution (scheduler/loops/triggers) for
+                    # previously-stopped agents, but DO seed the adapter with
+                    # the agent definition so operators can still RUN NOW
+                    # from Mission Control. Without this, adapter.invoke
+                    # returns "Agent not found" until the operator manually
+                    # re-deploys.
+                    try:
+                        await adapter.create_agent(agent_def)
+                        logger.info(
+                            "Recovered %s in dormant state (status=%s) — RUN NOW available, scheduler not wired",
+                            agent_def.agent_id, prev_status.value,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Dormant create_agent failed for %s", agent_def.agent_id,
+                        )
                     skipped += 1
                     continue
 
