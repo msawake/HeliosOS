@@ -342,6 +342,21 @@ class SchedulerEngine:
             })
         return results
 
+    def next_run_for(self, agent_id: str) -> datetime | None:
+        """Return the next scheduled wall-clock fire time for an agent, or None."""
+        if self._use_ap and self._ap_scheduler is not None:
+            try:
+                ap_job = self._ap_scheduler.get_job(agent_id)
+                if ap_job and ap_job.next_run_time:
+                    return ap_job.next_run_time
+            except Exception:
+                pass
+        j = self._jobs.get(agent_id)
+        if j:
+            base = j.last_run or datetime.now(timezone.utc)
+            return base + timedelta(seconds=j.interval_seconds)
+        return None
+
     def _start_job(self, job: ScheduledJob) -> None:
         store = self._job_store
 

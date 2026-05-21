@@ -96,11 +96,10 @@ class PostgresProcessTable(ProcessTable):
             phase_changed_at=str(row.get("phase_changed_at", _now_iso())),
         )
 
-    async def _upsert(self, proc: AgentProcess) -> None:
+    def _upsert_sync(self, proc: AgentProcess) -> None:
         row = self._to_row(proc)
-        try:
-            async with self._pool.connection() as conn:
-                await conn.execute("""
+        with self._pool.connection() as conn:
+            conn.execute("""
                     INSERT INTO agent_processes (
                         pid, name, namespace, generation, owner_id, tenant_id,
                         parent_pid, spec_ref, phase, phase_changed_at, last_error,
@@ -127,13 +126,22 @@ class PostgresProcessTable(ProcessTable):
                         parent_pid = EXCLUDED.parent_pid,
                         updated_at = NOW()
                 """, row)
+
+    def _delete_row_sync(self, pid: str) -> None:
+        with self._pool.connection() as conn:
+            conn.execute("DELETE FROM agent_processes WHERE pid = %s", (pid,))
+
+    async def _upsert(self, proc: AgentProcess) -> None:
+        import asyncio
+        try:
+            await asyncio.to_thread(self._upsert_sync, proc)
         except Exception as e:
             logger.warning("Process table upsert failed for %s: %s", proc.identity.pid, e)
 
     async def _delete_row(self, pid: str) -> None:
+        import asyncio
         try:
-            async with self._pool.connection() as conn:
-                await conn.execute("DELETE FROM agent_processes WHERE pid = %s", (pid,))
+            await asyncio.to_thread(self._delete_row_sync, pid)
         except Exception as e:
             logger.warning("Process table delete failed for %s: %s", pid, e)
 
@@ -191,22 +199,26 @@ class PostgresProcessTable(ProcessTable):
             except Exception:
                 pass
 
+    def _load_all_sync(self) -> int:
+        with self._pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM agent_processes ORDER BY created_at")
+                # The pool is configured with row_factory=dict_row, so each
+                # row is already a dict — don't re-zip against column names.
+                rows = cur.fetchall()
+                count = 0
+                for row in rows:
+                    proc = self._from_row(dict(row))
+                    self._processes[proc.identity.pid] = proc
+                    count += 1
+                logger.info("Loaded %d processes from PostgreSQL", count)
+                return count
+
     async def load_all(self) -> int:
         """Load all processes from database into memory. Called at boot."""
+        import asyncio
         try:
-            async with self._pool.connection() as conn:
-                async with conn.cursor() as cur:
-                    await cur.execute("SELECT * FROM agent_processes ORDER BY created_at")
-                    columns = [desc.name for desc in cur.description]
-                    rows = await cur.fetchall()
-                    count = 0
-                    for row_tuple in rows:
-                        row = dict(zip(columns, row_tuple))
-                        proc = self._from_row(row)
-                        self._processes[proc.identity.pid] = proc
-                        count += 1
-                    logger.info("Loaded %d processes from PostgreSQL", count)
-                    return count
+            return await asyncio.to_thread(self._load_all_sync)
         except Exception as e:
             logger.warning("Failed to load processes from PostgreSQL: %s", e)
             return 0

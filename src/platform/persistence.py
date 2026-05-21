@@ -44,10 +44,12 @@ class PostgresAgentRegistry:
                 """INSERT INTO platform_agents
                    (agent_id, tenant_id, name, stack, execution_type, ownership,
                     owner_id, department, status, description, goal, schedule,
-                    event_triggers, tools, config_path, llm_config, metadata)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'idle',%s,%s,%s,%s,%s,%s,%s,%s)
+                    event_triggers, tools, config_path, llm_config, metadata,
+                    system_prompt)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'idle',%s,%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT (agent_id) DO UPDATE SET
                      name=EXCLUDED.name, stack=EXCLUDED.stack, status='idle',
+                     system_prompt=EXCLUDED.system_prompt,
                      updated_at=NOW()""",
                 (
                     agent_def.agent_id, self._tenant_id, agent_def.name,
@@ -58,6 +60,7 @@ class PostgresAgentRegistry:
                     agent_def.tools, agent_def.config_path,
                     json.dumps(agent_def.llm_config.to_dict()),
                     json.dumps(agent_def.metadata),
+                    agent_def.system_prompt or "",
                 ),
             )
             conn.commit()
@@ -321,4 +324,5 @@ def _row_to_definition(row: dict) -> AgentDefinition:
         description=row.get("description", ""),
         department=row.get("department", ""),
         metadata=meta,
+        system_prompt=row.get("system_prompt") or "",
     )
