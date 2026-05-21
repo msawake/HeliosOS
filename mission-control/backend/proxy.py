@@ -123,18 +123,49 @@ async def proxy_delete_mcp(server_name: str):
 
 @router.post("/api/platform/agents/{agent_id}/invoke")
 async def proxy_invoke(agent_id: str, request: Request):
+    from fastapi.responses import JSONResponse
     body = await request.body()
     headers = {**_auth_headers(), "Content-Type": "application/json"}
+    qs = request.url.query  # preserves ?async_mode=true
+    target = f"{FORGEOS_API}/api/platform/agents/{agent_id}/invoke" + (f"?{qs}" if qs else "")
     async with httpx.AsyncClient(timeout=120) as client:
-        r = await client.post(
-            f"{FORGEOS_API}/api/platform/agents/{agent_id}/invoke",
-            content=body,
-            headers=headers,
-        )
+        r = await client.post(target, content=body, headers=headers)
         try:
-            return r.json()
+            payload = r.json()
         except Exception:
-            return {"error": r.text[:500], "status": r.status_code}
+            payload = {"error": r.text[:500]}
+        return JSONResponse(payload, status_code=r.status_code)
+
+
+@router.get("/api/platform/agents/{agent_id}/runs")
+async def proxy_agent_runs(agent_id: str, limit: int = 20):
+    return await _proxy(f"/api/platform/agents/{agent_id}/runs?limit={limit}")
+
+
+@router.get("/api/platform/agent-logs")
+async def proxy_agent_logs(request: Request):
+    qs = request.url.query
+    return await _proxy("/api/platform/agent-logs" + (f"?{qs}" if qs else ""))
+
+
+@router.get("/api/hitl/pending")
+async def proxy_hitl_pending():
+    return await _proxy("/api/hitl/pending")
+
+
+@router.post("/api/a2h/requests/{request_id}/approve")
+async def proxy_a2h_approve(request_id: str):
+    return await _proxy(f"/api/a2h/requests/{request_id}/approve", method="POST")
+
+
+@router.post("/api/a2h/requests/{request_id}/reject")
+async def proxy_a2h_reject(request_id: str):
+    return await _proxy(f"/api/a2h/requests/{request_id}/reject", method="POST")
+
+
+@router.get("/api/platform/agents/{agent_id}")
+async def proxy_get_agent(agent_id: str):
+    return await _proxy(f"/api/platform/agents/{agent_id}")
 
 
 @router.post("/api/platform/agents/from-yaml")
@@ -144,6 +175,22 @@ async def proxy_from_yaml(request: Request):
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.post(
             f"{FORGEOS_API}/api/platform/agents/from-yaml",
+            content=body,
+            headers=headers,
+        )
+        try:
+            return r.json()
+        except Exception:
+            return {"error": r.text[:500], "status": r.status_code}
+
+
+@router.put("/api/platform/agents/{agent_id}/from-yaml")
+async def proxy_update_yaml(agent_id: str, request: Request):
+    body = await request.body()
+    headers = {**_auth_headers(), "Content-Type": "text/yaml"}
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.put(
+            f"{FORGEOS_API}/api/platform/agents/{agent_id}/from-yaml",
             content=body,
             headers=headers,
         )

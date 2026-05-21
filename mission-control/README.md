@@ -1,6 +1,6 @@
 # ForgeOS Mission Control
 
-Operator console for the ForgeOS platform — Fleet / Governance / Cost / Topology / Manifest / Billing.
+Operator console for the ForgeOS platform — Fleet / Governance / Cost / Topology / Manifest / Billing / MCP.
 
 ## Layout
 
@@ -12,27 +12,48 @@ mission-control/
 
 ## Local development
 
-Two terminals.
-
-**Backend** (port 8888):
+Three terminals — Postgres, the platform, and the Vite dev server.
 
 ```bash
-cd mission-control/backend
-pip install -r requirements.txt
-FORGEOS_API_URL=http://localhost:5000 \
-  FORGEOS_API_TOKEN=dev \
-  python -m uvicorn main:app --reload --port 8888
+# from the repo root
+make pg              # one-time: Postgres container on :5432
+make migrate         # apply pending SQL migrations (idempotent)
+make mc-platform     # boots src.bootstrap on :5099 (auto-frees the port)
+
+# in another terminal
+cd mission-control && make dev-local   # backend on :8888 + Vite on :5173
 ```
 
-**Frontend** (port 5173, proxies /api and /login to 8888):
+Visit `http://localhost:5173`. Vite HMR picks up frontend edits instantly;
+backend changes require restarting `make mc-platform`. The root Makefile
+pre-cleans the port before booting, so `address already in use` errors are
+fixed automatically. To free a port without booting anything:
 
 ```bash
-cd mission-control/frontend
-npm install
-npm run dev
+make free-port PORT=5099
 ```
 
-Visit `http://localhost:5173`.
+## Features
+
+- **Fleet** — every platform process. Scheduled agents display **SCHEDULED**
+  (with next-run tooltip) between cron ticks and flip to **RUNNING** only
+  while actively invoking. Per-row **STOP** (transition to stopped, keep in
+  registry) and **DELETE** (stop + undeploy). `↑ UPLOAD AGENT` deploys a
+  manifest from file or pasted YAML.
+- **Right-side detail panel** — `▶ RUN NOW`, `STOP`, `DELETE`, plus a
+  **Recent Runs** section showing the last 20 invocations (status, trigger,
+  duration, tokens, tools, expandable prompt/output/error). Polled every 5 s.
+- **RUN NOW** — fire-and-forget. Prompt optional. Modal closes immediately,
+  results stream into Recent Runs and Governance → AGENT LOGS.
+- **Governance** — unified HITL inbox (legacy approvals + A2H requests),
+  kernel allow/deny feed, and an **AGENT LOGS** panel (run + tool events)
+  with `all | runs | tools | hitl` filters, polled every 2 s.
+- **MCP servers** — platform-scoped CRUD persisted in Postgres
+  (`client_mcp_configs` under the `_platform` synthetic client). Restart
+  required for changes to take effect.
+
+See `docs/operations/mission-control.md` for the full feature, endpoint, and
+schema reference.
 
 ## Production build (single container)
 
