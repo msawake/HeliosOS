@@ -1,6 +1,7 @@
 import type { AgentProcess } from "@/lib/api";
 import { fmt, usd } from "@/lib/utils";
 import { StackBadge } from "@/components/StackBadge";
+import { ResizableSplit } from "@/components/ui/resizable-split";
 
 interface Bucket {
   key: string;
@@ -58,27 +59,31 @@ export function CostTab({ procs }: { procs: AgentProcess[] }) {
   );
 
   return (
-    <div className="grid h-full grid-cols-2">
-      <div className="overflow-y-auto border-r border-border">
-        <div className="border-b border-border bg-surface px-[14px] py-2 text-[10px] uppercase tracking-widest text-dim">
-          Cost by Framework
+    <ResizableSplit
+      left={
+        <div>
+          <div className="border-b border-border bg-surface px-[14px] py-2 text-[10px] uppercase tracking-widest text-dim">
+            Cost by Framework
+          </div>
+          {byStack.length === 0 ? (
+            <div className="p-10 text-center text-dim">No cost data.</div>
+          ) : (
+            byStack.map((s) => <Row key={s.key} bucket={s} max={max} color="#58a6ff" isStack />)
+          )}
         </div>
-        {byStack.length === 0 ? (
-          <div className="p-10 text-center text-dim">No cost data.</div>
-        ) : (
-          byStack.map((s) => <Row key={s.key} bucket={s} max={max} color="#58a6ff" isStack />)
-        )}
-      </div>
-      <div className="overflow-y-auto">
-        <div className="border-b border-border bg-surface px-[14px] py-2 text-[10px] uppercase tracking-widest text-dim">
-          Cost by Namespace
+      }
+      right={
+        <div>
+          <div className="border-b border-border bg-surface px-[14px] py-2 text-[10px] uppercase tracking-widest text-dim">
+            Cost by Namespace
+          </div>
+          {byNs.length === 0 ? (
+            <div className="p-10 text-center text-dim">No cost data.</div>
+          ) : (
+            byNs.map((n) => <Row key={n.key} bucket={n} max={max} color="#bc8cff" isStack={false} />)
+          )}
         </div>
-        {byNs.length === 0 ? (
-          <div className="p-10 text-center text-dim">No cost data.</div>
-        ) : (
-          byNs.map((n) => <Row key={n.key} bucket={n} max={max} color="#bc8cff" isStack={false} />)
-        )}
-      </div>
-    </div>
+      }
+    />
   );
 }

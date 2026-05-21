@@ -22,7 +22,11 @@ interface Alert {
 }
 
 export function FleetTab({ procs, onSelect, onChange }: Props) {
-  const [pending, setPending] = useState<{ pid: string; label: string } | null>(null);
+  const [pending, setPending] = useState<{
+    pid: string;
+    label: string;
+    action: "stop" | "delete";
+  } | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
 
   const alerts: Alert[] = [];
@@ -48,17 +52,17 @@ export function FleetTab({ procs, onSelect, onChange }: Props) {
       });
   });
 
-  const requestStop = (pid: string, label: string) => {
+  const requestAction = (pid: string, label: string, action: "stop" | "delete") => {
     if (!pid) return;
-    setPending({ pid, label });
+    setPending({ pid, label, action });
   };
 
-  const confirmStop = async () => {
+  const confirmAction = async () => {
     if (!pending) return;
-    const { pid } = pending;
+    const { pid, action } = pending;
     setPending(null);
     await api.stop(pid);
-    await api.remove(pid);
+    if (action === "delete") await api.remove(pid);
     onChange();
   };
 
@@ -109,7 +113,7 @@ export function FleetTab({ procs, onSelect, onChange }: Props) {
             <Th>Tool Calls</Th>
             <Th>Wallclock</Th>
             <Th>Heartbeat</Th>
-            <Th>Signals</Th>
+            <Th>Actions</Th>
           </Tr>
         </Thead>
         <Tbody>
@@ -124,7 +128,14 @@ export function FleetTab({ procs, onSelect, onChange }: Props) {
                 <Td className="text-bright">{sn}</Td>
                 <Td className="font-mono text-[10px] text-dim">{pid || "-"}</Td>
                 <Td>
-                  <PhaseBadge phase={p.phase ?? "unknown"} />
+                  <PhaseBadge
+                    phase={p.display_phase ?? p.phase ?? "unknown"}
+                    title={
+                      p.display_phase === "scheduled" && p.next_run_at
+                        ? `next run: ${new Date(p.next_run_at).toLocaleString()}`
+                        : undefined
+                    }
+                  />
                 </Td>
                 <Td>{p.namespace ?? "-"}</Td>
                 <Td>{fmt(p.tokens)}</Td>
@@ -133,15 +144,27 @@ export function FleetTab({ procs, onSelect, onChange }: Props) {
                 <Td>-</Td>
                 <Td>{ago(p.last_heartbeat)}</Td>
                 <Td>
-                  <Button
-                    variant="danger"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      requestStop(pid, sn);
-                    }}
-                  >
-                    STOP
-                  </Button>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        requestAction(pid, sn, "stop");
+                      }}
+                      disabled={p.phase === "stopped"}
+                    >
+                      STOP
+                    </Button>
+                    <Button
+                      variant="danger"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        requestAction(pid, sn, "delete");
+                      }}
+                    >
+                      DELETE
+                    </Button>
+                  </div>
                 </Td>
               </Tr>
             );
@@ -173,9 +196,9 @@ export function FleetTab({ procs, onSelect, onChange }: Props) {
 
       <ConfirmDialog
         open={!!pending}
-        destructive
-        title="Stop & remove agent"
-        confirmLabel="STOP & REMOVE"
+        destructive={pending?.action === "delete"}
+        title={pending?.action === "delete" ? "Delete agent" : "Stop agent"}
+        confirmLabel={pending?.action === "delete" ? "STOP & DELETE" : "STOP"}
         cancelLabel="CANCEL"
         message={
           pending && (
@@ -188,13 +211,15 @@ export function FleetTab({ procs, onSelect, onChange }: Props) {
                 <span className="text-dim">pid:  </span>
                 <span className="text-bright">{pending.pid}</span>
               </div>
-              <div className="pt-2 text-danger">
-                This stops the process and unregisters it. Permanent.
+              <div className="pt-2 text-warn">
+                {pending.action === "delete"
+                  ? "Stops the process and unregisters it. Permanent."
+                  : "Transitions the process to STOPPED. The agent stays in the registry — you can RUN NOW to start it again."}
               </div>
             </div>
           )
         }
-        onConfirm={confirmStop}
+        onConfirm={confirmAction}
         onCancel={() => setPending(null)}
       />
       {uploadDialog}
