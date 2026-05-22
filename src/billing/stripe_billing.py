@@ -158,12 +158,14 @@ class StripeBilling:
                 "Subscription updated: tenant=%s status=%s",
                 tenant_id, subscription["status"],
             )
+            self._invalidate_license(tenant_id)
             return {"status": "processed", "event": event_type, "tenant_id": tenant_id}
 
         elif event_type == "customer.subscription.deleted":
             subscription = event["data"]["object"]
             tenant_id = subscription.get("metadata", {}).get("tenant_id")
             logger.warning("Subscription cancelled: tenant=%s", tenant_id)
+            self._invalidate_license(tenant_id)
             return {"status": "processed", "event": event_type, "tenant_id": tenant_id}
 
         elif event_type == "invoice.payment_failed":
@@ -173,3 +175,12 @@ class StripeBilling:
             return {"status": "processed", "event": event_type}
 
         return {"status": "ignored", "event": event_type}
+
+    def bind_license_manager(self, license_manager) -> None:
+        """Attach a LicenseManager for cache invalidation on webhook events."""
+        self._license_manager = license_manager
+
+    def _invalidate_license(self, tenant_id: str | None) -> None:
+        lm = getattr(self, "_license_manager", None)
+        if lm and tenant_id:
+            lm.invalidate_cache(tenant_id)

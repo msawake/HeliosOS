@@ -733,9 +733,11 @@ class Kernel:
         usage_enforcer=None,
         audit_log=None,
         capability_store=None,
+        license_manager=None,
     ):
         self._registry = registry
         self._audit_log = audit_log
+        self.license = license_manager
 
         # Phase A #3 — process-level contract registry. The admission
         # controller registers agents' typed A2A surfaces here as they're
@@ -865,6 +867,7 @@ class Kernel:
 
     def _build_pipeline(self):
         """Wire the default syscall pipeline against existing subsystems."""
+        from src.platform.kernel._license_stage import make_license_stage
         from src.platform.syscall import (
             SyscallPipeline,
             make_audit_stage,
@@ -876,12 +879,11 @@ class Kernel:
 
         return SyscallPipeline(
             stages={
+                "identity": make_license_stage(self.license),
                 "capability": make_capability_stage(self.permissions),
                 "quota": make_quota_stage(self.budgets),
                 "policy": make_policy_stage(self.policies),
                 "boundary": make_boundary_stage(self.data),
-                # `dispatch` is caller-supplied per syscall — wired below.
-                # `audit` delegates to whatever audit object the caller gave us.
                 "audit": make_audit_stage(self._audit_log) if self._audit_log else None,
             }
         )
@@ -970,6 +972,12 @@ class Kernel:
 
     def check_data_access(self, agent_id: str, target_namespace: str) -> KernelDecision:
         return self.data.check_data_access(agent_id, target_namespace)
+
+    def check_license(self, tenant_id: str) -> KernelDecision:
+        """Direct license check (bypasses syscall pipeline)."""
+        if self.license is None:
+            return KernelDecision.allow(reason="no license manager wired")
+        return self.license.check_license(tenant_id)
 
     def admit(self, contract: dict) -> AdmissionResult:
         result = self.admission.admit(contract)

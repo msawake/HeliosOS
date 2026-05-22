@@ -132,6 +132,9 @@ class Kernel:
     def check_data_access(self, agent_id: str, namespace: str, **kw: Any) -> KernelDecision:
         return KernelDecision.allow()
 
+    def check_license(self, tenant_id: str, **kw: Any) -> KernelDecision:
+        return KernelDecision.allow(reason="community edition — no license enforcement")
+
     def admit(self, contract: dict[str, Any], **kw: Any) -> AdmissionResult:
         return AdmissionResult(admitted=True, reason="community edition")
 
