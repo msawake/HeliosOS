@@ -28,6 +28,9 @@ jobs:
 
       - name: Install and test
         run: |
+          # ./a2h is a sibling package vendored in-repo; install it first so
+          # src/platform/a2h.py can resolve `from a2h.models import ...`.
+          pip install -e ./a2h --quiet
           pip install -e ".[dev]" --quiet
           PYTHONPATH=. python -m pytest tests/ -q --tb=short \
             --deselect tests/test_model_client.py::TestFactory::test_create_openai_without_sdk

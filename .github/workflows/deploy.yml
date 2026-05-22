@@ -28,7 +28,10 @@ env:
   BACKEND_SERVICE: forgeos-api
   DASHBOARD_SERVICE: forgeos-dashboard
   MC_SERVICE: forgeos-mission-control
-  BACKEND_URL: https://forgeos-api-${{ vars.GCP_PROJECT_NUMBER }}.${REGION}.run.app
+  # Resolved at workflow parse time — must use ${{ }} for REGION, not ${REGION},
+  # because env: blocks don't expand shell vars. The literal ${REGION} previously
+  # reached Cloud Build and was rejected as an invalid substitution.
+  BACKEND_URL: https://forgeos-api-${{ vars.GCP_PROJECT_NUMBER }}.${{ vars.GCP_REGION || 'europe-west1' }}.run.app
 
 jobs:
   deploy:
