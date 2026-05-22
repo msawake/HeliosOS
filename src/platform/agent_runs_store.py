@@ -139,6 +139,42 @@ class AgentRunsStore:
             logger.warning("agent_runs.recent failed: %s", e)
             return []
 
+    def _sweep_orphans_sync(self) -> int:
+        """Mark any agent_runs.status='running' rows as failed.
+        Called at platform boot to clean up runs left in-flight by a
+        prior process that crashed/restarted."""
+        with self._pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE agent_runs
+                       SET status = 'failed',
+                           ended_at = COALESCE(ended_at, NOW()),
+                           error = COALESCE(error, 'platform restart while running'),
+                           duration_ms = COALESCE(
+                               duration_ms,
+                               EXTRACT(EPOCH FROM (NOW() - started_at)) * 1000
+                           )::int
+                     WHERE status = 'running'
+                    """
+                )
+                # psycopg returns the rowcount on the cursor; capture it before
+                # the connection is committed.
+                return cur.rowcount or 0
+
+    async def sweep_orphans(self) -> int:
+        """Async wrapper; returns the number of rows reset."""
+        if not self.enabled:
+            return 0
+        try:
+            n = await asyncio.to_thread(self._sweep_orphans_sync)
+            if n:
+                logger.info("agent_runs: swept %d orphan 'running' rows at startup", n)
+            return n
+        except Exception as e:
+            logger.warning("agent_runs.sweep_orphans failed: %s", e)
+            return 0
+
 
 def _serialize(row: dict) -> dict:
     out = dict(row)

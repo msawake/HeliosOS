@@ -250,6 +250,15 @@ class PlatformBootstrap:
                     from src.platform.agent_runs_store import AgentRunsStore
                     self.executor.agent_runs = AgentRunsStore(self._db._pool)
                     logger.info("  Agent run history: POSTGRESQL")
+                    # Reset any agent_runs left in 'running' from a prior
+                    # process — they will never complete and would leak into
+                    # /api/platform/agent-logs as ghost run.started events.
+                    try:
+                        n_swept = await self.executor.agent_runs.sweep_orphans()
+                        if n_swept:
+                            logger.info("  Reset %d orphan in-flight runs", n_swept)
+                    except Exception as e:
+                        logger.warning("  Orphan-run sweep failed: %s", e)
                 except Exception as e:
                     logger.warning("  Agent run history disabled: %s", e)
 
