@@ -243,6 +243,41 @@ async def test_list_pending_from_filters_by_originating_agent():
     assert for_c == []
 
 
+@pytest.mark.asyncio
+async def test_list_resolved_from_returns_answered_and_rejected():
+    """The resume hook enriches the agent's prompt with prior outcomes.
+    list_resolved_from must surface answered/cancelled requests so the
+    agent can act on them without re-asking (it has no memory tools)."""
+    from src.platform.a2h import HumanResponse
+
+    gw = _seeded_gateway()
+    req_ok = await gw.ask(
+        from_agent="agent-A", from_agent_name="agent-A",
+        to_namespace="operations", to_name="approver",
+        question="Approve greeting comment on PR12148-298: ...?",
+        response_type="approval", priority="medium",
+        context={"issue_key": "PR12148-298"},
+    )
+    req_bad = await gw.ask(
+        from_agent="agent-A", from_agent_name="agent-A",
+        to_namespace="operations", to_name="approver",
+        question="Approve greeting comment on PR12148-277: ...?",
+        response_type="approval", priority="medium",
+        context={"issue_key": "PR12148-277"},
+    )
+    rid_ok, rid_bad = req_ok.id, req_bad.id
+
+    gw.respond(rid_ok, {"approved": True, "value": "approved"}, responded_by="op", via="dashboard")
+    gw.respond(rid_bad, {"approved": False, "value": "rejected"}, responded_by="op", via="dashboard")
+
+    resolved = gw.list_resolved_from("agent-A")
+    assert {r.id for r in resolved} == {rid_ok, rid_bad}
+    keys = {r.context.get("issue_key") for r in resolved}
+    assert keys == {"PR12148-298", "PR12148-277"}
+    # Non-requesting agent gets nothing.
+    assert gw.list_resolved_from("agent-B") == []
+
+
 def test_awaiting_human_phase_exists_and_round_trips():
     from src.platform.kernel._process import Phase, can_transition, status_value_from_phase
     assert Phase.AWAITING_HUMAN.value == "awaiting_human"

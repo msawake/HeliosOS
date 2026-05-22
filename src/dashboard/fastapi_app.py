@@ -3011,14 +3011,65 @@ def create_fastapi_app(
             return  # keep AWAITING_HUMAN; nothing to resume yet
         try:
             import asyncio as _asyncio
+            # Enrich the resume prompt with the resolved request outcomes so
+            # the agent can act on them directly (it usually has no memory tools
+            # and cannot reconstruct which request_id was approved vs rejected).
+            resume_prompt = (
+                "Resume: every pending human approval has been resolved. "
+                "Continue any deferred work."
+            )
+            resume_context = {"_trigger": "a2h_resume"}
+            try:
+                resolved = []
+                if hasattr(gw, "list_resolved_from"):
+                    resolved = gw.list_resolved_from(from_agent, limit=50)
+                if resolved:
+                    items = []
+                    for r in resolved:
+                        ctx = getattr(r, "context", {}) or {}
+                        resp = getattr(r, "response", None)
+                        items.append({
+                            "request_id": r.id,
+                            "status": r.status.value if hasattr(r.status, "value") else str(r.status),
+                            "value": getattr(resp, "value", None) if resp else None,
+                            "approved": getattr(resp, "approved", None) if resp else None,
+                            "question": getattr(r, "question", "") or "",
+                            "issue_key": ctx.get("issue_key"),
+                            "context": ctx,
+                            "responded_by": getattr(resp, "responded_by", None) if resp else None,
+                        })
+                    resume_context["resolved_a2h_requests"] = items
+                    import json as _json
+                    blob = _json.dumps(items, indent=2, default=str)
+                    resume_prompt += (
+                        "\n\nThe outcomes of your recent human__ask calls are below. "
+                        "For each entry, you do NOT need to re-ask — the human has already "
+                        "responded. Act on the outcome directly (approved → comment; rejected → skip):\n"
+                        f"```json\n{blob}\n```"
+                    )
+            except Exception:
+                logger.debug("could not enrich resume prompt with resolved A2H data", exc_info=True)
+
             _asyncio.create_task(platform_executor.invoke(
                 from_agent,
-                "Resume: a human just responded to your A2H request. Continue any deferred work.",
-                {"_trigger": "a2h_resume"},
+                resume_prompt,
+                resume_context,
             ))
             logger.info("A2H resume invoke scheduled for %s after %s", from_agent, request_id)
         except Exception:
             logger.exception("resume invoke failed for %s", from_agent)
+
+    def _a2h_respond_error(result: dict, request_id: str, gw) -> HTTPException:
+        """Map gateway respond() failure to a meaningful HTTP status.
+        404 if the request doesn't exist, 409 if it's already resolved,
+        400 otherwise."""
+        err = (result.get("error") or "").lower()
+        req = gw.get_request_obj(request_id) if hasattr(gw, "get_request_obj") else None
+        if req is None:
+            return HTTPException(404, f"A2H request '{request_id}' not found")
+        if "not pending" in err or "expired" in err or "cancelled" in err:
+            return HTTPException(409, result.get("error") or "Request is no longer pending")
+        return HTTPException(400, result.get("error") or "Failed")
 
     @app.post("/api/a2h/requests/{request_id}/approve", tags=["a2h"])
     async def a2h_approve(request_id: str, responded_by: str = "operator"):
@@ -3032,7 +3083,7 @@ def create_fastapi_app(
             responded_by=responded_by, via="dashboard",
         )
         if not result.get("success"):
-            raise HTTPException(400, result.get("error", "Failed"))
+            raise _a2h_respond_error(result, request_id, _gw)
         await _resume_after_human_response(request_id)
         return result
 
@@ -3048,7 +3099,7 @@ def create_fastapi_app(
             responded_by=responded_by, via="dashboard",
         )
         if not result.get("success"):
-            raise HTTPException(400, result.get("error", "Failed"))
+            raise _a2h_respond_error(result, request_id, _gw)
         await _resume_after_human_response(request_id)
         return result
 

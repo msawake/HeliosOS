@@ -777,6 +777,26 @@ class A2HGateway:
                 out.append(r)
         return out
 
+    def list_resolved_from(self, from_agent: str, limit: int = 50) -> list:
+        """Return RESOLVED (answered/rejected/cancelled/expired) requests
+        originally created by `from_agent`, newest first. Used to enrich
+        the prompt of an A2H resume invoke so the agent can act on the
+        outcomes without re-asking."""
+        store = self._store
+        bag = getattr(store, "_requests", None)
+        if not bag:
+            return []
+        resolved_states = {Status.ANSWERED, Status.CANCELLED, Status.EXPIRED}
+        out = []
+        for r in bag.values():
+            if getattr(r, "from_agent", None) != from_agent:
+                continue
+            if r.status not in resolved_states:
+                continue
+            out.append(r)
+        out.sort(key=lambda r: getattr(r, "updated_at", "") or getattr(r, "created_at", ""), reverse=True)
+        return out[:limit]
+
     def get_request_obj(self, request_id: str):
         """Return the raw HumanRequest object (not its dict form)."""
         return self._store.get(request_id)
