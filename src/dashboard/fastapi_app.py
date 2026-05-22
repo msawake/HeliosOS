@@ -756,6 +756,9 @@ def create_fastapi_app(
         # Path 1: Platform executor (new multi-stack agents)
         if platform_executor:
             agent_def = platform_executor.registry.get(agent_id)
+            if not agent_def and not admin_invoker:
+                # Neither path knows this agent — 404, not 500.
+                raise HTTPException(404, f"Agent '{agent_id}' not found")
             if agent_def:
                 if async_mode:
                     import asyncio as _asyncio
@@ -811,7 +814,10 @@ def create_fastapi_app(
                 logger.exception("Legacy invoker failed for %s", agent_id)
                 raise HTTPException(500, "Agent invocation failed")
 
-        raise HTTPException(500, "No invoker available")
+        # No platform executor and no admin invoker available — service issue.
+        # If the agent_id is simply unknown to whichever invoker IS configured,
+        # we want a 404 here too, but we can't tell without trying.
+        raise HTTPException(503, "No invoker available")
 
     # ------------------------------------------------------------------
     # Agent Update (edit in-place)
