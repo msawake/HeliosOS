@@ -9,5 +9,9 @@ dashboard/.next/
 mission-control/frontend/node_modules/
 .bagentpro/
 tests/
-docs/
+# docs/ and mkdocs.yml are kept in the Cloud Build context: the Mission
+# Control image (infrastructure/docker/Dockerfile.mission-control) runs
+# `mkdocs build` over them. The `!docs/**` re-include below ensures the
+# `*.md` rule doesn't strip the markdown sources inside docs/.
 *.md
+!docs/**
