@@ -226,6 +226,9 @@ def main(argv: list[str] | None = None) -> int:
     p_undeploy_team.add_argument("--namespace", default="default", help="Team namespace")
     p_undeploy_team.set_defaults(func=cmd_undeploy_team)
 
+    from . import mc_cli
+    mc_cli.register(sub)
+
     args = parser.parse_args(argv)
     return args.func(args)
 
