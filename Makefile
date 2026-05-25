@@ -65,8 +65,8 @@ setup: setup-py setup-rust
 setup-py:
 	@command -v $(PY) >/dev/null || { echo "✗ $(PY) not found — install Python 3.11+"; exit 1; }
 	@[ -d $(VENV) ] || { echo "→ creating $(VENV)"; $(PY) -m venv $(VENV); $(VENV_PIP) install -q --upgrade pip; }
-	@echo "→ installing project deps (editable, with server extras)"
-	@$(VENV_PIP) install -q -e ".[dev,server]"
+	@echo "→ installing project deps (editable, with server + mcp extras)"
+	@$(VENV_PIP) install -q -e ".[dev,server,mcp]"
 
 setup-rust:
 	@command -v $(CARGO) >/dev/null || { echo "✗ cargo not found — install Rust via https://rustup.rs"; exit 1; }
