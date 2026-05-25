@@ -147,10 +147,15 @@ class MCPServerManager:
             command = "uvx"
             args = [package] + config.args
 
-        # Resolve environment variables securely at runtime
-        resolved_env = None
+        # Resolve environment variables securely at runtime. We always start
+        # from a copy of os.environ so the child inherits PATH, HOME, TMPDIR,
+        # PYTHONHOME, etc. (the mcp SDK passes `env` straight to Popen — when
+        # set to a bare dict it REPLACES the parent env, which makes some MCP
+        # servers come up but expose zero tools because dependent files can't
+        # be found).
+        import os as _os
+        resolved_env = _os.environ.copy()
         if config.env_vars:
-            resolved_env = {}
             for k, v in config.env_vars.items():
                 if v.startswith("secret:"):
                     # Extract secret name (e.g., "secret:github-token" -> "github-token")

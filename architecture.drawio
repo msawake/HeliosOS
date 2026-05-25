@@ -1,0 +1,265 @@
+<mxfile host="app.diagrams.net" modified="2026-05-22T00:00:00.000Z" agent="Claude" version="24.0.0">
+  <diagram name="ForgeOS Services" id="forgeos-services">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- TITLE -->
+        <mxCell id="title" value="ForgeOS v3.1 — Service Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="10" width="600" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- USER/CLI LAYER -->
+        <mxCell id="g_clients" value="Clients" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;fontStyle=1;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="320" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="cli_forgeos" value="forgeos CLI&#xa;(deploy/invoke/list)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="60" y="100" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="cli_mc" value="mc_cli&#xa;(local SDK test)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="210" y="100" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="browser" value="Browser&#xa;(user)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="135" y="165" width="120" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- FRONTEND -->
+        <mxCell id="nextjs" value="Next.js Dashboard&#xa;(Node :3000)&#xa;React 19 + Tailwind" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="400" y="100" width="200" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- FASTAPI -->
+        <mxCell id="g_api" value="FastAPI Backend (src/dashboard/fastapi_app.py — :5000)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontStyle=1;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="40" y="260" width="1100" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="api_platform" value="/api/platform/*&#xa;agents, invoke, chat/stream" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="55" y="295" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="api_a2a" value="/api/a2a/*&#xa;agent-to-agent RPC" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="235" y="295" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="api_a2h" value="/api/a2h/*&#xa;approvals/notify" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="385" y="295" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="api_tools" value="/api/tools/*&#xa;/api/mcps/*" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="535" y="295" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="api_knowledge" value="/api/knowledge/*&#xa;/api/workflows/*" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="685" y="295" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="api_admin" value="/api/admin/*&#xa;/api/rbac/*" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="835" y="295" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="api_webhooks" value="/api/webhooks/*&#xa;/api/health" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="985" y="295" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="api_ws" value="WebSocket + SSE (real-time agent status, streaming chat)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="55" y="355" width="1070" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- PLATFORM LAYER -->
+        <mxCell id="g_platform" value="Platform Layer (src/platform/) — bootstrapped by src/bootstrap.py" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontStyle=1;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="40" y="430" width="1100" height="320" as="geometry" />
+        </mxCell>
+
+        <!-- Orchestration -->
+        <mxCell id="p_orch" value="Orchestration &amp; Execution" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;verticalAlign=top;fontStyle=1;fontSize=11" vertex="1" parent="1">
+          <mxGeometry x="55" y="465" width="260" height="135" as="geometry" />
+        </mxCell>
+        <mxCell id="p_exec" value="Executor" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="65" y="490" width="115" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p_sched" value="Scheduler" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="190" y="490" width="115" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p_eb" value="Event Bus" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="65" y="525" width="115" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p_loop" value="Agentic Loop" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="190" y="525" width="115" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p_router" value="LLM Router" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="65" y="560" width="240" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Kernel -->
+        <mxCell id="p_kern" value="Kernel &amp; Admission" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;verticalAlign=top;fontStyle=1;fontSize=11" vertex="1" parent="1">
+          <mxGeometry x="330" y="465" width="240" height="135" as="geometry" />
+        </mxCell>
+        <mxCell id="p_kernel" value="Kernel (RBAC, policies)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="340" y="490" width="220" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p_syscall" value="Syscall Pipeline (opt-in)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="340" y="525" width="220" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p_caps" value="Capabilities / Process Table" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="340" y="560" width="220" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- A2A/A2H -->
+        <mxCell id="p_comm" value="A2A &amp; A2H" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;verticalAlign=top;fontStyle=1;fontSize=11" vertex="1" parent="1">
+          <mxGeometry x="585" y="465" width="240" height="135" as="geometry" />
+        </mxCell>
+        <mxCell id="p_a2a" value="a2a / a2a_transport" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="595" y="490" width="220" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p_a2h" value="a2h gateway (approvals)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="595" y="525" width="220" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p_mcp_reg" value="MCP Registry / Skill Registry" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="595" y="560" width="220" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Observability -->
+        <mxCell id="p_obs" value="Observability" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;verticalAlign=top;fontStyle=1;fontSize=11" vertex="1" parent="1">
+          <mxGeometry x="840" y="465" width="285" height="135" as="geometry" />
+        </mxCell>
+        <mxCell id="p_audit" value="Audit (hash-chained)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="850" y="490" width="265" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p_metrics" value="Metrics (14 Prometheus families)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="850" y="525" width="265" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p_alerts" value="Alerts (Slack / PagerDuty / log)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="850" y="560" width="265" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Persistence row -->
+        <mxCell id="p_pers" value="Persistence &amp; State" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;verticalAlign=top;fontStyle=1;fontSize=11" vertex="1" parent="1">
+          <mxGeometry x="55" y="620" width="1070" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p_reg" value="Agent Registry" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="70" y="650" width="170" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="p_proctbl" value="Process Table&#xa;(checkpoints)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="250" y="650" width="170" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="p_runs" value="Agent Runs Store" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="430" y="650" width="170" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="p_sess" value="Session Event Store" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="610" y="650" width="170" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="p_mem" value="Memory Store" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="790" y="650" width="170" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="p_durev" value="Durable Event Store" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6f2e0;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="970" y="650" width="145" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="p_tool_exec" value="Tool Executor — routes mcp__* and company__* (kernel-gated)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="70" y="695" width="1045" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- STACK ADAPTERS -->
+        <mxCell id="g_stacks" value="Stack Adapters (stacks/) — AgentStackAdapter ABC" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontStyle=1;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="40" y="780" width="1100" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="s_forgeos" value="ForgeOS&#xa;(native)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="55" y="815" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s_crewai" value="CrewAI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="172" y="815" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s_adk" value="Google ADK" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="289" y="815" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s_lc" value="LangChain" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="406" y="815" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s_oc" value="OpenClaw&#xa;(subprocess)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="523" y="815" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s_sb" value="Sandbox&#xa;(Docker)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="640" y="815" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s_asdk" value="Anthropic&#xa;SDK" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="757" y="815" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s_amgd" value="Anthropic&#xa;Managed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="874" y="815" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s_oai" value="OpenAI&#xa;Agents" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="991" y="815" width="110" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- EXTERNAL -->
+        <mxCell id="g_ext" value="External Dependencies" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;verticalAlign=top;fontStyle=1;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="1180" y="60" width="380" height="840" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_anthropic" value="Anthropic API&#xa;(Claude Opus / Sonnet / Haiku)" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="100" width="320" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_openai" value="OpenAI API&#xa;(GPT-4 / o3)" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="200" width="320" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_pg" value="PostgreSQL&#xa;(multi-tenant + RLS)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="310" width="320" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_redis" value="Redis&#xa;(sessions / cache — optional)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="430" width="320" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_mcp" value="MCP Servers&#xa;(filesystem, web, email, …)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="530" width="320" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_docker" value="Docker&#xa;(sandbox containers)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="630" width="320" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_slack" value="Slack / PagerDuty&#xa;(alerts + A2H channels)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="730" width="320" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- EDGES -->
+        <mxCell id="e1" style="endArrow=classic;html=1;" edge="1" parent="1" source="browser" target="nextjs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="endArrow=classic;html=1;" edge="1" parent="1" source="nextjs" target="g_api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="endArrow=classic;html=1;" edge="1" parent="1" source="cli_forgeos" target="g_api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="endArrow=classic;html=1;" edge="1" parent="1" source="cli_mc" target="g_api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="endArrow=classic;html=1;" edge="1" parent="1" source="g_api" target="g_platform">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="endArrow=classic;html=1;" edge="1" parent="1" source="p_exec" target="g_stacks">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="p_router" target="ext_anthropic">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="p_router" target="ext_openai">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="p_pers" target="ext_pg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="p_pers" target="ext_redis">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="p_tool_exec" target="ext_mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="s_sb" target="ext_docker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="p_alerts" target="ext_slack">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="1" source="p_a2h" target="ext_slack">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" style="endArrow=classic;html=1;startArrow=classic;startFill=1;" edge="1" parent="1" source="p_exec" target="p_kernel">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e16" style="endArrow=classic;html=1;" edge="1" parent="1" source="p_exec" target="p_tool_exec">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

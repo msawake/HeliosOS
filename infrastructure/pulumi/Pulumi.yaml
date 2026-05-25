@@ -1,0 +1,6 @@
+name: forgeos-gcp
+runtime:
+  name: python
+  options:
+    virtualenv: venv
+description: ForgeOS infrastructure on GCP (Cloud Run + GKE Autopilot + Cloud SQL)
