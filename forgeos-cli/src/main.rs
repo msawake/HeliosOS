@@ -1,0 +1,87 @@
+// Copyright 2024-2026 Awake Venture Studio (awakeventurestudio.co),
+// a Making Science Group, SA company.
+// SPDX-License-Identifier: BUSL-1.1
+//
+// ForgeOS CLI — single static binary client for the Python platform.
+//
+// All operations go over HTTP against a forgeos-server daemon. The server's
+// host/port/token are discovered from ~/.forgeos/server.lock unless
+// overridden by --remote / --token or the FORGEOS_REMOTE / FORGEOS_TOKEN
+// env vars.
+
+mod api;
+mod cmd;
+mod config;
+mod manifest;
+mod ui;
+
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(
+    name = "forgeos",
+    version,
+    about = "ForgeOS CLI — declare and manage agents from the command line",
+    long_about = None
+)]
+struct Cli {
+    /// Server base URL. Default: read from ~/.forgeos/server.lock.
+    #[arg(long, global = true, env = "FORGEOS_REMOTE")]
+    remote: Option<String>,
+
+    /// Bearer token. Default: read from ~/.forgeos/server.lock.
+    #[arg(long, global = true, env = "FORGEOS_TOKEN")]
+    token: Option<String>,
+
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Validate an agent manifest without deploying. No server required.
+    Validate(cmd::validate::Args),
+    /// Deploy an agent from a manifest file.
+    Deploy(cmd::deploy::Args),
+    /// List deployed agents.
+    List,
+    /// Invoke an agent with a prompt.
+    Invoke(cmd::invoke::Args),
+    /// Undeploy an agent.
+    Undeploy(cmd::undeploy::Args),
+    /// Undeploy all agents in a team (server endpoint required; not yet implemented).
+    UndeployTeam(cmd::stub::TeamArgs),
+    /// Platform health check.
+    Health,
+    /// Manage local config and credentials in ~/.forgeos/.
+    #[command(subcommand)]
+    Config(cmd::config::ConfigCmd),
+}
+
+fn main() {
+    let cli = Cli::parse();
+    let ctx = cli.token_and_remote();
+    let result = match cli.command {
+        Command::Validate(args) => cmd::validate::run(args),
+        Command::Deploy(args) => cmd::deploy::run(args, &ctx),
+        Command::List => cmd::list::run(&ctx),
+        Command::Invoke(args) => cmd::invoke::run(args, &ctx),
+        Command::Undeploy(args) => cmd::undeploy::run(args, &ctx),
+        Command::UndeployTeam(args) => cmd::stub::undeploy_team(args),
+        Command::Health => cmd::health::run(&ctx),
+        Command::Config(sub) => cmd::config::run(sub),
+    };
+    match result {
+        Ok(code) => std::process::exit(code),
+        Err(e) => {
+            ui::err(&format!("{e:#}"));
+            std::process::exit(1);
+        }
+    }
+}
+
+impl Cli {
+    fn token_and_remote(&self) -> api::Endpoint {
+        api::Endpoint::resolve(self.remote.clone(), self.token.clone())
+    }
+}
