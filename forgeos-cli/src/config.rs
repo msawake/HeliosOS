@@ -6,7 +6,11 @@
 //! live in `~/.forgeos/credentials` at mode 0600; refusing to read the
 //! file if it's group/other-readable matches the Python behaviour.
 
-use anyhow::{anyhow, bail, Context, Result};
+// `anyhow::Context` is imported anonymously (the `as _`) so its
+// `.context()` method stays usable on Results while our own
+// `pub struct Context` further down can keep the name.
+use anyhow::Context as _;
+use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -67,6 +71,13 @@ pub fn save_config(data: &Config) -> Result<()> {
     let yaml = serde_yaml::to_string(data)?;
     let path = config_path();
     fs::write(&path, yaml).with_context(|| format!("write {}", path.display()))?;
+    // Contexts hold bearer tokens inline — keep config.yaml as tight as
+    // the credentials file. If you ever split tokens into a separate
+    // file, relax this back to 0644.
+    #[cfg(unix)]
+    {
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+    }
     Ok(())
 }
 
@@ -218,4 +229,133 @@ pub fn read_server_lock() -> Result<ServerLock> {
     let lock: ServerLock = serde_json::from_str(&raw)
         .map_err(|e| anyhow!("malformed {}: {}", path.display(), e))?;
     Ok(lock)
+}
+
+// ---- contexts (kubectl-style) --------------------------------------------
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub enum AuthScheme {
+    #[serde(rename = "bearer")]
+    Bearer,
+    #[serde(rename = "x-api-key")]
+    XApiKey,
+}
+
+impl Default for AuthScheme {
+    fn default() -> Self {
+        AuthScheme::Bearer
+    }
+}
+
+impl std::fmt::Display for AuthScheme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthScheme::Bearer => write!(f, "bearer"),
+            AuthScheme::XApiKey => write!(f, "x-api-key"),
+        }
+    }
+}
+
+impl std::str::FromStr for AuthScheme {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "bearer" => Ok(AuthScheme::Bearer),
+            "x-api-key" | "xapikey" | "apikey" | "api-key" => Ok(AuthScheme::XApiKey),
+            other => bail!("unknown auth scheme: {other:?} (expected: bearer | x-api-key)"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Context {
+    pub server: String,
+    #[serde(default)]
+    pub token: Option<String>,
+    #[serde(default, rename = "auth")]
+    pub auth_scheme: AuthScheme,
+}
+
+const CTX_KEY: &str = "contexts";
+const CURRENT_CTX_KEY: &str = "current_context";
+
+pub fn list_contexts() -> Result<BTreeMap<String, Context>> {
+    let cfg = load_config()?;
+    match cfg.get(CTX_KEY) {
+        Some(v) => serde_yaml::from_value(v.clone())
+            .with_context(|| format!("parse `{CTX_KEY}` block in config.yaml")),
+        None => Ok(BTreeMap::new()),
+    }
+}
+
+pub fn current_context_name() -> Result<Option<String>> {
+    let cfg = load_config()?;
+    Ok(match cfg.get(CURRENT_CTX_KEY) {
+        Some(serde_yaml::Value::String(s)) => Some(s.clone()),
+        _ => None,
+    })
+}
+
+pub fn current_context() -> Result<Option<(String, Context)>> {
+    let Some(name) = current_context_name()? else {
+        return Ok(None);
+    };
+    let mut ctxs = list_contexts()?;
+    match ctxs.remove(&name) {
+        Some(c) => Ok(Some((name, c))),
+        None => Err(anyhow!(
+            "current_context = {name:?} but no such entry under `contexts:` in config.yaml"
+        )),
+    }
+}
+
+pub fn set_context(name: &str, ctx: Context) -> Result<()> {
+    if name.trim().is_empty() {
+        bail!("context name cannot be empty");
+    }
+    let mut cfg = load_config()?;
+    let mut ctxs = list_contexts()?;
+    ctxs.insert(name.to_string(), ctx);
+    cfg.insert(
+        CTX_KEY.to_string(),
+        serde_yaml::to_value(&ctxs).context("serialize contexts")?,
+    );
+    save_config(&cfg)
+}
+
+pub fn use_context(name: &str) -> Result<()> {
+    let ctxs = list_contexts()?;
+    if !ctxs.contains_key(name) {
+        bail!(
+            "no context named {name:?}. Available: {}",
+            ctxs.keys().cloned().collect::<Vec<_>>().join(", ")
+        );
+    }
+    let mut cfg = load_config()?;
+    cfg.insert(
+        CURRENT_CTX_KEY.to_string(),
+        serde_yaml::Value::String(name.to_string()),
+    );
+    save_config(&cfg)
+}
+
+pub fn delete_context(name: &str) -> Result<bool> {
+    let mut cfg = load_config()?;
+    let mut ctxs = list_contexts()?;
+    let removed = ctxs.remove(name).is_some();
+    if removed {
+        cfg.insert(
+            CTX_KEY.to_string(),
+            serde_yaml::to_value(&ctxs).context("serialize contexts")?,
+        );
+        // If we just removed the active context, unset current_context
+        // so subsequent commands don't silently target a ghost.
+        if let Some(serde_yaml::Value::String(cur)) = cfg.get(CURRENT_CTX_KEY).cloned()
+            && cur == name
+        {
+            cfg.remove(CURRENT_CTX_KEY);
+        }
+        save_config(&cfg)?;
+    }
+    Ok(removed)
 }

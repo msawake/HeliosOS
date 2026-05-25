@@ -2,19 +2,35 @@
 //! HTTP client and endpoint discovery.
 
 use anyhow::{anyhow, bail, Result};
-use reqwest::blocking::{Client, Response};
+use reqwest::blocking::{Client, Response, RequestBuilder};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
 use std::time::Duration;
 
-use crate::config;
+use crate::config::{self, AuthScheme};
 
 pub struct Endpoint {
     /// Lazily resolved on first use so subcommands that don't need the
     /// server (like `validate`) can run without a lockfile.
     remote_override: Option<String>,
     token_override: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Resolved {
+    pub base: String,
+    pub token: String,
+    pub auth: AuthScheme,
+    /// What we resolved against (for error messages).
+    pub source: ResolvedSource,
+}
+
+#[derive(Debug, Clone)]
+pub enum ResolvedSource {
+    Flags,
+    Context(String),
+    Lockfile,
 }
 
 impl Endpoint {
@@ -25,22 +41,60 @@ impl Endpoint {
         }
     }
 
-    fn resolved(&self) -> Result<(String, String)> {
+    fn resolved(&self) -> Result<Resolved> {
+        // Resolution order:
+        //   1. Explicit --remote / --token flags
+        //   2. Current context in ~/.forgeos/config.yaml
+        //   3. ~/.forgeos/server.lock (auto-written by local forgeos-server)
+        //   4. Error
+        let ctx = config::current_context().ok().flatten();
         let lock = config::read_server_lock().ok();
-        let base = match (&self.remote_override, &lock) {
-            (Some(url), _) => url.trim_end_matches('/').to_string(),
-            (None, Some(l)) => format!("http://{}:{}", l.host, l.port),
-            (None, None) => bail!(
-                "no --remote URL given and no server lockfile at {}",
-                config::lock_path().display()
+
+        let (base, source_for_url) = match (&self.remote_override, &ctx, &lock) {
+            (Some(url), _, _) => (url.trim_end_matches('/').to_string(), ResolvedSource::Flags),
+            (None, Some((name, c)), _) => (
+                c.server.trim_end_matches('/').to_string(),
+                ResolvedSource::Context(name.clone()),
+            ),
+            (None, None, Some(l)) => (
+                format!("http://{}:{}", l.host, l.port),
+                ResolvedSource::Lockfile,
+            ),
+            (None, None, None) => bail!(
+                "no endpoint configured.\n\
+                 Run one of:\n  \
+                   forgeos config set-context <name> --server <URL> --token <T> && forgeos config use-context <name>\n  \
+                   make server    # for a local forgeos-server\n  \
+                 Or pass --remote <URL> --token <T> per-call."
             ),
         };
-        let token = match (&self.token_override, &lock) {
-            (Some(t), _) => t.clone(),
-            (None, Some(l)) => l.token.clone(),
-            (None, None) => bail!("no --token given and no server lockfile to read it from"),
+
+        let (token, auth) = match (&self.token_override, &ctx, &lock) {
+            (Some(t), _, _) => (t.clone(), AuthScheme::Bearer),
+            (None, Some((_, c)), _) => match &c.token {
+                Some(t) => (t.clone(), c.auth_scheme.clone()),
+                None => bail!(
+                    "context has no token. Set one with `forgeos config set-context <name> --token <T>`."
+                ),
+            },
+            (None, None, Some(l)) => (l.token.clone(), AuthScheme::Bearer),
+            (None, None, None) => unreachable!(),
         };
-        Ok((base, token))
+
+        Ok(Resolved {
+            base,
+            token,
+            auth,
+            source: source_for_url,
+        })
+    }
+}
+
+/// Attach the auth header appropriate for the given scheme.
+fn auth_header(req: RequestBuilder, token: &str, auth: &AuthScheme) -> RequestBuilder {
+    match auth {
+        AuthScheme::Bearer => req.bearer_auth(token),
+        AuthScheme::XApiKey => req.header("X-API-Key", token),
     }
 }
 
@@ -102,13 +156,11 @@ fn enrich_send(err: reqwest::Error, base: &str, method: &str, path: &str) -> any
 }
 
 pub fn get<T: DeserializeOwned>(ep: &Endpoint, path: &str) -> Result<T> {
-    let (base, token) = ep.resolved()?;
-    let url = format!("{base}{path}");
-    let resp = client()
-        .get(&url)
-        .bearer_auth(&token)
+    let r = ep.resolved()?;
+    let url = format!("{base}{path}", base = r.base);
+    let resp = auth_header(client().get(&url), &r.token, &r.auth)
         .send()
-        .map_err(|e| enrich_send(e, &base, "GET", path))?;
+        .map_err(|e| enrich_send(e, &r.base, "GET", path))?;
     let resp = check(resp, "GET", path)?;
     resp.json::<T>()
         .map_err(|e| anyhow!("decode GET {url}: {e}"))
@@ -119,27 +171,23 @@ pub fn post_json<B: Serialize, T: DeserializeOwned>(
     path: &str,
     body: &B,
 ) -> Result<T> {
-    let (base, token) = ep.resolved()?;
-    let url = format!("{base}{path}");
-    let resp = client()
-        .post(&url)
-        .bearer_auth(&token)
+    let r = ep.resolved()?;
+    let url = format!("{base}{path}", base = r.base);
+    let resp = auth_header(client().post(&url), &r.token, &r.auth)
         .json(body)
         .send()
-        .map_err(|e| enrich_send(e, &base, "POST", path))?;
+        .map_err(|e| enrich_send(e, &r.base, "POST", path))?;
     let resp = check(resp, "POST", path)?;
     resp.json::<T>()
         .map_err(|e| anyhow!("decode POST {url}: {e}"))
 }
 
 pub fn delete<T: DeserializeOwned>(ep: &Endpoint, path: &str) -> Result<T> {
-    let (base, token) = ep.resolved()?;
-    let url = format!("{base}{path}");
-    let resp = client()
-        .delete(&url)
-        .bearer_auth(&token)
+    let r = ep.resolved()?;
+    let url = format!("{base}{path}", base = r.base);
+    let resp = auth_header(client().delete(&url), &r.token, &r.auth)
         .send()
-        .map_err(|e| enrich_send(e, &base, "DELETE", path))?;
+        .map_err(|e| enrich_send(e, &r.base, "DELETE", path))?;
     let resp = check(resp, "DELETE", path)?;
     resp.json::<T>()
         .map_err(|e| anyhow!("decode DELETE {url}: {e}"))
@@ -147,13 +195,19 @@ pub fn delete<T: DeserializeOwned>(ep: &Endpoint, path: &str) -> Result<T> {
 
 /// `/api/health` is unauthenticated.
 pub fn health(ep: &Endpoint) -> Result<Value> {
-    let (base, _token) = ep.resolved()?;
-    let url = format!("{base}/api/health");
+    let r = ep.resolved()?;
+    let url = format!("{base}/api/health", base = r.base);
     let resp = client()
         .get(&url)
         .send()
-        .map_err(|e| enrich_send(e, &base, "GET", "/api/health"))?;
+        .map_err(|e| enrich_send(e, &r.base, "GET", "/api/health"))?;
     let resp = check(resp, "GET", "/api/health")?;
     resp.json::<Value>()
         .map_err(|e| anyhow!("decode GET {url}: {e}"))
+}
+
+/// Public view of the current endpoint resolution — for `config` commands
+/// that want to show what the CLI would target.
+pub fn describe_target(ep: &Endpoint) -> Result<Resolved> {
+    ep.resolved()
 }
