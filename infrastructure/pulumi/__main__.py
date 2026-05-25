@@ -26,7 +26,6 @@ from components.gke import Gke
 from components.identity import Identity
 from components.keda import Keda
 from components.migrations import Migrations
-from components.mission_control import MissionControl
 from components.namespaces import Namespaces
 from components.network import Network
 from components.observability import Observability
@@ -51,7 +50,6 @@ forgeos_namespaces: list[str] = config.require_object("namespaces")
 
 # Image tags — set per deploy. Defaults assume `:latest` for first-boot bootstrap.
 platform_api_tag: str = config.get("platform_api_tag") or "latest"
-mc_tag: str = config.get("mc_tag") or "latest"
 agent_tag: str = config.get("agent_tag") or "latest"
 migrations_tag: str = config.get("migrations_tag") or "latest"
 
@@ -118,8 +116,6 @@ for sa, label in [
     for secret_name, secret in _shared_secrets:
         secrets.grant_access(f"{label}-{secret_name}-access", secret, sa.email)
 
-secrets.grant_access("mc-pw-access", secrets.mc_admin_password, identity.mc.email)
-secrets.grant_access("mc-api-token-access", secrets.api_token, identity.mc.email)
 secrets.grant_access("migrations-db-access", secrets.database_url, identity.migrations.email)
 
 # 6. GKE
@@ -189,24 +185,11 @@ platform_api = PlatformApi(
     opts=pulumi.ResourceOptions(depends_on=_pa_deps),
 )
 
-# 11. Mission Control
-_mc_pw_secret = secrets.mc_admin_password.id if "mc-admin-password" in secrets.versions else None
-_mc_api_token_secret = secrets.api_token.id if "api-token" in secrets.versions else None
-_mc_deps = []
-if "mc-admin-password" in secrets.versions:
-    _mc_deps.append(secrets.versions["mc-admin-password"])
-if "api-token" in secrets.versions:
-    _mc_deps.append(secrets.versions["api-token"])
-mc = MissionControl(
-    "forgeos",
-    region=region,
-    image=_img("mc", mc_tag),
-    gsa_email=identity.mc.email,
-    platform_api_url=platform_api.url,
-    mc_admin_password_secret=_mc_pw_secret,
-    api_token_secret=_mc_api_token_secret,
-    opts=pulumi.ResourceOptions(depends_on=_mc_deps),
-)
+# 11. Mission Control — REMOVED.
+# The FastAPI Mission Control backend was deleted in the thin-client
+# refactor (forgeos CLI is now a Rust binary that talks to the lightweight
+# forgeos-server / platform_api directly). The component class and image
+# are kept out of the stack; no Cloud Run service is provisioned.
 
 # 12. Agents — list driven from config (empty by default; populate as agents ship)
 declared_agents: list[dict] = config.get_object("agents") or []
@@ -247,5 +230,4 @@ pulumi.export("pubsub_agent_triggers", data.agent_triggers.name)
 pulumi.export("gke_cluster_name", gke.cluster.name)
 pulumi.export("gke_endpoint", pulumi.Output.secret(gke.cluster.endpoint))
 pulumi.export("platform_api_url", platform_api.url)
-pulumi.export("mission_control_url", mc.url)
 pulumi.export("migrations_job", migrations.job.name)
