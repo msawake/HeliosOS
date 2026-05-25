@@ -20,6 +20,70 @@ from src.platform.llm_router import LLMResponse, LLMRouter
 
 logger = logging.getLogger(__name__)
 
+def _dedup_tool_calls(tool_calls: list) -> list:
+    """Drop duplicate tool-calls within the same LLM response.
+
+    Two cases handled (both real and observed in prod):
+
+    1. Exact dupes: same `(name, input)` appears multiple times in the
+       same batch. Keep the first occurrence, drop the rest.
+
+    2. Empty-input copies of an earlier non-empty call to the same tool
+       on the same primary key. E.g. Gemini emitted
+       `jira_add_comment(issue=336, body="hi from v2 jira greeter")`
+       followed by `jira_add_comment(issue=336, body="")` in the SAME
+       turn. Without the filter, both would land on the real ticket.
+
+    Returns a new list (the input is not mutated).
+    """
+    seen_signatures: set[tuple] = set()
+    seen_by_pk: dict[tuple, dict] = {}
+    keep: list = []
+    for tc in tool_calls:
+        name = getattr(tc, "name", "")
+        inp = getattr(tc, "input", {}) or {}
+        try:
+            sig = (name, json.dumps(inp, sort_keys=True, default=str))
+        except Exception:
+            sig = (name, repr(inp))
+        if sig in seen_signatures:
+            continue
+        seen_signatures.add(sig)
+        # Primary-key heuristic — works for the two known offenders.
+        pk = None
+        if name == "mcp__atlassian__jira_add_comment":
+            pk = (name, inp.get("issue_key"))
+        elif name == "human__check":
+            pk = (name, inp.get("request_id"))
+        if pk is not None:
+            existing = seen_by_pk.get(pk)
+            if existing is not None:
+                # If the prior call had substantive content (e.g.
+                # non-empty `comment`) and this one is empty, drop the
+                # new one. Conversely, if the prior was empty and this
+                # one is substantive, replace.
+                empty_now = _is_empty_payload(name, inp)
+                empty_prev = _is_empty_payload(name, existing["input"])
+                if empty_now and not empty_prev:
+                    continue
+                if empty_prev and not empty_now:
+                    keep.remove(existing["tc"])
+                    seen_by_pk[pk] = {"tc": tc, "input": inp}
+                    keep.append(tc)
+                    continue
+                # Both substantive (or both empty) but same pk → dedupe.
+                continue
+            seen_by_pk[pk] = {"tc": tc, "input": inp}
+        keep.append(tc)
+    return keep
+
+
+def _is_empty_payload(name: str, inp: dict) -> bool:
+    if name == "mcp__atlassian__jira_add_comment":
+        return not (inp.get("comment") or "").strip()
+    return False
+
+
 MAX_TOOL_TURNS = 60  # safety cap on tool-use iterations
 # 25 was too tight for realistic reflex agents: a Jira-greeter-style
 # pass over N tickets needs roughly search + get-issue×N + human_ask×N
@@ -238,6 +302,16 @@ async def run_agentic_loop(
         # Build assistant + tool result messages in the correct provider format
         is_vertex = llm_config.provider == "vertex"
         is_openai = (not is_vertex) and (llm_config.provider in ("openai", "atlas") or llm_config.chat_model.startswith(("gpt-", "o1-", "o3-", "deepseek-", "qwen-", "nemotron")))
+
+        # Within-turn dedup: Gemini (and occasionally other providers) will
+        # sometimes emit the same `(tool_name, input)` pair multiple times
+        # in a single response's tool_use batch. Without this guard a
+        # duplicated `jira_add_comment` call lands twice on the real
+        # ticket. Keep the FIRST occurrence (preserves ordering for the
+        # model's subsequent tool_result correlation) and drop later dupes.
+        # Empty-input dupes of an already-issued non-empty call get filtered
+        # too — they're almost always a hallucinated "amended" copy.
+        response.tool_calls = _dedup_tool_calls(response.tool_calls)
 
         if is_vertex:
             # Vertex AI Gemini format: functionCall parts + functionResponse parts
