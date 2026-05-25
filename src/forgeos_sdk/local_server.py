@@ -250,6 +250,80 @@ async def stop_agent(request: Request) -> JSONResponse:
 
 
 @_bearer_required
+async def list_approvals(request: Request) -> JSONResponse:
+    """List pending A2H human-approval requests.
+
+    Optional query param ``?from_agent=<id>`` filters to requests this
+    agent fired (useful when one operator runs many agents).
+    """
+    bs = request.app.state.bootstrap
+    gw = getattr(bs, "_a2h_gateway", None)
+    if gw is None:
+        return JSONResponse({"detail": "A2H not available on this platform"}, status_code=503)
+    from_agent = request.query_params.get("from_agent")
+    if from_agent:
+        items = [r.to_dict() for r in gw.list_pending_from(from_agent)]
+    else:
+        items = gw.list_pending()
+    return JSONResponse(_jsonify(items))
+
+
+def _respond_to_request(request_app, request_id: str, approved: bool, note: str | None) -> JSONResponse:
+    bs = request_app.state.bootstrap
+    gw = getattr(bs, "_a2h_gateway", None)
+    if gw is None:
+        return JSONResponse({"detail": "A2H not available on this platform"}, status_code=503)
+    existing = gw.get_request(request_id)
+    if existing is None:
+        return JSONResponse({"detail": "approval request not found"}, status_code=404)
+    response_data: dict[str, Any] = {
+        "value": "approved" if approved else "rejected",
+        "approved": approved,
+    }
+    if note:
+        response_data["notes"] = note
+    result = gw.respond(request_id, response_data, responded_by="cli", via="cli")
+    if not result.get("success"):
+        # Stay generic about whether it was "wrong status" vs. "not found"
+        # since the gateway already discriminates internally.
+        return JSONResponse(
+            {"detail": result.get("error", "could not record response")},
+            status_code=409,
+        )
+    return JSONResponse(_jsonify({"request_id": request_id, "approved": approved}))
+
+
+@_bearer_required
+async def approve_request(request: Request) -> JSONResponse:
+    body: dict[str, Any] = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    return _respond_to_request(
+        request.app,
+        request.path_params["request_id"],
+        approved=True,
+        note=body.get("notes") if isinstance(body, dict) else None,
+    )
+
+
+@_bearer_required
+async def reject_request(request: Request) -> JSONResponse:
+    body: dict[str, Any] = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    return _respond_to_request(
+        request.app,
+        request.path_params["request_id"],
+        approved=False,
+        note=body.get("reason") if isinstance(body, dict) else None,
+    )
+
+
+@_bearer_required
 async def invoke_agent(request: Request) -> JSONResponse:
     import dataclasses
 
@@ -315,6 +389,9 @@ def build_app(token: str) -> Starlette:
         Route("/api/platform/agents/{agent_id}", undeploy_agent, methods=["DELETE"]),
         Route("/api/platform/agents/{agent_id}/stop", stop_agent, methods=["POST"]),
         Route("/api/platform/agents/{agent_id}/invoke", invoke_agent, methods=["POST"]),
+        Route("/api/approvals", list_approvals, methods=["GET"]),
+        Route("/api/approvals/{request_id}/approve", approve_request, methods=["POST"]),
+        Route("/api/approvals/{request_id}/reject", reject_request, methods=["POST"]),
     ]
 
     @asynccontextmanager

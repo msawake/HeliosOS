@@ -56,6 +56,9 @@ enum Command {
     /// Manage local config and credentials in ~/.forgeos/.
     #[command(subcommand)]
     Config(cmd::config::ConfigCmd),
+    /// List / approve / reject pending human-in-the-loop requests.
+    #[command(subcommand)]
+    Approvals(cmd::approvals::ApprovalsCmd),
 }
 
 fn main() {
@@ -70,6 +73,7 @@ fn main() {
         Command::UndeployTeam(args) => cmd::stub::undeploy_team(args),
         Command::Health => cmd::health::run(&ctx),
         Command::Config(sub) => cmd::config::run(sub),
+        Command::Approvals(sub) => cmd::approvals::run(sub, &ctx),
     };
     match result {
         Ok(code) => std::process::exit(code),
