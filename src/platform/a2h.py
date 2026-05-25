@@ -31,6 +31,17 @@ logger = logging.getLogger(__name__)
 # (github.com/makingscience-awake/a2h)
 # ---------------------------------------------------------------------------
 
+# Best-effort: if the sibling `a2h/` package isn't on sys.path (e.g. user
+# is running outside the project Makefile), add it. The standalone repo
+# isn't pip-installable yet; the source-tree layout puts the package at
+# `<repo>/a2h/a2h/`, so we need `<repo>/a2h` on sys.path.
+import sys as _sys
+from pathlib import Path as _Path
+
+_a2h_parent = _Path(__file__).resolve().parents[2] / "a2h"
+if _a2h_parent.is_dir() and str(_a2h_parent) not in _sys.path:
+    _sys.path.insert(0, str(_a2h_parent))
+
 from a2h.models import (
     Status,
     ResponseType as _A2HResponseType,

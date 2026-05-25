@@ -357,7 +357,11 @@ class PlatformBootstrap:
                 self._a2h_gateway.register_human(default_human)
                 logger.info("  A2H: seeded default human operations/approver")
             except Exception as e:
-                logger.debug("  A2H Gateway initialization skipped: %s", e)
+                # Raised from debug to warning so users notice when A2H
+                # (and therefore human__ask / human__check) silently
+                # falls out of the platform. Was hiding a real import
+                # error on the sibling `a2h/` package.
+                logger.warning("  A2H Gateway initialization skipped: %s", e)
 
             # Wire A2H gateway into tool executor so agents can use human__* tools.
             # ToolExecutor.__init__ ran before A2H was constructed, so the

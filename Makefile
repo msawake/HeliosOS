@@ -96,7 +96,7 @@ forgeos-release:
 server: stop-server
 	@[ -x $(VENV_PY) ] || { echo "✗ $(VENV) missing — run 'make setup' first"; exit 1; }
 	@echo "→ starting forgeos-server on $(SERVER_HOST):$(SERVER_PORT)"
-	@PYTHONPATH=. nohup $(VENV_PY) -m src.forgeos_sdk.local_server \
+	@PYTHONPATH=.:a2h nohup $(VENV_PY) -m src.forgeos_sdk.local_server \
 		--host $(SERVER_HOST) --port $(SERVER_PORT) \
 		> $(SERVER_LOG) 2>&1 &
 	@for i in $$(seq 1 30); do \
@@ -142,7 +142,7 @@ migrate:
 	@[ -x $(VENV_PY) ] || { echo "✗ $(VENV) missing — run 'make setup' first"; exit 1; }
 	@docker exec $(PG_CONTAINER) pg_isready -U $(PG_USER) -d $(PG_DB) >/dev/null 2>&1 \
 		|| { echo "✗ Postgres not running — 'make pg' first"; exit 1; }
-	@DATABASE_URL="$(DATABASE_URL)" PYTHONPATH=. $(VENV_PY) -m src.core.migrations
+	@DATABASE_URL="$(DATABASE_URL)" PYTHONPATH=.:a2h $(VENV_PY) -m src.core.migrations
 	@docker exec $(PG_CONTAINER) psql -U $(PG_USER) -d $(PG_DB) -tAc \
 		"SELECT version FROM schema_migrations ORDER BY version;" | sed 's/^/    /'
 
