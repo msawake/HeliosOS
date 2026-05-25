@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 //! HTTP client and endpoint discovery.
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, bail, Result};
 use reqwest::blocking::{Client, Response};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -20,7 +20,7 @@ pub struct Endpoint {
 impl Endpoint {
     pub fn resolve(remote: Option<String>, token: Option<String>) -> Self {
         Self {
-            remote_override: remote,
+            remote_override: remote.map(normalize_remote),
             token_override: token,
         }
     }
@@ -41,6 +41,17 @@ impl Endpoint {
             (None, None) => bail!("no --token given and no server lockfile to read it from"),
         };
         Ok((base, token))
+    }
+}
+
+/// Prepend `http://` when the user passed a bare `host:port` (or just
+/// `host`). `reqwest` is strict about absolute URLs and otherwise yields
+/// the cryptic ``relative URL without a base``.
+fn normalize_remote(s: String) -> String {
+    if s.starts_with("http://") || s.starts_with("https://") {
+        s
+    } else {
+        format!("http://{s}")
     }
 }
 
@@ -69,6 +80,27 @@ fn check(resp: Response, method: &str, path: &str) -> Result<Response> {
     ))
 }
 
+/// Translate a reqwest send-error into something actionable.
+///
+/// "Connection refused" against a base URL whose host/port we got from
+/// the lockfile almost always means: the server crashed (kill -9 /
+/// reboot) and the lockfile is stale. Point the user at the cleanup
+/// path instead of leaving them with a raw socket error.
+fn enrich_send(err: reqwest::Error, base: &str, method: &str, path: &str) -> anyhow::Error {
+    if err.is_connect() && config::lock_path().exists() {
+        return anyhow!(
+            "{method} {base}{path} — connection refused.\n\
+             A server lockfile exists at {} but the daemon is not listening.\n\
+             Likely cause: a previous forgeos-server crashed or was killed.\n\
+             Start a fresh one with `make server`, or remove the stale lockfile:\n\
+             rm {}",
+            config::lock_path().display(),
+            config::lock_path().display()
+        );
+    }
+    anyhow!("{method} {base}{path}: {err}")
+}
+
 pub fn get<T: DeserializeOwned>(ep: &Endpoint, path: &str) -> Result<T> {
     let (base, token) = ep.resolved()?;
     let url = format!("{base}{path}");
@@ -76,9 +108,10 @@ pub fn get<T: DeserializeOwned>(ep: &Endpoint, path: &str) -> Result<T> {
         .get(&url)
         .bearer_auth(&token)
         .send()
-        .with_context(|| format!("GET {url}"))?;
+        .map_err(|e| enrich_send(e, &base, "GET", path))?;
     let resp = check(resp, "GET", path)?;
-    resp.json::<T>().with_context(|| format!("decode {url}"))
+    resp.json::<T>()
+        .map_err(|e| anyhow!("decode GET {url}: {e}"))
 }
 
 pub fn post_json<B: Serialize, T: DeserializeOwned>(
@@ -93,9 +126,10 @@ pub fn post_json<B: Serialize, T: DeserializeOwned>(
         .bearer_auth(&token)
         .json(body)
         .send()
-        .with_context(|| format!("POST {url}"))?;
+        .map_err(|e| enrich_send(e, &base, "POST", path))?;
     let resp = check(resp, "POST", path)?;
-    resp.json::<T>().with_context(|| format!("decode {url}"))
+    resp.json::<T>()
+        .map_err(|e| anyhow!("decode POST {url}: {e}"))
 }
 
 pub fn delete<T: DeserializeOwned>(ep: &Endpoint, path: &str) -> Result<T> {
@@ -105,9 +139,10 @@ pub fn delete<T: DeserializeOwned>(ep: &Endpoint, path: &str) -> Result<T> {
         .delete(&url)
         .bearer_auth(&token)
         .send()
-        .with_context(|| format!("DELETE {url}"))?;
+        .map_err(|e| enrich_send(e, &base, "DELETE", path))?;
     let resp = check(resp, "DELETE", path)?;
-    resp.json::<T>().with_context(|| format!("decode {url}"))
+    resp.json::<T>()
+        .map_err(|e| anyhow!("decode DELETE {url}: {e}"))
 }
 
 /// `/api/health` is unauthenticated.
@@ -117,7 +152,8 @@ pub fn health(ep: &Endpoint) -> Result<Value> {
     let resp = client()
         .get(&url)
         .send()
-        .with_context(|| format!("GET {url}"))?;
+        .map_err(|e| enrich_send(e, &base, "GET", "/api/health"))?;
     let resp = check(resp, "GET", "/api/health")?;
-    resp.json::<Value>().with_context(|| format!("decode {url}"))
+    resp.json::<Value>()
+        .map_err(|e| anyhow!("decode GET {url}: {e}"))
 }

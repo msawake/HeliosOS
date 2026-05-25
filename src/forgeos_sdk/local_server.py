@@ -77,6 +77,42 @@ def _write_lock(host: str, port: int, token: str) -> None:
         pass
 
 
+def _reclaim_stale_lock() -> None:
+    """Delete the lockfile if the PID it points at is no longer alive.
+
+    Crash / kill -9 leaves the lockfile behind because the ``lifespan``
+    cleanup never runs. Without this, the next CLI invocation sees a
+    valid-looking lockfile and gets a raw "connection refused".
+    """
+    lp = lock_path()
+    if not lp.exists():
+        return
+    try:
+        payload = json.loads(lp.read_text(encoding="utf-8"))
+    except Exception:
+        # Malformed lockfile — safe to drop.
+        try:
+            lp.unlink()
+        except FileNotFoundError:
+            pass
+        return
+    pid = payload.get("pid")
+    if not isinstance(pid, int):
+        return
+    try:
+        os.kill(pid, 0)  # signal 0 = existence check only
+    except ProcessLookupError:
+        try:
+            lp.unlink()
+        except FileNotFoundError:
+            pass
+    except PermissionError:
+        # PID exists and is owned by another user — leave it; the new
+        # server will bail later on a port conflict if it really is the
+        # forgeos-server.
+        pass
+
+
 def _clear_lock() -> None:
     try:
         lock_path().unlink()
@@ -179,7 +215,13 @@ async def deploy_agent(request: Request) -> JSONResponse:
     bs = request.app.state.bootstrap
     deploy_body = manifest.to_deploy_request(base_path=base_path)
     defn = _build_agent_definition(deploy_body)
-    agent_id = await bs.executor.deploy(defn)
+    try:
+        agent_id = await bs.executor.deploy(defn)
+    except ValueError as exc:
+        # Platform raises ValueError on uniqueness collisions (same
+        # namespace/name as an existing agent). Surface as 409 Conflict
+        # so the CLI shows the actual message instead of a bare 500.
+        return JSONResponse({"detail": str(exc)}, status_code=409)
     return JSONResponse({"agent_id": agent_id}, status_code=201)
 
 
@@ -187,8 +229,16 @@ async def deploy_agent(request: Request) -> JSONResponse:
 async def undeploy_agent(request: Request) -> JSONResponse:
     bs = request.app.state.bootstrap
     agent_id = request.path_params["agent_id"]
-    ok = await bs.executor.undeploy(agent_id)
-    return JSONResponse({"agent_id": agent_id, "removed": bool(ok)})
+    # ``PlatformExecutor.undeploy`` returns True unconditionally — even
+    # when the agent never existed. Check the registry first so the CLI
+    # can tell "removed" from "no such agent".
+    if bs.platform_registry.get(agent_id) is None:
+        return JSONResponse(
+            {"agent_id": agent_id, "removed": False, "detail": "agent not found"},
+            status_code=404,
+        )
+    await bs.executor.undeploy(agent_id)
+    return JSONResponse({"agent_id": agent_id, "removed": True})
 
 
 @_bearer_required
@@ -201,15 +251,44 @@ async def stop_agent(request: Request) -> JSONResponse:
 
 @_bearer_required
 async def invoke_agent(request: Request) -> JSONResponse:
+    import dataclasses
+
     bs = request.app.state.bootstrap
     agent_id = request.path_params["agent_id"]
+    if bs.platform_registry.get(agent_id) is None:
+        return JSONResponse({"detail": "agent not found"}, status_code=404)
     body: dict[str, Any] = await request.json()
     prompt = body.get("prompt", "")
     context = body.get("context") or {}
     result = await bs.executor.invoke(agent_id, prompt, context)
-    if not isinstance(result, dict):
+    # The executor returns an `AgentResult` dataclass (or sometimes a
+    # plain dict). Coerce to a plain dict so JSONResponse can serialize.
+    if dataclasses.is_dataclass(result):
+        if hasattr(result, "to_dict") and callable(result.to_dict):
+            result = result.to_dict()
+        else:
+            result = dataclasses.asdict(result)
+    elif not isinstance(result, dict):
         result = {"result": result}
-    return JSONResponse(result)
+    return JSONResponse(_jsonify(result))
+
+
+def _jsonify(value: Any) -> Any:
+    """Walk a dict/list and replace Enum values with their .value.
+
+    Starlette's ``JSONResponse`` uses ``json.dumps`` which doesn't know
+    about Enum. ``AgentResult.status`` is an ``AgentStatus`` enum that
+    survives ``dataclasses.asdict()``; this normalises it.
+    """
+    from enum import Enum
+
+    if isinstance(value, dict):
+        return {k: _jsonify(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_jsonify(v) for v in value]
+    if isinstance(value, Enum):
+        return value.value
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +351,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Print the bearer token to stdout on startup (default: written to ~/.forgeos/server.lock only)",
     )
     args = parser.parse_args(argv)
+
+    # Drop a stale lockfile left behind by a crash / kill -9. Without
+    # this, the CLI follows the dead lockfile and yields a raw
+    # ``Connection refused``.
+    _reclaim_stale_lock()
 
     token = os.environ.get("FORGEOS_API_TOKEN") or secrets.token_hex(16)
     _write_lock(args.host, args.port, token)
