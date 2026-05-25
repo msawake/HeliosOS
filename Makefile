@@ -1,25 +1,35 @@
-# ForgeOS local dev — thin-client model.
+# ForgeOS local dev — Rust CLI + Python server.
 #
-# Since the Mission Control FastAPI backend was removed, there is no
-# "backend" or "dashboard" process to run. The `forgeos` CLI talks to the
-# platform in-process (see src/forgeos_sdk/local_runtime.py), so everyday
-# work just means invoking the CLI inside the project venv.
+# The `forgeos` CLI is a Rust binary (forgeos-cli/) that talks to the Python
+# platform via an HTTP server (`forgeos-server`). Typical loop:
 #
+#   make setup            # one-time: venv + deps + cargo build
+#   make server           # start the Python platform on :5055 (background)
 #   make forgeos ARGS="health"
 #   make forgeos ARGS="deploy examples/jira-greeter-v2/manifest.yaml"
 #   make forgeos ARGS="config set-credential ANTHROPIC_API_KEY sk-..."
+#   make stop-server
 #
-# Postgres is optional. The CLI runs without it; bring it up when you want
-# persistence under the platform's process table / agent runs store:
+# Postgres is optional. Without it the server runs in-memory. Bring up
+# Postgres when you want persistence under the platform's process table:
 #
 #   make pg && make migrate
 #
-# Requires: python3.11+, Docker Desktop (only for `make pg` / `make migrate`).
+# Requires: python3.11+, Rust toolchain (cargo, rustc), Docker (for pg).
 
 VENV              ?= .venv
 PY                ?= python3.13
 VENV_PY           := $(VENV)/bin/python
 VENV_PIP          := $(VENV)/bin/pip
+
+CARGO             ?= cargo
+RUST_DIR          := forgeos-cli
+RUST_BIN_DEBUG    := $(RUST_DIR)/target/debug/forgeos
+RUST_BIN_RELEASE  := $(RUST_DIR)/target/release/forgeos
+
+SERVER_HOST       ?= 127.0.0.1
+SERVER_PORT       ?= 5055
+SERVER_LOG        ?= /tmp/forgeos-server.log
 
 PG_PORT           ?= 5432
 PG_CONTAINER      ?= forgeos-pg-local
@@ -33,42 +43,77 @@ DATABASE_URL := postgresql://$(PG_USER):$(PG_PASSWORD)@localhost:$(PG_PORT)/$(PG
 .PHONY: help
 help:
 	@echo "Targets:"
-	@echo "  make forgeos ARGS=\"<subcommand ...>\"  Run the forgeos CLI in-process"
-	@echo "  make cli ARGS=\"<subcommand ...>\"      Alias for 'make forgeos'"
-	@echo "  make setup                            Create $(VENV) and install deps"
-	@echo "  make pg                               Start local Postgres container (optional)"
-	@echo "  make migrate                          Apply SQL migrations against local Postgres"
-	@echo "  make psql                             Interactive psql shell"
-	@echo "  make stop                             Stop the Postgres container"
-	@echo "  make reset                            Stop + drop pg volume + restart"
+	@echo "  make setup                            One-time venv + pip + cargo build"
+	@echo "  make server                           Start forgeos-server on $(SERVER_HOST):$(SERVER_PORT)"
+	@echo "  make stop-server                      Stop forgeos-server"
+	@echo "  make forgeos ARGS=\"<args>\"            Run the Rust CLI (debug build)"
+	@echo "  make forgeos-release                  Build optimized Rust binary"
+	@echo "  make pg                               Start local Postgres (optional)"
+	@echo "  make migrate                          Apply SQL migrations"
+	@echo "  make stop                             Stop server + postgres"
 	@echo "  make status                           Show what's running"
-	@echo "  make free-port PORT=N                 Kill whatever is listening on port N"
-
-# ---------------------------------------------------------------------------
-# CLI entrypoint
-# ---------------------------------------------------------------------------
-.PHONY: forgeos cli
-
-forgeos:
-	@[ -x $(VENV_PY) ] || { echo "✗ $(VENV) missing — run 'make setup' first"; exit 1; }
-	@PYTHONPATH=. $(VENV_PY) -m src.forgeos_sdk.cli $(ARGS)
-
-cli: forgeos
+	@echo "  make free-port PORT=N                 Kill whatever's on port N"
 
 # ---------------------------------------------------------------------------
 # Setup
 # ---------------------------------------------------------------------------
-.PHONY: setup
+.PHONY: setup setup-py setup-rust
 
-setup:
+setup: setup-py setup-rust
+	@echo "✓ ready. Try: make server  &&  make forgeos ARGS=\"health\""
+
+setup-py:
 	@command -v $(PY) >/dev/null || { echo "✗ $(PY) not found — install Python 3.11+"; exit 1; }
 	@[ -d $(VENV) ] || { echo "→ creating $(VENV)"; $(PY) -m venv $(VENV); $(VENV_PIP) install -q --upgrade pip; }
-	@echo "→ installing project deps (editable)"
-	@$(VENV_PIP) install -q -e ".[dev]"
-	@echo "✓ ready. Try: make forgeos ARGS=\"health\""
+	@echo "→ installing project deps (editable, with server extras)"
+	@$(VENV_PIP) install -q -e ".[dev,server]"
+
+setup-rust:
+	@command -v $(CARGO) >/dev/null || { echo "✗ cargo not found — install Rust via https://rustup.rs"; exit 1; }
+	@echo "→ cargo build (debug)"
+	@cd $(RUST_DIR) && $(CARGO) build --quiet
 
 # ---------------------------------------------------------------------------
-# Postgres (optional — agents work fine without it, in-memory)
+# Rust CLI
+# ---------------------------------------------------------------------------
+.PHONY: forgeos cli forgeos-release
+
+forgeos:
+	@[ -x $(RUST_BIN_DEBUG) ] || { echo "→ building Rust CLI"; cd $(RUST_DIR) && $(CARGO) build --quiet; }
+	@$(RUST_BIN_DEBUG) $(ARGS)
+
+cli: forgeos
+
+forgeos-release:
+	@cd $(RUST_DIR) && $(CARGO) build --release
+	@echo "✓ optimized binary at $(RUST_BIN_RELEASE)"
+
+# ---------------------------------------------------------------------------
+# Python HTTP server (forgeos-server)
+# ---------------------------------------------------------------------------
+.PHONY: server stop-server
+
+server: stop-server
+	@[ -x $(VENV_PY) ] || { echo "✗ $(VENV) missing — run 'make setup' first"; exit 1; }
+	@echo "→ starting forgeos-server on $(SERVER_HOST):$(SERVER_PORT)"
+	@PYTHONPATH=. nohup $(VENV_PY) -m src.forgeos_sdk.local_server \
+		--host $(SERVER_HOST) --port $(SERVER_PORT) \
+		> $(SERVER_LOG) 2>&1 &
+	@for i in $$(seq 1 30); do \
+		sleep 1; \
+		curl -sf http://$(SERVER_HOST):$(SERVER_PORT)/api/health >/dev/null 2>&1 \
+			&& { echo "✓ server ready (token in ~/.forgeos/server.lock)"; exit 0; }; \
+	done; \
+	echo "✗ server did not become ready — see $(SERVER_LOG)"; tail -20 $(SERVER_LOG); exit 1
+
+stop-server:
+	@echo "→ stopping forgeos-server"
+	@-pkill -f "src.forgeos_sdk.local_server" 2>/dev/null || true
+	@-lsof -tiTCP:$(SERVER_PORT) -sTCP:LISTEN 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+	@-rm -f $$HOME/.forgeos/server.lock 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# Postgres (optional)
 # ---------------------------------------------------------------------------
 .PHONY: pg stop-pg migrate
 
@@ -91,40 +136,33 @@ pg: stop-pg
 	echo "✗ postgres did not become ready"; exit 1
 
 stop-pg:
-	@echo "→ stopping postgres ($(PG_CONTAINER))"
 	@-docker rm -f $(PG_CONTAINER) >/dev/null 2>&1 || true
 
 migrate:
 	@[ -x $(VENV_PY) ] || { echo "✗ $(VENV) missing — run 'make setup' first"; exit 1; }
 	@docker exec $(PG_CONTAINER) pg_isready -U $(PG_USER) -d $(PG_DB) >/dev/null 2>&1 \
 		|| { echo "✗ Postgres not running — 'make pg' first"; exit 1; }
-	@echo "→ applying migrations"
 	@DATABASE_URL="$(DATABASE_URL)" PYTHONPATH=. $(VENV_PY) -m src.core.migrations
-	@echo "→ schema_migrations:"
 	@docker exec $(PG_CONTAINER) psql -U $(PG_USER) -d $(PG_DB) -tAc \
 		"SELECT version FROM schema_migrations ORDER BY version;" | sed 's/^/    /'
 
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
-.PHONY: stop psql reset status free-port
+.PHONY: stop psql status free-port
 
-stop: stop-pg
+stop: stop-server stop-pg
 	@echo "✓ stopped"
 
-# Free an arbitrary TCP port. Usage: make free-port PORT=5432
 free-port:
 	@if [ -z "$(PORT)" ]; then echo "✗ specify PORT=<n>"; exit 1; fi
-	@echo "→ freeing port $(PORT)"
 	@-lsof -tiTCP:$(PORT) -sTCP:LISTEN 2>/dev/null | xargs -r kill -9 2>/dev/null || true
 
 psql:
 	@docker exec -it $(PG_CONTAINER) psql -U $(PG_USER) -d $(PG_DB)
 
-reset: stop
-	@docker volume rm forgeos_pg_data >/dev/null 2>&1 || true
-	@$(MAKE) pg
-
 status:
-	@echo "── Venv     ──"; [ -x $(VENV_PY) ] && echo "  $(VENV_PY) present" || echo "  not set up (run 'make setup')"
-	@echo "── Postgres ──"; docker ps --filter "name=$(PG_CONTAINER)" --format '  {{.Names}}  {{.Status}}' 2>/dev/null | grep . || echo "  not running"
+	@echo "── Venv      ──"; [ -x $(VENV_PY) ] && echo "  $(VENV_PY) present" || echo "  not set up"
+	@echo "── Rust bin  ──"; [ -x $(RUST_BIN_DEBUG) ] && echo "  $(RUST_BIN_DEBUG) present" || echo "  not built (run 'make setup')"
+	@echo "── Server    ──"; lsof -nP -iTCP:$(SERVER_PORT) -sTCP:LISTEN 2>/dev/null | tail -n +2 | awk '{print "  "$$1" PID="$$2}' | grep . || echo "  not running"
+	@echo "── Postgres  ──"; docker ps --filter "name=$(PG_CONTAINER)" --format '  {{.Names}}  {{.Status}}' 2>/dev/null | grep . || echo "  not running"
