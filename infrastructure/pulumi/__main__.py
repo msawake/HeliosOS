@@ -164,6 +164,10 @@ _pa_secret_specs = [
     ("JIRA_URL", "jira-url", secrets.jira_url),
     ("JIRA_USERNAME", "jira-username", secrets.jira_username),
     ("JIRA_API_TOKEN", "jira-api-token", secrets.jira_api_token),
+    # Bearer token the Rust `forgeos` CLI sends on every authenticated
+    # request. The forgeos-server inside the container reads this from
+    # the env on startup; clients pass it via --token / FORGEOS_TOKEN.
+    ("FORGEOS_API_TOKEN", "api-token", secrets.api_token),
 ]
 if enable_redis:
     _pa_secret_specs.append(("REDIS_URL", "redis-url", secrets.redis_url))

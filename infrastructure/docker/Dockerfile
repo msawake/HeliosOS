@@ -29,11 +29,11 @@ COPY pyproject.toml .
 # `[production,scheduler]` pulls openai + mcp + apscheduler + psycopg[binary,pool]
 # + redis + GCP libs + stripe + otel. Fallback keeps a minimal install for
 # environments that can't read the optional extras.
-RUN pip install --no-cache-dir --prefix=/install ".[production,scheduler]" \
+RUN pip install --no-cache-dir --prefix=/install ".[production,scheduler,server]" \
     || pip install --no-cache-dir --prefix=/install \
         "pyyaml>=6.0" \
-        "fastapi>=0.115" \
-        "uvicorn[standard]>=0.34" \
+        "starlette>=0.36" \
+        "uvicorn[standard]>=0.30" \
         "anthropic>=0.52" \
         "openai>=1.0" \
         "python-dotenv>=1.0" \
@@ -92,5 +92,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 # tini ensures proper signal handling and zombie reaping
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
-# Default: boot platform with dashboard + main loop
-CMD ["python", "-m", "src.bootstrap", "--dashboard", "--loop"]
+# Default: run the thin-client HTTP server (Starlette) that the Rust
+# `forgeos` CLI talks to. Listens on $PORT (default 5000).
+CMD ["sh", "-c", "exec python -m src.forgeos_sdk.local_server --host 0.0.0.0 --port ${PORT:-5000}"]

@@ -160,7 +160,7 @@ async def health(request: Request) -> JSONResponse:
 @_bearer_required
 async def list_agents(request: Request) -> JSONResponse:
     bs = request.app.state.bootstrap
-    return JSONResponse(bs.executor.list_agents())
+    return JSONResponse(_jsonify(bs.executor.list_agents()))
 
 
 @_bearer_required
@@ -171,7 +171,7 @@ async def get_agent(request: Request) -> Response:
     if defn is None:
         return JSONResponse({"detail": "agent not found"}, status_code=404)
     status = bs.platform_registry.get_status(agent_id)
-    return JSONResponse(_agent_definition_to_dict(defn, status))
+    return JSONResponse(_jsonify(_agent_definition_to_dict(defn, status)))
 
 
 @_bearer_required
@@ -278,16 +278,26 @@ def _jsonify(value: Any) -> Any:
 
     Starlette's ``JSONResponse`` uses ``json.dumps`` which doesn't know
     about Enum. ``AgentResult.status`` is an ``AgentStatus`` enum that
-    survives ``dataclasses.asdict()``; this normalises it.
+    survives ``dataclasses.asdict()``; this normalises it. Also handles
+    ``datetime`` (Postgres-backed process table emits raw datetimes) and
+    nested dataclasses by recursive ``asdict``.
     """
+    import dataclasses as _dc
+    from datetime import date, datetime
     from enum import Enum
 
     if isinstance(value, dict):
         return {k: _jsonify(v) for k, v in value.items()}
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return [_jsonify(v) for v in value]
     if isinstance(value, Enum):
         return value.value
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if _dc.is_dataclass(value):
+        if hasattr(value, "to_dict") and callable(value.to_dict):
+            return _jsonify(value.to_dict())
+        return _jsonify(_dc.asdict(value))
     return value
 
 
