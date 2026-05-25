@@ -20,4 +20,5 @@ config:
     secure: v1:iZbGddonajeV4s9u:wWi9vTXIbZWoa2U52sRuB3fWyR/MqugrJdZMNhq0LGziy/yC2eE0dIHJdBFpj9c=
   forgeos-gcp:jira_api_token:
     secure: v1:JdaRHGIxV616d8fL:glFId52TRSKKuyHrVCtpM7CBVQirRSlyVE0TNCApFNmvrwJdXAyTaHN0FFxrUYbryBsG55ybmSQ0/k2q2fhD0CjoWUXQEmF/EPQTCKvNs4ce/6dN+ssBjFygAzbMov/P4ZYhEWDSRyqKCRLzBQuli0RIO0GwJEZNktg4cTTjHFGbYg2Ob47RGCshIcDPqNpMFJSBUVqSHkA+22a54OQonGfe9OGb2DDcprrOG4zyMG62adOS5bXuZ8wbbSKdct8PuOoqEiddQ0pjqunZA/VyoA==
+  forgeos-gcp:platform_api_tag: thin-client-14555f6f
 encryptionsalt: v1:aAnZL1A6xrw=:v1:RxasCPnystMWc9sM:V2eUSJQDxw4hFLD8DqUsJmlwHldjog==
