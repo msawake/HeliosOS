@@ -105,10 +105,25 @@ class MCPServerManager:
                         }
                         for tool in tools.tools
                     ]
-                    logger.info(
-                        "MCP connected: %s (%d tools discovered)",
-                        server_config.name, len(tools.tools),
-                    )
+                    n_tools = len(tools.tools)
+                    if n_tools == 0:
+                        # A "connected with zero tools" MCP server is almost
+                        # always a misconfiguration (unresolved secret refs,
+                        # missing API token, wrong tier permission) that
+                        # manifests as the agent running without its tools.
+                        # Make this loud instead of an INFO line.
+                        logger.warning(
+                            "MCP server '%s' connected but exposed 0 tools — "
+                            "check its credentials / required env vars. "
+                            "Agents that declare this server's tools will "
+                            "see them as unavailable at invoke time.",
+                            server_config.name,
+                        )
+                    else:
+                        logger.info(
+                            "MCP connected: %s (%d tools discovered)",
+                            server_config.name, n_tools,
+                        )
             except Exception as e:
                 if server_config.required:
                     logger.error(
