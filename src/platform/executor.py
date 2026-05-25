@@ -40,6 +40,74 @@ logger = logging.getLogger(__name__)
 AGENTS_ROOT = Path("agents")
 
 
+def _enrich_prompt_with_a2h_state(prompt: str, gateway, agent_id: str) -> str:
+    """Prepend per-agent A2H state to the invoke prompt.
+
+    The agent has no memory across invocations otherwise. Without this:
+      * Approvals resolved between runs are invisible to the model, so
+        the agent never acts on them.
+      * On every fresh invoke the model re-fires human__ask for tickets
+        it had already asked about, accumulating duplicate requests in
+        the queue.
+
+    Both pending and resolved (answered/rejected/expired/cancelled)
+    requests fired by this agent are surfaced. The prompt block is
+    delimited so it stays distinguishable from the user's actual prompt.
+    """
+    if gateway is None:
+        return prompt
+    try:
+        pending = []
+        if hasattr(gateway, "list_pending_from"):
+            pending = list(gateway.list_pending_from(agent_id) or [])
+        resolved = []
+        if hasattr(gateway, "list_resolved_from"):
+            resolved = list(gateway.list_resolved_from(agent_id, limit=50) or [])
+    except Exception:
+        logger.debug("A2H prompt enrichment failed", exc_info=True)
+        return prompt
+
+    if not pending and not resolved:
+        return prompt
+
+    lines: list[str] = [
+        "## A2H state from previous runs (already-fired human__ask requests)",
+        "",
+        "Use this to AVOID re-asking on tickets you've already asked about,",
+        "and to ACT on resolutions that have come in. Pull `request_id`s from",
+        "below into human__check rather than re-firing human__ask.",
+        "",
+    ]
+    if resolved:
+        lines.append("### Resolved (act on these now)")
+        for r in resolved:
+            d = r.to_dict() if hasattr(r, "to_dict") else (r if isinstance(r, dict) else {})
+            content = d.get("content") or {}
+            ctx = (content.get("context") or {})
+            issue = ctx.get("issue_key") or ctx.get("subject") or "?"
+            status = d.get("status", "?")
+            response = d.get("response") or {}
+            value = response.get("value") or response.get("approved")
+            notes = response.get("notes") or response.get("reason") or ""
+            lines.append(
+                f"- request_id={d.get('id', '?')} issue={issue} "
+                f"status={status} value={value!r} notes={notes!r}"
+            )
+        lines.append("")
+    if pending:
+        lines.append("### Pending (do NOT re-ask; call human__check on the existing request_id)")
+        for r in pending:
+            d = r.to_dict() if hasattr(r, "to_dict") else (r if isinstance(r, dict) else {})
+            content = d.get("content") or {}
+            ctx = (content.get("context") or {})
+            issue = ctx.get("issue_key") or ctx.get("subject") or "?"
+            lines.append(f"- request_id={d.get('id', '?')} issue={issue}")
+        lines.append("")
+    lines.append("---")
+    lines.append("")
+    return "\n".join(lines) + prompt
+
+
 class PlatformExecutor:
     """
     Dispatches agent operations to the correct stack adapter and manages
@@ -331,7 +399,21 @@ class PlatformExecutor:
                 invoke_ctx = dict(context or {})
                 if self.callback_registry:
                     invoke_ctx["_callback_registry"] = self.callback_registry
-                result = await adapter.invoke(agent_id, prompt, invoke_ctx, history=history)
+
+                # Inject A2H state so the agent doesn't fire duplicate
+                # human__ask requests on every invoke and does notice
+                # answers it received between runs.
+                #
+                # The A2H gateway already tracks per-agent pending and
+                # resolved request lists; we just need to surface them
+                # in the prompt context. Without this the agent has no
+                # memory across invocations (#13, #14).
+                enriched_prompt = _enrich_prompt_with_a2h_state(
+                    prompt,
+                    getattr(self, "_a2h_gateway", None),
+                    agent_id,
+                )
+                result = await adapter.invoke(agent_id, enriched_prompt, invoke_ctx, history=history)
                 # Self-heal: if the adapter forgot the agent (e.g. a process
                 # restart before recovery wired adapters, or a stale stop),
                 # re-create from the registry definition and retry once. This
