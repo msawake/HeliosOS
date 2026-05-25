@@ -1,0 +1,17 @@
+# =============================================================================
+# ForgeOS DB migrations image
+#
+# Runs every infrastructure/database/*.sql file (sorted by name) against the
+# database identified by $DATABASE_URL. Idempotent: each migration uses
+# CREATE … IF NOT EXISTS so re-runs are safe.
+#
+# Invoked by Cloud Run Job `forgeos-migrations`.
+# =============================================================================
+FROM postgres:15-alpine
+
+WORKDIR /migrations
+COPY infrastructure/database/*.sql ./
+COPY infrastructure/docker/run-migrations.sh /run-migrations.sh
+RUN chmod +x /run-migrations.sh
+
+ENTRYPOINT ["/run-migrations.sh"]

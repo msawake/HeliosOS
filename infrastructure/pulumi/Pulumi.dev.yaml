@@ -1,0 +1,23 @@
+config:
+  gcp:project: admachina-atomic-test-84
+  gcp:region: europe-west1
+  forgeos-gcp:network_cidr: 10.20.0.0/16
+  forgeos-gcp:pods_cidr: 10.40.0.0/14
+  forgeos-gcp:services_cidr: 10.44.0.0/20
+  forgeos-gcp:cloud_sql_tier: db-f1-micro
+  forgeos-gcp:enable_redis: "false"
+  forgeos-gcp:namespaces:
+    - sales-team
+    - legal
+    - operations
+  forgeos-gcp:gemini_api_key:
+    secure: v1:td1CQ3NmsjbGKLKT:J2ReVGV6G7WVgHkXAyVrcdWwBkpyuxvBotMl3VTjxFQpN29OcZoMsDhqzQBNxDdgI8ex5XtOXA==
+  forgeos-gcp:mc_admin_password:
+    secure: v1:tS49kdC58AP6by63:hvGR6BRinh8itXX0kxavEz7kEuAKEQIrRWXdMZXTm/8Ja+o2CHmM38q2lq+oqxmA
+  forgeos-gcp:jira_url:
+    secure: v1:ashQC6K3U856yhJW:wlC0uNWNJ+cE5uvzsSZKmKX7AXmpuPTdUeFeQVgaLIesCawKiKpQ/9cK2Idf9fPNHwsg
+  forgeos-gcp:jira_username:
+    secure: v1:iZbGddonajeV4s9u:wWi9vTXIbZWoa2U52sRuB3fWyR/MqugrJdZMNhq0LGziy/yC2eE0dIHJdBFpj9c=
+  forgeos-gcp:jira_api_token:
+    secure: v1:JdaRHGIxV616d8fL:glFId52TRSKKuyHrVCtpM7CBVQirRSlyVE0TNCApFNmvrwJdXAyTaHN0FFxrUYbryBsG55ybmSQ0/k2q2fhD0CjoWUXQEmF/EPQTCKvNs4ce/6dN+ssBjFygAzbMov/P4ZYhEWDSRyqKCRLzBQuli0RIO0GwJEZNktg4cTTjHFGbYg2Ob47RGCshIcDPqNpMFJSBUVqSHkA+22a54OQonGfe9OGb2DDcprrOG4zyMG62adOS5bXuZ8wbbSKdct8PuOoqEiddQ0pjqunZA/VyoA==
+encryptionsalt: v1:aAnZL1A6xrw=:v1:RxasCPnystMWc9sM:V2eUSJQDxw4hFLD8DqUsJmlwHldjog==

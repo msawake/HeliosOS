@@ -1,0 +1,210 @@
+<mxfile host="app.diagrams.net" modified="2026-05-22T00:00:00.000Z" agent="Claude" version="24.0.0">
+  <diagram name="ForgeOS Infra" id="forgeos-infra">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="ForgeOS — Services &amp; Infrastructure Dependencies" style="text;html=1;align=center;verticalAlign=middle;fontSize=18;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="15" width="900" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Users -->
+        <mxCell id="user" value="Operators&#xa;(browser)" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="60" y="120" width="60" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="user_cli" value="CLI users&#xa;(forgeos / mc)" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="60" y="280" width="60" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Frontends -->
+        <mxCell id="g_fe" value="Web Frontends" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;fontStyle=1;fontSize=13" vertex="1" parent="1">
+          <mxGeometry x="180" y="80" width="280" height="280" as="geometry" />
+        </mxCell>
+
+        <mxCell id="svc_mc_fe" value="Mission Control UI&#xa;Vite + React + TS&#xa;dev: :5173 · prod: static/ served&#xa;by Mission Control backend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="200" y="120" width="240" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="svc_dash" value="Next.js Dashboard&#xa;Node.js · :3000&#xa;(legacy / alternate UI)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="200" y="240" width="240" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Backends we run -->
+        <mxCell id="g_be" value="Backend Services (we run — Python 3.11+)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontStyle=1;fontSize=13" vertex="1" parent="1">
+          <mxGeometry x="500" y="80" width="500" height="450" as="geometry" />
+        </mxCell>
+
+        <mxCell id="svc_mc_be" value="Mission Control Backend&#xa;FastAPI · :8888&#xa;Password gate + reverse proxy → platform&#xa;(mission-control/backend/)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="525" y="120" width="450" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="svc_api" value="ForgeOS Platform API&#xa;FastAPI · :5099 (mc) / :5000 (legacy)&#xa;REST + WebSocket + SSE&#xa;(src/bootstrap.py + src/dashboard/fastapi_app.py)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="525" y="215" width="450" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="svc_sched" value="Scheduler Loop&#xa;(in-process, --loop flag)&#xa;Cron + event triggers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="525" y="320" width="215" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="svc_sandbox" value="Sandbox Runner&#xa;Spawns Docker containers&#xa;per agent invocation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="760" y="320" width="215" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="svc_a2h" value="A2H Gateway&#xa;Approvals + human notifications&#xa;(src/platform/a2h.py, a2h/)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="525" y="415" width="215" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="svc_obs" value="Observability Sidecar&#xa;Prometheus metrics + audit log&#xa;(observability/)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="760" y="415" width="215" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- CLI -->
+        <mxCell id="g_cli" value="CLIs (operator tooling)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontStyle=1;fontSize=13" vertex="1" parent="1">
+          <mxGeometry x="180" y="400" width="280" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="cli_forgeos" value="forgeos&#xa;deploy / invoke / list / health" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="200" y="435" width="240" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="cli_mc" value="forgeos mc&#xa;terminal Mission Control" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="200" y="480" width="240" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Data stores -->
+        <mxCell id="g_data" value="Data Stores (we host)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontStyle=1;fontSize=13" vertex="1" parent="1">
+          <mxGeometry x="1040" y="80" width="420" height="220" as="geometry" />
+        </mxCell>
+
+        <mxCell id="db_pg" value="PostgreSQL 15+&#xa;REQUIRED · port 5432&#xa;Multi-tenant w/ RLS&#xa;Agents · sessions · process table&#xa;runs · audit log · MCP configs" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="1060" y="120" width="230" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="db_redis" value="Redis&#xa;OPTIONAL · port 6379&#xa;Session cache&#xa;event subs" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="1305" y="120" width="140" height="160" as="geometry" />
+        </mxCell>
+
+        <!-- External APIs -->
+        <mxCell id="g_ext" value="External APIs (third-party, outbound HTTPS)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;verticalAlign=top;fontStyle=1;fontSize=13" vertex="1" parent="1">
+          <mxGeometry x="1040" y="320" width="420" height="320" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ext_anthropic" value="Anthropic API&#xa;api.anthropic.com (Claude)" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="1060" y="360" width="380" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ext_openai" value="OpenAI API&#xa;api.openai.com (GPT / o3)" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="1060" y="425" width="380" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ext_google" value="Google AI / Vertex&#xa;(ADK adapter — optional)" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="1060" y="490" width="380" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ext_mcp" value="MCP Servers&#xa;(filesystem · web · email · …)" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="1060" y="555" width="190" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ext_slack" value="Slack / PagerDuty&#xa;(alerts + A2H)" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="1255" y="555" width="190" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- Runtime -->
+        <mxCell id="g_runtime" value="Runtime / OS Requirements &amp; Secrets" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontStyle=1;fontSize=13" vertex="1" parent="1">
+          <mxGeometry x="180" y="570" width="820" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="rt1" value="Python 3.11+" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="200" y="610" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="rt2" value="Node.js 20+" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="395" y="610" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="rt3" value="Docker daemon&#xa;(Sandbox stack only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="590" y="610" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="rt4" value="Container image:&#xa;infrastructure/docker/Dockerfile" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="785" y="610" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="rt5" value="Secrets (env): ANTHROPIC_API_KEY · OPENAI_API_KEY · DATABASE_URL · REDIS_URL (opt) · MC_ADMIN_PASSWORD · SLACK_WEBHOOK_URL" style="text;html=1;align=center;verticalAlign=middle;fontSize=11;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="200" y="660" width="785" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="rt6" value="Deploy targets: Cloud Run, Kubernetes (deploy/k8s/), Terraform (infrastructure/terraform/gcp/)" style="text;html=1;align=center;verticalAlign=middle;fontSize=11;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="200" y="690" width="785" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Edges -->
+        <mxCell id="e_u1" value="HTTPS" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="1" source="user" target="svc_mc_fe">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_u2" value="HTTPS" style="endArrow=classic;html=1;fontSize=10;dashed=1;" edge="1" parent="1" source="user" target="svc_dash">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_u3" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="1" source="user_cli" target="cli_forgeos">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_u4" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="1" source="user_cli" target="cli_mc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_mc" value="HTTPS proxy /api/*" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="1" source="svc_mc_fe" target="svc_mc_be">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_mcbe" value="HTTP (FORGEOS_API_URL)" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="1" source="svc_mc_be" target="svc_api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_dash" value="HTTPS / WS / SSE" style="endArrow=classic;html=1;fontSize=10;dashed=1;" edge="1" parent="1" source="svc_dash" target="svc_api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cli1" value="HTTPS" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="1" source="cli_forgeos" target="svc_api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cli2" value="HTTPS" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="1" source="cli_mc" target="svc_api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_db1" value="TCP 5432" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="1" source="svc_api" target="db_pg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_db2" style="endArrow=classic;html=1;fontSize=10;dashed=1;" edge="1" parent="1" source="svc_sched" target="db_pg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_db3" style="endArrow=classic;html=1;fontSize=10;dashed=1;" edge="1" parent="1" source="svc_a2h" target="db_pg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_db4" style="endArrow=classic;html=1;fontSize=10;dashed=1;" edge="1" parent="1" source="svc_obs" target="db_pg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_rd" value="TCP 6379 (opt)" style="endArrow=classic;html=1;fontSize=10;dashed=1;" edge="1" parent="1" source="svc_api" target="db_redis">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_ant" value="HTTPS 443" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="1" source="svc_api" target="ext_anthropic">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_oai" value="HTTPS 443" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="1" source="svc_api" target="ext_openai">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_gg" style="endArrow=classic;html=1;fontSize=10;dashed=1;" edge="1" parent="1" source="svc_api" target="ext_google">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_mcp" value="HTTPS / stdio" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="1" source="svc_api" target="ext_mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_slk" value="HTTPS webhooks" style="endArrow=classic;html=1;fontSize=10;" edge="1" parent="1" source="svc_a2h" target="ext_slack">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_slk2" style="endArrow=classic;html=1;fontSize=10;dashed=1;" edge="1" parent="1" source="svc_obs" target="ext_slack">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_dkr" value="docker.sock" style="endArrow=classic;html=1;fontSize=10;dashed=1;" edge="1" parent="1" source="svc_sandbox" target="rt3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="lg" value="Legend:  solid = required path · dashed = optional / conditional · bold box = primary entry point" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="180" y="745" width="820" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
