@@ -15,6 +15,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+server = [
+    "starlette>=0.36",
+    "uvicorn[standard]>=0.30",
+]
 openai = ["openai>=1.0"]
 mcp = ["mcp>=1.0"]
 all-providers = ["openai>=1.0", "mcp>=1.0"]
@@ -67,7 +71,11 @@ docs = [
 ]
 
 [project.scripts]
-forgeos = "src.forgeos_sdk.cli:main"
+# The canonical `forgeos` CLI now ships as a Rust binary (see forgeos-cli/).
+# This Python entry point is retained only as an internal dev harness;
+# users should install the Rust binary instead.
+forgeos-py = "src.forgeos_sdk.cli:main"
+forgeos-server = "src.forgeos_sdk.local_server:main"
 forgeos-migrate = "src.core.migrations:main"
 forgeos-mcp = "src.forgeos_mcp.__main__:main"
 
