@@ -23,6 +23,37 @@ logger = logging.getLogger(__name__)
 TOOL_TIMEOUT = 120  # 2 minutes default
 
 
+# Tool-specific guards against "empty mutation" calls — observed in prod
+# when a model (notably Gemini, with parallel tool_use) emits a mutating
+# call with the body arg dropped. Returning an error here forces the
+# model to retry with content rather than committing nothing to the
+# downstream system.
+_EMPTY_BODY_ARG: dict[str, str] = {
+    "mcp__atlassian__jira_add_comment": "comment",
+    "mcp__atlassian__jira_update_issue": "fields",
+    "mcp__atlassian__confluence_update_page": "content",
+}
+
+
+def _empty_mutation_error(tool_name: str, tool_input: dict) -> str | None:
+    """Return an error string if `tool_input` is missing its mutation body.
+
+    Empty includes: missing key, ``None``, empty string, empty list/dict.
+    Returns ``None`` if the call is safe to dispatch.
+    """
+    arg = _EMPTY_BODY_ARG.get(tool_name)
+    if arg is None:
+        return None
+    value = tool_input.get(arg) if isinstance(tool_input, dict) else None
+    if value is None:
+        return f"missing required `{arg}` — refusing to dispatch empty mutation"
+    if isinstance(value, str) and not value.strip():
+        return f"`{arg}` is empty — refusing to dispatch empty mutation"
+    if isinstance(value, (list, dict)) and not value:
+        return f"`{arg}` is empty — refusing to dispatch empty mutation"
+    return None
+
+
 class ToolExecutor:
     """
     Dispatches tool calls from Claude to the appropriate execution backend.
@@ -351,6 +382,17 @@ class ToolExecutor:
             except ValidationError as e:
                 logger.warning("Tool %s input validation failed: %s", tool_name, e.message)
                 return {"success": False, "error": f"Input validation failed: {e.message}"}
+
+        # 1b. Belt-and-braces guard against "empty mutation" tool calls.
+        # Surfaced during the jira-greeter end-to-end test: Gemini
+        # occasionally emits an mcp__atlassian__jira_add_comment with
+        # an empty `comment` arg. The MCP server happily accepts it and
+        # an empty comment lands on the real ticket. Reject empty-body
+        # mutations before dispatch so the model retries with content.
+        empty_body_err = _empty_mutation_error(tool_name, tool_input)
+        if empty_body_err:
+            logger.warning("Refusing %s with empty body: %s", tool_name, empty_body_err)
+            return {"success": False, "error": empty_body_err}
 
         from src.platform.syscall import syscall_pipeline_enabled
 
