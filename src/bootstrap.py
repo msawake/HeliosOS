@@ -80,6 +80,37 @@ def _load_dotenv_from_repo_root() -> None:
     if env_file.is_file():
         load_dotenv(env_file)
     load_dotenv()
+    _load_forgeos_credentials_into_env()
+
+
+def _load_forgeos_credentials_into_env() -> None:
+    """Promote ``~/.forgeos/credentials`` into ``os.environ`` (env wins).
+
+    Lets every existing ``os.environ.get("ANTHROPIC_API_KEY", ...)`` call
+    site keep working without being rewritten. Existing env vars are NOT
+    overwritten so CI / shell exports stay authoritative.
+    """
+    try:
+        from src.forgeos_sdk.config_store import (
+            CredentialsPermissionError,
+            current_profile,
+            load_credentials,
+        )
+    except Exception:
+        return
+    try:
+        creds = load_credentials()
+    except CredentialsPermissionError as exc:
+        logger.error("Refusing to load credentials: %s", exc)
+        return
+    except Exception:
+        return
+    bucket = creds.get(current_profile()) if isinstance(creds, dict) else None
+    if not isinstance(bucket, dict):
+        return
+    for key, val in bucket.items():
+        if key and val and key not in os.environ:
+            os.environ[str(key)] = str(val)
 
 
 def _load_dotenv_manual() -> None:
