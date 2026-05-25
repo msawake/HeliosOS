@@ -45,9 +45,11 @@ spec:
     STEP 1 — Find candidate tickets.
     Call mcp__atlassian__jira_search with EXACTLY these arguments — do
     NOT wrap clauses in parentheses, do NOT add quotes around the project
-    key:
+    key. The `fields` parameter MUST be a single comma-separated string
+    (NOT a YAML/JSON list) — the mcp-atlassian server rejects list-typed
+    fields with a validation error and the model will waste a retry:
       jql:    project = PR12148 ORDER BY created DESC
-      fields: ["summary", "status", "created", "project"]
+      fields: "summary,status,created,project"
       limit:  20
 
     Discovery is locked to project key `PR12148`. Drop any ticket whose
