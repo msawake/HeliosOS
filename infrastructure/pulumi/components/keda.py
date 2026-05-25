@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import pulumi
 import pulumi_kubernetes as k8s
+# Explicit imports work around a Pulumi-runtime lazy-import quirk where
+# `k8s.helm.v3.Release` raises AttributeError mid-program even though
+# the symbol is importable directly.
+from pulumi_kubernetes.helm.v3 import Release as HelmRelease, RepositoryOptsArgs
 
 
 class Keda(pulumi.ComponentResource):
@@ -23,12 +27,12 @@ class Keda(pulumi.ComponentResource):
             opts=child,
         )
 
-        self.release = k8s.helm.v3.Release(
+        self.release = HelmRelease(
             f"{name}-release",
             chart="keda",
             version=version,
             namespace=self.namespace.metadata.name,
-            repository_opts=k8s.helm.v3.RepositoryOptsArgs(
+            repository_opts=RepositoryOptsArgs(
                 repo="https://kedacore.github.io/charts",
             ),
             opts=child,
