@@ -11,16 +11,20 @@ Usage:
     forgeos invoke <agent_id> "your prompt"
     forgeos undeploy <agent_id>
     forgeos health
+
+By default every command runs in-process against the platform Python
+objects. Pass ``--remote <url>`` to keep using the legacy HTTP Mission
+Control backend instead (deprecated; removed in a follow-up).
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
-from .client import ForgeOSClient, ForgeOSError
 from .manifest import AgentManifest
 
 
@@ -36,8 +40,34 @@ def _print_warn(msg: str):
     print(f"\033[33m!\033[0m {msg}")
 
 
+def _open_client(args):
+    """Return a context-managed client.
+
+    Local (in-process) by default. ``--remote URL`` (or
+    ``FORGEOS_REMOTE_URL`` env) selects the legacy HTTP client.
+    """
+    remote = getattr(args, "remote", None) or os.environ.get("FORGEOS_REMOTE_URL")
+    if remote:
+        from .client import ForgeOSClient
+
+        return ForgeOSClient(base_url=remote, api_key=getattr(args, "api_key", None))
+    from .local_runtime import LocalClient
+
+    return LocalClient()
+
+
+def _client_error_types():
+    """Return the tuple of exception classes that mean 'CLI surface error'."""
+    try:
+        from .client import ForgeOSError
+
+        return (ForgeOSError, FileNotFoundError, ValueError, RuntimeError)
+    except Exception:
+        return (FileNotFoundError, ValueError, RuntimeError)
+
+
 def cmd_validate(args) -> int:
-    """Validate an agent manifest without deploying."""
+    """Validate an agent manifest without deploying. No platform boot needed."""
     try:
         path = Path(args.file)
         if path.suffix in (".yaml", ".yml"):
@@ -48,7 +78,6 @@ def cmd_validate(args) -> int:
             _print_err(f"Unsupported file type: {path.suffix}")
             return 1
 
-        # Also try to resolve system_prompt file references
         deploy_body = manifest.to_deploy_request(base_path=path.parent)
         _print_ok(f"Manifest valid: {manifest.metadata.name}")
         print(f"  Stack:          {manifest.spec.stack}")
@@ -73,27 +102,42 @@ def cmd_deploy(args) -> int:
     path = Path(args.file)
     try:
         import yaml
+
         data = yaml.safe_load(path.read_text())
         kind = data.get("kind", "Agent")
-
         if kind == "Team":
             return _deploy_team(args, data)
 
-        with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
+        with _open_client(args) as client:
             agent_id = client.deploy(path)
             _print_ok(f"Deployed agent: {agent_id}")
             return 0
-    except (ForgeOSError, FileNotFoundError, ValueError) as e:
+    except _client_error_types() as e:
         _print_err(f"Deploy failed: {e}")
         return 1
 
 
 def _deploy_team(args, data: dict) -> int:
-    """Deploy a team manifest via the API."""
+    """Deploy a team manifest.
+
+    Team deploy still goes through the HTTP path because the in-process
+    LocalClient does not expose a team endpoint yet. Until that lands,
+    fall back to the legacy client when a Team manifest is detected.
+    """
+    from .client import ForgeOSClient
     from .manifest import TeamManifest
+
     team = TeamManifest.from_dict(data)
-    with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
-        resp = client._session.post(f"{client._base_url}/api/platform/teams", json=data)
+    remote = getattr(args, "remote", None) or os.environ.get("FORGEOS_REMOTE_URL")
+    if not remote:
+        _print_err(
+            "Team deploys still require --remote <url> until the in-process "
+            "team path lands. Pass --remote http://localhost:5000 to use the "
+            "legacy HTTP backend, or split the team into individual agents."
+        )
+        return 1
+    with ForgeOSClient(base_url=remote, api_key=getattr(args, "api_key", None)) as client:
+        resp = client._http.post("/api/platform/teams", json=data)
         if resp.status_code in (200, 201):
             result = resp.json()
             agent_ids = result.get("agent_ids", [])
@@ -101,37 +145,46 @@ def _deploy_team(args, data: dict) -> int:
             for aid in agent_ids:
                 print(f"  - {aid}")
             return 0
-        else:
-            _print_err(f"Team deploy failed: {resp.status_code} — {resp.text}")
-            return 1
+        _print_err(f"Team deploy failed: {resp.status_code} — {resp.text}")
+        return 1
 
 
 def cmd_undeploy_team(args) -> int:
-    """Undeploy all agents in a team."""
+    """Undeploy all agents in a team (HTTP only for now — see _deploy_team)."""
+    from .client import ForgeOSClient
+
+    remote = getattr(args, "remote", None) or os.environ.get("FORGEOS_REMOTE_URL")
+    if not remote:
+        _print_err(
+            "undeploy-team still requires --remote <url>. Pass "
+            "--remote http://localhost:5000 to use the legacy HTTP backend."
+        )
+        return 1
     try:
-        with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
-            resp = client._session.delete(
-                f"{client._base_url}/api/platform/teams/{args.namespace}/{args.name}"
+        with ForgeOSClient(base_url=remote, api_key=getattr(args, "api_key", None)) as client:
+            resp = client._http.delete(
+                f"/api/platform/teams/{args.namespace}/{args.name}"
             )
             if resp.status_code == 200:
                 result = resp.json()
-                _print_ok(f"Team '{args.name}' undeployed: {result.get('removed', 0)} agents removed")
+                _print_ok(
+                    f"Team '{args.name}' undeployed: "
+                    f"{result.get('removed', 0)} agents removed"
+                )
                 return 0
-            elif resp.status_code == 404:
+            if resp.status_code == 404:
                 _print_err(f"Team '{args.namespace}/{args.name}' not found")
                 return 1
-            else:
-                _print_err(f"Undeploy failed: {resp.status_code} — {resp.text}")
-                return 1
-    except ForgeOSError as e:
+            _print_err(f"Undeploy failed: {resp.status_code} — {resp.text}")
+            return 1
+    except _client_error_types() as e:
         _print_err(str(e))
         return 1
 
 
 def cmd_list(args) -> int:
-    """List deployed agents."""
     try:
-        with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
+        with _open_client(args) as client:
             agents = client.list()
             if not agents:
                 _print_warn("No agents deployed")
@@ -144,46 +197,43 @@ def cmd_list(args) -> int:
                     f"{a.get('execution_type','?'):14}  {a.get('status','?'):12}"
                 )
             return 0
-    except ForgeOSError as e:
+    except _client_error_types() as e:
         _print_err(str(e))
         return 1
 
 
 def cmd_invoke(args) -> int:
-    """Invoke an agent with a prompt."""
     try:
-        with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
+        with _open_client(args) as client:
             result = client.invoke(args.agent_id, args.prompt)
             print(json.dumps(result, indent=2, default=str))
-            if result.get("warnings"):
+            if isinstance(result, dict) and result.get("warnings"):
                 for w in result["warnings"]:
                     _print_warn(w)
             return 0
-    except ForgeOSError as e:
+    except _client_error_types() as e:
         _print_err(str(e))
         return 1
 
 
 def cmd_undeploy(args) -> int:
-    """Undeploy an agent."""
     try:
-        with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
+        with _open_client(args) as client:
             client.undeploy(args.agent_id)
             _print_ok(f"Undeployed {args.agent_id}")
             return 0
-    except ForgeOSError as e:
+    except _client_error_types() as e:
         _print_err(str(e))
         return 1
 
 
 def cmd_health(args) -> int:
-    """Check platform health."""
     try:
-        with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
+        with _open_client(args) as client:
             h = client.health()
             print(json.dumps(h, indent=2))
             return 0
-    except ForgeOSError as e:
+    except _client_error_types() as e:
         _print_err(str(e))
         return 1
 
@@ -193,8 +243,16 @@ def main(argv: list[str] | None = None) -> int:
         prog="forgeos",
         description="ForgeOS CLI — declare and manage agents from the command line",
     )
-    parser.add_argument("--url", help="API base URL (default: FORGEOS_API_URL or http://localhost:5000)")
-    parser.add_argument("--api-key", help="API key (default: FORGEOS_API_KEY)")
+    parser.add_argument(
+        "--remote",
+        help=(
+            "Use the legacy HTTP Mission Control backend at this URL instead "
+            "of in-process. Default: in-process (no server required)."
+        ),
+    )
+    parser.add_argument("--api-key", help="API key for --remote (default: FORGEOS_API_KEY)")
+    # Back-compat: --url is the old name for --remote.
+    parser.add_argument("--url", dest="remote", help=argparse.SUPPRESS)
 
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -226,7 +284,17 @@ def main(argv: list[str] | None = None) -> int:
     p_undeploy_team.add_argument("--namespace", default="default", help="Team namespace")
     p_undeploy_team.set_defaults(func=cmd_undeploy_team)
 
+    # `config` subcommands — added in chunk 2; import is optional so the
+    # CLI keeps working before that module lands.
+    try:
+        from . import config_cli  # type: ignore[attr-defined]
+
+        config_cli.register(sub)
+    except ImportError:
+        pass
+
     from . import mc_cli
+
     mc_cli.register(sub)
 
     args = parser.parse_args(argv)
