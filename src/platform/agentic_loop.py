@@ -20,7 +20,13 @@ from src.platform.llm_router import LLMResponse, LLMRouter
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_TURNS = 25  # safety cap on tool-use iterations
+MAX_TOOL_TURNS = 60  # safety cap on tool-use iterations
+# 25 was too tight for realistic reflex agents: a Jira-greeter-style
+# pass over N tickets needs roughly search + get-issue×N + human_ask×N
+# + human_check×N + a final summary turn — i.e. ~3N+2 turns. The old
+# cap silently truncated the final assistant message and dropped tool
+# pairs (#7, #12). 60 supports ~20-ticket passes which is well within
+# operator workloads.
 MAX_GUIDANCE_RETRIES = 3  # max times a tool can be GUIDE'd before escalating to DENY
 
 # Tool execution hardening

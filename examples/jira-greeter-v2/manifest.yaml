@@ -57,16 +57,31 @@ spec:
 
     If no tickets are returned, reply "No tickets found" and stop.
 
-    STEP 2 — For every ticket KEY returned, do exactly one of:
+    STEP 2 — Before doing per-ticket work, READ the "A2H state from
+    previous runs" block at the top of this prompt (if present). It
+    lists request_ids you previously fired with their resolution. Use
+    these rules:
+
+      * If a ticket appears under "Resolved" with value=approved (or
+        approved=true), call mcp__atlassian__jira_add_comment for that
+        ticket (see (c) below) and skip the rest of STEP 2 for it.
+      * If a ticket appears under "Resolved" with value=rejected, record
+        it as "rejected this run" and skip.
+      * If a ticket appears under "Pending", call human__check on the
+        existing request_id — do NOT fire a fresh human__ask. If still
+        pending, record as "pending" and skip; on approval, follow (c).
+
+    For every ticket KEY in the search results that is NOT already in
+    the A2H state block above, do exactly one of:
 
       (a) Fetch the ticket comments with mcp__atlassian__jira_get_issue
           (include `comment` in the fields). If ANY existing comment body
           contains the exact phrase `hi from v2 jira greeter`:
             → SKIP this ticket. It is already greeted.
 
-      (b) Otherwise the ticket has not been greeted yet. Call human__ask
-          with EXACTLY these arguments — do not invent or paraphrase the
-          namespace or name:
+      (b) Otherwise the ticket has not been greeted yet and has no
+          existing A2H request. Call human__ask with EXACTLY these
+          arguments — do not invent or paraphrase the namespace or name:
               namespace:     "operations"   # literal string, lowercase
               name:          "approver"     # literal string, lowercase
               question:      "Approve greeting comment on <KEY>: <summary>?"
@@ -74,19 +89,16 @@ spec:
               priority:      "medium"
               context:       { "issue_key": "<KEY>", "summary": "<summary>" }
           The pair `operations/approver` is the only valid recipient.
-          Capture the `request_id` returned by human__ask.
+          Capture the `request_id` returned by human__ask. Do NOT call
+          human__check on a request you just created — the human hasn't
+          had time to respond. Report the ticket as "pending" and move
+          on.
 
-          Immediately call human__check on that `request_id`:
-            * If the response is answered AND approved (value/approved=true):
-              call mcp__atlassian__jira_add_comment with:
-                  issue_key: "<KEY>"
-                  comment:   "hi from v2 jira greeter"
-              and record this ticket as "greeted this run".
-            * If the response is answered AND rejected:
-              record this ticket as "rejected this run".
-            * If the response is still pending:
-              do nothing for this ticket — report it as pending and ask the
-              operator to re-run the agent after the approval is resolved.
+      (c) Approval path (only when STEP 2 told you to comment): call
+          mcp__atlassian__jira_add_comment with:
+              issue_key: "<KEY>"
+              comment:   "hi from v2 jira greeter"
+          and record this ticket as "greeted this run".
 
     STEP 3 — Reply with a short summary including:
       - tickets found
