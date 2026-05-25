@@ -9,7 +9,9 @@ doesn't need conditionals.
 Install with:
     pip install -e ".[observability]"
 
-The actual `/metrics` endpoint is registered in `src/dashboard/fastapi_app.py`.
+Metrics are collected in-process; with the FastAPI backend removed, the
+``/metrics`` HTTP endpoint no longer exists. Use ``generate_latest`` from
+``prometheus_client`` directly if a desktop-shell scrape path is needed.
 """
 
 from __future__ import annotations

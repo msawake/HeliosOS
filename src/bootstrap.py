@@ -6,7 +6,11 @@ CrewAI, Google ADK, OpenClaw) with five execution types (always-on, scheduled,
 event-driven, reflex, autonomous) and personal/shared ownership.
 
 Usage:
-    python -m src.bootstrap [--company leadforge] [--config path/to/config.yaml] [--mode shadow|supervised|autonomous] [--dashboard] [--loop] [--port N]
+    python -m src.bootstrap [--company leadforge] [--config path/to/config.yaml] [--mode shadow|supervised|autonomous] [--loop]
+
+Note: as of the thin-client migration, the FastAPI Mission Control backend
+has been removed. The CLI (`forgeos`) talks to the platform in-process via
+`src.forgeos_sdk.local_runtime` — no HTTP server is started.
 """
 
 from __future__ import annotations
@@ -179,7 +183,7 @@ class PlatformBootstrap:
         self._running = False
         self._init_stages: set[str] = set()  # tracks completed init stages for safe cleanup
 
-    async def boot(self, api_listen_port: int = 5000):
+    async def boot(self):
         _load_dotenv_from_repo_root()
         logger.info("=" * 60)
         logger.info("BOOTING FORGEOS MULTI-STACK PLATFORM")
@@ -461,8 +465,7 @@ class PlatformBootstrap:
         if self.legacy_registry:
             logger.info("Legacy agents: %d", len(self.legacy_registry.all_agents()))
         logger.info("Mode: %s", self.mode)
-        logger.info("Dashboard: http://localhost:3000 (Next.js)")
-        logger.info("API: http://localhost:%d (FastAPI)", api_listen_port)
+        logger.info("Platform: in-process library (no HTTP server)")
         logger.info("=" * 60)
 
         self._running = True
@@ -689,14 +692,11 @@ class PlatformBootstrap:
             raise RuntimeError("Platform not booted yet")
         return await self.executor.deploy(agent_def)
 
-    async def run_main_loop(self, tick_interval: float = 30.0, app=None):
+    async def run_main_loop(self, tick_interval: float = 30.0):
         logger.info("Starting main loop (tick every %.0fs)...", tick_interval)
         tick_count = 0
         while self._running:
             tick_count += 1
-            # Update liveness timestamp (used by /api/liveness probe)
-            if app and hasattr(app, "state"):
-                app.state.last_tick_at = datetime.now(timezone.utc)
             try:
                 dispatches = await self.workflow_engine.tick()
                 if dispatches:
@@ -766,54 +766,6 @@ class PlatformBootstrap:
         if self._db:
             self._db.close()
 
-    def create_api_app(self, auth_enabled: bool = True):
-        """Create the FastAPI app."""
-        from src.dashboard.fastapi_app import create_fastapi_app
-        company_name = self.config.get("company", {}).get("name", "AI Company")
-        return create_fastapi_app(
-            company_system=self.system,
-            workflow_engine=self.workflow_engine,
-            company_name=company_name,
-            db_client=self._db,
-            auth_enabled=auth_enabled,
-            platform_executor=self.executor,
-            platform_registry=self.platform_registry,
-            llm_router=self.llm_router,
-            _boot_complete=self._running,
-            admin_tools=getattr(self, 'admin_tools', None),
-            admin_invoker=self.legacy_invoker,
-            admin_registry=self.legacy_registry,
-            ontology=getattr(self, 'ontology', None),
-            tenant_id=self.tenant_id,
-            kernel=getattr(self, '_kernel', None),
-        )
-
-    def start_api_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):
-        """Start the FastAPI server via uvicorn in a background thread."""
-        app = self.create_api_app(auth_enabled=auth_enabled)
-        if not app:
-            logger.warning("API server not available")
-            return
-        logger.info("API server starting on http://%s:%d (FastAPI + Uvicorn)", host, port)
-        import threading
-        import uvicorn
-        config = uvicorn.Config(app, host=host, port=port, log_level="warning")
-        server = uvicorn.Server(config)
-        thread = threading.Thread(target=server.run, daemon=True)
-        thread.start()
-
-    async def run_api_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):
-        """Run uvicorn in the main asyncio loop (for Cloud Run / containers)."""
-        app = self.create_api_app(auth_enabled=auth_enabled)
-        if not app:
-            logger.warning("API server not available")
-            return
-        logger.info("API server starting on http://%s:%d (FastAPI + Uvicorn, async)", host, port)
-        import uvicorn
-        config = uvicorn.Config(app, host=host, port=port, log_level="warning")
-        server = uvicorn.Server(config)
-        await server.serve()
-
     def get_platform_summary(self) -> dict:
         return {
             "company_id": self.company_id,
@@ -862,15 +814,7 @@ async def main():
         default="supervised",
     )
     parser.add_argument("--demo", action="store_true", help="Run demo scenario")
-    parser.add_argument("--dashboard", action="store_true", help="Start API server")
     parser.add_argument("--loop", action="store_true", help="Run main operational loop")
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=None,
-        help="API listen port (default: env PORT or 5000). Use when 5000 is already in use.",
-    )
-    parser.add_argument("--no-auth", action="store_true", help="Disable API authentication (dev only)")
     parser.add_argument("--validate-only", action="store_true", help="Validate config and exit")
     args = parser.parse_args()
 
@@ -890,20 +834,11 @@ async def main():
         logger.error("Fix the above errors or use --mode supervised for dev.")
         sys.exit(1)
 
-    api_port = args.port if args.port is not None else int(os.environ.get("PORT", "5000"))
-
     bootstrap = PlatformBootstrap(config_path=args.config, mode=args.mode, company_id=args.company)
-    await bootstrap.boot(api_listen_port=api_port)
+    await bootstrap.boot()
 
     if args.demo:
         run_demo(company_id=args.company)
-
-    # Store app reference for liveness tick tracking
-    _api_app = None
-    auth_on = not args.no_auth and not os.environ.get("FORGEOS_AUTH_DISABLED") if args.dashboard else True
-    if args.dashboard and args.loop:
-        _api_app = bootstrap.create_api_app(auth_enabled=auth_on)
-        bootstrap.start_api_server(port=api_port, auth_enabled=auth_on)
 
     # Register SIGTERM/SIGINT for graceful shutdown
     loop = asyncio.get_running_loop()
@@ -913,19 +848,14 @@ async def main():
 
     if args.loop:
         try:
-            await bootstrap.run_main_loop(app=_api_app)
+            await bootstrap.run_main_loop()
         except asyncio.CancelledError:
             pass
         finally:
             await bootstrap.shutdown()
-    elif args.dashboard:
-        logger.info("API server running on http://0.0.0.0:%d — Ctrl+C to stop.", api_port)
-        try:
-            await bootstrap.run_api_server(port=api_port, auth_enabled=auth_on)
-        except (KeyboardInterrupt, asyncio.CancelledError):
-            pass
-        finally:
-            await bootstrap.shutdown()
+    else:
+        # No --loop, no HTTP server — boot succeeded, exit cleanly.
+        await bootstrap.shutdown()
 
 
 async def _handle_signal(sig, bootstrap):

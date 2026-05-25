@@ -3,36 +3,17 @@ kind: Kustomization
 
 namespace: forgeos
 
+# NOTE: as of the thin-client migration, ForgeOS no longer ships a server
+# image. The CLI runs locally and Mission Control is a desktop client. The
+# remaining manifests below describe shared infra (namespace, configmaps,
+# PVCs, NetworkPolicy) that may still be useful when deploying agents as
+# standalone Kubernetes workloads alongside other systems.
 resources:
   - namespace.yaml
   - configmap.yaml
   - pvc.yaml
-  - deployment-api.yaml
-  - deployment-web.yaml
-  - service-api.yaml
-  - service-web.yaml
-  - ingress.yaml
   - networkpolicy.yaml
-  - hpa-api.yaml
-  - pdb-api.yaml
-  - pdb-web.yaml
 
 commonLabels:
   app.kubernetes.io/managed-by: kustomize
   app.kubernetes.io/part-of: forgeos
-
-# Override with your registry after CI build, e.g.:
-# images:
-#   - name: forgeos-api
-#     newName: ghcr.io/your-org/forgeos-api
-#     newTag: main
-#   - name: forgeos-web
-#     newName: ghcr.io/your-org/forgeos-web
-#     newTag: main
-images:
-  - name: forgeos-api
-    newName: forgeos-api
-    newTag: latest
-  - name: forgeos-web
-    newName: forgeos-web
-    newTag: latest

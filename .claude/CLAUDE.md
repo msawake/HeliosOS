@@ -29,21 +29,19 @@ PYTHONPATH=. python3 -m pytest -k "test_deploy"
 ruff check src/ tests/
 mypy src/
 
-# Boot the platform (dev: no auth, in-memory DB)
-PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
-
-# Boot the platform (production-shaped: company pack + scheduler loop)
-PYTHONPATH=. python3 -m src.bootstrap --company leadforge --dashboard --loop --port 5000
+# Boot the platform as a long-running loop (no HTTP server)
+PYTHONPATH=. python3 -m src.bootstrap --company leadforge --loop
 
 # Boot with AgentOS syscall pipeline enabled (opt-in)
-FORGEOS_SYSCALL_PIPELINE=1 PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
+FORGEOS_SYSCALL_PIPELINE=1 PYTHONPATH=. python3 -m src.bootstrap --loop
 
-# Next.js dashboard (separate terminal)
-cd dashboard && npm install && npm run dev
-
-# CLI (installed as console script by pyproject.toml)
-forgeos deploy agent.yaml          # validate + POST to /api/platform/agents
+# CLI is the canonical client — runs in-process (no server needed)
+forgeos deploy agent.yaml          # in-process deploy via PlatformBootstrap
 forgeos list | forgeos invoke <id> "prompt" | forgeos undeploy <id> | forgeos health
+forgeos config set-credential ANTHROPIC_API_KEY sk-...   # ~/.forgeos/credentials
+
+# Legacy HTTP backend has been removed; --remote URL is kept on the CLI
+# only so a future remote re-introduction has a parking spot.
 ```
 
 Notes:
@@ -134,9 +132,13 @@ Public-facing Python package for declaring and managing agents:
 - `companies/<id>/` — Each provides `agent_configs.py`, `workflows.py`, `knowledge.py`, `config.yaml`, `demo.py`
 - `forgeos_sandbox/runner.py` — In-process sandbox runner helper (distinct from the `stacks/sandbox/` adapter)
 
-### Dashboard
+### Dashboard ("Mission Control")
 
-Next.js 15 + React 19 + Tailwind CSS in `dashboard/`. Talks to FastAPI backend (~70 endpoints). OpenAI-inspired dark theme.
+Next.js 15 + React 19 + Tailwind CSS in `dashboard/`. As of the thin-client
+migration, the FastAPI backend has been removed: Mission Control is a
+desktop shell (Tauri target lives in `mission-control/`, follow-up work)
+that talks to the `forgeos` CLI via a local 127.0.0.1 loopback. Treat the
+dashboard like OpenLens is to EKS — a local client, not a server.
 
 ### Infrastructure
 
