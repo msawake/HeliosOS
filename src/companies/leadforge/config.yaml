@@ -15,8 +15,8 @@ rate_limits:
   max_api_calls_per_minute: 30
 
 models:
-  orchestrator_default: "gemini-2.0-flash"
-  doer_default: "gemini-2.0-flash"
+  orchestrator_default: "gemini-2.5-flash"
+  doer_default: "gemini-2.5-flash"
 
 mcp_servers:
   tier1:

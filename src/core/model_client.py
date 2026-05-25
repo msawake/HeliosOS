@@ -78,6 +78,7 @@ class LLMClient(Protocol):
 class ModelProvider(Enum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
+    GOOGLE = "google"
     OLLAMA = "ollama"
     VLLM = "vllm"
 
@@ -95,13 +96,15 @@ def get_provider(model_name: str) -> ModelProvider:
         or name.startswith("openai/")
     ):
         return ModelProvider.OPENAI
+    if name.startswith("gemini-") or name.startswith("google/"):
+        return ModelProvider.GOOGLE
     if name.startswith("ollama-") or name.startswith("ollama/"):
         return ModelProvider.OLLAMA
     if name.startswith("vllm-") or name.startswith("vllm/"):
         return ModelProvider.VLLM
     raise ValueError(
         f"Unknown model provider for '{model_name}'. "
-        f"Expected prefix: claude-*, gpt-*, o1-*, o3-*, o4-*, ollama-*, vllm-*"
+        f"Expected prefix: claude-*, gpt-*, o1-*, o3-*, o4-*, gemini-*, ollama-*, vllm-*"
     )
 
 
