@@ -1,87 +1,76 @@
-# ForgeOS local dev — Postgres + FastAPI backend + Next.js dashboard.
+# ForgeOS local dev — thin-client model.
 #
-#   make start      # stop anything stale, then bring up pg → backend → dashboard
-#   make stop       # kill all three (ports 3000, 5055, container forgeos-pg-local)
-#   make logs       # tail backend + dashboard logs
-#   make psql       # interactive psql inside the running Postgres container
-#   make reset      # nuke the database volume and restart fresh
+# Since the Mission Control FastAPI backend was removed, there is no
+# "backend" or "dashboard" process to run. The `forgeos` CLI talks to the
+# platform in-process (see src/forgeos_sdk/local_runtime.py), so everyday
+# work just means invoking the CLI inside the project venv.
 #
-# Requires: Docker Desktop running, python3.11, node, npm.
+#   make forgeos ARGS="health"
+#   make forgeos ARGS="deploy examples/jira-greeter-v2/manifest.yaml"
+#   make forgeos ARGS="config set-credential ANTHROPIC_API_KEY sk-..."
+#
+# Postgres is optional. The CLI runs without it; bring it up when you want
+# persistence under the platform's process table / agent runs store:
+#
+#   make pg && make migrate
+#
+# Requires: python3.11+, Docker Desktop (only for `make pg` / `make migrate`).
 
-BACKEND_PORT      ?= 5055
-DASH_PORT         ?= 3000
-MC_PLATFORM_PORT  ?= 5099
-MC_VENV           ?= .venv-platform
-MC_PY             ?= python3.11
-MC_COMPANY        ?= leadforge
+VENV              ?= .venv
+PY                ?= python3.13
+VENV_PY           := $(VENV)/bin/python
+VENV_PIP          := $(VENV)/bin/pip
+
 PG_PORT           ?= 5432
 PG_CONTAINER      ?= forgeos-pg-local
 PG_USER           ?= forgeos
 PG_PASSWORD       ?= forgeos
 PG_DB             ?= forgeos
 PG_IMAGE          ?= pgvector/pgvector:pg16
-COMPANY           ?= leadforge
-BACKEND_LOG       ?= /tmp/forgeos-backend.log
-DASH_LOG          ?= /tmp/forgeos-dashboard.log
 
 DATABASE_URL := postgresql://$(PG_USER):$(PG_PASSWORD)@localhost:$(PG_PORT)/$(PG_DB)
 
 .PHONY: help
 help:
 	@echo "Targets:"
-	@echo "  make start    Stop stale processes, start pg → backend → dashboard"
-	@echo "  make stop     Kill processes on $(BACKEND_PORT)/$(DASH_PORT) and stop pg container"
-	@echo "  make pg       Start Postgres container only"
-	@echo "  make backend  Start backend only (needs pg up)"
-	@echo "  make dash     Start dashboard only"
-	@echo "  make logs     Tail backend + dashboard logs"
-	@echo "  make psql     Interactive psql shell"
-	@echo "  make reset    Stop, delete pg volume, restart fresh"
-	@echo "  make status   Show what's running"
-	@echo ""
-	@echo "Mission Control workflow (no Postgres, in-memory):"
-	@echo "  make mc-platform   Boot platform on $(MC_PLATFORM_PORT) — pair with 'cd mission-control && make dev-local'"
-	@echo "  make mc-setup      Create $(MC_VENV) and install platform deps (run once)"
-	@echo "  make migrate       Apply pending SQL migrations to local Postgres"
-	@echo "  make free-port PORT=N   Kill whatever is listening on port N"
+	@echo "  make forgeos ARGS=\"<subcommand ...>\"  Run the forgeos CLI in-process"
+	@echo "  make cli ARGS=\"<subcommand ...>\"      Alias for 'make forgeos'"
+	@echo "  make setup                            Create $(VENV) and install deps"
+	@echo "  make pg                               Start local Postgres container (optional)"
+	@echo "  make migrate                          Apply SQL migrations against local Postgres"
+	@echo "  make psql                             Interactive psql shell"
+	@echo "  make stop                             Stop the Postgres container"
+	@echo "  make reset                            Stop + drop pg volume + restart"
+	@echo "  make status                           Show what's running"
+	@echo "  make free-port PORT=N                 Kill whatever is listening on port N"
 
 # ---------------------------------------------------------------------------
-# Stop targets — always safe to run, never errors on "nothing to kill"
+# CLI entrypoint
 # ---------------------------------------------------------------------------
-.PHONY: stop stop-backend stop-dash stop-pg stop-mc-platform free-port
+.PHONY: forgeos cli
 
-stop: stop-backend stop-dash stop-pg stop-mc-platform
-	@echo "✓ all stopped"
+forgeos:
+	@[ -x $(VENV_PY) ] || { echo "✗ $(VENV) missing — run 'make setup' first"; exit 1; }
+	@PYTHONPATH=. $(VENV_PY) -m src.forgeos_sdk.cli $(ARGS)
 
-# Free an arbitrary TCP port. Usage: make free-port PORT=5099
-free-port:
-	@if [ -z "$(PORT)" ]; then echo "✗ specify PORT=<n>"; exit 1; fi
-	@echo "→ freeing port $(PORT)"
-	@-lsof -tiTCP:$(PORT) -sTCP:LISTEN 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-
-stop-mc-platform:
-	@echo "→ stopping mc-platform ($(MC_PLATFORM_PORT))"
-	@-pkill -f "src.bootstrap" 2>/dev/null || true
-	@-lsof -tiTCP:$(MC_PLATFORM_PORT) -sTCP:LISTEN 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-
-stop-backend:
-	@echo "→ stopping backend ($(BACKEND_PORT))"
-	@-pkill -f "src.bootstrap" 2>/dev/null || true
-	@-lsof -tiTCP:$(BACKEND_PORT) -sTCP:LISTEN 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-
-stop-dash:
-	@echo "→ stopping dashboard ($(DASH_PORT))"
-	@-pkill -f "next dev" 2>/dev/null || true
-	@-lsof -tiTCP:$(DASH_PORT) -sTCP:LISTEN 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-
-stop-pg:
-	@echo "→ stopping postgres ($(PG_CONTAINER))"
-	@-docker rm -f $(PG_CONTAINER) >/dev/null 2>&1 || true
+cli: forgeos
 
 # ---------------------------------------------------------------------------
-# Start targets
+# Setup
 # ---------------------------------------------------------------------------
-.PHONY: pg backend dash start
+.PHONY: setup
+
+setup:
+	@command -v $(PY) >/dev/null || { echo "✗ $(PY) not found — install Python 3.11+"; exit 1; }
+	@[ -d $(VENV) ] || { echo "→ creating $(VENV)"; $(PY) -m venv $(VENV); $(VENV_PIP) install -q --upgrade pip; }
+	@echo "→ installing project deps (editable)"
+	@$(VENV_PIP) install -q -e ".[dev]"
+	@echo "✓ ready. Try: make forgeos ARGS=\"health\""
+
+# ---------------------------------------------------------------------------
+# Postgres (optional — agents work fine without it, in-memory)
+# ---------------------------------------------------------------------------
+.PHONY: pg stop-pg migrate
 
 pg: stop-pg
 	@command -v docker >/dev/null || { echo "✗ docker not found"; exit 1; }
@@ -101,93 +90,41 @@ pg: stop-pg
 	done; \
 	echo "✗ postgres did not become ready"; exit 1
 
-backend: stop-backend stop-mc-platform
-	@echo "→ starting backend on $(BACKEND_PORT) (DATABASE_URL=$(DATABASE_URL))"
-	@cd "$(CURDIR)" && PYTHONPATH=.:a2h DATABASE_URL="$(DATABASE_URL)" \
-		nohup python3.11 -m src.bootstrap --no-auth --port $(BACKEND_PORT) --company $(COMPANY) --dashboard \
-		> $(BACKEND_LOG) 2>&1 &
-	@for i in $$(seq 1 30); do \
-		curl -sf --max-time 2 http://localhost:$(BACKEND_PORT)/api/health >/dev/null 2>&1 && { echo "✓ backend ready"; exit 0; }; \
-		sleep 2; \
-	done; \
-	echo "✗ backend did not become ready — see $(BACKEND_LOG)"; tail -20 $(BACKEND_LOG); exit 1
+stop-pg:
+	@echo "→ stopping postgres ($(PG_CONTAINER))"
+	@-docker rm -f $(PG_CONTAINER) >/dev/null 2>&1 || true
 
-dash: stop-dash
-	@echo "→ starting dashboard on $(DASH_PORT) (proxying to http://localhost:$(BACKEND_PORT))"
-	@cd "$(CURDIR)/dashboard" && FORGEOS_API_URL=http://localhost:$(BACKEND_PORT) \
-		nohup npm run dev > $(DASH_LOG) 2>&1 &
-	@for i in $$(seq 1 30); do \
-		curl -sf --max-time 2 http://localhost:$(DASH_PORT) >/dev/null 2>&1 && { echo "✓ dashboard ready"; exit 0; }; \
-		sleep 2; \
-	done; \
-	echo "✗ dashboard did not become ready — see $(DASH_LOG)"; tail -20 $(DASH_LOG); exit 1
-
-start: stop pg backend dash
-	@echo ""
-	@echo "════════════════════════════════════════════════════════════"
-	@echo "  Dashboard:  http://localhost:$(DASH_PORT)"
-	@echo "  Backend:    http://localhost:$(BACKEND_PORT)"
-	@echo "  Postgres:   localhost:$(PG_PORT) (user=$(PG_USER) db=$(PG_DB))"
-	@echo "  Logs:       make logs"
-	@echo "════════════════════════════════════════════════════════════"
+migrate:
+	@[ -x $(VENV_PY) ] || { echo "✗ $(VENV) missing — run 'make setup' first"; exit 1; }
+	@docker exec $(PG_CONTAINER) pg_isready -U $(PG_USER) -d $(PG_DB) >/dev/null 2>&1 \
+		|| { echo "✗ Postgres not running — 'make pg' first"; exit 1; }
+	@echo "→ applying migrations"
+	@DATABASE_URL="$(DATABASE_URL)" PYTHONPATH=. $(VENV_PY) -m src.core.migrations
+	@echo "→ schema_migrations:"
+	@docker exec $(PG_CONTAINER) psql -U $(PG_USER) -d $(PG_DB) -tAc \
+		"SELECT version FROM schema_migrations ORDER BY version;" | sed 's/^/    /'
 
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
-.PHONY: logs psql reset status
+.PHONY: stop psql reset status free-port
 
-logs:
-	@tail -n 80 -f $(BACKEND_LOG) $(DASH_LOG)
+stop: stop-pg
+	@echo "✓ stopped"
+
+# Free an arbitrary TCP port. Usage: make free-port PORT=5432
+free-port:
+	@if [ -z "$(PORT)" ]; then echo "✗ specify PORT=<n>"; exit 1; fi
+	@echo "→ freeing port $(PORT)"
+	@-lsof -tiTCP:$(PORT) -sTCP:LISTEN 2>/dev/null | xargs -r kill -9 2>/dev/null || true
 
 psql:
 	@docker exec -it $(PG_CONTAINER) psql -U $(PG_USER) -d $(PG_DB)
 
 reset: stop
 	@docker volume rm forgeos_pg_data >/dev/null 2>&1 || true
-	@$(MAKE) start
+	@$(MAKE) pg
 
 status:
-	@echo "── Postgres ──"; docker ps --filter "name=$(PG_CONTAINER)" --format '{{.Names}}  {{.Status}}' | sed 's/^/  /' || echo "  not running"
-	@echo "── Backend  ──"; lsof -nP -iTCP:$(BACKEND_PORT) -sTCP:LISTEN 2>/dev/null | tail -n +2 | awk '{print "  "$$1" PID="$$2}' || echo "  not running"
-	@echo "── Dashboard ─"; lsof -nP -iTCP:$(DASH_PORT) -sTCP:LISTEN 2>/dev/null | tail -n +2 | awk '{print "  "$$1" PID="$$2}' || echo "  not running"
-
-# ---------------------------------------------------------------------------
-# Mission Control workflow — boots a lightweight platform (in-memory,
-# no Postgres) on $(MC_PLATFORM_PORT). Pair with `cd mission-control &&
-# make dev-local` in another terminal.
-# ---------------------------------------------------------------------------
-.PHONY: mc-setup mc-platform migrate
-
-# Apply pending SQL migrations against the local Postgres. Idempotent —
-# already-applied versions are tracked in the schema_migrations table.
-migrate:
-	@[ -x $(MC_VENV)/bin/python ] || { echo "✗ $(MC_VENV) missing — run 'make mc-setup' first"; exit 1; }
-	@docker exec $(PG_CONTAINER) pg_isready -U $(PG_USER) -d $(PG_DB) >/dev/null 2>&1 \
-		|| { echo "✗ Postgres not running — 'make pg' first"; exit 1; }
-	@echo "→ applying migrations"
-	@DATABASE_URL="$(DATABASE_URL)" PYTHONPATH=. $(MC_VENV)/bin/python -m src.core.migrations
-	@echo "→ schema_migrations:"
-	@docker exec $(PG_CONTAINER) psql -U $(PG_USER) -d $(PG_DB) -tAc \
-		"SELECT version FROM schema_migrations ORDER BY version;" | sed 's/^/    /'
-
-mc-setup:
-	@command -v $(MC_PY) >/dev/null || { echo "✗ $(MC_PY) not found — install Python 3.11+"; exit 1; }
-	@[ -d $(MC_VENV) ] || { echo "→ creating $(MC_VENV)"; $(MC_PY) -m venv $(MC_VENV); $(MC_VENV)/bin/pip install -q --upgrade pip; }
-	@echo "→ installing platform deps into $(MC_VENV)"
-	@$(MC_VENV)/bin/pip install -q -e ".[dev]"
-	@echo "→ installing optional deps (psycopg, jsonschema)"
-	@$(MC_VENV)/bin/pip install -q 'psycopg[binary]' psycopg_pool jsonschema mcp
-	@echo "✓ ready. Run: make pg (once) then: make mc-platform"
-
-mc-platform: stop-mc-platform
-	@[ -x $(MC_VENV)/bin/python ] || { echo "✗ $(MC_VENV) missing — run 'make mc-setup' first"; exit 1; }
-	@if docker exec $(PG_CONTAINER) pg_isready -U $(PG_USER) -d $(PG_DB) >/dev/null 2>&1; then \
-		echo "→ Postgres detected on :$(PG_PORT) — wiring DATABASE_URL for persistence"; \
-		DB_URL="$(DATABASE_URL)"; \
-	else \
-		echo "→ no Postgres on :$(PG_PORT) — booting IN-MEMORY (run 'make pg' first for persistence)"; \
-		DB_URL=""; \
-	fi; \
-	echo "→ booting platform on $(MC_PLATFORM_PORT) (company=$(MC_COMPANY))"; \
-	echo "  pair with: cd mission-control && make dev-local"; \
-	DATABASE_URL="$$DB_URL" PYTHONPATH=.:a2h $(MC_VENV)/bin/python -m src.bootstrap --no-auth --dashboard --port $(MC_PLATFORM_PORT) --company $(MC_COMPANY)
+	@echo "── Venv     ──"; [ -x $(VENV_PY) ] && echo "  $(VENV_PY) present" || echo "  not set up (run 'make setup')"
+	@echo "── Postgres ──"; docker ps --filter "name=$(PG_CONTAINER)" --format '  {{.Names}}  {{.Status}}' 2>/dev/null | grep . || echo "  not running"
