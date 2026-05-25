@@ -30,6 +30,14 @@ pub fn run(args: Args, ep: &Endpoint) -> Result<i32> {
         },
     )?;
     println!("{}", serde_json::to_string_pretty(&result)?);
+    if result
+        .get("simulated")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        eprintln!();
+        ui::warn("Agent ran in SIMULATED mode — no real LLM call was made.");
+    }
     if let Some(warnings) = result.get("warnings").and_then(|v| v.as_array()) {
         for w in warnings {
             if let Some(s) = w.as_str() {

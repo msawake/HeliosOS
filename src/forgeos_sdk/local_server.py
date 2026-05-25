@@ -344,6 +344,23 @@ async def invoke_agent(request: Request) -> JSONResponse:
             result = dataclasses.asdict(result)
     elif not isinstance(result, dict):
         result = {"result": result}
+
+    # Surface simulation mode so CLI users don't mistake a no-op for a
+    # real run. The LLM router prefixes simulated outputs with
+    # "[Simulated <provider>/<model>] ..."; additionally a real run
+    # would have non-empty tool_calls and non-zero tokens_used, so we
+    # treat (zero tools + zero tokens + simulated prefix) as the signal.
+    output = result.get("output", "") if isinstance(result, dict) else ""
+    if isinstance(output, str) and output.startswith("[Simulated "):
+        warnings = list(result.get("warnings") or [])
+        warnings.append(
+            "Agent ran in SIMULATED mode — no LLM provider key configured. "
+            "Set ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY (matching "
+            "the agent's declared model) on the server to enable real calls."
+        )
+        result["warnings"] = warnings
+        result["simulated"] = True
+
     return JSONResponse(_jsonify(result))
 
 
