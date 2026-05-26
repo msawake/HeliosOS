@@ -40,6 +40,13 @@ SHELL_ALLOWLIST = {
     "git", "gh",
     "opencode",
     "ls", "cat", "mkdir", "pwd", "which", "echo", "head", "tail",
+    # `bash -c "<one-liner>"` is allowed so agents can chain git/gh/pnpm
+    # commands in a single tool call when juggling multiple short steps
+    # otherwise burns LLM rounds. The container runs as the non-root
+    # forgeos user, network egress is the only thing of value here, and
+    # the LLM-side prompts gate what reaches this layer in practice.
+    "bash",
+    "sh",
 }
 
 # Maximum stdout/stderr captured per tool result, in bytes.
