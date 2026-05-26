@@ -445,7 +445,7 @@ A2A_TOOL_SCHEMAS = [
                 "name": {"type": "string", "description": "Target agent name"},
                 "task": {"type": "string", "description": "Task/prompt for the callee"},
                 "context": {"type": "object", "description": "Additional context to pass"},
-                "timeout": {"type": "number", "description": "Seconds to wait", "default": 120},
+                "timeout": {"type": "number", "description": "Seconds to wait. Pass a higher value (e.g. 1200) when the callee runs long pipelines (opencode + pnpm install + build).", "default": 900},
             },
             "required": ["name", "task"],
         },
@@ -471,7 +471,7 @@ A2A_TOOL_SCHEMAS = [
             "type": "object",
             "properties": {
                 "job_id": {"type": "string"},
-                "timeout": {"type": "number", "default": 120},
+                "timeout": {"type": "number", "default": 900},
             },
             "required": ["job_id"],
         },
