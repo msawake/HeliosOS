@@ -468,6 +468,25 @@ class ToolExecutor:
             audit = getattr(self, "_audit_log", None)
             if audit is not None and _agent_id:
                 outcome = "success" if (isinstance(result, dict) and result.get("success", True)) else "denied"
+                # For developer-facing tools (shell, opencode, git, gh),
+                # also surface a tail of stdout/stderr so `forgeos logs`
+                # shows what the subprocess actually said — without that,
+                # opencode runs look like a silent ~60s "→ success" line.
+                inner = (result or {}).get("result") if isinstance(result, dict) else None
+                stdout_tail = stderr_tail = files_changed = None
+                pr_url = None
+                if isinstance(inner, dict) and tool_name.split("__", 1)[0] in {"code", "shell", "git", "gh"}:
+                    s = inner.get("stdout") or ""
+                    e = inner.get("stderr") or ""
+                    # Last ~2000 chars; enough to show opencode's final
+                    # diff summary or pnpm's build output without exploding
+                    # the audit row.
+                    stdout_tail = s[-2000:] if s else None
+                    stderr_tail = e[-2000:] if e else None
+                    fc = inner.get("files_changed")
+                    if isinstance(fc, list) and fc:
+                        files_changed = fc[:25]
+                    pr_url = inner.get("pr_url") or None
                 audit.record(
                     actor=_agent_id,
                     action="tool.call",
@@ -478,6 +497,11 @@ class ToolExecutor:
                         "agent_id": _agent_id,
                         "duration_ms": int((_time.monotonic() - _t0) * 1000),
                         "error": (result or {}).get("error") if isinstance(result, dict) else None,
+                        # New: dev-tool subprocess output for the logs CLI.
+                        **({"stdout_tail": stdout_tail} if stdout_tail else {}),
+                        **({"stderr_tail": stderr_tail} if stderr_tail else {}),
+                        **({"files_changed": files_changed} if files_changed else {}),
+                        **({"pr_url": pr_url} if pr_url else {}),
                     },
                 )
         except Exception:

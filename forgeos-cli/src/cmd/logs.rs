@@ -146,4 +146,51 @@ fn print_event(e: &Event) {
             extra.dimmed()
         );
     }
+
+    // When the platform attaches stdout/stderr/files_changed/pr_url to a
+    // dev-tool tool.call, render them as indented continuation lines so the
+    // operator can see what opencode / pnpm / gh actually said.
+    if let Some(d) = det {
+        if let Some(s) = d.get("stdout_tail").and_then(|v| v.as_str()) {
+            print_block("stdout", s, false);
+        }
+        if let Some(s) = d.get("stderr_tail").and_then(|v| v.as_str()) {
+            print_block("stderr", s, true);
+        }
+        if let Some(arr) = d.get("files_changed").and_then(|v| v.as_array()) {
+            let names: Vec<String> = arr
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+            if !names.is_empty() {
+                println!("    {} {}", "files:".dimmed(), names.join(" ").cyan());
+            }
+        }
+        if let Some(u) = d.get("pr_url").and_then(|v| v.as_str()) {
+            if !u.is_empty() {
+                println!("    {} {}", "pr:".dimmed(), u.green().bold());
+            }
+        }
+    }
+}
+
+fn print_block(label: &str, text: &str, is_err: bool) {
+    let trimmed = text.trim_end();
+    if trimmed.is_empty() {
+        return;
+    }
+    // Indent each line so the block stays visually attached to its event.
+    let label_colored = if is_err {
+        label.red().to_string()
+    } else {
+        label.dimmed().to_string()
+    };
+    println!("    {label_colored}");
+    for line in trimmed.lines() {
+        if is_err {
+            println!("    │ {}", line.dimmed());
+        } else {
+            println!("    │ {line}");
+        }
+    }
 }
