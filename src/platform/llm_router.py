@@ -220,6 +220,40 @@ class LLMRouter:
             elif provider == "google" and key:
                 self._clients["google"] = {"api_key": key}
                 logger.info("Initialized Google AI Studio (Gemini) client")
+            elif provider == "vllm":
+                try:
+                    from openai import OpenAI
+                    vllm_url = os.environ.get("VLLM_BASE_URL", "http://localhost:8000/v1")
+                    self._clients["vllm"] = OpenAI(
+                        api_key=key or "EMPTY", base_url=vllm_url, timeout=120.0,
+                    )
+                    logger.info("Initialized vLLM client (%s)", vllm_url)
+                except ImportError:
+                    logger.warning("openai package not installed (needed for vLLM)")
+
+    def _get_vllm_client(self, base_url: str | None) -> Any:
+        """Return a vLLM OpenAI client for the requested base_url.
+
+        Caches one client per base_url so per-agent endpoint overrides don't
+        leak across agents. Falls back to the env-configured default client
+        when base_url is None.
+        """
+        if not base_url:
+            return self._clients.get("vllm")
+        cache_key = f"vllm::{base_url}"
+        client = self._clients.get(cache_key)
+        if client is not None:
+            return client
+        try:
+            from openai import OpenAI
+            key = self._api_keys.get("vllm") or "EMPTY"
+            client = OpenAI(api_key=key, base_url=base_url, timeout=120.0)
+            self._clients[cache_key] = client
+            logger.info("Initialized per-agent vLLM client (%s)", base_url)
+            return client
+        except ImportError:
+            logger.warning("openai package not installed (needed for vLLM)")
+            return None
 
     async def chat(self, llm_config: LLMConfig, messages: list[dict], tools: list[dict] | None = None) -> LLMResponse:
         """Send a chat completion using the agent's chat model.
@@ -267,6 +301,7 @@ class LLMRouter:
             messages=messages,
             tools=tools,
             fallback_provider=fallback,
+            base_url=metadata.get("base_url"),
         )
 
         # --- After callback ----------------------------------------------------
@@ -511,11 +546,13 @@ class LLMRouter:
         messages: list[dict],
         tools: list[dict] | None = None,
         fallback_provider: str | None = None,
+        base_url: str | None = None,
     ) -> LLMResponse:
         """Call the primary provider with retries; optionally failover once."""
         try:
             return await self._call(
                 provider=provider, model=model, messages=messages, tools=tools,
+                base_url=base_url,
             )
         except Exception as primary_error:
             logger.error("Primary LLM call failed after retries: %s/%s: %s",
@@ -572,8 +609,16 @@ class LLMRouter:
         model: str,
         messages: list[dict],
         tools: list[dict] | None = None,
+        base_url: str | None = None,
     ) -> LLMResponse:
         """Direct provider call with retries. Raises on exhausted retries."""
+        if provider == "vllm":
+            client = self._get_vllm_client(base_url)
+            if client:
+                return await _with_retry(
+                    lambda: self._call_openai(client, model, messages, tools),
+                    provider=provider, model=model,
+                )
         client = self._clients.get(provider)
 
         if provider == "anthropic" and client:

@@ -68,6 +68,11 @@ class ToolExecutor:
         handlers["memory__history"] = self._handle_memory_history
         handlers["memory__delete"] = self._handle_memory_delete
 
+        # Developer tools (shell + opencode + git + gh). Available whenever the
+        # platform is wired; agents still need to list them in their manifest.
+        from src.platform.dev_tools import DEV_TOOL_HANDLERS
+        handlers.update(DEV_TOOL_HANDLERS)
+
         if not self._system:
             return handlers
 
@@ -108,6 +113,10 @@ class ToolExecutor:
         # Memory tools (always available)
         from src.platform.memory_store import MEMORY_TOOL_SCHEMAS
         schemas.extend(MEMORY_TOOL_SCHEMAS)
+
+        # Developer tools (shell + opencode + git + gh)
+        from src.platform.dev_tools import DEV_TOOL_SCHEMAS
+        schemas.extend(DEV_TOOL_SCHEMAS)
 
         if not self._system:
             return schemas

@@ -51,7 +51,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 STACKS = Literal["forgeos", "crewai", "adk", "openclaw", "anthropic-agent-sdk", "anthropic-managed", "openai-agents"]
 EXECUTION_TYPES = Literal["always_on", "scheduled", "event_driven", "reflex", "autonomous"]
 OWNERSHIP_TYPES = Literal["personal", "shared", "client"]
-PROVIDERS = Literal["anthropic", "openai", "google", "openclaw", "atlas", "vertex"]
+PROVIDERS = Literal["anthropic", "openai", "google", "openclaw", "atlas", "vertex", "vllm"]
 MEMORY_BLOCK_TYPES = Literal["persistent", "rolling_window", "shared", "scratch"]
 
 
