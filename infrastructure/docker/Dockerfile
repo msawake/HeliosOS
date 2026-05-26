@@ -45,6 +45,16 @@ RUN pip install --no-cache-dir --prefix=/install ".[production,scheduler]" \
         "google-auth>=2.0" \
         "requests>=2.31"
 
+# Belt-and-braces: ensure the GCP libs the platform reaches for at runtime
+# (Secret Manager for per-user PATs, Storage / Logging for ops) are present
+# even when the fallback above kicked in because pip couldn't build the
+# project from this stripped-down COPY context.
+RUN pip install --no-cache-dir --prefix=/install \
+    "google-cloud-secret-manager>=2.16" \
+    "google-cloud-logging>=3.5" \
+    "google-cloud-storage>=2.10" \
+    "google-cloud-sql-connector[pg8000]>=1.4"
+
 # ---------------------------------------------------------------------------
 # Stage 2 — api (runtime)
 # ---------------------------------------------------------------------------
