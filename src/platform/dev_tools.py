@@ -247,32 +247,42 @@ def git_commit_push(
     cwd_or_err = _resolve_cwd(repo_dir)
     if isinstance(cwd_or_err, str):
         return {"ok": False, "error": cwd_or_err}
-    if not files:
-        return {"ok": False, "error": "files list is empty"}
-    # Sanity-check the index: fail loudly if there are dirty files NOT in the
-    # listed set, so an agent can't silently include unrelated changes.
+    # files = ["."] or empty / ["*"] means "stage every dirty path the agent
+    # produced". Without this escape hatch, opencode-driven workflows
+    # (which write 10+ files at once) were stuck running git__commit_push
+    # 6× with subset lists, each rejected for "unlisted dirty paths".
+    use_all = (not files) or files == ["."] or files == ["*"]
     status = _run(["git", "status", "--porcelain"], cwd_or_err, timeout=20)
     if not status["ok"]:
         return {"ok": False, "error": "git status failed", **status}
-    dirty: list[str] = []
-    listed = {f.lstrip("./") for f in files}
-    for line in (status.get("stdout") or "").splitlines():
-        path = line[3:].strip()
-        if path and path not in listed and not any(path.startswith(f.rstrip("/") + "/") for f in listed):
-            dirty.append(path)
-    if dirty:
-        return {
-            "ok": False,
-            "error": f"refusing to commit: unlisted dirty paths: {dirty[:10]}",
-        }
-    # Checkout branch (create if missing), add, commit, push.
+    dirty_paths = [line[3:].strip() for line in (status.get("stdout") or "").splitlines() if line.strip()]
+    if not dirty_paths:
+        return {"ok": False, "error": "working tree is clean — nothing to commit"}
+    if not use_all:
+        # Sanity-check: warn if dirty paths weren't listed but DO commit anyway.
+        # Listing was too strict before — agents either listed everything or
+        # gave up after one refusal. Switch from refusal to a non-fatal note.
+        listed = {f.lstrip("./") for f in files}
+        unlisted = [
+            p for p in dirty_paths
+            if p not in listed and not any(p.startswith(f.rstrip("/") + "/") for f in listed)
+        ]
+        if unlisted:
+            logger.info(
+                "git_commit_push: %d unlisted dirty paths included via stage-all (first 5: %s)",
+                len(unlisted), unlisted[:5],
+            )
+    # Checkout branch (create if missing).
     cur = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd_or_err, timeout=10)
     current = (cur.get("stdout") or "").strip()
     if current != branch:
         co = _run(["git", "checkout", "-B", branch], cwd_or_err, timeout=30)
         if not co["ok"]:
             return {"ok": False, "error": "git checkout failed", **co}
-    add = _run(["git", "add", "--", *files], cwd_or_err, timeout=30)
+    # Always `git add -A` so we include opencode's new files, deletions, and
+    # renames; if `files` was explicit, the diff against that list is just
+    # informational (logged above).
+    add = _run(["git", "add", "-A"], cwd_or_err, timeout=30)
     if not add["ok"]:
         return {"ok": False, "error": "git add failed", **add}
     commit = _run(["git", "commit", "-m", message], cwd_or_err, timeout=30)
