@@ -633,6 +633,7 @@ class AgentManifest(BaseModel):
             "department": self.metadata.department,
             "chat_model": self.spec.llm.chat_model,
             "provider": self.spec.llm.provider,
+            "llm_metadata": dict(self.spec.llm.metadata or {}),
             "tools": effective_tools,
             "schedule": effective_schedule,
             "event_triggers": effective_event_triggers,

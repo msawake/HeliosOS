@@ -134,6 +134,7 @@ class AgentCreateRequest(BaseModel):
     metadata: dict = {}
     chat_model: str = "gpt-4o"
     provider: str = "openai"
+    llm_metadata: dict = {}
     client_id: str | None = None
     system_prompt: str = ""
 
@@ -638,7 +639,11 @@ def create_fastapi_app(
                 event_triggers=req.event_triggers,
                 tools=req.tools,
                 metadata=req.metadata,
-                llm_config=LLMConfig(chat_model=req.chat_model, provider=req.provider),
+                llm_config=LLMConfig(
+                    chat_model=req.chat_model,
+                    provider=req.provider,
+                    metadata=dict(req.llm_metadata or {}),
+                ),
                 system_prompt=req.system_prompt,
             )
             agent_id = await platform_executor.deploy(defn)
@@ -3124,6 +3129,10 @@ def create_fastapi_app(
         )
         if not result.get("success"):
             raise HTTPException(400, result.get("error", "Failed"))
+        # Same auto-resume behaviour as /approve and /reject: when the agent
+        # has no more pending requests, wake it back up with the resolved
+        # A2H state prepended to the resume prompt.
+        await _resume_after_human_response(request_id)
         return result
 
     @app.get("/api/a2h/pending", tags=["a2h"])

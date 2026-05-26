@@ -178,7 +178,13 @@ def _run(argv: list[str], cwd: Path, timeout: int, env: dict[str, str] | None = 
     }
 
 
-def shell_exec(*, cmd: str, cwd: str, timeout: int = 300, env: dict[str, str] | None = None) -> dict[str, Any]:
+def shell_exec(*, cmd: str, cwd: str | None = None, timeout: int = 300, env: dict[str, str] | None = None) -> dict[str, Any]:
+    # When the model forgets cwd, fall back to the working directory the
+    # forgeos-lens-builder agent uses by default. /tmp is always available
+    # and the allowlist forbids destructive commands anyway.
+    if not cwd:
+        fallback = "/tmp/forgeos-lens-builder/forgeos-lens"
+        cwd = fallback if Path(fallback).is_dir() else "/tmp"
     cwd_or_err = _resolve_cwd(cwd)
     if isinstance(cwd_or_err, str):
         return {"ok": False, "error": cwd_or_err}
@@ -202,23 +208,24 @@ def code_opencode_run(
     task: str,
     repo_dir: str,
     model: str | None = None,
-    base_url: str | None = None,
+    base_url: str | None = None,  # accepted for API stability; unused (opencode reads provider config)
     timeout: int = 1200,
 ) -> dict[str, Any]:
     cwd_or_err = _resolve_cwd(repo_dir)
     if isinstance(cwd_or_err, str):
         return {"ok": False, "error": cwd_or_err}
-    model = model or os.environ.get("FORGEOS_DEV_TOOLS_MODEL") or "nvidia/nemotron-3-super"
-    base_url = base_url or os.environ.get("FORGEOS_DEV_TOOLS_BASE_URL") or os.environ.get("VLLM_BASE_URL") or "http://34.78.73.30:8080/v1"
+    # opencode is configured to route `atlas/nvidia/nemotron-3-super` via its
+    # provider config (Atlas Gateway). Override with FORGEOS_OPENCODE_MODEL.
+    model = model or os.environ.get("FORGEOS_OPENCODE_MODEL") or "atlas/nvidia/nemotron-3-super"
     argv = [
         "opencode", "run",
-        "--model", f"openai/{model}",
-        "--base-url", base_url,
-        "--cwd", str(cwd_or_err),
+        "--model", model,
+        "--dir", str(cwd_or_err),
+        "--print-logs",
+        "--log-level", "INFO",
         task,
     ]
-    env = {"OPENAI_API_KEY": "EMPTY"}
-    result = _run(argv, cwd_or_err, timeout=timeout, env=env)
+    result = _run(argv, cwd_or_err, timeout=timeout)
     diff = _run(["git", "status", "--porcelain"], cwd_or_err, timeout=20)
     files_changed: list[str] = []
     for line in (diff.get("stdout") or "").splitlines():
