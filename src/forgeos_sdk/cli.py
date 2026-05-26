@@ -176,6 +176,50 @@ def cmd_undeploy(args) -> int:
         return 1
 
 
+def cmd_credentials_put(args) -> int:
+    """Store a per-user credential (write-only; no read endpoint exists)."""
+    try:
+        with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
+            result = client._request(
+                "POST",
+                f"/api/credentials/{args.kind}",
+                json={"pat": args.pat, "user_id": args.user_id},
+            )
+            _print_ok(f"Stored {args.kind} credential for user_id={result.get('user_id')}")
+            return 0
+    except ForgeOSError as e:
+        _print_err(str(e))
+        return 1
+
+
+def cmd_answer(args) -> int:
+    """Respond to a pending A2H request with text, value, or choice."""
+    if not args.text and args.value is None:
+        _print_err("Provide --text or --value")
+        return 1
+    response: dict = {}
+    if args.text is not None:
+        response["text"] = args.text
+    if args.value is not None:
+        response["value"] = args.value
+    try:
+        with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
+            result = client._request(
+                "POST",
+                f"/api/a2h/requests/{args.request_id}/respond",
+                json={
+                    "response": response,
+                    "responded_by": args.responded_by,
+                    "channel": "cli",
+                },
+            )
+            _print_ok(f"Responded to {args.request_id}: {result}")
+            return 0
+    except ForgeOSError as e:
+        _print_err(str(e))
+        return 1
+
+
 def cmd_health(args) -> int:
     """Check platform health."""
     try:
@@ -228,6 +272,23 @@ def main(argv: list[str] | None = None) -> int:
 
     from . import mc_cli
     mc_cli.register(sub)
+
+    # `forgeos credentials put github --pat <PAT> [--user-id <id>]`
+    p_creds = sub.add_parser("credentials", help="Manage per-user credentials (write-only)")
+    creds_sub = p_creds.add_subparsers(dest="creds_cmd", required=True)
+    p_creds_put = creds_sub.add_parser("put", help="Store a credential")
+    p_creds_put.add_argument("kind", choices=["github"], help="Credential kind")
+    p_creds_put.add_argument("--pat", required=True, help="Personal access token")
+    p_creds_put.add_argument("--user-id", default="default", help="User identifier (default: 'default')")
+    p_creds_put.set_defaults(func=cmd_credentials_put)
+
+    # `forgeos answer <request_id> --text "..."` or --value "..."
+    p_answer = sub.add_parser("answer", help="Answer a pending A2H request with text/value/choice")
+    p_answer.add_argument("request_id")
+    p_answer.add_argument("--text", help="Freeform text response (response_type=text)")
+    p_answer.add_argument("--value", help="Structured value (response_type=choice/number)")
+    p_answer.add_argument("--responded-by", default="cli", help="Who is responding")
+    p_answer.set_defaults(func=cmd_answer)
 
     args = parser.parse_args(argv)
     return args.func(args)

@@ -191,3 +191,49 @@ class SecretsManager:
     def get_database_url(self) -> str:
         """Get the database URL."""
         return self.get("database-url", os.environ.get("DATABASE_URL", ""))
+
+    def put(
+        self,
+        name: str,
+        value: str,
+        *,
+        caller: str = "",
+        reason: str = "",
+    ) -> bool:
+        """Write or overwrite a Secret Manager secret.
+
+        Creates the secret resource on first call and always adds a new
+        version. Returns True on success, False if Secret Manager is not
+        available (env-var fallback is intentionally write-disabled — secrets
+        must land in the configured secret store, not the process env).
+        """
+        if not (self._client and self._project_id):
+            logger.warning("Secret Manager unavailable; refusing to put '%s'", name)
+            return False
+        parent = f"projects/{self._project_id}"
+        try:
+            try:
+                self._client.create_secret(
+                    request={
+                        "parent": parent,
+                        "secret_id": name,
+                        "secret": {"replication": {"automatic": {}}},
+                    }
+                )
+            except Exception as e:
+                # AlreadyExists is fine — we just want to add a new version.
+                if "already exists" not in str(e).lower() and "alreadyexists" not in type(e).__name__.lower():
+                    raise
+            self._client.add_secret_version(
+                request={
+                    "parent": f"{parent}/secrets/{name}",
+                    "payload": {"data": value.encode("utf-8")},
+                }
+            )
+        except Exception:
+            logger.exception("Failed to write secret '%s'", name)
+            return False
+        # Drop any cached value so callers see the new version immediately.
+        self._cache.pop(name, None)
+        self._emit_audit("secret.write", name=name, caller=caller, reason=reason)
+        return True

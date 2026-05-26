@@ -77,6 +77,13 @@ class PlatformExecutor:
         # pool exists. When None, all run-history writes are no-ops.
         from src.platform.agent_runs_store import AgentRunsStore
         self.agent_runs: AgentRunsStore = AgentRunsStore(None)
+        # Per-user credential store (e.g. GitHub PATs). Bootstrap attaches one
+        # if Secret Manager is reachable; remains None in pure dev/test runs.
+        self.credential_store = None
+
+    def attach_credential_store(self, store) -> None:
+        """Bind a CredentialStore so invoke() can inject per-user secrets."""
+        self.credential_store = store
 
     def _register_process(self, agent_def: AgentDefinition) -> None:
         """Create a process-table entry for a freshly-registered agent."""
@@ -331,6 +338,24 @@ class PlatformExecutor:
                 invoke_ctx = dict(context or {})
                 if self.callback_registry:
                     invoke_ctx["_callback_registry"] = self.callback_registry
+                # Per-user credentials (GH PAT, etc.) — injected into the
+                # invocation context only, never on os.environ, so concurrent
+                # invocations for different users don't race.
+                if self.credential_store is not None:
+                    try:
+                        user_id = (
+                            invoke_ctx.get("user_id")
+                            or getattr(agent_def, "owner_id", None)
+                            or "default"
+                        )
+                        self.credential_store.inject_for_invocation(
+                            invoke_ctx,
+                            user_id=user_id,
+                            caller=f"executor.invoke:{agent_id}",
+                            invocation_id=run_id or "",
+                        )
+                    except Exception:
+                        logger.debug("credential injection failed", exc_info=True)
                 result = await adapter.invoke(agent_id, prompt, invoke_ctx, history=history)
                 # Self-heal: if the adapter forgot the agent (e.g. a process
                 # restart before recovery wired adapters, or a stale stop),

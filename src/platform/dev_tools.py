@@ -315,8 +315,33 @@ def gh_open_pr(
 # Tool handler glue for ToolExecutor
 # ---------------------------------------------------------------------------
 
+def _gh_token_from_ctx(agent_context: dict | None) -> str:
+    if not agent_context:
+        return ""
+    creds = agent_context.get("_credentials") or {}
+    return creds.get("gh_token") or ""
+
+
+def _ensure_gh_env(env: dict[str, str] | None, agent_context: dict | None) -> dict[str, str]:
+    """Layer per-invocation gh credentials on top of caller-supplied env.
+
+    Never mutates os.environ. If no token is present, returns the env
+    unchanged so we don't fabricate fake auth.
+    """
+    out = dict(env or {})
+    token = _gh_token_from_ctx(agent_context)
+    if token:
+        out.setdefault("GH_TOKEN", token)
+        out.setdefault("GITHUB_TOKEN", token)
+    return out
+
+
 async def _handle_shell_exec(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
-    return {"success": True, "result": shell_exec(**tool_input)}
+    # gh + git both ride on the per-invocation token when an agent uses
+    # shell__exec to drive them directly (rather than the dedicated wrappers).
+    inp = dict(tool_input)
+    inp["env"] = _ensure_gh_env(inp.get("env"), agent_context)
+    return {"success": True, "result": shell_exec(**inp)}
 
 
 async def _handle_opencode_run(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
@@ -324,11 +349,91 @@ async def _handle_opencode_run(tool_input: dict, agent_context: dict | None = No
 
 
 async def _handle_git_commit_push(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
-    return {"success": True, "result": git_commit_push(**tool_input)}
+    # git_commit_push runs `git push` which needs auth on github.com. We add
+    # GH_TOKEN to the underlying _run() env via a thin wrapper.
+    token = _gh_token_from_ctx(agent_context)
+    if token:
+        import os as _os
+        # _run inherits os.environ; we layer a minimal override using a
+        # context-managed env var on the current process is unsafe under
+        # concurrency. Instead pass env through _run via the env kw, which
+        # git_commit_push doesn't expose. Simplest correct path: shell to a
+        # one-shot git push from shell__exec semantics is overkill. Use the
+        # GIT_ASKPASS dance via env injected through a private helper.
+        result = _git_commit_push_with_token(token=token, **tool_input)
+    else:
+        result = git_commit_push(**tool_input)
+    return {"success": True, "result": result}
 
 
 async def _handle_gh_open_pr(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
-    return {"success": True, "result": gh_open_pr(**tool_input)}
+    token = _gh_token_from_ctx(agent_context)
+    if token:
+        result = _gh_open_pr_with_token(token=token, **tool_input)
+    else:
+        result = gh_open_pr(**tool_input)
+    return {"success": True, "result": result}
+
+
+# --- Auth-aware variants ----------------------------------------------------
+
+def _git_commit_push_with_token(*, token: str, **kwargs: Any) -> dict[str, Any]:
+    """Same as git_commit_push but pushes with GH_TOKEN-backed credentials.
+
+    git uses GH_TOKEN via the `gh` credential helper when configured, but we
+    don't assume `gh auth setup-git` has been run in the container. Instead
+    we override the remote URL just for the push step using a temporary
+    https://x-access-token:<token>@github.com style URL. That URL never lands
+    in the repo config — we pass it via `git -c http.extraheader=...` is also
+    an option but cleaner to use `-c credential.helper=` with a one-shot.
+    """
+    # Reuse the unauthenticated path for staging/commit; only swap auth at
+    # the push step.
+    cwd_or_err = _resolve_cwd(kwargs["repo_dir"])
+    if isinstance(cwd_or_err, str):
+        return {"ok": False, "error": cwd_or_err}
+    base_result = git_commit_push(**{**kwargs, "files": kwargs.get("files", [])})
+    if not base_result.get("ok") and "git push" not in (base_result.get("error") or ""):
+        # Failure before push — bubble up as-is.
+        if base_result.get("returncode") != 0 and "git push" not in str(base_result.get("stderr", "")):
+            return base_result
+    # If the push leg failed because of auth, retry with an inline credential.
+    if not base_result.get("ok") and (
+        "Authentication failed" in (base_result.get("stderr") or "")
+        or "could not read Username" in (base_result.get("stderr") or "")
+        or "fatal: could not read" in (base_result.get("stderr") or "")
+        or "403" in (base_result.get("stderr") or "")
+    ):
+        env = {"GH_TOKEN": token, "GITHUB_TOKEN": token}
+        retry = _run(
+            ["git", "-c", f"http.extraHeader=Authorization: Bearer {token}",
+             "push", "-u", "origin", kwargs["branch"]],
+            cwd_or_err, timeout=120, env=env,
+        )
+        return {"ok": retry["ok"], "branch": kwargs["branch"], **retry}
+    return base_result
+
+
+def _gh_open_pr_with_token(*, token: str, **kwargs: Any) -> dict[str, Any]:
+    cwd_or_err = _resolve_cwd(kwargs["repo_dir"])
+    if isinstance(cwd_or_err, str):
+        return {"ok": False, "error": cwd_or_err}
+    argv = [
+        "gh", "pr", "create",
+        "--base", kwargs.get("base", "main"),
+        "--head", kwargs["branch"],
+        "--title", kwargs["title"],
+        "--body", kwargs["body"],
+    ]
+    env = {"GH_TOKEN": token, "GITHUB_TOKEN": token}
+    result = _run(argv, cwd_or_err, timeout=60, env=env)
+    url = ""
+    for line in (result.get("stdout") or "").splitlines():
+        line = line.strip()
+        if line.startswith("https://github.com/") and "/pull/" in line:
+            url = line
+    result["pr_url"] = url
+    return result
 
 
 DEV_TOOL_HANDLERS: dict[str, Any] = {

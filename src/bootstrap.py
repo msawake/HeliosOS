@@ -213,6 +213,8 @@ class PlatformBootstrap:
             # layer wires it (via self._kernel.audit_log setter below).
             from src.core.secrets import SecretsManager
             self.secrets = SecretsManager(audit_recorder=None)  # recorder bound after kernel
+            from src.platform.credentials import CredentialStore
+            self.credentials = CredentialStore(self.secrets)
 
             logger.info("[Phase 3] Registering stack adapters...")
             self._register_adapters()
@@ -243,6 +245,8 @@ class PlatformBootstrap:
                 process_table=_process_table,
             )
             self.executor._session_store = self._session_store
+            if getattr(self, 'credentials', None) is not None:
+                self.executor.attach_credential_store(self.credentials)
 
             # Wire per-invocation history store when Postgres is available.
             if hasattr(self, '_db') and self._db and self._db.is_connected:
@@ -755,6 +759,7 @@ class PlatformBootstrap:
             ontology=getattr(self, 'ontology', None),
             tenant_id=self.tenant_id,
             kernel=getattr(self, '_kernel', None),
+            credential_store=getattr(self, 'credentials', None),
         )
 
     def start_api_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):

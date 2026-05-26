@@ -26,7 +26,7 @@ from fastapi import FastAPI, WebSocket, Request, Depends, Header, HTTPException,
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +229,7 @@ def create_fastapi_app(
     ontology=None,
     tenant_id: str = "default",
     kernel=None,  # AgentOS kernel facade
+    credential_store=None,
 ) -> FastAPI:
 
     app = FastAPI(
@@ -3176,6 +3177,38 @@ def create_fastapi_app(
             return {"humans": []}
         humans = _gw.list_humans(namespace)
         return {"humans": [h.to_discovery_dict() for h in humans]}
+
+    # ------------------------------------------------------------------
+    # Per-user credentials (write-only; secrets flow into agent processes
+    # via the executor, never back out through a read endpoint)
+    # ------------------------------------------------------------------
+
+    class _CredentialPutGithub(BaseModel):
+        pat: str = Field(..., min_length=20, description="GitHub PAT (repo+workflow scopes)")
+        user_id: str = Field("default", description="Identifier under which to scope the secret")
+
+    @app.post("/api/credentials/github", tags=["credentials"])
+    async def put_github_credential(body: _CredentialPutGithub, request: Request):
+        """Store a GitHub PAT for a user in Secret Manager.
+
+        The PAT is never returned by any read endpoint. Agent tool handlers
+        receive it via the executor's invoke_ctx for the duration of one
+        invocation only.
+        """
+        if credential_store is None:
+            raise HTTPException(503, "Credential store not configured")
+        caller = request.headers.get("x-forgeos-caller") or request.client.host if request.client else "api"
+        ok = credential_store.put_github_pat(body.pat, user_id=body.user_id, caller=caller)
+        if not ok:
+            raise HTTPException(503, "Secret Manager unavailable; secret was not stored")
+        _audit(
+            "credential.write",
+            actor=caller,
+            resource_type="credential",
+            resource_id=f"github:{body.user_id}",
+            details={"kind": "github"},
+        )
+        return {"stored": True, "user_id": body.user_id, "kind": "github"}
 
     return app
 
