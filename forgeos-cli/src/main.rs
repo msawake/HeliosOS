@@ -47,6 +47,8 @@ enum Command {
     List,
     /// Invoke an agent with a prompt.
     Invoke(cmd::invoke::Args),
+    /// Stream per-agent activity: run start/end + every tool call.
+    Logs(cmd::logs::Cmd),
     /// Undeploy an agent.
     Undeploy(cmd::undeploy::Args),
     /// Undeploy all agents in a team (server endpoint required; not yet implemented).
@@ -74,6 +76,7 @@ fn main() {
         Command::Deploy(args) => cmd::deploy::run(args, &ctx),
         Command::List => cmd::list::run(&ctx),
         Command::Invoke(args) => cmd::invoke::run(args, &ctx),
+        Command::Logs(args) => cmd::logs::run(args, &ctx),
         Command::Undeploy(args) => cmd::undeploy::run(args, &ctx),
         Command::UndeployTeam(args) => cmd::stub::undeploy_team(args),
         Command::Health => cmd::health::run(&ctx),

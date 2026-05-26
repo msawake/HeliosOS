@@ -7,6 +7,7 @@ pub mod deploy;
 pub mod health;
 pub mod invoke;
 pub mod list;
+pub mod logs;
 pub mod stub;
 pub mod undeploy;
 pub mod validate;
