@@ -177,6 +177,10 @@ class MessageSendRequest(BaseModel):
     to_agent_id: str
     content: dict = {}
 
+class CredentialPutGithubRequest(BaseModel):
+    pat: str = Field(..., min_length=20, description="GitHub PAT (repo+workflow scopes)")
+    user_id: str = Field("default", description="Identifier under which to scope the secret")
+
 class EventFireRequest(BaseModel):
     name: str
     payload: dict = {}
@@ -3192,12 +3196,8 @@ def create_fastapi_app(
     # via the executor, never back out through a read endpoint)
     # ------------------------------------------------------------------
 
-    class _CredentialPutGithub(BaseModel):
-        pat: str = Field(..., min_length=20, description="GitHub PAT (repo+workflow scopes)")
-        user_id: str = Field("default", description="Identifier under which to scope the secret")
-
     @app.post("/api/credentials/github", tags=["credentials"])
-    async def put_github_credential(body: _CredentialPutGithub, request: Request):
+    async def put_github_credential(req: CredentialPutGithubRequest, request: Request):
         """Store a GitHub PAT for a user in Secret Manager.
 
         The PAT is never returned by any read endpoint. Agent tool handlers
@@ -3206,18 +3206,18 @@ def create_fastapi_app(
         """
         if credential_store is None:
             raise HTTPException(503, "Credential store not configured")
-        caller = request.headers.get("x-forgeos-caller") or request.client.host if request.client else "api"
-        ok = credential_store.put_github_pat(body.pat, user_id=body.user_id, caller=caller)
+        caller = request.headers.get("x-forgeos-caller") or (request.client.host if request.client else "api")
+        ok = credential_store.put_github_pat(req.pat, user_id=req.user_id, caller=caller)
         if not ok:
             raise HTTPException(503, "Secret Manager unavailable; secret was not stored")
         _audit(
             "credential.write",
             actor=caller,
             resource_type="credential",
-            resource_id=f"github:{body.user_id}",
+            resource_id=f"github:{req.user_id}",
             details={"kind": "github"},
         )
-        return {"stored": True, "user_id": body.user_id, "kind": "github"}
+        return {"stored": True, "user_id": req.user_id, "kind": "github"}
 
     return app
 
