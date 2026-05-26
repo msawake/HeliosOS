@@ -1,0 +1,40 @@
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: forgeos-lens-builder
+  description: >-
+    Builds and iterates the antonibergas-hue/forgeos-lens Tauri client.
+    Runs Nemotron-3-Super via vLLM on rtx3, drives opencode for code edits,
+    asks the human freeform follow-up questions over A2H, and opens PRs
+    against the seed repo.
+  department: operations
+  labels:
+    category: developer-tools
+    execution: reflex
+    protocol: a2h
+    model: nemotron-3-super
+spec:
+  stack: forgeos
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: nvidia/nemotron-3-super
+    provider: vllm
+    metadata:
+      base_url: "http://34.78.73.30:8080/v1"
+  tools:
+    - shell__exec
+    - code__opencode_run
+    - git__commit_push
+    - gh__open_pr
+    - human__ask
+    - human__check
+    - memory__read
+    - memory__write
+  system_prompt:
+    file: system_prompt.md
+  metadata:
+    work_dir: "/tmp/forgeos-lens-builder"
+    repo_url: "https://github.com/antonibergas-hue/forgeos-lens.git"
+    branch_prefix: "feat/lens-"
+    pr_base: "main"
