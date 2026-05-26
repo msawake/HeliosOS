@@ -52,8 +52,7 @@ RUN pip install --no-cache-dir --prefix=/install ".[production,scheduler]" \
 RUN pip install --no-cache-dir --prefix=/install \
     "google-cloud-secret-manager>=2.16" \
     "google-cloud-logging>=3.5" \
-    "google-cloud-storage>=2.10" \
-    "google-cloud-sql-connector[pg8000]>=1.4"
+    "google-cloud-storage>=2.10"
 
 # ---------------------------------------------------------------------------
 # Stage 2 — api (runtime)
