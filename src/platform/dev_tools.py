@@ -22,6 +22,7 @@ the failure and can self-correct.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -348,37 +349,34 @@ async def _handle_shell_exec(tool_input: dict, agent_context: dict | None = None
     # shell__exec to drive them directly (rather than the dedicated wrappers).
     inp = dict(tool_input)
     inp["env"] = _ensure_gh_env(inp.get("env"), agent_context)
-    return {"success": True, "result": shell_exec(**inp)}
+    # subprocess.run inside an async handler would block the event loop —
+    # under Cloud Run, that stalls the HTTP server, the scheduler, every
+    # other in-flight invocation, and (when the call lasts minutes) gets
+    # the instance flagged unresponsive. Offload to a worker thread.
+    result = await asyncio.to_thread(shell_exec, **inp)
+    return {"success": True, "result": result}
 
 
 async def _handle_opencode_run(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
-    return {"success": True, "result": code_opencode_run(**tool_input)}
+    result = await asyncio.to_thread(code_opencode_run, **tool_input)
+    return {"success": True, "result": result}
 
 
 async def _handle_git_commit_push(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
-    # git_commit_push runs `git push` which needs auth on github.com. We add
-    # GH_TOKEN to the underlying _run() env via a thin wrapper.
     token = _gh_token_from_ctx(agent_context)
     if token:
-        import os as _os
-        # _run inherits os.environ; we layer a minimal override using a
-        # context-managed env var on the current process is unsafe under
-        # concurrency. Instead pass env through _run via the env kw, which
-        # git_commit_push doesn't expose. Simplest correct path: shell to a
-        # one-shot git push from shell__exec semantics is overkill. Use the
-        # GIT_ASKPASS dance via env injected through a private helper.
-        result = _git_commit_push_with_token(token=token, **tool_input)
+        result = await asyncio.to_thread(_git_commit_push_with_token, token=token, **tool_input)
     else:
-        result = git_commit_push(**tool_input)
+        result = await asyncio.to_thread(git_commit_push, **tool_input)
     return {"success": True, "result": result}
 
 
 async def _handle_gh_open_pr(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
     token = _gh_token_from_ctx(agent_context)
     if token:
-        result = _gh_open_pr_with_token(token=token, **tool_input)
+        result = await asyncio.to_thread(_gh_open_pr_with_token, token=token, **tool_input)
     else:
-        result = gh_open_pr(**tool_input)
+        result = await asyncio.to_thread(gh_open_pr, **tool_input)
     return {"success": True, "result": result}
 
 
