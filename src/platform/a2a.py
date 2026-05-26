@@ -29,7 +29,11 @@ from dataclasses import asdict, dataclass, field
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_DEPTH = 5
-DEFAULT_CALL_TIMEOUT_SECONDS = 120
+# Long-running tools (opencode passes, pnpm install + build, cargo check) can
+# easily exceed 120s. Bump the default so an orchestrator that forgets to pass
+# `timeout=...` doesn't strand callees mid-work. Callers can still pass a
+# smaller value when they want a tighter deadline.
+DEFAULT_CALL_TIMEOUT_SECONDS = 900
 
 
 @dataclass
