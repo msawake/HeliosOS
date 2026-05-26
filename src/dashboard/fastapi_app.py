@@ -605,8 +605,21 @@ def create_fastapi_app(
         
         all_agents = platform_registry.query(**filters) if filters else platform_registry.list_all()
         agents = all_agents[offset:offset+limit]
-        
-        return [a.to_dict() if hasattr(a, "to_dict") else {"agent_id": str(a)} for a in agents]
+
+        # Merge the registry's per-agent runtime status into the response so
+        # CLIs don't have to make N extra requests just to color the table.
+        out = []
+        for a in agents:
+            d = a.to_dict() if hasattr(a, "to_dict") else {"agent_id": str(a)}
+            try:
+                aid = getattr(a, "agent_id", None) or d.get("agent_id")
+                if aid:
+                    status = platform_registry.get_status(aid)
+                    d["status"] = status.value if hasattr(status, "value") else str(status)
+            except Exception:
+                pass
+            out.append(d)
+        return out
 
     @app.get("/api/platform/agents/{agent_id}", tags=["agents"])
     async def get_agent(agent_id: str, _auth=Depends(check_auth)):
@@ -614,7 +627,13 @@ def create_fastapi_app(
         if platform_registry:
             agent = platform_registry.get(agent_id)
             if agent:
-                return agent.to_dict() if hasattr(agent, "to_dict") else {"agent_id": agent_id}
+                d = agent.to_dict() if hasattr(agent, "to_dict") else {"agent_id": agent_id}
+                try:
+                    status = platform_registry.get_status(agent_id)
+                    d["status"] = status.value if hasattr(status, "value") else str(status)
+                except Exception:
+                    pass
+                return d
         raise HTTPException(404, f"Agent {agent_id} not found")
 
     @app.post("/api/platform/agents", tags=["agents"], status_code=201)
