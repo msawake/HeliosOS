@@ -57,7 +57,10 @@ class ForgeOSClient:
     def _headers(self) -> dict[str, str]:
         h = {"Content-Type": "application/json"}
         if self.api_key:
+            # Send both: X-API-Key for legacy auth paths, Authorization: Bearer
+            # for the deployed Cloud Run service which validates bearer tokens.
             h["X-API-Key"] = self.api_key
+            h["Authorization"] = f"Bearer {self.api_key}"
         return h
 
     def _request(self, method: str, path: str, **kwargs) -> Any:

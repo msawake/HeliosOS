@@ -237,8 +237,10 @@ def main(argv: list[str] | None = None) -> int:
         prog="forgeos",
         description="ForgeOS CLI — declare and manage agents from the command line",
     )
-    parser.add_argument("--url", help="API base URL (default: FORGEOS_API_URL or http://localhost:5000)")
-    parser.add_argument("--api-key", help="API key (default: FORGEOS_API_KEY)")
+    parser.add_argument("--url", help="API base URL (overrides --config / env)")
+    parser.add_argument("--api-key", help="Bearer token / X-API-Key value (overrides --config / env)")
+    parser.add_argument("--config", help="Path to a forgeos config file (default: $FORGEOS_CONFIG or ~/.forgeos/config)")
+    parser.add_argument("--context", help="Name of a context inside the config file")
 
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -291,6 +293,23 @@ def main(argv: list[str] | None = None) -> int:
     p_answer.set_defaults(func=cmd_answer)
 
     args = parser.parse_args(argv)
+    # Resolve url/token from CLI flags → env → config file (kubectl-style).
+    try:
+        from .config_file import resolve as _resolve_cfg, ConfigError as _CfgErr
+        url, token, _scheme = _resolve_cfg(
+            cli_url=args.url,
+            cli_token=args.api_key,
+            context=args.context,
+            config_path=args.config,
+        )
+        args.url = url
+        args.api_key = token
+    except Exception as e:
+        _print_err(str(e))
+        return 2
+    if not args.url:
+        _print_err("no API URL: set --url, FORGEOS_API_URL, or a config file with `url:`")
+        return 2
     return args.func(args)
 
 
