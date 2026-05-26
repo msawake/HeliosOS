@@ -28,6 +28,8 @@ spec:
     - memory__read
     - memory__write
     - human__notify
+    # A2A: reviewer can be invoked by the orchestrator and can discover peers.
+    - agent__list_available
   system_prompt:
     file: system_prompt.md
   metadata:

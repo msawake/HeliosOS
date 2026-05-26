@@ -182,6 +182,22 @@ pub fn post_json<B: Serialize, T: DeserializeOwned>(
         .map_err(|e| anyhow!("decode POST {url}: {e}"))
 }
 
+/// POST raw YAML body (Content-Type: text/yaml). Used by `deploy` so the
+/// server's AgentManifest.from_dict handles parsing — including resolving
+/// system_prompt file references that the Rust client pre-inlined.
+pub fn post_yaml<T: DeserializeOwned>(ep: &Endpoint, path: &str, yaml: &str) -> Result<T> {
+    let r = ep.resolved()?;
+    let url = format!("{base}{path}", base = r.base);
+    let resp = auth_header(client().post(&url), &r.token, &r.auth)
+        .header("Content-Type", "text/yaml")
+        .body(yaml.to_string())
+        .send()
+        .map_err(|e| enrich_send(e, &r.base, "POST", path))?;
+    let resp = check(resp, "POST", path)?;
+    resp.json::<T>()
+        .map_err(|e| anyhow!("decode POST {url}: {e}"))
+}
+
 pub fn delete<T: DeserializeOwned>(ep: &Endpoint, path: &str) -> Result<T> {
     let r = ep.resolved()?;
     let url = format!("{base}{path}", base = r.base);

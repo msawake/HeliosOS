@@ -1,0 +1,33 @@
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: forgeos-lens-tester
+  description: >-
+    Runs pnpm build + pnpm test + cargo check inside the working clone
+    of antonibergas-hue/forgeos-lens and returns a structured result.
+    Invoked by the builder (post-scaffold) and the orchestrator (gating
+    before PR). No network mutation; comments-and-tests only.
+  department: operations
+  labels:
+    category: test-runner
+    execution: reflex
+    model: nemotron-3-super
+spec:
+  stack: forgeos
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: nvidia/nemotron-3-super
+    provider: vllm
+    metadata:
+      base_url: "http://34.78.73.30:8080/v1"
+  tools:
+    - shell__exec
+    - memory__read
+    - memory__write
+    - human__notify
+    - agent__list_available
+  system_prompt:
+    file: system_prompt.md
+  metadata:
+    work_dir: "/tmp/forgeos-lens-builder/forgeos-lens"
