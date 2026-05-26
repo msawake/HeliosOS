@@ -1,5 +1,6 @@
 .git
 .venv
+.venv-platform/
 __pycache__
 *.pyc
 adk-samples/
@@ -8,7 +9,17 @@ dashboard/node_modules/
 dashboard/.next/
 mission-control/frontend/node_modules/
 .bagentpro/
+.bagent/
 tests/
+# Transient codebase semantic-index store; can mutate mid-archive and
+# crashes the gcloud archiver when files disappear under it.
+.codegraph/
+# Local agent state (in-memory at runtime; do not ship to Cloud Build).
+agents/
+# Seed for the forgeos-lens repo — already pushed upstream; not needed in
+# the platform-api image build context.
+forgeos-lens-seed/
+*.log
 # docs/ and mkdocs.yml are kept in the Cloud Build context: the Mission
 # Control image (infrastructure/docker/Dockerfile.mission-control) runs
 # `mkdocs build` over them. The `!docs/**` re-include below ensures the
