@@ -315,6 +315,10 @@ def _row_to_definition(row: dict) -> AgentDefinition:
             chat_model=llm_raw.get("chat_model", "claude-4-sonnet"),
             reasoning_model=llm_raw.get("reasoning_model"),
             provider=llm_raw.get("provider", "anthropic"),
+            # CRITICAL: persistence wrote `metadata` (line 61) but the original
+            # reader dropped it on the way back, which silently neutered
+            # per-agent base_url overrides every time the platform restarted.
+            metadata=llm_raw.get("metadata") or {},
         ),
         schedule=row.get("schedule"),
         event_triggers=row.get("event_triggers") or [],

@@ -231,6 +231,23 @@ class LLMRouter:
                 except ImportError:
                     logger.warning("openai package not installed (needed for vLLM)")
 
+        # Defense in depth: vLLM doesn't need an API key, so most deployments
+        # never put "vllm" in _api_keys. Initialize the env-fallback client
+        # here so agents with no per-call metadata.base_url still reach the
+        # configured endpoint instead of returning the [Simulated …] string.
+        if "vllm" not in self._clients and os.environ.get("VLLM_BASE_URL"):
+            try:
+                from openai import OpenAI
+                vllm_url = os.environ["VLLM_BASE_URL"]
+                self._clients["vllm"] = OpenAI(
+                    api_key=self._api_keys.get("vllm") or "EMPTY",
+                    base_url=vllm_url,
+                    timeout=120.0,
+                )
+                logger.info("Initialized fallback vLLM client (%s)", vllm_url)
+            except ImportError:
+                logger.warning("openai package not installed (vLLM fallback)")
+
     def _get_vllm_client(self, base_url: str | None) -> Any:
         """Return a vLLM OpenAI client for the requested base_url.
 
