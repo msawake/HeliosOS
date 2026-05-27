@@ -26,7 +26,7 @@ GKE Autopilot for agent workloads, Cloud SQL + Memorystore + Pub/Sub for data.
 ## One-time setup
 
 ```bash
-cd infrastructure/pulumi
+cd pulumi
 
 # Auth (uses your local gcloud creds)
 gcloud auth application-default login
@@ -113,7 +113,7 @@ pulumi up
 ## Layout
 
 ```
-infrastructure/pulumi/
+pulumi/
 ├── Pulumi.yaml
 ├── Pulumi.dev.yaml
 ├── requirements.txt
