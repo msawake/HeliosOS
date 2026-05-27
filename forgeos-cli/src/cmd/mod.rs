@@ -4,6 +4,7 @@ pub mod approvals;
 pub mod config;
 pub mod credentials;
 pub mod deploy;
+pub mod describe;
 pub mod health;
 pub mod invoke;
 pub mod list;

@@ -1,12 +1,24 @@
 // SPDX-License-Identifier: BUSL-1.1
 use anyhow::Result;
+use clap::Args as ClapArgs;
 use serde_json::Value;
 
 use crate::api::{self, Endpoint};
 use crate::ui;
 
-pub fn run(ep: &Endpoint) -> Result<i32> {
+#[derive(ClapArgs)]
+pub struct Args {
+    /// Emit raw JSON instead of the table (for piping into jq).
+    #[arg(long)]
+    pub json: bool,
+}
+
+pub fn run(args: Args, ep: &Endpoint) -> Result<i32> {
     let agents: Vec<Value> = api::get(ep, "/api/platform/agents")?;
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&agents).unwrap_or_default());
+        return Ok(0);
+    }
     if agents.is_empty() {
         ui::warn("No agents deployed");
         return Ok(0);

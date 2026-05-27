@@ -44,7 +44,9 @@ enum Command {
     /// Deploy an agent from a manifest file.
     Deploy(cmd::deploy::Args),
     /// List deployed agents.
-    List,
+    List(cmd::list::Args),
+    /// Show full manifest + live status for one agent.
+    Describe(cmd::describe::Args),
     /// Invoke an agent with a prompt.
     Invoke(cmd::invoke::Args),
     /// Stream per-agent activity: run start/end + every tool call.
@@ -74,7 +76,8 @@ fn main() {
     let result = match cli.command {
         Command::Validate(args) => cmd::validate::run(args),
         Command::Deploy(args) => cmd::deploy::run(args, &ctx),
-        Command::List => cmd::list::run(&ctx),
+        Command::List(args) => cmd::list::run(args, &ctx),
+        Command::Describe(args) => cmd::describe::run(args, &ctx),
         Command::Invoke(args) => cmd::invoke::run(args, &ctx),
         Command::Logs(args) => cmd::logs::run(args, &ctx),
         Command::Undeploy(args) => cmd::undeploy::run(args, &ctx),
