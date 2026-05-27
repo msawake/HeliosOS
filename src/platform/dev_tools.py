@@ -481,9 +481,15 @@ def _git_commit_push_with_token(*, token: str, **kwargs: Any) -> dict[str, Any]:
         or "fatal: could not read" in (base_result.get("stderr") or "")
         or "403" in (base_result.get("stderr") or "")
     ):
+        # Use HTTP Basic with the x-access-token convention, NOT
+        # `Authorization: Bearer`. GitHub rejects Bearer for git operations
+        # ("Password authentication is not supported"), especially for `gho_`
+        # OAuth tokens. A one-shot credential helper feeds the token as the
+        # password without writing it to repo config.
         env = {"GH_TOKEN": token, "GITHUB_TOKEN": token}
+        helper = "!f() { echo username=x-access-token; echo \"password=$GH_TOKEN\"; }; f"
         retry = _run(
-            ["git", "-c", f"http.extraHeader=Authorization: Bearer {token}",
+            ["git", "-c", f"credential.helper={helper}",
              "push", "-u", "origin", kwargs["branch"]],
             cwd_or_err, timeout=120, env=env,
         )
