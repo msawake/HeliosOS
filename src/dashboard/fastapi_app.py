@@ -499,10 +499,39 @@ def create_fastapi_app(
 
     @app.get("/api/approvals", tags=["approvals"])
     async def list_approvals(category: str = None):
-        """List pending HITL approval requests."""
-        if not company_system:
-            return []
-        pending = company_system.hitl.get_pending(category) if category else company_system.hitl.get_pending()
+        """List pending HITL requests — both the legacy company HITL store and
+        the A2H gateway (human__ask). Merged so `forgeos approvals` / the CLI
+        surface A2H requests, not just legacy approvals."""
+        pending: list = []
+        if company_system:
+            try:
+                pending = list(
+                    company_system.hitl.get_pending(category) if category
+                    else company_system.hitl.get_pending()
+                )
+            except Exception:
+                pending = []
+        # A2H requests created via human__ask live in the A2H gateway store,
+        # not company_system.hitl. Merge them in so they're answerable via the
+        # CLI (`forgeos answer <id> ...`).
+        try:
+            gw = _resolve_a2h_gateway()
+            if gw and hasattr(gw, "list_pending"):
+                for it in gw.list_pending() or []:
+                    content = it.get("content") or {}
+                    frm = it.get("from") or {}
+                    pending.append({
+                        "source": "a2h",
+                        "id": it.get("id"),
+                        "agent": frm.get("name") or it.get("from_agent") or it.get("agent_id"),
+                        "risk": it.get("priority", "medium"),
+                        "timestamp": it.get("created_at"),
+                        "title": content.get("question") or it.get("question") or it.get("message"),
+                        "response_type": content.get("response_type") or it.get("response_type"),
+                        "description": (content.get("context") or it.get("context") or {}),
+                    })
+        except Exception:
+            pass
         return pending
 
     @app.get("/api/approvals/{request_id}", tags=["approvals"])

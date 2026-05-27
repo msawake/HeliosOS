@@ -38,6 +38,10 @@ SHELL_ALLOWLIST = {
     "pnpm", "npm", "node", "npx",
     "cargo", "rustc", "rustup",
     "git", "gh",
+    # gcloud/gsutil/bq let read-only auditor agents (e.g. sre-gcp-auditor)
+    # run `gcloud ... list/describe --format=json`. On Cloud Run these
+    # authenticate via the metadata server (ADC) using the service account.
+    "gcloud", "gsutil", "bq",
     "opencode",
     "ls", "cat", "mkdir", "pwd", "which", "echo", "head", "tail",
     # `bash -c "<one-liner>"` is allowed so agents can chain git/gh/pnpm
@@ -72,6 +76,27 @@ DEV_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 },
             },
             "required": ["cmd", "cwd"],
+        },
+    },
+    {
+        "name": "fs__write_file",
+        "description": (
+            "Write text to a file (creating parent dirs), overwriting unless "
+            "append=true. Use this to author or edit source files and to "
+            "compose multi-line bodies (e.g. a PR-review markdown file) — it is "
+            "far more reliable than shell redirection, which shell__exec does "
+            "NOT support (shell__exec runs a single binary with no '>' / '>>' / "
+            "heredoc). Returns the resolved path and bytes written."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File path; absolute, or relative to cwd."},
+                "content": {"type": "string", "description": "Full file contents to write."},
+                "cwd": {"type": "string", "description": "Base dir for a relative path."},
+                "append": {"type": "boolean", "default": False, "description": "Append instead of overwrite."},
+            },
+            "required": ["path", "content"],
         },
     },
     {
@@ -209,6 +234,31 @@ def shell_exec(*, cmd: str, cwd: str | None = None, timeout: int = 300, env: dic
             "error": f"binary '{bin_name}' not in allowlist {sorted(SHELL_ALLOWLIST)}",
         }
     return _run(argv, cwd_or_err, timeout=timeout, env=env)
+
+
+def fs_write_file(
+    *, path: str, content: str, cwd: str | None = None, append: bool = False
+) -> dict[str, Any]:
+    """Write `content` to `path`. Relative paths resolve against `cwd` (or the
+    builder's default working clone). Creates parent directories."""
+    p = Path(path).expanduser()
+    if not p.is_absolute():
+        base = cwd or "/tmp/forgeos-lens-builder/forgeos-lens"
+        p = Path(base).expanduser() / p
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "a" if append else "w", encoding="utf-8") as f:
+            f.write(content)
+        size = p.stat().st_size
+    except OSError as e:
+        return {"ok": False, "error": f"write failed: {e}", "path": str(p)}
+    return {
+        "ok": True,
+        "path": str(p),
+        "bytes_written": len(content.encode("utf-8")),
+        "size": size,
+        "append": append,
+    }
 
 
 def code_opencode_run(
@@ -374,6 +424,11 @@ async def _handle_shell_exec(tool_input: dict, agent_context: dict | None = None
     return {"success": True, "result": result}
 
 
+async def _handle_fs_write_file(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
+    result = await asyncio.to_thread(fs_write_file, **tool_input)
+    return {"success": True, "result": result}
+
+
 async def _handle_opencode_run(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
     result = await asyncio.to_thread(code_opencode_run, **tool_input)
     return {"success": True, "result": result}
@@ -460,6 +515,7 @@ def _gh_open_pr_with_token(*, token: str, **kwargs: Any) -> dict[str, Any]:
 
 DEV_TOOL_HANDLERS: dict[str, Any] = {
     "shell__exec": _handle_shell_exec,
+    "fs__write_file": _handle_fs_write_file,
     "code__opencode_run": _handle_opencode_run,
     "git__commit_push": _handle_git_commit_push,
     "gh__open_pr": _handle_gh_open_pr,

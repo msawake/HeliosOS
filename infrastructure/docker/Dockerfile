@@ -73,6 +73,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update && apt-get install -y --no-install-recommends gh \
+    # Google Cloud SDK (gcloud) — sre-gcp-auditor runs read-only `gcloud ...
+    # list/describe --format=json` via shell__exec. On Cloud Run gcloud
+    # authenticates through the metadata server (ADC) using the service account.
+    && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" > /etc/apt/sources.list.d/google-cloud-sdk.list \
+    && curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg \
+    && apt-get update && apt-get install -y --no-install-recommends google-cloud-cli \
     # opencode CLI — installs to /root/.opencode/bin; move to /usr/local/bin so the
     # non-root forgeos user can find it on $PATH.
     && curl -fsSL https://opencode.ai/install | bash \

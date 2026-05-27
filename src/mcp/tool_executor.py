@@ -73,6 +73,15 @@ class ToolExecutor:
         from src.platform.dev_tools import DEV_TOOL_HANDLERS
         handlers.update(DEV_TOOL_HANDLERS)
 
+        # Email tool (Gmail API via FORGEOS_GWS_* creds) — always available so
+        # auditor agents can email reports without a CompanySystem.
+        from src.platform.email_tool import EMAIL_TOOL_HANDLERS
+        handlers.update(EMAIL_TOOL_HANDLERS)
+
+        # Drive sharing-audit tool (Drive API via FORGEOS_GWS_* creds).
+        from src.platform.drive_audit_tool import DRIVE_TOOL_HANDLERS
+        handlers.update(DRIVE_TOOL_HANDLERS)
+
         if not self._system:
             return handlers
 
@@ -117,6 +126,12 @@ class ToolExecutor:
         # Developer tools (shell + opencode + git + gh)
         from src.platform.dev_tools import DEV_TOOL_SCHEMAS
         schemas.extend(DEV_TOOL_SCHEMAS)
+
+        from src.platform.email_tool import EMAIL_TOOL_SCHEMAS
+        schemas.extend(EMAIL_TOOL_SCHEMAS)
+
+        from src.platform.drive_audit_tool import DRIVE_TOOL_SCHEMAS
+        schemas.extend(DRIVE_TOOL_SCHEMAS)
 
         if not self._system:
             return schemas
