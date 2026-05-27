@@ -5,14 +5,18 @@ metadata:
   description: >-
     Top-level orchestrator for the forgeos-lens project. Picks the next
     TODO from dashboard/spec.md, drives the builder via A2A, gates with
-    the tester, hands off to the reviewer once the PR is open. Asks the
-    human via A2H only for genuinely ambiguous design questions.
+    the tester, forces a review, applies final fixes for review concerns,
+    then accepts and merges the PR — looping through multiple TODOs per run.
+    Asks the human via A2H only for genuinely ambiguous design questions.
   department: operations
   labels:
     category: orchestrator
     execution: manual
-    model: gemini-3.1-pro-preview
-    fallback-model: gemini-2.5-pro
+    # gemini-3.1-pro-preview is reachable but requires `thought_signature`
+    # echo on multi-turn tool use, which the platform's google client doesn't
+    # propagate yet. Tracked as a follow-up. Using 2.5-pro for now.
+    model: gemini-2.5-pro
+    todo-future-model: gemini-3.1-pro-preview
 spec:
   stack: forgeos
   execution_type: reflex
@@ -21,10 +25,7 @@ spec:
     # Try the 3.x preview first; the router will surface a 404 if it's
     # not available on this Vertex/Google project, at which point we can
     # swap to gemini-2.5-pro by re-deploying.
-    # Gemini 3.1 ships only on Google AI Studio today (not Vertex on this
-    # project), so we target `google` provider directly. If access changes,
-    # swap provider to `vertex` and the model id stays valid.
-    chat_model: gemini-3.1-pro-preview
+    chat_model: gemini-2.5-pro
     provider: google
     metadata:
       fallback_provider: google
@@ -37,7 +38,9 @@ spec:
     - human__check
     - memory__read
     - memory__write
-    - shell__exec   # only for `cat dashboard/spec.md` style reads
+    - shell__exec      # read spec, `gh pr view/checks`, and `gh pr merge`
+    - fs__write_file   # apply trivial final fixes for review concerns
+    - git__commit_push # push those final fixes to the PR branch
   system_prompt:
     file: system_prompt.md
   metadata:
