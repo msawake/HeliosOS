@@ -106,6 +106,23 @@ These tools are always available when a `CompanySystem` is initialized. No confi
 
 ---
 
+## Developer & Integration Tools
+
+Always-on tools registered directly in `ToolExecutor` (no `CompanySystem` required) for agents that write code, run commands, or report out:
+
+| Tool | Description |
+|------|-------------|
+| `shell__exec` | Run one allowlisted binary (no pipes/redirects) in a working dir. `gh`/`git` automatically pick up a per-invocation token. |
+| `fs__write_file` | Write/append a file (creates parent dirs); relative paths resolve against a working dir. |
+| `git__commit_push` | Commit and push using the per-invocation GitHub token (token-as-password Basic auth). |
+| `gh__open_pr` | Open a pull request via the `gh` CLI with the injected token. |
+| `notify__email` | Send an email via the Gmail API using the `FORGEOS_GWS_*` OAuth secrets. Never echoes secret values. |
+| `drive__audit_sharing` | Read-only Google Drive sharing audit (flags public/external/domain-shared files). |
+
+Credentials are injected **per invocation** (`credentials.inject_for_invocation()` pulls `forgeos-{kind}-pat-{user_id}` from Secret Manager) into the invoke context — never onto `os.environ`. Per-tool-call audit rows record a compact, secret-redacted `args` summary, surfaced by `forgeos logs`.
+
+---
+
 ## Assigning Tools to Agents
 
 ### Exact Match

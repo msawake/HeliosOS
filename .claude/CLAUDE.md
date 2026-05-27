@@ -104,9 +104,15 @@ Stack-agnostic orchestration shared by all agents. Grouped roughly by responsibi
 - `durable_event_store.py` — Durable event log backing the event bus and A2A async jobs
 
 **Observability**
-- `audit.py` — Records all platform events (hash-chained audit trail)
+- `audit.py` — Records all platform events (hash-chained audit trail). Per-tool-call rows carry a compact, secret-redacted `args` summary so `forgeos logs` shows *what* each tool was invoked with.
 - `alerts.py` — Multi-destination alerts (Slack, PagerDuty, log)
 - `metrics.py` — Prometheus metrics (14 families)
+
+**Developer & integration tools** (always-on, registered in `src/mcp/tool_executor.py`)
+- `dev_tools.py` — `shell__exec` (allowlisted binaries, no pipes), `fs__write_file`, `git__commit_push`, `gh__open_pr`. gh/git ride a per-invocation token injected via `_ensure_gh_env` (never `os.environ`).
+- `email_tool.py` — `notify__email`: sends via the Gmail API using `FORGEOS_GWS_*` OAuth secrets (refresh-token flow); never echoes secret values.
+- `drive_audit_tool.py` — `drive__audit_sharing`: read-only Drive sharing audit (reuses `email_tool` creds).
+- `credentials.py` — Per-user credential store; `inject_for_invocation()` pulls `forgeos-{kind}-pat-{user_id}` from Secret Manager into the invoke context (write-only; no read-back).
 
 **Two admission paths coexist today.** The legacy 7-check `src/core/hooks.py` chain runs by default. Set `FORGEOS_SYSCALL_PIPELINE=1` to activate the new syscall pipeline at adopted call sites. Both are safe to run; the feature flag controls which path executes.
 
@@ -119,6 +125,7 @@ Public-facing Python package for declaring and managing agents:
 - `client.py` — `ForgeOSClient` sync HTTP wrapper
 - `kernel.py` — `Kernel` accessor (in-process or remote) for permission checks from agent code
 - `cli.py` — `forgeos deploy/list/invoke/validate/undeploy/health` CLI
+- `config_file.py` — Reads/writes `~/.forgeos/server.lock` (server URL + token) shared by the SDK client and the standalone Rust CLI
 
 ### 3. Core + Companies (`src/core/`, `src/companies/`, `src/mcp/`)
 
@@ -140,11 +147,21 @@ Next.js 15 + React 19 + Tailwind CSS in `dashboard/`. Talks to FastAPI backend (
 
 ### Infrastructure
 
+- `pulumi/` — **Pulumi IaC (top-level)**: GKE Autopilot for agent workloads, Cloud SQL + Memorystore + Pub/Sub, identity, networking, observability, secrets (`pulumi/components/`)
 - `infrastructure/docker/` — Dockerfile + docker-compose (Postgres + Redis + API)
 - `infrastructure/database/` — 5 SQL migrations (001-005)
 - `infrastructure/terraform/gcp/` — Cloud SQL, Redis, Cloud Run, VPC, Secret Manager
 - `deploy/k8s/` — Kubernetes manifests with Kustomize overlays (dev/staging/prod)
 - `.github/workflows/` — CI: test -> build -> push to GHCR
+
+### Standalone Rust CLI (separate repo)
+
+The single-binary `forgeos` CLI is **not** in this repo — it was extracted to
+[`antonibergas-hue/forgeos-cli`](https://github.com/antonibergas-hue/forgeos-cli)
+(`cargo build --release`). Commands: `health`, `deploy`, `list [--json]`,
+`describe`, `invoke` (fire-and-return by default, `--wait` to block), `logs
+[--follow]`, `undeploy`. It is distinct from the in-repo Python SDK CLI
+(`src/forgeos_sdk/cli.py`).
 
 ## Agent Model
 

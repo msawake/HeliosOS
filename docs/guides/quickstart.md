@@ -100,6 +100,12 @@ curl -s -X POST http://localhost:5000/api/platform/agents \
   }' | python3 -m json.tool
 ```
 
+> **Tip — the `forgeos` CLI.** Instead of curl, you can use the standalone Rust
+> CLI, which lives in its own repo: [`antonibergas-hue/forgeos-cli`](https://github.com/antonibergas-hue/forgeos-cli)
+> (`cargo build --release`). Then: `forgeos deploy agent.yaml`,
+> `forgeos list`, `forgeos describe <id>`, `forgeos invoke <id> "prompt"`
+> (fire-and-return; add `--wait` to block), and `forgeos logs <id> --follow`.
+
 ## 6. Chat with Your Agent
 
 Use the streaming chat endpoint:

@@ -2,6 +2,13 @@
 
 This guide deploys ForgeOS (API + Dashboard + Mission Control) on Google Cloud Run with Cloud SQL for persistence and Secret Manager for credentials.
 
+> **Prefer Infrastructure-as-Code?** The steps below are the manual `gcloud`
+> path. For a repeatable, automated deployment (GKE Autopilot for agent
+> workloads, Cloud SQL + Memorystore + Pub/Sub, identity, networking,
+> observability, secrets), use the Pulumi stack at the top-level
+> [`pulumi/`](https://github.com/makingscience-awake/forgeos/tree/main/pulumi)
+> directory — see `pulumi/README.md`.
+
 ## Architecture
 
 ```
