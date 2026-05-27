@@ -11,6 +11,10 @@ use crate::ui;
 pub struct Args {
     pub agent_id: String,
     pub prompt: String,
+    /// Wait for the run to finish and print the full result (blocking).
+    /// Default is fire-and-return: queue the run and exit immediately.
+    #[arg(short, long)]
+    pub wait: bool,
 }
 
 #[derive(Serialize)]
@@ -20,6 +24,29 @@ struct InvokeRequest<'a> {
 }
 
 pub fn run(args: Args, ep: &Endpoint) -> Result<i32> {
+    // Default: fire-and-return via the server's async_mode (returns immediately
+    // with {status:"accepted"}). Use --wait to block on the full result.
+    if !args.wait {
+        let path = format!(
+            "/api/platform/agents/{}/invoke?async_mode=true",
+            args.agent_id
+        );
+        let _result: Value = api::post_json(
+            ep,
+            &path,
+            &InvokeRequest {
+                prompt: &args.prompt,
+                context: Value::Object(Default::default()),
+            },
+        )?;
+        ui::ok(&format!("Invoked {} — run queued.", args.agent_id));
+        println!(
+            "  Watch it:  forgeos logs {} --follow",
+            args.agent_id
+        );
+        return Ok(0);
+    }
+
     let path = format!("/api/platform/agents/{}/invoke", args.agent_id);
     let result: Value = api::post_json(
         ep,

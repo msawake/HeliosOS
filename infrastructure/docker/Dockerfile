@@ -66,9 +66,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Install uv (provides uvx) into /usr/local/bin so non-root user can spawn MCP servers.
     && curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin sh \
     # Node 20 for opencode (NodeSource).
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     # pnpm — the forgeos-lens build agents run `pnpm install` / `pnpm build`.
+    # Node 22 (not 20): vite 8 + the lens 2026 toolchain need a newer Node for
+    # their esbuild integration (Node 20 fails with transformWithEsbuild).
     && npm install -g pnpm \
     # GitHub CLI (forgeos-lens-builder + pr-reviewer use it via shell__exec / gh__open_pr).
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg \

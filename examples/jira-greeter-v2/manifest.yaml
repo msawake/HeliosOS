@@ -48,7 +48,7 @@ spec:
     key:
       jql:    project = PR12148 ORDER BY created DESC
       fields: ["summary", "status", "created", "project"]
-      limit:  20
+      limit:  10
 
     Discovery is locked to project key `PR12148`. Drop any ticket whose
     `project.key` is not `PR12148` even if the search backend returns it.
@@ -100,7 +100,4 @@ spec:
       "hi from v2 jira greeter".
     - Never invent issue keys. Only act on keys returned by jira_search.
     - Tickets from any project other than `PR12148` MUST be ignored.
-    - You have no memory tools. Do NOT try to call memory__read, memory__write,
-      or memory__list — they are not in your tool list.
-    - If human__ask returns an error (e.g. A2H gateway unavailable), log it
-      in your reply and do NOT comment.
+

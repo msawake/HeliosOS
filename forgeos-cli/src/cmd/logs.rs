@@ -151,6 +151,25 @@ fn print_event(e: &Event) {
     // dev-tool tool.call, render them as indented continuation lines so the
     // operator can see what opencode / pnpm / gh actually said.
     if let Some(d) = det {
+        // Show the call arguments (e.g. the gcloud command, email subject)
+        // on an indented continuation line so the operator sees *what* the
+        // tool was invoked with, not just that it was.
+        if kind.starts_with("tool.") {
+            if let Some(a) = d.get("args") {
+                if !a.is_null() {
+                    let rendered = match a {
+                        Value::Object(_) | Value::Array(_) => {
+                            serde_json::to_string(a).unwrap_or_default()
+                        }
+                        Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    if !rendered.is_empty() && rendered != "{}" {
+                        println!("    {} {}", "args:".dimmed(), rendered.dimmed());
+                    }
+                }
+            }
+        }
         if let Some(s) = d.get("stdout_tail").and_then(|v| v.as_str()) {
             print_block("stdout", s, false);
         }

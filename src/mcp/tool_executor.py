@@ -22,6 +22,45 @@ logger = logging.getLogger(__name__)
 # Timeout for tool execution (configurable via module attribute)
 TOOL_TIMEOUT = 120  # 2 minutes default
 
+# Argument keys whose values must never be written to the audit trail.
+_REDACT_ARG_KEYS = {
+    "token", "gh_token", "password", "secret", "api_key", "apikey",
+    "refresh_token", "access_token", "authorization", "credentials",
+    "private_key", "client_secret",
+}
+_MAX_ARG_STR = 600       # cap on any single string value
+_MAX_ARGS_TOTAL = 2000   # cap on the whole serialized summary
+
+
+def _summarize_tool_args(tool_input: Any) -> Any:
+    """Produce a compact, secret-redacted copy of a tool's arguments for the
+    audit trail / `forgeos logs`. Long strings are truncated, sensitive keys
+    are masked, and the whole thing is bounded so a giant ``fs__write_file``
+    body can't bloat an audit row."""
+    def _scrub(v: Any) -> Any:
+        if isinstance(v, dict):
+            out = {}
+            for k, val in v.items():
+                if any(s in str(k).lower() for s in _REDACT_ARG_KEYS):
+                    out[k] = "***redacted***"
+                else:
+                    out[k] = _scrub(val)
+            return out
+        if isinstance(v, list):
+            return [_scrub(x) for x in v[:20]]
+        if isinstance(v, str) and len(v) > _MAX_ARG_STR:
+            return v[:_MAX_ARG_STR] + f"…(+{len(v) - _MAX_ARG_STR} chars)"
+        return v
+
+    try:
+        scrubbed = _scrub(tool_input if isinstance(tool_input, dict) else {"value": tool_input})
+        blob = json.dumps(scrubbed, default=str, ensure_ascii=False)
+        if len(blob) > _MAX_ARGS_TOTAL:
+            return {"_truncated": blob[:_MAX_ARGS_TOTAL] + "…"}
+        return scrubbed
+    except Exception:
+        return None
+
 
 class ToolExecutor:
     """
@@ -511,6 +550,10 @@ class ToolExecutor:
                     details={
                         "agent_id": _agent_id,
                         "duration_ms": int((_time.monotonic() - _t0) * 1000),
+                        # Compact, secret-redacted copy of the call arguments so
+                        # `forgeos logs` can show *what* each tool was invoked
+                        # with (e.g. the gcloud command, the email subject).
+                        "args": _summarize_tool_args(tool_input),
                         "error": (result or {}).get("error") if isinstance(result, dict) else None,
                         # New: dev-tool subprocess output for the logs CLI.
                         **({"stdout_tail": stdout_tail} if stdout_tail else {}),
