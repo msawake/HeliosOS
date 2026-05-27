@@ -20,7 +20,9 @@ from src.platform.llm_router import LLMResponse, LLMRouter
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_TURNS = 25  # safety cap on tool-use iterations
+MAX_TOOL_TURNS = 60  # safety cap on tool-use iterations (a code-writing agent
+# needs many turns: read spec, write several files, install, build, fix, commit,
+# push, open a PR — 25 was too low to finish a TODO in one run)
 MAX_GUIDANCE_RETRIES = 3  # max times a tool can be GUIDE'd before escalating to DENY
 
 # Tool execution hardening

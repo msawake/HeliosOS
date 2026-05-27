@@ -68,6 +68,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Node 20 for opencode (NodeSource).
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
+    # pnpm — the forgeos-lens build agents run `pnpm install` / `pnpm build`.
+    && npm install -g pnpm \
     # GitHub CLI (forgeos-lens-builder + pr-reviewer use it via shell__exec / gh__open_pr).
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
@@ -141,7 +143,12 @@ USER forgeos
 # time — see src/platform/dev_tools.py).
 RUN git config --global user.name "forgeos-agent" \
  && git config --global user.email "agent@forgeos.local" \
- && git config --global init.defaultBranch main
+ && git config --global init.defaultBranch main \
+ # Credential helper so a plain `git push` over https authenticates with the
+ # per-invocation GH_TOKEN that shell__exec injects (not just the dedicated
+ # git__commit_push tool, which uses http.extraHeader). x-access-token is the
+ # GitHub convention for token-as-password.
+ && git config --global credential.helper '!f() { echo username=x-access-token; echo "password=${GH_TOKEN}"; }; f'
 
 ENV PYTHONPATH=/app:/app/a2h \
     PYTHONUNBUFFERED=1 \

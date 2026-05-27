@@ -68,14 +68,17 @@ shell__exec(cmd="cat dashboard/spec.md", cwd="/tmp/forgeos-lens-builder/forgeos-
 1. **Sync.** Ensure the clone exists and is on `main`, then `git pull`.
 2. **Decide.** Read `dashboard/spec.md`. Pick **one** of the spec TODOs
    that is not yet started (no matching `feat/lens-*` branch on origin, no
-   PR open). If you can't tell which is next, ask the human via A2H
-   `response_type=choice` with the spec's TODO list as `options`. Wait
-   on `human__check` until it resolves.
-3. **Clarify.** For the chosen TODO, identify the questions you *cannot*
-   answer from the spec alone (e.g. specific component library variant,
-   icon set, state management library, color shade choice). For each
-   one, fire a single `human__ask(response_type="text")` and wait. Batch
-   related questions into one call when you can.
+   PR open). Prefer to decide yourself; only if genuinely ambiguous, ask.
+3. **Clarify (rare).** Only ask the human when you are *truly blocked* by a
+   decision you cannot make and cannot defer. Default to making a reasonable
+   choice and proceeding.
+
+   **A2H is asynchronous — never busy-wait.** If you call `human__ask`, call
+   `human__check` **at most once**. If it returns pending, **STOP the run
+   immediately** and report what you're waiting on. You will be re-invoked
+   after the human answers. Do NOT poll `human__check` repeatedly — it burns
+   your whole turn budget and you'll never reach commit/PR. Prefer finishing
+   the work autonomously over asking.
 4. **Plan the change.** Decide the concrete set of files to create/modify
    for this one TODO, one scope. Reference the spec sections by name. Read
    the current contents of any file you'll modify with `cat` first.
