@@ -1,21 +1,29 @@
 """
-Developer tools available to agents: opencode wrapper, scoped shell exec,
+Developer tools available to agents: qwen-code wrapper, scoped shell exec,
 git commit/push, and `gh pr create`.
 
 These tools are how a code-writing agent (e.g. forgeos-lens-builder) drives
-opencode + git + gh non-interactively. They are intentionally narrow:
+qwen-code + git + gh non-interactively. They are intentionally narrow:
 
   * `shell__exec` honors a binary allowlist (`pnpm`, `npm`, `node`, `cargo`,
-    `git`, `gh`, `opencode`, `ls`, `cat`, `mkdir`, `pwd`, `which`). No shell
+    `git`, `gh`, `qwen`, `ls`, `cat`, `mkdir`, `pwd`, `which`). No shell
     interpretation, no `rm -rf`, no `sudo`, no networking tools beyond gh.
   * `git__commit_push` refuses if the working tree contains modifications
     outside the listed files.
   * `gh__open_pr` requires `GH_TOKEN` in the environment (set by
     `executor.invoke()` from per-user Secret Manager credentials).
-  * `code__opencode_run` shells out to the local `opencode` binary with
-    `--model openai/<chat_model>` and `--base-url <vllm-url>`.
+  * `code__qwen_code_run` shells out to the local `qwen` binary
+    (https://github.com/QwenLM/qwen-code) with `--prompt`, `--yolo`, and
+    `--output-format json`. The OpenAI-compatible endpoint is configured
+    purely via env vars (`OPENAI_API_KEY`, `OPENAI_BASE_URL`,
+    `OPENAI_MODEL`) so no `~/.qwen/settings.json` write is needed.
 
-All four return dicts the agentic loop can present as tool_result content.
+When a dev tool runs without an explicit `cwd`/`repo_dir`, it falls back
+to a per-invocation workdir derived from `agent_context["invocation_id"]`
+(e.g. `/tmp/forgeos-lens-builder/run-<inv>/forgeos-lens`) so two parallel
+runs can't trample each other's git state.
+
+All return dicts the agentic loop can present as tool_result content.
 Errors are reported via the `error` key rather than raised, so the LLM sees
 the failure and can self-correct.
 """
@@ -42,7 +50,7 @@ SHELL_ALLOWLIST = {
     # run `gcloud ... list/describe --format=json`. On Cloud Run these
     # authenticate via the metadata server (ADC) using the service account.
     "gcloud", "gsutil", "bq",
-    "opencode",
+    "qwen",
     "ls", "cat", "mkdir", "pwd", "which", "echo", "head", "tail",
     # `bash -c "<one-liner>"` is allowed so agents can chain git/gh/pnpm
     # commands in a single tool call when juggling multiple short steps
@@ -100,23 +108,26 @@ DEV_TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
-        "name": "code__opencode_run",
+        "name": "code__qwen_code_run",
         "description": (
-            "Drive a non-interactive opencode coding pass. Spawns "
-            "`opencode run --model openai/<model> --base-url <url> --cwd <repo_dir> "
-            "<task>` and returns stdout, stderr, files_changed (parsed from "
-            "`git status --porcelain`)."
+            "Drive a non-interactive qwen-code coding pass. Spawns "
+            "`qwen --prompt <task> --output-format json --yolo` with "
+            "OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL env vars set so the "
+            "CLI hits the configured OpenAI-compatible endpoint. Returns "
+            "stdout, stderr, returncode, and files_changed (parsed from "
+            "`git status --porcelain`). `repo_dir` is the working directory "
+            "(omit to use the per-invocation workdir)."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "task": {"type": "string", "description": "Natural-language task for opencode."},
-                "repo_dir": {"type": "string", "description": "Absolute path to the repo."},
-                "model": {"type": "string", "description": "OpenAI-compatible model id, e.g. 'nvidia/nemotron-3-super'."},
-                "base_url": {"type": "string", "description": "OpenAI-compatible base URL."},
+                "task": {"type": "string", "description": "Natural-language task for qwen-code."},
+                "repo_dir": {"type": "string", "description": "Absolute path to the repo. Defaults to the per-invocation workdir."},
+                "model": {"type": "string", "description": "Model id served by the endpoint, e.g. 'qwen3.6-27b'. Defaults to FORGEOS_QWEN_MODEL env."},
+                "base_url": {"type": "string", "description": "OpenAI-compatible base URL. Defaults to FORGEOS_QWEN_BASE_URL env."},
                 "timeout": {"type": "integer", "default": 1200, "minimum": 60, "maximum": 3600},
             },
-            "required": ["task", "repo_dir"],
+            "required": ["task"],
         },
     },
     {
@@ -179,6 +190,25 @@ def _resolve_cwd(cwd: str) -> Path | str:
     return p
 
 
+def _per_invocation_workdir(agent_context: dict | None) -> str:
+    """Return the per-invocation default workdir for forgeos-lens-builder.
+
+    Two concurrent runs must not share `/tmp/forgeos-lens-builder/forgeos-lens`
+    or they'll trample each other's git state. We derive a unique path from
+    the invocation_id that `executor.invoke()` puts in agent_context.
+
+    Falls back to the legacy shared path when no invocation_id is present
+    (e.g. running outside the platform), so local debugging still works.
+    """
+    inv = (agent_context or {}).get("invocation_id") if agent_context else None
+    if inv:
+        # Keep the segment short and filesystem-safe.
+        slug = "".join(c for c in str(inv) if c.isalnum() or c in "-_")[:24]
+        if slug:
+            return f"/tmp/forgeos-lens-builder/run-{slug}/forgeos-lens"
+    return "/tmp/forgeos-lens-builder/forgeos-lens"
+
+
 def _run(argv: list[str], cwd: Path, timeout: int, env: dict[str, str] | None = None) -> dict[str, Any]:
     full_env = os.environ.copy()
     if env:
@@ -211,13 +241,26 @@ def _run(argv: list[str], cwd: Path, timeout: int, env: dict[str, str] | None = 
     }
 
 
-def shell_exec(*, cmd: str, cwd: str | None = None, timeout: int = 300, env: dict[str, str] | None = None) -> dict[str, Any]:
-    # When the model forgets cwd, fall back to the working directory the
-    # forgeos-lens-builder agent uses by default. /tmp is always available
-    # and the allowlist forbids destructive commands anyway.
+def shell_exec(
+    *,
+    cmd: str,
+    cwd: str | None = None,
+    timeout: int = 300,
+    env: dict[str, str] | None = None,
+    agent_context: dict | None = None,
+) -> dict[str, Any]:
+    # When the model omits cwd, route the call into a per-invocation workdir
+    # so two concurrent runs can't trample each other's git state. We create
+    # the directory on demand (mkdir -p) so the agent's first command can be
+    # `git clone <repo> .` and land in the right place without knowing the
+    # exact path.
     if not cwd:
-        fallback = "/tmp/forgeos-lens-builder/forgeos-lens"
-        cwd = fallback if Path(fallback).is_dir() else "/tmp"
+        per_inv = _per_invocation_workdir(agent_context)
+        try:
+            Path(per_inv).mkdir(parents=True, exist_ok=True)
+            cwd = per_inv
+        except OSError:
+            cwd = "/tmp"
     cwd_or_err = _resolve_cwd(cwd)
     if isinstance(cwd_or_err, str):
         return {"ok": False, "error": cwd_or_err}
@@ -237,13 +280,18 @@ def shell_exec(*, cmd: str, cwd: str | None = None, timeout: int = 300, env: dic
 
 
 def fs_write_file(
-    *, path: str, content: str, cwd: str | None = None, append: bool = False
+    *,
+    path: str,
+    content: str,
+    cwd: str | None = None,
+    append: bool = False,
+    agent_context: dict | None = None,
 ) -> dict[str, Any]:
     """Write `content` to `path`. Relative paths resolve against `cwd` (or the
-    builder's default working clone). Creates parent directories."""
+    per-invocation workdir). Creates parent directories."""
     p = Path(path).expanduser()
     if not p.is_absolute():
-        base = cwd or "/tmp/forgeos-lens-builder/forgeos-lens"
+        base = cwd or _per_invocation_workdir(agent_context)
         p = Path(base).expanduser() / p
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -261,35 +309,58 @@ def fs_write_file(
     }
 
 
-def code_opencode_run(
+def code_qwen_code_run(
     *,
     task: str,
-    repo_dir: str,
+    repo_dir: str | None = None,
     model: str | None = None,
-    base_url: str | None = None,  # accepted for API stability; unused (opencode reads provider config)
+    base_url: str | None = None,
     timeout: int = 1200,
+    agent_context: dict | None = None,
 ) -> dict[str, Any]:
+    """Drive `qwen` (https://github.com/QwenLM/qwen-code) non-interactively.
+
+    Configuration is purely env-driven so we never need to write
+    `~/.qwen/settings.json` on the platform container:
+        OPENAI_API_KEY   — auth (use 'EMPTY' for unauth'd vLLM endpoints)
+        OPENAI_BASE_URL  — vLLM/OpenAI-compatible endpoint
+        OPENAI_MODEL     — model id served by the endpoint
+    """
+    if not repo_dir:
+        repo_dir = _per_invocation_workdir(agent_context)
+        try:
+            Path(repo_dir).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
     cwd_or_err = _resolve_cwd(repo_dir)
     if isinstance(cwd_or_err, str):
         return {"ok": False, "error": cwd_or_err}
-    # opencode is configured to route `atlas/nvidia/nemotron-3-super` via its
-    # provider config (Atlas Gateway). Override with FORGEOS_OPENCODE_MODEL.
-    model = model or os.environ.get("FORGEOS_OPENCODE_MODEL") or "atlas/nvidia/nemotron-3-super"
+    model = model or os.environ.get("FORGEOS_QWEN_MODEL") or "qwen3.6-27b"
+    base_url = base_url or os.environ.get("FORGEOS_QWEN_BASE_URL") or "http://79.117.23.16:20327/v1"
+    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("FORGEOS_QWEN_API_KEY") or "EMPTY"
+    env = {
+        "OPENAI_API_KEY": api_key,
+        "OPENAI_BASE_URL": base_url,
+        "OPENAI_MODEL": model,
+        # qwen-code retries persistently on transient endpoint errors when this
+        # is set — better fit for autonomous runs than the default fast-fail.
+        "QWEN_CODE_UNATTENDED_RETRY": "1",
+    }
     argv = [
-        "opencode", "run",
-        "--model", model,
-        "--dir", str(cwd_or_err),
-        "--print-logs",
-        "--log-level", "INFO",
-        task,
+        "qwen",
+        "--prompt", task,
+        "--output-format", "json",
+        "--yolo",  # auto-approve actions — required for non-interactive runs
     ]
-    result = _run(argv, cwd_or_err, timeout=timeout)
+    result = _run(argv, cwd_or_err, timeout=timeout, env=env)
     diff = _run(["git", "status", "--porcelain"], cwd_or_err, timeout=20)
     files_changed: list[str] = []
     for line in (diff.get("stdout") or "").splitlines():
         if len(line) > 3:
             files_changed.append(line[3:].strip())
     result["files_changed"] = files_changed
+    result["model"] = model
+    result["base_url"] = base_url
     return result
 
 
@@ -305,7 +376,7 @@ def git_commit_push(
     if isinstance(cwd_or_err, str):
         return {"ok": False, "error": cwd_or_err}
     # files = ["."] or empty / ["*"] means "stage every dirty path the agent
-    # produced". Without this escape hatch, opencode-driven workflows
+    # produced". Without this escape hatch, qwen-code-driven workflows
     # (which write 10+ files at once) were stuck running git__commit_push
     # 6× with subset lists, each rejected for "unlisted dirty paths".
     use_all = (not files) or files == ["."] or files == ["*"]
@@ -336,7 +407,7 @@ def git_commit_push(
         co = _run(["git", "checkout", "-B", branch], cwd_or_err, timeout=30)
         if not co["ok"]:
             return {"ok": False, "error": "git checkout failed", **co}
-    # Always `git add -A` so we include opencode's new files, deletions, and
+    # Always `git add -A` so we include qwen-code's new files, deletions, and
     # renames; if `files` was explicit, the diff against that list is just
     # informational (logged above).
     add = _run(["git", "add", "-A"], cwd_or_err, timeout=30)
@@ -416,6 +487,7 @@ async def _handle_shell_exec(tool_input: dict, agent_context: dict | None = None
     # shell__exec to drive them directly (rather than the dedicated wrappers).
     inp = dict(tool_input)
     inp["env"] = _ensure_gh_env(inp.get("env"), agent_context)
+    inp["agent_context"] = agent_context
     # subprocess.run inside an async handler would block the event loop —
     # under Cloud Run, that stalls the HTTP server, the scheduler, every
     # other in-flight invocation, and (when the call lasts minutes) gets
@@ -425,12 +497,16 @@ async def _handle_shell_exec(tool_input: dict, agent_context: dict | None = None
 
 
 async def _handle_fs_write_file(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
-    result = await asyncio.to_thread(fs_write_file, **tool_input)
+    inp = dict(tool_input)
+    inp["agent_context"] = agent_context
+    result = await asyncio.to_thread(fs_write_file, **inp)
     return {"success": True, "result": result}
 
 
-async def _handle_opencode_run(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
-    result = await asyncio.to_thread(code_opencode_run, **tool_input)
+async def _handle_qwen_code_run(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
+    inp = dict(tool_input)
+    inp["agent_context"] = agent_context
+    result = await asyncio.to_thread(code_qwen_code_run, **inp)
     return {"success": True, "result": result}
 
 
@@ -522,7 +598,7 @@ def _gh_open_pr_with_token(*, token: str, **kwargs: Any) -> dict[str, Any]:
 DEV_TOOL_HANDLERS: dict[str, Any] = {
     "shell__exec": _handle_shell_exec,
     "fs__write_file": _handle_fs_write_file,
-    "code__opencode_run": _handle_opencode_run,
+    "code__qwen_code_run": _handle_qwen_code_run,
     "git__commit_push": _handle_git_commit_push,
     "gh__open_pr": _handle_gh_open_pr,
 }

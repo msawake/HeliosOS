@@ -336,6 +336,11 @@ class PlatformExecutor:
 
             try:
                 invoke_ctx = dict(context or {})
+                # Surface the run id so per-call tool handlers (e.g. the
+                # forgeos-lens dev tools) can derive a per-invocation workdir
+                # — two concurrent runs must not share /tmp scratch space.
+                if run_id and "invocation_id" not in invoke_ctx:
+                    invoke_ctx["invocation_id"] = run_id
                 if self.callback_registry:
                     invoke_ctx["_callback_registry"] = self.callback_registry
                 # Per-user credentials (GH PAT, etc.) — injected into the

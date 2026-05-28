@@ -225,7 +225,12 @@ class AgentStackAdapter(ABC):
         return None
 
 
-def build_agent_context(agent_def: AgentDefinition, agent_id: str) -> dict:
+def build_agent_context(
+    agent_def: AgentDefinition,
+    agent_id: str,
+    *,
+    invocation_id: str | None = None,
+) -> dict:
     """Shared helper: build the per-invocation agent_context dict.
 
     Every adapter should pass the result of this function as `agent_context`
@@ -234,9 +239,11 @@ def build_agent_context(agent_def: AgentDefinition, agent_id: str) -> dict:
         - client_id (if ownership is CLIENT)
         - allowed_tools (for whitelist enforcement)
         - tenant_id, plan, monthly_limit_usd (for cost tracking in the loop)
+        - invocation_id (so per-call tool handlers can derive a per-run
+          workdir; populated from executor.invoke()'s run_id)
     """
     metadata = agent_def.metadata or {}
-    return {
+    out = {
         "agent_id": agent_id,
         "agent_name": agent_def.name,
         "namespace": agent_def.namespace,
@@ -247,3 +254,6 @@ def build_agent_context(agent_def: AgentDefinition, agent_id: str) -> dict:
         "plan": metadata.get("plan", "starter"),
         "monthly_limit_usd": metadata.get("monthly_limit_usd"),
     }
+    if invocation_id:
+        out["invocation_id"] = invocation_id
+    return out

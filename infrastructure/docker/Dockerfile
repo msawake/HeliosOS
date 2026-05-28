@@ -65,13 +65,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && useradd -u 1000 -g forgeos -s /bin/bash -m -d /home/forgeos forgeos \
     # Install uv (provides uvx) into /usr/local/bin so non-root user can spawn MCP servers.
     && curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin sh \
-    # Node 20 for opencode (NodeSource).
+    # Node 22 (NodeSource). qwen-code requires Node >= 22; vite 8 + the lens
+    # 2026 toolchain also need Node 22 for their esbuild integration.
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
-    # pnpm — the forgeos-lens build agents run `pnpm install` / `pnpm build`.
-    # Node 22 (not 20): vite 8 + the lens 2026 toolchain need a newer Node for
-    # their esbuild integration (Node 20 fails with transformWithEsbuild).
-    && npm install -g pnpm \
+    # pnpm + qwen-code — pnpm runs `pnpm install`/`pnpm build` for the
+    # forgeos-lens build pipeline; qwen-code is the agent's coding CLI (driven
+    # via the code__qwen_code_run dev tool). qwen-code reads OPENAI_API_KEY /
+    # OPENAI_BASE_URL / OPENAI_MODEL purely from env, so no settings.json seed.
+    && npm install -g pnpm @qwen-code/qwen-code@latest \
     # GitHub CLI (forgeos-lens-builder + pr-reviewer use it via shell__exec / gh__open_pr).
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
@@ -83,39 +85,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" > /etc/apt/sources.list.d/google-cloud-sdk.list \
     && curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg \
     && apt-get update && apt-get install -y --no-install-recommends google-cloud-cli \
-    # opencode CLI — installs to /root/.opencode/bin; move to /usr/local/bin so the
-    # non-root forgeos user can find it on $PATH.
-    && curl -fsSL https://opencode.ai/install | bash \
-    && mv /root/.opencode/bin/opencode /usr/local/bin/opencode \
-    && rm -rf /var/lib/apt/lists/* /root/.opencode
-
-# Seed opencode provider config so the atlas/nvidia/nemotron-3-super model
-# routes to the rtx3 vLLM endpoint with zero per-call configuration. The
-# inner `opencode models` call also pre-warms the @ai-sdk/openai-compatible
-# npm dep into /home/forgeos/.config/opencode/node_modules, so first-call
-# latency in production stays low.
-RUN mkdir -p /home/forgeos/.config/opencode \
- && printf '%s\n' \
-    '{' \
-    '  "$schema": "https://opencode.ai/config.json",' \
-    '  "model": "atlas/nvidia/nemotron-3-super",' \
-    '  "provider": {' \
-    '    "atlas": {' \
-    '      "npm": "@ai-sdk/openai-compatible",' \
-    '      "name": "Atlas Gateway",' \
-    '      "options": {"baseURL": "http://34.78.73.30:8080/v1", "apiKey": "sk-local-test"},' \
-    '      "models": {' \
-    '        "nvidia/nemotron-3-super": {' \
-    '          "name": "Nemotron 3 Super 120B",' \
-    '          "limit": {"context": 131072, "output": 16384},' \
-    '          "interleaved": {"field": "reasoning_content"}' \
-    '        }' \
-    '      }' \
-    '    }' \
-    '  }' \
-    '}' \
-    > /home/forgeos/.config/opencode/config.json \
- && chown -R forgeos:forgeos /home/forgeos/.config
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -155,7 +125,11 @@ RUN git config --global user.name "forgeos-agent" \
 ENV PYTHONPATH=/app:/app/a2h \
     PYTHONUNBUFFERED=1 \
     PORT=5000 \
-    UV_CACHE_DIR=/home/forgeos/.cache/uv
+    UV_CACHE_DIR=/home/forgeos/.cache/uv \
+    # qwen-code defaults — agents can override per-call via the tool's
+    # `model` / `base_url` parameters; Cloud Run env can override at deploy time.
+    FORGEOS_QWEN_BASE_URL=http://79.117.23.16:20327/v1 \
+    FORGEOS_QWEN_MODEL=qwen3.6-27b
 
 EXPOSE 5000
 

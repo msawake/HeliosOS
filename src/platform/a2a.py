@@ -29,7 +29,7 @@ from dataclasses import asdict, dataclass, field
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_DEPTH = 5
-# Long-running tools (opencode passes, pnpm install + build, cargo check) can
+# Long-running tools (qwen-code passes, pnpm install + build, cargo check) can
 # easily exceed 120s. Bump the default so an orchestrator that forgets to pass
 # `timeout=...` doesn't strand callees mid-work. Callers can still pass a
 # smaller value when they want a tighter deadline.
@@ -445,7 +445,7 @@ A2A_TOOL_SCHEMAS = [
                 "name": {"type": "string", "description": "Target agent name"},
                 "task": {"type": "string", "description": "Task/prompt for the callee"},
                 "context": {"type": "object", "description": "Additional context to pass"},
-                "timeout": {"type": "number", "description": "Seconds to wait. Pass a higher value (e.g. 1200) when the callee runs long pipelines (opencode + pnpm install + build).", "default": 900},
+                "timeout": {"type": "number", "description": "Seconds to wait. Pass a higher value (e.g. 1200) when the callee runs long pipelines (qwen-code + pnpm install + build).", "default": 900},
             },
             "required": ["name", "task"],
         },

@@ -111,7 +111,7 @@ class ToolExecutor:
         handlers["memory__history"] = self._handle_memory_history
         handlers["memory__delete"] = self._handle_memory_delete
 
-        # Developer tools (shell + opencode + git + gh). Available whenever the
+        # Developer tools (shell + qwen-code + git + gh wrappers). Available whenever the
         # platform is wired; agents still need to list them in their manifest.
         from src.platform.dev_tools import DEV_TOOL_HANDLERS
         handlers.update(DEV_TOOL_HANDLERS)
@@ -173,7 +173,7 @@ class ToolExecutor:
         from src.platform.memory_store import MEMORY_TOOL_SCHEMAS
         schemas.extend(MEMORY_TOOL_SCHEMAS)
 
-        # Developer tools (shell + opencode + git + gh)
+        # Developer tools (shell + qwen-code + git + gh)
         from src.platform.dev_tools import DEV_TOOL_SCHEMAS
         schemas.extend(DEV_TOOL_SCHEMAS)
 
@@ -536,17 +536,20 @@ class ToolExecutor:
             audit = getattr(self, "_audit_log", None)
             if audit is not None and _agent_id:
                 outcome = "success" if (isinstance(result, dict) and result.get("success", True)) else "denied"
-                # For developer-facing tools (shell, opencode, git, gh),
-                # also surface a tail of stdout/stderr so `forgeos logs`
-                # shows what the subprocess actually said — without that,
-                # opencode runs look like a silent ~60s "→ success" line.
+                # For developer-facing tools (shell, qwen-code, git, gh),
+                # also surface a tail of stdout/stderr + returncode + cwd
+                # so `forgeos logs` shows what the subprocess actually did —
+                # without that, long qwen-code or pnpm runs look like silent
+                # "→ success" lines and concurrency bugs are invisible.
                 inner = (result or {}).get("result") if isinstance(result, dict) else None
                 stdout_tail = stderr_tail = files_changed = None
                 pr_url = None
-                if isinstance(inner, dict) and tool_name.split("__", 1)[0] in {"code", "shell", "git", "gh"}:
+                returncode = cwd_used = cmd_str = None
+                is_dev_tool = tool_name.split("__", 1)[0] in {"code", "shell", "git", "gh"}
+                if isinstance(inner, dict) and is_dev_tool:
                     s = inner.get("stdout") or ""
                     e = inner.get("stderr") or ""
-                    # Last ~2000 chars; enough to show opencode's final
+                    # Last ~2000 chars; enough to show qwen-code's final
                     # diff summary or pnpm's build output without exploding
                     # the audit row.
                     stdout_tail = s[-2000:] if s else None
@@ -555,6 +558,18 @@ class ToolExecutor:
                     if isinstance(fc, list) and fc:
                         files_changed = fc[:25]
                     pr_url = inner.get("pr_url") or None
+                    # `returncode` is on every _run() result; surface it as a
+                    # top-level field so `forgeos logs` can grep for non-zero
+                    # exits without parsing the full payload.
+                    rc = inner.get("returncode")
+                    if rc is not None:
+                        returncode = rc
+                if is_dev_tool and isinstance(tool_input, dict):
+                    # `cwd` lives under different keys per tool: shell__exec
+                    # uses "cwd"; code__qwen_code_run and git/gh use "repo_dir".
+                    cwd_used = tool_input.get("cwd") or tool_input.get("repo_dir")
+                    if tool_name == "shell__exec":
+                        cmd_str = tool_input.get("cmd")
                 audit.record(
                     actor=_agent_id,
                     action="tool.call",
@@ -569,11 +584,14 @@ class ToolExecutor:
                         # with (e.g. the gcloud command, the email subject).
                         "args": _summarize_tool_args(tool_input),
                         "error": (result or {}).get("error") if isinstance(result, dict) else None,
-                        # New: dev-tool subprocess output for the logs CLI.
+                        # Dev-tool subprocess output + identity for the logs CLI.
                         **({"stdout_tail": stdout_tail} if stdout_tail else {}),
                         **({"stderr_tail": stderr_tail} if stderr_tail else {}),
                         **({"files_changed": files_changed} if files_changed else {}),
                         **({"pr_url": pr_url} if pr_url else {}),
+                        **({"returncode": returncode} if returncode is not None else {}),
+                        **({"cwd": cwd_used} if cwd_used else {}),
+                        **({"cmd": cmd_str} if cmd_str else {}),
                     },
                 )
         except Exception:

@@ -68,7 +68,10 @@ class ForgeOSAdapter(AgentStackAdapter):
                 user_prompt=prompt,
                 tool_definitions=tools or None,
                 tool_executor=self._tool_executor,
-                agent_context=build_agent_context(agent_def, agent_id),
+                agent_context=build_agent_context(
+                    agent_def, agent_id,
+                    invocation_id=(context or {}).get("invocation_id"),
+                ),
                 context=context,
                 history=history,
                 goal=agent_def.goal,
