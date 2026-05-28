@@ -1,0 +1,91 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="c1" name="Compute topologies (T1–T4)">
+    <mxGraphModel dx="1400" dy="850" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="c1t" value="Compute topology — where does the agent code actually RUN?" style="text;html=1;fontSize=22;fontStyle=1;align=left;" vertex="1" parent="1"><mxGeometry x="40" y="20" width="1300" height="34" as="geometry"/></mxCell>
+        <mxCell id="c1s" value="Four honest options. Identity (the Credential Broker) is orthogonal — it composes with each." style="text;html=1;fontSize=13;align=left;fontStyle=2;" vertex="1" parent="1"><mxGeometry x="40" y="58" width="1300" height="22" as="geometry"/></mxCell>
+
+        <mxCell id="t1box" value="T1 · TODAY — one shared office (monolith)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=center;verticalAlign=top;fontStyle=1;fontSize=14;" vertex="1" parent="1"><mxGeometry x="40" y="100" width="800" height="450" as="geometry"/></mxCell>
+        <mxCell id="t1plat" value="Central platform (Cloud Run)&lt;br&gt;ONE container · ONE SA&lt;br&gt;&lt;br&gt;🤖 auditor    🤖 builder    🤖 marketing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="70" y="160" width="320" height="160" as="geometry"/></mxCell>
+        <mxCell id="t1proj" value="GCP project(s)&lt;br&gt;&lt;br&gt;&apos;read-only&apos; is a PROMPT promise" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="490" y="180" width="320" height="120" as="geometry"/></mxCell>
+        <mxCell id="t1e" value="shared master key&lt;br&gt;(Cloud Run SA + ADC)" style="endArrow=block;html=1;strokeColor=#b85450;strokeWidth=2;" edge="1" parent="1" source="t1plat" target="t1proj"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="t1tr" value="✗ all agents share one identity&lt;br&gt;✗ in-process compromise = all agents' secrets&lt;br&gt;✗ no per-project boundary&lt;br&gt;✓ simplest to operate&lt;br&gt;&lt;br&gt;&lt;b&gt;Status: TODAY · HIGH risk&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="70" y="350" width="740" height="180" as="geometry"/></mxCell>
+
+        <mxCell id="t2box" value="T2 · Autoscale pods (central, per-agent)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=center;verticalAlign=top;fontStyle=1;fontSize=14;" vertex="1" parent="1"><mxGeometry x="880" y="100" width="800" height="450" as="geometry"/></mxCell>
+        <mxCell id="t2orc" value="Central&lt;br&gt;orchestrator" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="910" y="180" width="180" height="120" as="geometry"/></mxCell>
+        <mxCell id="t2p1" value="🤖 pod-1 (own SA · WI)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1140" y="160" width="220" height="50" as="geometry"/></mxCell>
+        <mxCell id="t2p2" value="🤖 pod-2 (own SA · WI)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1140" y="220" width="220" height="50" as="geometry"/></mxCell>
+        <mxCell id="t2p3" value="🤖 pod-3 (own SA · WI)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1140" y="280" width="220" height="50" as="geometry"/></mxCell>
+        <mxCell id="t2gp" value="GCP project(s)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="1430" y="200" width="220" height="100" as="geometry"/></mxCell>
+        <mxCell id="t2e1" value="spawn (per invocation)" style="endArrow=block;html=1;strokeColor=#82b366;" edge="1" parent="1" source="t2orc" target="t2p2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="t2e2" value="via Broker" style="endArrow=block;html=1;strokeColor=#82b366;" edge="1" parent="1" source="t2p2" target="t2gp"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="t2tr" value="✓ real process isolation per agent (fresh pod each run)&lt;br&gt;✓ per-pod workload identity (no shared SA between agents)&lt;br&gt;✓ pod dies after the run — no shared memory across users&lt;br&gt;✗ cold start; still in CENTRAL GCP project&lt;br&gt;&lt;br&gt;&lt;b&gt;Status: ✅ recommended for OBO / interactive agents&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="910" y="350" width="740" height="180" as="geometry"/></mxCell>
+
+        <mxCell id="t3box" value="T3 · Full agent per project (your suggestion)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=center;verticalAlign=top;fontStyle=1;fontSize=14;" vertex="1" parent="1"><mxGeometry x="40" y="580" width="800" height="490" as="geometry"/></mxCell>
+        <mxCell id="t3pA" value="GCP project A&lt;br&gt;🤖 FULL agent (LLM, shell, tools)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1"><mxGeometry x="70" y="640" width="340" height="80" as="geometry"/></mxCell>
+        <mxCell id="t3pB" value="GCP project B&lt;br&gt;🤖 FULL agent (LLM, shell, tools)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1"><mxGeometry x="70" y="730" width="340" height="80" as="geometry"/></mxCell>
+        <mxCell id="t3pC" value="GCP project C&lt;br&gt;🤖 FULL agent (LLM, shell, tools)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1"><mxGeometry x="70" y="820" width="340" height="80" as="geometry"/></mxCell>
+        <mxCell id="t3coord" value="Central forgeos&lt;br&gt;coordinator&lt;br&gt;(A2A inbox)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="490" y="720" width="320" height="100" as="geometry"/></mxCell>
+        <mxCell id="t3e1" value="A2A (outbound)" style="endArrow=block;html=1;strokeColor=#d79b00;" edge="1" parent="1" source="t3pA" target="t3coord"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="t3e2" style="endArrow=block;html=1;strokeColor=#d79b00;" edge="1" parent="1" source="t3pB" target="t3coord"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="t3e3" style="endArrow=block;html=1;strokeColor=#d79b00;" edge="1" parent="1" source="t3pC" target="t3coord"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="t3tr" value="✓ native project identity; no central impersonation&lt;br&gt;✓ blast radius = ONE project per compromise&lt;br&gt;✗ &lt;b&gt;LLM + prompt-injection surface lives INSIDE the audited project&lt;/b&gt;&lt;br&gt;✗ N full deployments to maintain (versions, IAM, configs)&lt;br&gt;✗ heterogeneity (regions, perimeters)&lt;br&gt;&lt;br&gt;&lt;b&gt;Status: valid for tiny estates; expensive at scale&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="70" y="920" width="740" height="140" as="geometry"/></mxCell>
+
+        <mxCell id="t4box" value="T4 · HYBRID — central brain + per-project collectors   ✅ RECOMMENDED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=center;verticalAlign=top;fontStyle=1;fontSize=14;strokeWidth=3;" vertex="1" parent="1"><mxGeometry x="880" y="580" width="800" height="490" as="geometry"/></mxCell>
+        <mxCell id="t4center" value="Central forgeos&lt;br&gt;LLM agent + Credential Broker&lt;br&gt;(OUTSIDE audited projects)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1"><mxGeometry x="910" y="650" width="260" height="160" as="geometry"/></mxCell>
+        <mxCell id="t4ps" value="Pub/Sub&lt;br&gt;(jobs / results)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="1210" y="690" width="140" height="80" as="geometry"/></mxCell>
+        <mxCell id="t4pA" value="Project A · 📋 collector&lt;br&gt;(no LLM, gcloud reads only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1390" y="620" width="260" height="60" as="geometry"/></mxCell>
+        <mxCell id="t4pB" value="Project B · 📋 collector&lt;br&gt;(no LLM, gcloud reads only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1390" y="700" width="260" height="60" as="geometry"/></mxCell>
+        <mxCell id="t4pC" value="Project C · 📋 collector&lt;br&gt;(no LLM, gcloud reads only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1390" y="780" width="260" height="60" as="geometry"/></mxCell>
+        <mxCell id="t4e1" style="endArrow=block;html=1;strokeColor=#82b366;" edge="1" parent="1" source="t4center" target="t4ps"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="t4e2" style="endArrow=block;html=1;strokeColor=#82b366;" edge="1" parent="1" source="t4ps" target="t4pA"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="t4e3" style="endArrow=block;html=1;strokeColor=#82b366;" edge="1" parent="1" source="t4ps" target="t4pB"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="t4e4" style="endArrow=block;html=1;strokeColor=#82b366;" edge="1" parent="1" source="t4ps" target="t4pC"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="t4tr" value="✓ &lt;b&gt;LLM kept OUT of audited projects&lt;/b&gt; — no prompt-injection blast there&lt;br&gt;✓ per-project workload identity (in-project least privilege)&lt;br&gt;✓ tiny per-project footprint (small static collector — no LLM, no shell)&lt;br&gt;✓ collector code is easy to audit (allowlisted gcloud commands)&lt;br&gt;✗ two-component design to maintain&lt;br&gt;&lt;br&gt;&lt;b&gt;Status: ✅ recommended for multi-project audit&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="910" y="870" width="740" height="180" as="geometry"/></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="c2" name="T4 detail — central brain + collectors">
+    <mxGraphModel dx="1400" dy="850" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="c2t" value="T4 in detail — central brain + per-project collectors  (multi-project audit)" style="text;html=1;fontSize=22;fontStyle=1;align=left;" vertex="1" parent="1"><mxGeometry x="40" y="20" width="1400" height="34" as="geometry"/></mxCell>
+        <mxCell id="c2s" value="Central is the brain (LLM + Broker). Collectors are tiny dumb hands in each project. They never see each other." style="text;html=1;fontSize=13;align=left;fontStyle=2;" vertex="1" parent="1"><mxGeometry x="40" y="58" width="1400" height="22" as="geometry"/></mxCell>
+
+        <mxCell id="c2cp" value="Central forgeos service&lt;br&gt;(own project / region — for maximum auditor independence)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=center;verticalAlign=top;fontStyle=1;fontSize=13;" vertex="1" parent="1"><mxGeometry x="40" y="100" width="480" height="600" as="geometry"/></mxCell>
+        <mxCell id="c2sso" value="SSO / JWT (for OBO agents)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="60" y="160" width="440" height="44" as="geometry"/></mxCell>
+        <mxCell id="c2llm" value="🤖 LLM auditor agent (Plane B — service principal)&lt;br&gt;reads no GCP data directly · only asks collectors questions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="60" y="220" width="440" height="80" as="geometry"/></mxCell>
+        <mxCell id="c2brk" value="🗝️ Credential Broker&lt;br&gt;mints short-lived OIDC tokens for collectors when needed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1"><mxGeometry x="60" y="320" width="440" height="80" as="geometry"/></mxCell>
+        <mxCell id="c2mail" value="📬 Mailbox / report sender (auditor-bot@…)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="60" y="420" width="440" height="60" as="geometry"/></mxCell>
+        <mxCell id="c2sink" value="📹 Audit log sink (separate project — append-only)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="60" y="500" width="440" height="60" as="geometry"/></mxCell>
+
+        <mxCell id="c2qbox" value="Pub/Sub queue (authenticated · OIDC-signed messages)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=center;verticalAlign=top;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="560" y="100" width="340" height="600" as="geometry"/></mxCell>
+        <mxCell id="c2qj" value="audit-jobs topic&lt;br&gt;&lt;br&gt;central → collectors&lt;br&gt;(target: project_id + allowed commands)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="580" y="160" width="300" height="180" as="geometry"/></mxCell>
+        <mxCell id="c2qr" value="audit-results topic&lt;br&gt;&lt;br&gt;collectors → central&lt;br&gt;(JSON results · per project)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="580" y="360" width="300" height="180" as="geometry"/></mxCell>
+
+        <mxCell id="c2pA" value="GCP project A (allowlisted)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=center;verticalAlign=top;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="940" y="120" width="720" height="160" as="geometry"/></mxCell>
+        <mxCell id="c2cA" value="📋 collector&lt;br&gt;• in-project SA via Workload Identity Federation&lt;br&gt;• gcloud list/describe ONLY (allowlist enforced in code)&lt;br&gt;• NO LLM · NO shell · NO tool-use" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;" vertex="1" parent="1"><mxGeometry x="960" y="160" width="680" height="100" as="geometry"/></mxCell>
+
+        <mxCell id="c2pB" value="GCP project B (allowlisted)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=center;verticalAlign=top;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="940" y="300" width="720" height="160" as="geometry"/></mxCell>
+        <mxCell id="c2cB" value="📋 collector&lt;br&gt;• in-project SA via WI · gcloud list/describe ONLY · no LLM/shell" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;" vertex="1" parent="1"><mxGeometry x="960" y="340" width="680" height="100" as="geometry"/></mxCell>
+
+        <mxCell id="c2pC" value="GCP project C — NOT on the allowlist (no collector deployed)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=center;verticalAlign=top;fontStyle=1;dashed=1;" vertex="1" parent="1"><mxGeometry x="940" y="480" width="720" height="160" as="geometry"/></mxCell>
+        <mxCell id="c2cC" value="🚫 unreachable BY DESIGN&lt;br&gt;no collector → no subscription → no read identity. Hard exclude." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=left;" vertex="1" parent="1"><mxGeometry x="960" y="520" width="680" height="100" as="geometry"/></mxCell>
+
+        <mxCell id="c2f1" value="1 · publish job (project=A · allowed cmds)" style="endArrow=block;html=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="c2llm" target="c2qj"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="c2f2" value="2 · pull (filtered by project=A)" style="endArrow=block;html=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="c2qj" target="c2cA"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="c2f3" value="3 · publish results (signed OIDC)" style="endArrow=block;html=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="c2cA" target="c2qr"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="c2f4" value="4 · read results · compose report" style="endArrow=block;html=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="c2qr" target="c2llm"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="c2f5" value="5 · attributed email" style="endArrow=block;html=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="c2llm" target="c2mail"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="c2f6" value="audit every step" style="endArrow=block;html=1;strokeColor=#82b366;strokeWidth=2;dashed=1;" edge="1" parent="1" source="c2brk" target="c2sink"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="c2cap" value="Central never reaches IN to a project.  ·  Collectors only reach OUT (to the queue).  ·  OIDC tokens authenticate every message.  ·  Project without a deployed collector = NOT audited (hard exclude by absence)." style="text;html=1;align=center;fontStyle=2;fontSize=12;" vertex="1" parent="1"><mxGeometry x="40" y="720" width="1620" height="44" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

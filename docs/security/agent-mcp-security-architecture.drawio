@@ -1,0 +1,172 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="p1" name="1 · Before (today)">
+    <mxGraphModel dx="1400" dy="850" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="p1t" value="1 · BEFORE — current state   (residual risk: HIGH)" style="text;html=1;fontSize=22;fontStyle=1;align=left;" vertex="1" parent="1"><mxGeometry x="40" y="20" width="800" height="34" as="geometry"/></mxCell>
+        <mxCell id="p1leg" value="LEGEND&lt;br&gt;🟥 vulnerable / leak   🟧 weak / pending&lt;br&gt;🟦 infra / data   🟩 secure (target)   🟪 broker" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="1"><mxGeometry x="1180" y="20" width="380" height="70" as="geometry"/></mxCell>
+
+        <mxCell id="p1op" value="Operator / CLI / Dashboard&lt;br&gt;(one shared token)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="40" y="200" width="170" height="70" as="geometry"/></mxCell>
+        <mxCell id="p1sum" value="Authorization = PROMPT,&lt;br&gt;not the identity boundary.&lt;br&gt;&lt;br&gt;• PAT serialized into LLM prompt&lt;br&gt;• user_id is caller-controlled&lt;br&gt;• ambient ~Editor SA, shared&lt;br&gt;• one Workspace identity&lt;br&gt;• unauth PAT-write endpoint&lt;br&gt;• A2A leaks _credentials" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="1"><mxGeometry x="40" y="320" width="180" height="240" as="geometry"/></mxCell>
+
+        <mxCell id="p1plat" value="Cloud Run: forgeos-platform-api — ONE shared container + ONE SA" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=center;verticalAlign=top;fontStyle=1;fontSize=13;" vertex="1" parent="1"><mxGeometry x="260" y="150" width="620" height="640" as="geometry"/></mxCell>
+        <mxCell id="p1auth" value="check_auth — single shared token; AuthUser/RBAC defined but UNWIRED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="290" y="200" width="560" height="46" as="geometry"/></mxCell>
+        <mxCell id="p1exec" value="Executor.invoke — user_id = request body / owner / 'default'  (caller-controlled)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="290" y="266" width="560" height="46" as="geometry"/></mxCell>
+        <mxCell id="p1loop" value="Agentic loop — serializes _credentials (the PAT) INTO the LLM prompt   (agentic_loop.py:141)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="290" y="332" width="560" height="56" as="geometry"/></mxCell>
+        <mxCell id="p1ag" value="Agents — every stack runs as async tasks in ONE process (no isolation)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1"><mxGeometry x="290" y="408" width="560" height="46" as="geometry"/></mxCell>
+        <mxCell id="p1sh" value="shell__exec: bash / sh / gcloud   →   arbitrary shell under ambient ADC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="290" y="474" width="560" height="46" as="geometry"/></mxCell>
+        <mxCell id="p1a2a" value="A2A — copies _credentials to callees by default (across namespaces)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="290" y="540" width="560" height="46" as="geometry"/></mxCell>
+        <mxCell id="p1cred" value="POST /api/credentials/github — UNAUTHENTICATED · user_id from body&lt;br&gt;anyone reachable can plant a victim's PAT  (exploitable now)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="290" y="620" width="560" height="60" as="geometry"/></mxCell>
+
+        <mxCell id="p1saSA" value="Cloud Run runtime SA ≈ Editor&lt;br&gt;(project-wide READ / WRITE)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="940" y="200" width="300" height="60" as="geometry"/></mxCell>
+        <mxCell id="p1sec" value="Secret Manager&lt;br&gt;github-pat-*, FORGEOS_GWS_* (single global), GEMINI key" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="940" y="290" width="300" height="70" as="geometry"/></mxCell>
+        <mxCell id="p1gws" value="Google Workspace&lt;br&gt;sends AS ONE human (antoni) · no attribution" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="940" y="390" width="300" height="70" as="geometry"/></mxCell>
+        <mxCell id="p1gcp" value="GCP project admachina-atomic-test-84&lt;br&gt;audit scope = prompt '--project=' ONLY" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1"><mxGeometry x="940" y="490" width="300" height="70" as="geometry"/></mxCell>
+        <mxCell id="p1llm" value="LLM (Gemini / Anthropic)&lt;br&gt;receives the leaked PAT in the prompt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="940" y="600" width="300" height="60" as="geometry"/></mxCell>
+
+        <mxCell id="p1e1" style="endArrow=block;html=1;strokeColor=#6c8ebf;" edge="1" parent="1" source="p1op" target="p1auth"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p1e2" value="ambient · shared" style="endArrow=block;html=1;strokeColor=#b85450;strokeWidth=2;" edge="1" parent="1" source="p1saSA" target="p1sh"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p1e3" value="list/describe — WRITE possible" style="endArrow=block;html=1;strokeColor=#b85450;strokeWidth=2;" edge="1" parent="1" source="p1sh" target="p1gcp"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p1e4" value="one global token" style="endArrow=block;html=1;strokeColor=#b85450;strokeWidth=2;" edge="1" parent="1" source="p1ag" target="p1gws"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p1e5" value="PAT in prompt — LEAK" style="endArrow=block;html=1;strokeColor=#b85450;strokeWidth=2;dashed=1;fontStyle=1;" edge="1" parent="1" source="p1loop" target="p1llm"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p1e6" value="write any user_id" style="endArrow=block;html=1;strokeColor=#b85450;strokeWidth=2;" edge="1" parent="1" source="p1cred" target="p1sec"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="p2" name="2 · After (target)">
+    <mxGraphModel dx="1400" dy="850" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="p2t" value="2 · AFTER — target architecture   (residual risk: LOW)" style="text;html=1;fontSize=22;fontStyle=1;align=left;" vertex="1" parent="1"><mxGeometry x="40" y="20" width="800" height="34" as="geometry"/></mxCell>
+        <mxCell id="p2leg" value="LEGEND&lt;br&gt;🟩 secure   🟦 infra / data   🟪 credential broker (separate service)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="1"><mxGeometry x="1240" y="20" width="420" height="56" as="geometry"/></mxCell>
+
+        <mxCell id="p2op" value="Operator" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="40" y="200" width="150" height="50" as="geometry"/></mxCell>
+        <mxCell id="p2sso" value="Google SSO / OIDC&lt;br&gt;→ JWT {user_id, team/ns, role}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="40" y="280" width="150" height="70" as="geometry"/></mxCell>
+        <mxCell id="p2sum" value="Authorization = IAM/OAuth + policy,&lt;br&gt;not prompt.&lt;br&gt;&lt;br&gt;• per-user / per-service identity&lt;br&gt;• short-lived scoped tokens&lt;br&gt;• least-priv runtime SA&lt;br&gt;• hard exclude: Deny + VPC-SC&lt;br&gt;• full attribution&lt;br&gt;• OBO bounded by user's own access" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="1"><mxGeometry x="40" y="400" width="180" height="250" as="geometry"/></mxCell>
+
+        <mxCell id="p2plat" value="Cloud Run: forgeos-platform-api   (least-priv runtime SA · NO token-creator · internal ingress + IAP)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=center;verticalAlign=top;fontStyle=1;fontSize=13;" vertex="1" parent="1"><mxGeometry x="250" y="150" width="700" height="640" as="geometry"/></mxCell>
+        <mxCell id="p2auth" value="check_auth — verifies JWT · derives user_id from principal (body ignored) · write routes auth+rate-limited" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="280" y="200" width="640" height="56" as="geometry"/></mxCell>
+        <mxCell id="p2wall" value="Per-team namespaces — ENFORCED walls (authz + broker scope + per-request RLS)" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#d5e8d4;strokeColor=#82b366;align=center;verticalAlign=top;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="280" y="290" width="640" height="320" as="geometry"/></mxCell>
+        <mxCell id="p2pa" value="PLANE A — On-behalf-of&lt;br&gt;Interactive agent runs AS the launching user&lt;br&gt;&lt;br&gt;• creds injected per-run (NOT in prompt)&lt;br&gt;• A2A strips _credentials each hop&lt;br&gt;• run visible only to that user&lt;br&gt;• preflight-requires user integrations" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="300" y="340" width="290" height="240" as="geometry"/></mxCell>
+        <mxCell id="p2pb" value="PLANE B — Service identity&lt;br&gt;Scheduled auditor = service principal&lt;br&gt;&lt;br&gt;• no launching user&lt;br&gt;• dedicated least-priv identity&lt;br&gt;• read-only by IAM, not prompt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="610" y="340" width="290" height="240" as="geometry"/></mxCell>
+
+        <mxCell id="p2brk" value="CREDENTIAL BROKER&lt;br&gt;(SEPARATE Cloud Run service · own SA)&lt;br&gt;&lt;br&gt;1 · identify principal (user / service)&lt;br&gt;2 · policy-check (kernel)&lt;br&gt;3 · mint SHORT-LIVED scoped token&lt;br&gt;4 · inject per-run   5 · audit the mint" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="1010" y="300" width="330" height="210" as="geometry"/></mxCell>
+
+        <mxCell id="p2gh" value="GitHub — per-user PAT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1420" y="180" width="230" height="50" as="geometry"/></mxCell>
+        <mxCell id="p2gws" value="Workspace — per-user OAuth&lt;br&gt;(acts AS the user)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1420" y="250" width="230" height="60" as="geometry"/></mxCell>
+        <mxCell id="p2usa" value="Per-user SA impersonation&lt;br&gt;(GCP OBO) — scope ≤ user" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1420" y="330" width="230" height="60" as="geometry"/></mxCell>
+        <mxCell id="p2asa" value="Audit SA — CUSTOM read role&lt;br&gt;folder grants · Deny + VPC-SC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="1420" y="410" width="230" height="60" as="geometry"/></mxCell>
+        <mxCell id="p2gcp" value="Allowlisted GCP projects / folders&lt;br&gt;excluded = no grant / Deny (unreadable)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="1420" y="490" width="230" height="60" as="geometry"/></mxCell>
+        <mxCell id="p2sink" value="Append-only audit sink&lt;br&gt;(separate project)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1420" y="570" width="230" height="50" as="geometry"/></mxCell>
+
+        <mxCell id="p2e1" style="endArrow=block;html=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="p2op" target="p2sso"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p2e2" style="endArrow=block;html=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="p2sso" target="p2auth"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p2e3" value="request cred (OBO)" style="endArrow=block;html=1;strokeColor=#9673a6;strokeWidth=2;" edge="1" parent="1" source="p2pa" target="p2brk"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p2e4" value="request cred (service)" style="endArrow=block;html=1;strokeColor=#9673a6;strokeWidth=2;" edge="1" parent="1" source="p2pb" target="p2brk"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p2e5" value="short-lived token" style="endArrow=block;html=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="p2brk" target="p2gh"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p2e6" style="endArrow=block;html=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="p2brk" target="p2gws"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p2e7" style="endArrow=block;html=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="p2brk" target="p2usa"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p2e8" value="impersonate (read-only)" style="endArrow=block;html=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="p2brk" target="p2asa"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p2e9" value="read" style="endArrow=block;html=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="p2asa" target="p2gcp"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p2e10" value="audit every mint" style="endArrow=block;html=1;strokeColor=#82b366;strokeWidth=2;dashed=1;" edge="1" parent="1" source="p2brk" target="p2sink"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="p3" name="3 · Auditor before/after">
+    <mxGraphModel dx="1400" dy="850" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="p3t" value="3 · Example — sre-gcp-auditor  (scheduled, multi-project audit)" style="text;html=1;fontSize=22;fontStyle=1;align=left;" vertex="1" parent="1"><mxGeometry x="40" y="20" width="900" height="34" as="geometry"/></mxCell>
+        <mxCell id="p3div" style="endArrow=none;html=1;strokeColor=#999999;dashed=1;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="800" y="80" as="sourcePoint"/><mxPoint x="800" y="680" as="targetPoint"/></mxGeometry></mxCell>
+
+        <mxCell id="p3bh" value="BEFORE  —  read-only is a PROMPT promise" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=14;" vertex="1" parent="1"><mxGeometry x="40" y="80" width="700" height="40" as="geometry"/></mxCell>
+        <mxCell id="p3b1" value="Cron (06:00) → Executor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="220" y="150" width="320" height="46" as="geometry"/></mxCell>
+        <mxCell id="p3b2" value="Auditor agent (gemini-2.5-pro)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1"><mxGeometry x="220" y="220" width="320" height="46" as="geometry"/></mxCell>
+        <mxCell id="p3b3" value="shell__exec gcloud — AMBIENT runtime SA (~Editor)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="220" y="290" width="320" height="56" as="geometry"/></mxCell>
+        <mxCell id="p3b4" value="Reads admachina-* — could read OTHER projects or WRITE (only the prompt stops it)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="220" y="370" width="320" height="60" as="geometry"/></mxCell>
+        <mxCell id="p3b5" value="Emails report AS antoni (global Workspace token)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="220" y="454" width="320" height="46" as="geometry"/></mxCell>
+        <mxCell id="p3bn" value="Risks: 'read-only' + 'one project' are prompt promises · no per-project boundary · sender not attributable" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="1"><mxGeometry x="220" y="524" width="320" height="100" as="geometry"/></mxCell>
+
+        <mxCell id="p3ah" value="AFTER  —  read-only is ENFORCED by IAM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=14;" vertex="1" parent="1"><mxGeometry x="850" y="80" width="700" height="40" as="geometry"/></mxCell>
+        <mxCell id="p3a1" value="Cron → Executor (service principal)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="1030" y="150" width="320" height="46" as="geometry"/></mxCell>
+        <mxCell id="p3a2" value="Auditor agent (service identity, Plane B)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1030" y="220" width="320" height="46" as="geometry"/></mxCell>
+        <mxCell id="p3a3" value="Credential Broker mints short-lived token → impersonates AUDIT SA" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1"><mxGeometry x="1030" y="290" width="320" height="56" as="geometry"/></mxCell>
+        <mxCell id="p3a4" value="Audit SA: CUSTOM read role · folder grants · ALLOWLIST only · excluded = Deny + VPC-SC (unreadable)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1030" y="370" width="320" height="70" as="geometry"/></mxCell>
+        <mxCell id="p3a5" value="Emails via service mailbox (attributed); per-user if user-triggered" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1030" y="464" width="320" height="46" as="geometry"/></mxCell>
+        <mxCell id="p3an" value="Guarantees: read-only ENFORCED by role · cannot touch excluded/other projects · external append-only audit sink" style="shape=note;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="1"><mxGeometry x="1030" y="534" width="320" height="100" as="geometry"/></mxCell>
+
+        <mxCell id="p3be1" style="endArrow=block;html=1;strokeColor=#b85450;" edge="1" parent="1" source="p3b1" target="p3b2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p3be2" style="endArrow=block;html=1;strokeColor=#b85450;" edge="1" parent="1" source="p3b2" target="p3b3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p3be3" style="endArrow=block;html=1;strokeColor=#b85450;" edge="1" parent="1" source="p3b3" target="p3b4"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p3be4" style="endArrow=block;html=1;strokeColor=#b85450;" edge="1" parent="1" source="p3b4" target="p3b5"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p3ae1" style="endArrow=block;html=1;strokeColor=#82b366;" edge="1" parent="1" source="p3a1" target="p3a2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p3ae2" style="endArrow=block;html=1;strokeColor=#82b366;" edge="1" parent="1" source="p3a2" target="p3a3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p3ae3" style="endArrow=block;html=1;strokeColor=#82b366;" edge="1" parent="1" source="p3a3" target="p3a4"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p3ae4" style="endArrow=block;html=1;strokeColor=#82b366;" edge="1" parent="1" source="p3a4" target="p3a5"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="p4" name="4 · OBO agent before/after">
+    <mxGraphModel dx="1400" dy="850" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="p4t" value="4 · Example — interactive Workspace/GitHub agent  (on-behalf-of)" style="text;html=1;fontSize=22;fontStyle=1;align=left;" vertex="1" parent="1"><mxGeometry x="40" y="20" width="950" height="34" as="geometry"/></mxCell>
+        <mxCell id="p4div" style="endArrow=none;html=1;strokeColor=#999999;dashed=1;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="800" y="80" as="sourcePoint"/><mxPoint x="800" y="660" as="targetPoint"/></mxGeometry></mxCell>
+
+        <mxCell id="p4bh" value="BEFORE  —  one identity for everyone" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=14;" vertex="1" parent="1"><mxGeometry x="40" y="80" width="700" height="40" as="geometry"/></mxCell>
+        <mxCell id="p4b1" value="User A triggers agent (shared token)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="220" y="150" width="320" height="46" as="geometry"/></mxCell>
+        <mxCell id="p4b2" value="Agent uses the ONE global Workspace token" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="220" y="220" width="320" height="46" as="geometry"/></mxCell>
+        <mxCell id="p4b3" value="Emails sent AS antoni — whoever launched it" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="220" y="290" width="320" height="46" as="geometry"/></mxCell>
+        <mxCell id="p4b4" value="GitHub PAT picked by owner/'default' → leaked into the prompt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="220" y="360" width="320" height="56" as="geometry"/></mxCell>
+        <mxCell id="p4b5" value="Run visible to everyone (no per-user scoping)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1"><mxGeometry x="220" y="440" width="320" height="46" as="geometry"/></mxCell>
+        <mxCell id="p4bn" value="Risks: no attribution · wrong identity · secret-to-LLM · no isolation" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="1"><mxGeometry x="220" y="510" width="320" height="90" as="geometry"/></mxCell>
+
+        <mxCell id="p4ah" value="AFTER  —  acts as the launching user" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=14;" vertex="1" parent="1"><mxGeometry x="850" y="80" width="700" height="40" as="geometry"/></mxCell>
+        <mxCell id="p4a1" value="User A logs in (SSO) → launches agent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1030" y="150" width="320" height="46" as="geometry"/></mxCell>
+        <mxCell id="p4a2" value="Broker resolves USER A's GitHub PAT + Workspace OAuth" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1"><mxGeometry x="1030" y="220" width="320" height="46" as="geometry"/></mxCell>
+        <mxCell id="p4a3" value="Agent acts AS User A — emails from A, GitHub as A" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1030" y="290" width="320" height="46" as="geometry"/></mxCell>
+        <mxCell id="p4a4" value="Preflight FAILS if A has not connected the integration (no default fallback)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1030" y="360" width="320" height="56" as="geometry"/></mxCell>
+        <mxCell id="p4a5" value="Run visible only to User A / their team" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1030" y="440" width="320" height="46" as="geometry"/></mxCell>
+        <mxCell id="p4an" value="Guarantees: per-user identity · attribution · scope ≤ user's own access · creds never in prompt" style="shape=note;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;fontSize=11;" vertex="1" parent="1"><mxGeometry x="1030" y="510" width="320" height="90" as="geometry"/></mxCell>
+
+        <mxCell id="p4be1" style="endArrow=block;html=1;strokeColor=#b85450;" edge="1" parent="1" source="p4b1" target="p4b2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p4be2" style="endArrow=block;html=1;strokeColor=#b85450;" edge="1" parent="1" source="p4b2" target="p4b3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p4be3" style="endArrow=block;html=1;strokeColor=#b85450;" edge="1" parent="1" source="p4b3" target="p4b4"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p4be4" style="endArrow=block;html=1;strokeColor=#b85450;" edge="1" parent="1" source="p4b4" target="p4b5"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p4ae1" style="endArrow=block;html=1;strokeColor=#82b366;" edge="1" parent="1" source="p4a1" target="p4a2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p4ae2" style="endArrow=block;html=1;strokeColor=#82b366;" edge="1" parent="1" source="p4a2" target="p4a3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p4ae3" style="endArrow=block;html=1;strokeColor=#82b366;" edge="1" parent="1" source="p4a3" target="p4a4"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p4ae4" style="endArrow=block;html=1;strokeColor=#82b366;" edge="1" parent="1" source="p4a4" target="p4a5"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="p5" name="5 · Roadmap">
+    <mxGraphModel dx="1400" dy="850" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="980" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="p5t" value="5 · Roadmap — pending → target   (status: ✅ exists/partial · 🟠 pending gate · ⬜ future)" style="text;html=1;fontSize=22;fontStyle=1;align=left;" vertex="1" parent="1"><mxGeometry x="40" y="20" width="1200" height="34" as="geometry"/></mxCell>
+        <mxCell id="p5risk" value="Residual risk:  HIGH (today)  →  MEDIUM (after Phase 0)  →  LOW (after Phase 3)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;align=center;" vertex="1" parent="1"><mxGeometry x="40" y="64" width="1480" height="34" as="geometry"/></mxCell>
+
+        <mxCell id="p5p0" value="PHASE 0 — Correctness gates   (MUST precede the broker · partly EXPLOITABLE NOW)&lt;br&gt;&lt;br&gt;🟠 Authenticate + rate-limit /api/credentials/github + all write routes; kill dev-* bypass   ·   🟠 Bind user_id to verified JWT principal (ignore body)&lt;br&gt;🟠 Stop creds-in-prompt; deliver via agent_context   ·   🟠 A2A default-isolate + strip _credentials   ·   🟠 Least-priv Cloud Run runtime SA + internal ingress/IAP   ·   🟠 Wire kernel registry + FORGEOS_KERNEL_MODE=production" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;fontStyle=0;" vertex="1" parent="1"><mxGeometry x="40" y="120" width="1480" height="120" as="geometry"/></mxCell>
+        <mxCell id="p5p1" value="PHASE 1 — Foundation: identity + isolation&lt;br&gt;&lt;br&gt;⬜ Google SSO/OIDC → JWT   ·   ⬜ forgeos login (device flow)   ·   ⬜ per-request namespace/tenant + RLS enforced   ·   ⬜ kill 'default' fallback + required-integration preflight&lt;br&gt;✅ partial: AuthUser/RBAC code exists (unwired) · A2A ACLs exist · kernel pipeline shape exists" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="40" y="270" width="1480" height="110" as="geometry"/></mxCell>
+        <mxCell id="p5p2" value="PHASE 2 — Credential Broker (separate service)&lt;br&gt;&lt;br&gt;⬜ Broker service + own SA (token-creator isolated)   ·   ⬜ generalize per-user vault: GitHub (fix) · Workspace OAuth · GCP per-user SA impersonation&lt;br&gt;⬜ per-run injection + audit every mint   ·   ❗ DECIDE: GCP-OBO = SA impersonation vs true OAuth" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;align=left;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="40" y="410" width="1480" height="110" as="geometry"/></mxCell>
+        <mxCell id="p5p3" value="PHASE 3 — Multi-project auditor (hardened-A2)&lt;br&gt;&lt;br&gt;⬜ dedicated audit SA + CUSTOM read role   ·   ⬜ folder-level grants + allowlist   ·   ⬜ hard-exclude via IAM Deny + VPC-SC   ·   ⬜ external append-only audit sink&lt;br&gt;✅ auditor agent + notify__email tool exist today" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="40" y="550" width="1480" height="110" as="geometry"/></mxCell>
+        <mxCell id="p5p4" value="PHASE 4 — Defense-in-depth&lt;br&gt;&lt;br&gt;⬜ A4 external auditor host   ·   ⬜ prompt-injection defense + HITL on dangerous tools   ·   ⬜ egress controls/proxy   ·   ⬜ Secret Manager CMEK + rotation   ·   ⬜ SIEM/alerting + break-glass   ·   ⬜ EU data-residency review" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;verticalAlign=top;" vertex="1" parent="1"><mxGeometry x="40" y="690" width="1480" height="100" as="geometry"/></mxCell>
+
+        <mxCell id="p5e0" style="endArrow=block;html=1;strokeColor=#666666;strokeWidth=2;" edge="1" parent="1" source="p5p0" target="p5p1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p5e1" style="endArrow=block;html=1;strokeColor=#666666;strokeWidth=2;" edge="1" parent="1" source="p5p1" target="p5p2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p5e2" style="endArrow=block;html=1;strokeColor=#666666;strokeWidth=2;" edge="1" parent="1" source="p5p2" target="p5p3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p5e3" style="endArrow=block;html=1;strokeColor=#666666;strokeWidth=2;" edge="1" parent="1" source="p5p3" target="p5p4"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

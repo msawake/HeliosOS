@@ -1,0 +1,76 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="a1" name="Before — master key + sticky note">
+    <mxGraphModel dx="1400" dy="850" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="a1t" value="Before — one master key, one sticky note" style="text;html=1;fontSize=22;fontStyle=1;align=left;" vertex="1" parent="1"><mxGeometry x="40" y="20" width="1000" height="34" as="geometry"/></mxCell>
+        <mxCell id="a1s" value="An everyday picture of how sre-gcp-auditor works today on the platform" style="text;html=1;fontSize=13;align=left;fontStyle=2;" vertex="1" parent="1"><mxGeometry x="40" y="56" width="1000" height="24" as="geometry"/></mxCell>
+
+        <mxCell id="a1mail" value="📬 Outgoing email&lt;br&gt;&lt;br&gt;ALL agents send AS&lt;br&gt;antoni.bergas@…&lt;br&gt;&lt;br&gt;(no attribution — was it the auditor? the builder? You can't tell.)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="40" y="180" width="240" height="200" as="geometry"/></mxCell>
+
+        <mxCell id="a1bld" value="🏢  GCP project: admachina-atomic-test-84" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=center;verticalAlign=top;fontSize=15;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="340" y="120" width="900" height="720" as="geometry"/></mxCell>
+
+        <mxCell id="a1rA" value="🚪 Room A&lt;br&gt;IAM bindings" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1"><mxGeometry x="370" y="170" width="180" height="90" as="geometry"/></mxCell>
+        <mxCell id="a1rB" value="🚪 Room B&lt;br&gt;Cloud SQL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1"><mxGeometry x="580" y="170" width="180" height="90" as="geometry"/></mxCell>
+        <mxCell id="a1rC" value="🚪 Room C&lt;br&gt;Storage buckets" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1"><mxGeometry x="790" y="170" width="180" height="90" as="geometry"/></mxCell>
+        <mxCell id="a1rD" value="🚪 Room D&lt;br&gt;Cloud Run / secrets" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1"><mxGeometry x="1000" y="170" width="180" height="90" as="geometry"/></mxCell>
+
+        <mxCell id="a1off" value="Shared security office (the platform's ONE container)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=center;verticalAlign=top;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="430" y="340" width="720" height="380" as="geometry"/></mxCell>
+        <mxCell id="a1key" value="🔑  MASTER KEY — opens EVERY door&lt;br&gt;(Cloud Run runtime SA ≈ Editor)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=14;" vertex="1" parent="1"><mxGeometry x="460" y="380" width="660" height="70" as="geometry"/></mxCell>
+        <mxCell id="a1ag" value="🤖 sre-gcp-auditor    🤖 marketing-agent    🤖 builder-agent&lt;br&gt;(all share the office and the key)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1"><mxGeometry x="460" y="470" width="660" height="60" as="geometry"/></mxCell>
+        <mxCell id="a1note" value="📋  &apos;Only look. Don't touch. Project X only.&apos;&lt;br&gt;(this sticky note IS the entire safety rule)" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=center;verticalAlign=middle;fontStyle=2;" vertex="1" parent="1"><mxGeometry x="460" y="550" width="660" height="60" as="geometry"/></mxCell>
+        <mxCell id="a1risk" value="⚠️  If the note is edited, ignored, or weird text slips into the agent's input — the master key still works." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=center;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="460" y="625" width="660" height="70" as="geometry"/></mxCell>
+
+        <mxCell id="a1e1" value="opens" style="endArrow=block;html=1;strokeColor=#b85450;strokeWidth=2;exitX=0.25;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="a1key" target="a1rA"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a1e2" value="opens" style="endArrow=block;html=1;strokeColor=#b85450;strokeWidth=2;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="a1key" target="a1rB"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a1e3" value="opens" style="endArrow=block;html=1;strokeColor=#b85450;strokeWidth=2;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="a1key" target="a1rC"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a1e4" value="opens" style="endArrow=block;html=1;strokeColor=#b85450;strokeWidth=2;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="a1key" target="a1rD"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="a1cap" value="No per-agent identity   ·   No attribution   ·   No IAM-enforced boundary   ·   &apos;Safety&apos; lives on a sticky note" style="text;html=1;align=center;fontStyle=2;fontSize=12;" vertex="1" parent="1"><mxGeometry x="40" y="860" width="1320" height="24" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="a2" name="After — keycard counter + Do Not Enter">
+    <mxGraphModel dx="1400" dy="850" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="a2t" value="After — keycards from a counter · 'Do Not Enter' stickers · separate cameras" style="text;html=1;fontSize=22;fontStyle=1;align=left;" vertex="1" parent="1"><mxGeometry x="40" y="20" width="1300" height="34" as="geometry"/></mxCell>
+        <mxCell id="a2s" value="The auditor no longer carries a key. It asks a counter, gets a temporary keycard, uses it only where allowed." style="text;html=1;fontSize=13;align=left;fontStyle=2;" vertex="1" parent="1"><mxGeometry x="40" y="56" width="1300" height="24" as="geometry"/></mxCell>
+
+        <mxCell id="a2cp" value="Central platform" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=center;verticalAlign=top;fontSize=13;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="40" y="100" width="640" height="720" as="geometry"/></mxCell>
+
+        <mxCell id="a2aud" value="🤖 sre-gcp-auditor&lt;br&gt;(scheduled · service identity)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="70" y="180" width="240" height="80" as="geometry"/></mxCell>
+        <mxCell id="a2bdg" value="🪪 Badge: &apos;scheduled-auditor&apos;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="70" y="280" width="240" height="50" as="geometry"/></mxCell>
+
+        <mxCell id="a2kc" value="🗝️ KEY COUNTER&lt;br&gt;(Credential Broker)&lt;br&gt;separate locked room · its own SA" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="380" y="180" width="280" height="100" as="geometry"/></mxCell>
+        <mxCell id="a2ck" value="checks: who? · which projects allowed? · which scope? · how long?" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;dashed=1;fontSize=11;align=center;" vertex="1" parent="1"><mxGeometry x="380" y="300" width="280" height="50" as="geometry"/></mxCell>
+        <mxCell id="a2card" value="🪪 TEMP KEYCARD&lt;br&gt;read-only · projects A, B · expires in 15 min" style="shape=note;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=center;verticalAlign=middle;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="380" y="370" width="280" height="80" as="geometry"/></mxCell>
+
+        <mxCell id="a2mb" value="📬 auditor-bot@…&lt;br&gt;(dedicated mailbox · attributed)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="70" y="620" width="280" height="80" as="geometry"/></mxCell>
+        <mxCell id="a2cam" value="📹 Off-site security cameras&lt;br&gt;(audit log sink in SEPARATE project)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="380" y="620" width="280" height="80" as="geometry"/></mxCell>
+
+        <mxCell id="a2vsc" value="🛡️ VPC-SC perimeter — campus fence (leaks can't physically leave)" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=none;strokeColor=#82b366;strokeWidth=3;align=center;verticalAlign=top;fontStyle=1;fontSize=13;" vertex="1" parent="1"><mxGeometry x="730" y="100" width="900" height="720" as="geometry"/></mxCell>
+        <mxCell id="a2est" value="GCP estate (only allowlisted projects/folders)" style="text;html=1;align=center;fontSize=12;fontStyle=2;" vertex="1" parent="1"><mxGeometry x="730" y="140" width="900" height="20" as="geometry"/></mxCell>
+
+        <mxCell id="a2rA" value="🚪 Room A&lt;br&gt;ALLOWED&lt;br&gt;(IAM bindings)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="780" y="200" width="200" height="100" as="geometry"/></mxCell>
+        <mxCell id="a2rB" value="🚪 Room B&lt;br&gt;ALLOWED&lt;br&gt;(Cloud SQL)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1380" y="200" width="200" height="100" as="geometry"/></mxCell>
+        <mxCell id="a2rC" value="🚪 Room C&lt;br&gt;🚫 DO NOT ENTER&lt;br&gt;(IAM Deny policy)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="780" y="480" width="200" height="110" as="geometry"/></mxCell>
+        <mxCell id="a2rD" value="🚪 Room D&lt;br&gt;🚫 DO NOT ENTER&lt;br&gt;(no SA grant → unreachable)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="1380" y="480" width="200" height="110" as="geometry"/></mxCell>
+        <mxCell id="a2nox" value="…and any project NOT on the allowlist&lt;br&gt;is unreachable by design (no IAM grant exists)" style="text;html=1;align=center;fontSize=12;fontStyle=2;" vertex="1" parent="1"><mxGeometry x="1010" y="510" width="360" height="60" as="geometry"/></mxCell>
+
+        <mxCell id="a2f1" value="1 · &apos;I need read-only, projects A&amp;B, 15 min&apos; (with badge)" style="endArrow=block;html=1;strokeColor=#9673a6;strokeWidth=2;" edge="1" parent="1" source="a2aud" target="a2kc"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a2f2" value="2 · dispenses keycard" style="endArrow=block;html=1;strokeColor=#9673a6;strokeWidth=2;" edge="1" parent="1" source="a2ck" target="a2card"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a2f3" value="3 · opens (read-only, 15 min)" style="endArrow=block;html=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="a2card" target="a2rA"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a2f4" value="3 · opens (read-only, 15 min)" style="endArrow=block;html=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="a2card" target="a2rB"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a2f5" value="🚫 BLOCKED" style="endArrow=block;html=1;strokeColor=#b85450;strokeWidth=2;dashed=1;fontStyle=1;" edge="1" parent="1" source="a2card" target="a2rC"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a2f6" value="4 · attributed report email" style="endArrow=block;html=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="a2aud" target="a2mb"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="a2f7" value="every keycard logged" style="endArrow=block;html=1;strokeColor=#82b366;strokeWidth=2;dashed=1;" edge="1" parent="1" source="a2kc" target="a2cam"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="a2cap" value="Per-task identity  ·  Attribution  ·  IAM-enforced boundary  ·  Hard exclude  ·  Time-boxed  ·  Logged off-site" style="text;html=1;align=center;fontStyle=2;fontSize=12;" vertex="1" parent="1"><mxGeometry x="40" y="860" width="1620" height="24" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
