@@ -52,6 +52,14 @@ class ForgeOSAdapter(AgentStackAdapter):
             if not self._tool_executor:
                 logger.warning("ForgeOS invoke for %s: no tool_executor — agent will run without tools", agent_id)
             from src.platform.agentic_loop import run_agentic_loop, build_tool_definitions
+            # LLM-routing keys live in agent_def.metadata (where the YAML/PUT
+            # endpoint stores them), but llm_router.chat() reads them from
+            # llm_config.metadata. Mirror the relevant ones across so per-agent
+            # base_url / fallback_provider actually take effect.
+            for k in ("base_url", "fallback_provider"):
+                v = (agent_def.metadata or {}).get(k)
+                if v and not agent_def.llm_config.metadata.get(k):
+                    agent_def.llm_config.metadata[k] = v
             tools = build_tool_definitions(self._tool_executor, agent_def.tools or None)
             # Warn if agent expects MCP tools but none were resolved
             if agent_def.tools and not tools:
