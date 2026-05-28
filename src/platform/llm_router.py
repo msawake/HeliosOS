@@ -36,6 +36,12 @@ MAX_RETRIES = int(os.environ.get("FORGEOS_LLM_MAX_RETRIES", "3"))
 BACKOFF_BASE_SECONDS = float(os.environ.get("FORGEOS_LLM_BACKOFF_BASE", "1.0"))
 BACKOFF_MAX_SECONDS = float(os.environ.get("FORGEOS_LLM_BACKOFF_MAX", "30.0"))
 
+# Per-request timeout for vLLM/OpenAI-compatible endpoints. Large self-hosted
+# models (qwen3.6-27b on 2x RTX 6000) can take 60-300s to respond to a
+# tool-loaded prompt — well past the 120s default. Tunable via env so we don't
+# need a code change to extend it further for cold starts.
+_VLLM_TIMEOUT_S = float(os.environ.get("FORGEOS_VLLM_TIMEOUT_S", "600.0"))
+
 
 def _is_retryable(exc: BaseException) -> bool:
     """Classify an exception as transient/retryable.
@@ -225,9 +231,11 @@ class LLMRouter:
                     from openai import OpenAI
                     vllm_url = os.environ.get("VLLM_BASE_URL", "http://localhost:8000/v1")
                     self._clients["vllm"] = OpenAI(
-                        api_key=key or "EMPTY", base_url=vllm_url, timeout=120.0,
+                        api_key=key or "EMPTY", base_url=vllm_url,
+                        timeout=_VLLM_TIMEOUT_S,
+                        max_retries=0,  # _with_retry owns retries; don't nest
                     )
-                    logger.info("Initialized vLLM client (%s)", vllm_url)
+                    logger.info("Initialized vLLM client (%s, timeout=%ss)", vllm_url, _VLLM_TIMEOUT_S)
                 except ImportError:
                     logger.warning("openai package not installed (needed for vLLM)")
 
@@ -242,9 +250,10 @@ class LLMRouter:
                 self._clients["vllm"] = OpenAI(
                     api_key=self._api_keys.get("vllm") or "EMPTY",
                     base_url=vllm_url,
-                    timeout=120.0,
+                    timeout=_VLLM_TIMEOUT_S,
+                    max_retries=0,
                 )
-                logger.info("Initialized fallback vLLM client (%s)", vllm_url)
+                logger.info("Initialized fallback vLLM client (%s, timeout=%ss)", vllm_url, _VLLM_TIMEOUT_S)
             except ImportError:
                 logger.warning("openai package not installed (vLLM fallback)")
 
@@ -264,9 +273,13 @@ class LLMRouter:
         try:
             from openai import OpenAI
             key = self._api_keys.get("vllm") or "EMPTY"
-            client = OpenAI(api_key=key, base_url=base_url, timeout=120.0)
+            client = OpenAI(
+                api_key=key, base_url=base_url,
+                timeout=_VLLM_TIMEOUT_S,
+                max_retries=0,  # _with_retry owns retries; don't nest
+            )
             self._clients[cache_key] = client
-            logger.info("Initialized per-agent vLLM client (%s)", base_url)
+            logger.info("Initialized per-agent vLLM client (%s, timeout=%ss)", base_url, _VLLM_TIMEOUT_S)
             return client
         except ImportError:
             logger.warning("openai package not installed (needed for vLLM)")
