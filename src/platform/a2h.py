@@ -535,6 +535,10 @@ class A2HGateway:
         self._channels = channels or [DashboardChannel(), LogChannel()]
         self._kernel = kernel
         self._humans: dict[str, HumanAgent] = {}
+        # ForgeOS A2H chat extension (multi-turn sessions on top of the spec).
+        # See src/platform/a2h_chat.py.
+        from src.platform.a2h_chat import A2HChatGateway
+        self.chat = A2HChatGateway(self)
 
     # ---- Human registration ------------------------------------------------
 
@@ -969,3 +973,7 @@ A2H_TOOL_SCHEMAS = [
         },
     },
 ]
+
+# Append the A2H chat method's tool schemas (multi-turn sessions extension).
+from src.platform.a2h_chat import CHAT_TOOL_SCHEMAS as _CHAT_TOOL_SCHEMAS  # noqa: E402
+A2H_TOOL_SCHEMAS.extend(_CHAT_TOOL_SCHEMAS)

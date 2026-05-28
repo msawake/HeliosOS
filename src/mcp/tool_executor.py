@@ -98,6 +98,10 @@ class ToolExecutor:
             handlers["human__notify"] = self._handle_human_notify
             handlers["human__check"] = self._handle_human_check
             handlers["human__list_available"] = self._handle_human_list
+            # A2H chat (multi-turn session extension).
+            handlers["human__chat"] = self._handle_human_chat
+            handlers["human__chat_check"] = self._handle_human_chat_check
+            handlers["human__chat_close"] = self._handle_human_chat_close
 
         # Memory tools (always available — uses in-memory store as fallback)
         handlers["memory__read"] = self._handle_memory_read
@@ -120,6 +124,13 @@ class ToolExecutor:
         # Drive sharing-audit tool (Drive API via FORGEOS_GWS_* creds).
         from src.platform.drive_audit_tool import DRIVE_TOOL_HANDLERS
         handlers.update(DRIVE_TOOL_HANDLERS)
+
+        # Drive read/write tools — authenticate via SA impersonation (keyless),
+        # not the user's OAuth refresh token. Requires FORGEOS_DRIVE_AGENT_SA
+        # to be set on the platform and the user to have shared the target
+        # files/folders with that SA's email.
+        from src.platform.drive_tool import DRIVE_RW_TOOL_HANDLERS
+        handlers.update(DRIVE_RW_TOOL_HANDLERS)
 
         if not self._system:
             return handlers
@@ -171,6 +182,9 @@ class ToolExecutor:
 
         from src.platform.drive_audit_tool import DRIVE_TOOL_SCHEMAS
         schemas.extend(DRIVE_TOOL_SCHEMAS)
+
+        from src.platform.drive_tool import DRIVE_RW_TOOL_SCHEMAS
+        schemas.extend(DRIVE_RW_TOOL_SCHEMAS)
 
         if not self._system:
             return schemas
@@ -804,6 +818,59 @@ class ToolExecutor:
             return {"humans": []}
         humans = self._a2h_gateway.list_humans(namespace=input.get("namespace"))
         return {"humans": [h.to_discovery_dict() for h in humans]}
+
+    # -- A2H chat (multi-turn session extension) ----------------------------
+
+    async def _handle_human_chat(self, input: dict, ctx: dict | None) -> dict:
+        """Agent-initiated chat: open a session if needed, post a message,
+        then long-poll for the human's reply."""
+        if not self._a2h_gateway or not hasattr(self._a2h_gateway, "chat"):
+            return {"error": "A2H chat not available"}
+        gw = self._a2h_gateway.chat
+        agent_id = (ctx or {}).get("agent_id", "")
+
+        chat_id = input.get("chat_id")
+        if not chat_id:
+            session = gw.open(
+                from_agent=agent_id, from_agent_name=agent_id,
+                to_namespace=input.get("namespace", "default"),
+                to_name=input["name"],
+                topic=input.get("topic", ""),
+                context=input.get("context"),
+            )
+            if session.status.value == "closed":
+                return {"error": session.closed_reason or "could not open chat"}
+            chat_id = session.id
+
+        post = gw.post(
+            chat_id=chat_id, role="agent", sender=agent_id,
+            content=input["message"],
+        )
+        if not post.get("ok"):
+            return {"error": post.get("error", "post failed"), "chat_id": chat_id}
+
+        wait = float(input.get("wait_seconds", 120) or 0)
+        if wait <= 0:
+            return {"chat_id": chat_id, "status": "open", "messages": []}
+        last_id = post["message"]["id"]
+        result = await gw.wait(chat_id=chat_id, since=last_id, timeout=wait)
+        return {
+            "chat_id": chat_id,
+            "status": result.get("status"),
+            "messages": result.get("messages", []),
+        }
+
+    def _handle_human_chat_check(self, input: dict, ctx: dict | None) -> dict:
+        if not self._a2h_gateway or not hasattr(self._a2h_gateway, "chat"):
+            return {"error": "A2H chat not available"}
+        return self._a2h_gateway.chat.fetch(
+            chat_id=input["chat_id"], since=input.get("since"),
+        )
+
+    def _handle_human_chat_close(self, input: dict, ctx: dict | None) -> dict:
+        if not self._a2h_gateway or not hasattr(self._a2h_gateway, "chat"):
+            return {"error": "A2H chat not available"}
+        return self._a2h_gateway.chat.close(input["chat_id"], reason=input.get("reason", ""))
 
     # -- Memory tools -------------------------------------------------------
 

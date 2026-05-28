@@ -1,0 +1,44 @@
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: drive-chat-agent
+  description: >-
+    Interactive agent that helps a human manage Google Drive files via chat.
+    Reads/writes Drive files using a dedicated service account
+    (forgeos-drive-agent), impersonated keylessly from the platform's runtime
+    SA. The SA only sees files the user has explicitly shared with its
+    email — that's the authorization mechanism, in line with the security
+    proposal (docs/security/agent-mcp-security-proposal.md). The user chats
+    with the agent through the A2H chat method (forgeos chat <id>).
+  department: operations
+  labels:
+    category: drive-assistant
+    execution: event_driven
+    model: gemini-2.5-pro
+spec:
+  stack: forgeos
+  execution_type: reflex   # responds to invoke / chat — no scheduler, no event subscription
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-pro
+    provider: google
+  tools:
+    - drive__list_files
+    - drive__find_by_name
+    - drive__read_file
+    - drive__update_file
+    - drive__create_file
+    - human__chat
+    - human__chat_check
+    - memory__read
+    - memory__write
+  system_prompt:
+    file: system_prompt.md
+  metadata:
+    # The user shares Drive files/folders with this SA's email to grant access.
+    # The platform impersonates the SA (no keys) — see drive_tool.py.
+    drive_agent_sa: "forgeos-drive-agent@admachina-atomic-test-84.iam.gserviceaccount.com"
+    # Optional default folder id the user wants the agent to focus on. The
+    # agent can also list files outside it by passing a different folder_id
+    # or query to drive__list_files.
+    default_folder_id: ""

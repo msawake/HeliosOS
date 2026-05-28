@@ -3240,6 +3240,116 @@ def create_fastapi_app(
         return {"humans": [h.to_discovery_dict() for h in humans]}
 
     # ------------------------------------------------------------------
+    # A2H chat — multi-turn session extension (see src/platform/a2h_chat.py)
+    # ------------------------------------------------------------------
+
+    def _resolve_chat_gw():
+        gw = _resolve_a2h_gateway()
+        if gw is None or not hasattr(gw, "chat"):
+            return None
+        return gw.chat
+
+    @app.post("/api/a2h/v1/chats", tags=["a2h-chat"], status_code=201)
+    async def a2h_chat_open(request: Request, _auth=Depends(check_auth)):
+        """Open a chat session. Body: {agent_namespace, agent_name, human_name?,
+        human_namespace?, topic?, context?}.
+
+        Either direction may open: typically a human (CLI/dashboard) opens
+        toward an agent. For agent-initiated chats use the human__chat tool.
+        """
+        gw = _resolve_chat_gw()
+        if gw is None:
+            raise HTTPException(503, "A2H chat not available")
+        body = await request.json()
+        agent_ns = body.get("agent_namespace", "default")
+        agent_name = body["agent_name"]
+        human_name = body.get("human_name", "operator")
+        human_ns = body.get("human_namespace", agent_ns)
+        topic = body.get("topic", "")
+        context = body.get("context") or {}
+
+        # Look up the agent id by name (best-effort) so the session links a pid.
+        agent_pid = body.get("agent_pid", "")
+        if not agent_pid and platform_executor and hasattr(platform_executor, "registry"):
+            for a in platform_executor.registry.list_all():
+                if getattr(a, "name", "") == agent_name and getattr(a, "namespace", "default") == agent_ns:
+                    agent_pid = getattr(a, "agent_id", "")
+                    break
+
+        session = gw.open_for_human(
+            agent_pid=agent_pid or f"{agent_ns}/{agent_name}",
+            agent_name=agent_name,
+            namespace=agent_ns,
+            human_pid=body.get("human_pid", f"human:{human_name}"),
+            human_name=human_name,
+            topic=topic, context=context,
+        )
+        return session.to_dict(include_messages=False)
+
+    @app.post("/api/a2h/v1/chats/{chat_id}/messages", tags=["a2h-chat"], status_code=201)
+    async def a2h_chat_post(chat_id: str, request: Request, _auth=Depends(check_auth)):
+        """Post a message into a chat. Body: {role: 'human'|'agent'|'system',
+        sender, content}."""
+        gw = _resolve_chat_gw()
+        if gw is None:
+            raise HTTPException(503, "A2H chat not available")
+        body = await request.json()
+        result = gw.post(
+            chat_id=chat_id,
+            role=body.get("role", "human"),
+            sender=body.get("sender", ""),
+            content=body.get("content", ""),
+        )
+        if not result.get("ok"):
+            raise HTTPException(400, result.get("error", "post failed"))
+        return result
+
+    @app.get("/api/a2h/v1/chats/{chat_id}/messages", tags=["a2h-chat"])
+    async def a2h_chat_fetch(
+        chat_id: str, since: str | None = None, wait_seconds: float = 0,
+        _auth=Depends(check_auth),
+    ):
+        """Fetch messages after `since`. If wait_seconds>0, long-poll up to
+        that many seconds for new messages before returning."""
+        gw = _resolve_chat_gw()
+        if gw is None:
+            raise HTTPException(503, "A2H chat not available")
+        if wait_seconds and wait_seconds > 0:
+            return await gw.wait(chat_id=chat_id, since=since, timeout=float(wait_seconds))
+        return gw.fetch(chat_id=chat_id, since=since)
+
+    @app.post("/api/a2h/v1/chats/{chat_id}/close", tags=["a2h-chat"])
+    async def a2h_chat_close(chat_id: str, request: Request, _auth=Depends(check_auth)):
+        gw = _resolve_chat_gw()
+        if gw is None:
+            raise HTTPException(503, "A2H chat not available")
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        return gw.close(chat_id, reason=(body or {}).get("reason", ""))
+
+    @app.get("/api/a2h/v1/chats/{chat_id}", tags=["a2h-chat"])
+    async def a2h_chat_get(chat_id: str, include_messages: bool = True, _auth=Depends(check_auth)):
+        gw = _resolve_chat_gw()
+        if gw is None:
+            raise HTTPException(503, "A2H chat not available")
+        out = gw.get_session(chat_id, include_messages=include_messages)
+        if out is None:
+            raise HTTPException(404, "chat not found")
+        return out
+
+    @app.get("/api/a2h/v1/chats", tags=["a2h-chat"])
+    async def a2h_chat_list(
+        agent_pid: str | None = None, human_pid: str | None = None,
+        status: str | None = None, _auth=Depends(check_auth),
+    ):
+        gw = _resolve_chat_gw()
+        if gw is None:
+            return {"chats": []}
+        return {"chats": gw.list(agent_pid=agent_pid, human_pid=human_pid, status=status)}
+
+    # ------------------------------------------------------------------
     # Per-user credentials (write-only; secrets flow into agent processes
     # via the executor, never back out through a read endpoint)
     # ------------------------------------------------------------------
