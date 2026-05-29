@@ -20,9 +20,13 @@ from src.platform.llm_router import LLMResponse, LLMRouter
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_TURNS = 60  # safety cap on tool-use iterations (a code-writing agent
-# needs many turns: read spec, write several files, install, build, fix, commit,
-# push, open a PR — 25 was too low to finish a TODO in one run)
+MAX_TOOL_TURNS = int(os.environ.get("FORGEOS_MAX_TOOL_TURNS", "300"))  # safety cap
+# on tool-use iterations. A code-writing Qwen-driven agent regularly needs 40-80
+# turns for a single TODO (the reasoning model's chain-of-thought is verbose,
+# each turn does git/cat/write/test/fix/commit/push/PR). 300 is "effectively
+# unlimited" — the LLM provider's request rate-limits + Cloud Run timeouts will
+# bound the run before we hit it. Tunable via env so operators can clamp it back
+# if a misbehaving agent starts looping.
 MAX_GUIDANCE_RETRIES = 3  # max times a tool can be GUIDE'd before escalating to DENY
 
 # Tool execution hardening
