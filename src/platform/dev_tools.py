@@ -227,6 +227,23 @@ def _per_invocation_workdir(agent_context: dict | None) -> str:
     return "/tmp/forgeos-lens-builder/forgeos-lens"
 
 
+def _coerce_int(value: Any, default: int) -> int:
+    """LLM tool args sometimes arrive as strings ("60" instead of 60).
+    Coerce defensively so arithmetic with subprocess.timeout / deadline
+    doesn't blow up with `float + str` TypeErrors.
+    """
+    if isinstance(value, bool):  # bool is an int subclass — exclude explicitly
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(float(value.strip()))
+        except (ValueError, AttributeError):
+            return default
+    return default
+
+
 def _run(argv: list[str], cwd: Path, timeout: int, env: dict[str, str] | None = None) -> dict[str, Any]:
     """Run a subprocess with line-by-line capture + periodic progress
     heartbeats so long-running tools (pnpm build, qwen-code, cargo check)
@@ -238,6 +255,7 @@ def _run(argv: list[str], cwd: Path, timeout: int, env: dict[str, str] | None = 
     bound (e.g. running outside the platform), behaviour matches the old
     `subprocess.run` path.
     """
+    timeout = _coerce_int(timeout, 300)
     full_env = os.environ.copy()
     if env:
         full_env.update(env)
