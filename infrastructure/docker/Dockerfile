@@ -61,6 +61,13 @@ FROM python:3.12-slim AS api
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl tini ca-certificates git gnupg unzip \
+        # Playwright Chromium shared libs — required for the
+        # forgeos-lens-tester to run `pnpm test:e2e` (the smoke harness
+        # added in TODO #13). The forgeos user can't sudo, so we install
+        # these at image build time instead of `playwright install --with-deps`.
+        libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+        libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
+        libgbm1 libpango-1.0-0 libcairo2 libasound2 \
     && groupadd -g 1000 forgeos \
     && useradd -u 1000 -g forgeos -s /bin/bash -m -d /home/forgeos forgeos \
     # Install uv (provides uvx) into /usr/local/bin so non-root user can spawn MCP servers.
