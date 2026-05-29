@@ -147,6 +147,12 @@ class LLMResponse:
     tool_calls: list[ToolCall] | None = None
     raw: dict[str, Any] | None = None
     error: str | None = None  # set when both primary + fallback providers fail
+    # Reasoning models (Qwen 3, DeepSeek-R1, Nemotron Super) emit their
+    # chain-of-thought in a separate `reasoning` field. We capture it so the
+    # agentic loop can echo it back in conversation history as a <think>
+    # block — without that, the model has to re-derive its plan every turn
+    # and the loop never converges.
+    reasoning: str | None = None
 
     @property
     def has_tool_calls(self) -> bool:
@@ -738,7 +744,16 @@ class LLMRouter:
         self, client: Any, model: str, messages: list[dict], tools: list[dict] | None
     ) -> LLMResponse:
         """Call OpenAI. Raises on any error so the retry wrapper can handle it."""
-        kwargs: dict[str, Any] = {"model": model, "messages": messages}
+        # Match the Anthropic path's max_tokens budget (16384). Without an
+        # explicit value the OpenAI SDK defaults to a model-specific cap
+        # (~4096 for most chat models) — for reasoning models like Qwen 3.6
+        # that's not enough to fit the chain-of-thought AND the content +
+        # tool_call, so we see truncated/empty responses mid-loop.
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": 16384,
+        }
         if tools:
             kwargs["tools"] = _to_openai_tools(tools)
         response = client.chat.completions.create(**kwargs)
@@ -754,8 +769,22 @@ class LLMRouter:
                 )
                 for tc in choice.message.tool_calls
             ]
+        # Reasoning extraction: vLLM with --reasoning-parser qwen3 surfaces
+        # the chain-of-thought as `message.reasoning`. DeepSeek-R1 servers
+        # sometimes use `reasoning_content`. Capture whichever is present.
+        msg = choice.message
+        reasoning = (
+            getattr(msg, "reasoning", None)
+            or getattr(msg, "reasoning_content", None)
+        )
+        # Fallback when the model emits ONLY reasoning + no content + no tool
+        # calls (mid-thought truncation): surface reasoning as the text so
+        # the agentic loop has something to act on instead of an empty turn.
+        text = msg.content or ""
+        if not text and not tool_calls and reasoning:
+            text = reasoning
         return LLMResponse(
-            text=choice.message.content or "",
+            text=text,
             model=model,
             provider="openai",
             tokens_used=response.usage.total_tokens if response.usage else 0,
@@ -763,6 +792,7 @@ class LLMRouter:
             output_tokens=getattr(response.usage, "completion_tokens", 0) if response.usage else 0,
             finish_reason=choice.finish_reason or "stop",
             tool_calls=tool_calls,
+            reasoning=reasoning,
         )
 
     async def _call_vertex(

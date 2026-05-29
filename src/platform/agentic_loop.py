@@ -289,10 +289,19 @@ async def run_agentic_loop(
             messages.append({"role": "user", "parts": response_parts})
 
         elif is_openai:
-            # OpenAI format: assistant message with tool_calls array
+            # OpenAI format: assistant message with tool_calls array.
+            # For reasoning models (Qwen 3, DeepSeek-R1, Nemotron) embed the
+            # chain-of-thought as a <think> block in content so the next
+            # turn sees the model's own plan instead of re-deriving it.
+            content_parts = []
+            if response.reasoning:
+                content_parts.append(f"<think>\n{response.reasoning}\n</think>")
+            if response.text:
+                content_parts.append(response.text)
+            assistant_content = "\n\n".join(content_parts) if content_parts else None
             assistant_msg: dict[str, Any] = {
                 "role": "assistant",
-                "content": response.text or None,
+                "content": assistant_content,
                 "tool_calls": [
                     {
                         "id": tc.id,
@@ -305,6 +314,10 @@ async def run_agentic_loop(
                     for tc in response.tool_calls
                 ],
             }
+            # vLLM with the qwen3 reasoning parser also accepts reasoning back
+            # on input via this non-standard field. Other servers ignore it.
+            if response.reasoning:
+                assistant_msg["reasoning_content"] = response.reasoning
             messages.append(assistant_msg)
 
             # Execute tools in parallel (with GUIDE steering check)
