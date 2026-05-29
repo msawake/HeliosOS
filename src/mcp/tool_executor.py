@@ -589,6 +589,12 @@ class ToolExecutor:
                 pr_url = None
                 returncode = cwd_used = cmd_str = None
                 is_dev_tool = tool_name.split("__", 1)[0] in {"code", "shell", "git", "gh"}
+                # The outer wrapper always returns `success: True` for dev
+                # tools — the *real* success/failure is in inner.ok. Surface
+                # that as the audit outcome so `forgeos logs` doesn't lie
+                # ("tool shell__exec → success" while inner.ok=False).
+                if is_dev_tool and isinstance(inner, dict) and inner.get("ok") is False:
+                    outcome = "failed"
                 if isinstance(inner, dict) and is_dev_tool:
                     s = inner.get("stdout") or ""
                     e = inner.get("stderr") or ""

@@ -383,7 +383,10 @@ def shell_exec(
     # the directory on demand (mkdir -p) so the agent's first command can be
     # `git clone <repo> .` and land in the right place without knowing the
     # exact path.
-    if not cwd:
+    # Treat `.`, `./`, empty, and None as "use my per-invocation workdir".
+    # The LLM naturally writes `.` for "here"; without coercion we'd error
+    # with "cwd must be absolute: ." and the tool no-ops.
+    if not cwd or cwd.strip() in (".", "./"):
         per_inv = _per_invocation_workdir(agent_context)
         try:
             Path(per_inv).mkdir(parents=True, exist_ok=True)
@@ -455,7 +458,10 @@ def code_qwen_code_run(
         OPENAI_BASE_URL  — vLLM/OpenAI-compatible endpoint
         OPENAI_MODEL     — model id served by the endpoint
     """
-    if not repo_dir:
+    # Resolve `.`/`./`/empty to the per-invocation workdir — the LLM
+    # naturally writes these as "use the current repo dir". Without this
+    # we hit `cwd must be absolute: .` and the call no-ops in 0s.
+    if not repo_dir or repo_dir.strip() in (".", "./"):
         repo_dir = _per_invocation_workdir(agent_context)
         try:
             Path(repo_dir).mkdir(parents=True, exist_ok=True)
