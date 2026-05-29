@@ -227,6 +227,25 @@ def _per_invocation_workdir(agent_context: dict | None) -> str:
     return "/tmp/forgeos-lens-builder/forgeos-lens"
 
 
+def _resolve_repo_dir(repo_dir: str | None, agent_context: dict | None) -> str:
+    """Resolve `.`, `./`, empty, or None to the per-invocation workdir.
+
+    Used by every dev tool that takes a `repo_dir` argument
+    (shell_exec, code_qwen_code_run, git_commit_push, gh_open_pr) so the
+    LLM can naturally pass `.` to mean "here". Without this, the
+    `_resolve_cwd` "must be absolute" check rejects `.` and the tool
+    no-ops in 0s — which is how round 5/6 lost work to silent failures.
+    """
+    if not repo_dir or repo_dir.strip() in (".", "./"):
+        per_inv = _per_invocation_workdir(agent_context)
+        try:
+            Path(per_inv).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+        return per_inv
+    return repo_dir
+
+
 def _coerce_int(value: Any, default: int) -> int:
     """LLM tool args sometimes arrive as strings ("60" instead of 60).
     Coerce defensively so arithmetic with subprocess.timeout / deadline
@@ -506,7 +525,9 @@ def git_commit_push(
     message: str,
     files: list[str],
     base: str = "main",
+    agent_context: dict | None = None,
 ) -> dict[str, Any]:
+    repo_dir = _resolve_repo_dir(repo_dir, agent_context)
     cwd_or_err = _resolve_cwd(repo_dir)
     if isinstance(cwd_or_err, str):
         return {"ok": False, "error": cwd_or_err}
@@ -565,7 +586,9 @@ def gh_open_pr(
     title: str,
     body: str,
     base: str = "main",
+    agent_context: dict | None = None,
 ) -> dict[str, Any]:
+    repo_dir = _resolve_repo_dir(repo_dir, agent_context)
     cwd_or_err = _resolve_cwd(repo_dir)
     if isinstance(cwd_or_err, str):
         return {"ok": False, "error": cwd_or_err}
@@ -646,20 +669,24 @@ async def _handle_qwen_code_run(tool_input: dict, agent_context: dict | None = N
 
 
 async def _handle_git_commit_push(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
+    inp = dict(tool_input)
+    inp["agent_context"] = agent_context
     token = _gh_token_from_ctx(agent_context)
     if token:
-        result = await asyncio.to_thread(_git_commit_push_with_token, token=token, **tool_input)
+        result = await asyncio.to_thread(_git_commit_push_with_token, token=token, **inp)
     else:
-        result = await asyncio.to_thread(git_commit_push, **tool_input)
+        result = await asyncio.to_thread(git_commit_push, **inp)
     return {"success": True, "result": result}
 
 
 async def _handle_gh_open_pr(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
+    inp = dict(tool_input)
+    inp["agent_context"] = agent_context
     token = _gh_token_from_ctx(agent_context)
     if token:
-        result = await asyncio.to_thread(_gh_open_pr_with_token, token=token, **tool_input)
+        result = await asyncio.to_thread(_gh_open_pr_with_token, token=token, **inp)
     else:
-        result = await asyncio.to_thread(gh_open_pr, **tool_input)
+        result = await asyncio.to_thread(gh_open_pr, **inp)
     return {"success": True, "result": result}
 
 
@@ -676,7 +703,8 @@ def _git_commit_push_with_token(*, token: str, **kwargs: Any) -> dict[str, Any]:
     an option but cleaner to use `-c credential.helper=` with a one-shot.
     """
     # Reuse the unauthenticated path for staging/commit; only swap auth at
-    # the push step.
+    # the push step. Coerce repo_dir to handle `.` from the LLM.
+    kwargs["repo_dir"] = _resolve_repo_dir(kwargs.get("repo_dir"), kwargs.get("agent_context"))
     cwd_or_err = _resolve_cwd(kwargs["repo_dir"])
     if isinstance(cwd_or_err, str):
         return {"ok": False, "error": cwd_or_err}
@@ -709,6 +737,7 @@ def _git_commit_push_with_token(*, token: str, **kwargs: Any) -> dict[str, Any]:
 
 
 def _gh_open_pr_with_token(*, token: str, **kwargs: Any) -> dict[str, Any]:
+    kwargs["repo_dir"] = _resolve_repo_dir(kwargs.get("repo_dir"), kwargs.get("agent_context"))
     cwd_or_err = _resolve_cwd(kwargs["repo_dir"])
     if isinstance(cwd_or_err, str):
         return {"ok": False, "error": cwd_or_err}
