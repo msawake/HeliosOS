@@ -42,6 +42,16 @@ BACKOFF_MAX_SECONDS = float(os.environ.get("FORGEOS_LLM_BACKOFF_MAX", "30.0"))
 # need a code change to extend it further for cold starts.
 _VLLM_TIMEOUT_S = float(os.environ.get("FORGEOS_VLLM_TIMEOUT_S", "600.0"))
 
+# Max output tokens for OpenAI / vLLM chat completions. Reasoning models
+# (Qwen 3.6, DeepSeek-R1, Nemotron) emit 1-15k of chain-of-thought BEFORE
+# the actual content+tool_calls — a 16k cap silently truncates mid-reasoning
+# on complex multi-step diffs. Qwen 3.6's full context is 131k, so 65k
+# output headroom is safe even with a 30k prompt + 30k history. vLLM only
+# allocates what's actually generated, so there's no waste in setting this
+# high. Tunable via env (FORGEOS_OPENAI_MAX_TOKENS) if a model's served
+# context is smaller.
+_OPENAI_MAX_TOKENS = int(os.environ.get("FORGEOS_OPENAI_MAX_TOKENS", "65536"))
+
 
 def _is_retryable(exc: BaseException) -> bool:
     """Classify an exception as transient/retryable.
@@ -744,15 +754,15 @@ class LLMRouter:
         self, client: Any, model: str, messages: list[dict], tools: list[dict] | None
     ) -> LLMResponse:
         """Call OpenAI. Raises on any error so the retry wrapper can handle it."""
-        # Match the Anthropic path's max_tokens budget (16384). Without an
-        # explicit value the OpenAI SDK defaults to a model-specific cap
-        # (~4096 for most chat models) — for reasoning models like Qwen 3.6
+        # Without an explicit value the OpenAI SDK defaults to a model-specific
+        # cap (~4096 for most chat models) — for reasoning models like Qwen 3.6
         # that's not enough to fit the chain-of-thought AND the content +
-        # tool_call, so we see truncated/empty responses mid-loop.
+        # tool_call, so we'd see truncated/empty responses mid-loop. _OPENAI_MAX_TOKENS
+        # defaults to 65k — see the constant's docstring for the rationale.
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
-            "max_tokens": 16384,
+            "max_tokens": _OPENAI_MAX_TOKENS,
         }
         if tools:
             kwargs["tools"] = _to_openai_tools(tools)
