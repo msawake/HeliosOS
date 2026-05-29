@@ -499,6 +499,41 @@ class ToolExecutor:
         _t0 = _time.monotonic()
         _agent_id = (agent_context or {}).get("agent_id")
 
+        # Bind a progress emitter into the per-call ContextVar so that
+        # dev_tools._run() can stream heartbeats from long-running
+        # subprocesses (pnpm build, qwen-code, cargo check). The emitter
+        # writes `tool.progress` audit rows that `forgeos logs --follow`
+        # picks up automatically. ContextVars propagate through asyncio
+        # and into `asyncio.to_thread` workers as of Python 3.9.
+        _progress_token = None
+        _is_dev_tool = tool_name.split("__", 1)[0] in {"code", "shell", "git", "gh"}
+        _audit_ref = getattr(self, "_audit_log", None)
+        if _is_dev_tool and _audit_ref is not None and _agent_id:
+            try:
+                from src.platform.dev_tools import _progress_emitter as _pe
+
+                def _emit_progress(stdout_tail: str, stderr_tail: str, elapsed_ms: int) -> None:
+                    try:
+                        _audit_ref.record(
+                            actor=_agent_id,
+                            action="tool.progress",
+                            resource_type="tool",
+                            resource_id=tool_name,
+                            outcome="running",
+                            details={
+                                "agent_id": _agent_id,
+                                "elapsed_ms": elapsed_ms,
+                                **({"stdout_tail": stdout_tail} if stdout_tail else {}),
+                                **({"stderr_tail": stderr_tail} if stderr_tail else {}),
+                            },
+                        )
+                    except Exception:
+                        pass  # heartbeat is best-effort
+
+                _progress_token = _pe.set(_emit_progress)
+            except Exception:
+                _progress_token = None
+
         async def _dispatch() -> dict:
             # Custom company tools + platform tools (both in _custom_handlers)
             if tool_name in self._custom_handlers:
@@ -527,7 +562,15 @@ class ToolExecutor:
 
             return {"success": False, "error": f"Unknown tool: {tool_name}"}
 
-        result = await _dispatch()
+        try:
+            result = await _dispatch()
+        finally:
+            if _progress_token is not None:
+                try:
+                    from src.platform.dev_tools import _progress_emitter as _pe
+                    _pe.reset(_progress_token)
+                except Exception:
+                    pass
 
         # Record one audit row per tool call so the Mission Control "Agent
         # Logs" feed can render activity even when the syscall pipeline is

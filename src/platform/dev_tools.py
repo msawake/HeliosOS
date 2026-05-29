@@ -31,15 +31,33 @@ the failure and can self-correct.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import logging
 import os
 import shlex
 import subprocess
+import threading
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
+
+
+# Heartbeat interval for long-running subprocesses. Every N seconds while a
+# `shell__exec` or `code__qwen_code_run` is in flight, the platform emits a
+# `tool.progress` audit row with the current stdout/stderr tail — so
+# `forgeos logs --follow` shows pnpm builds and qwen-code passes streaming
+# instead of going silent for minutes.
+_PROGRESS_INTERVAL_S = float(os.environ.get("FORGEOS_TOOL_PROGRESS_INTERVAL_S", "5.0"))
+
+# Context-local progress emitter. tool_executor sets this before dispatching
+# a dev-tool call; _run() inside the subprocess loop polls it every tick.
+ProgressFn = Callable[[str, str, int], None]  # (stdout_tail, stderr_tail, elapsed_ms)
+_progress_emitter: contextvars.ContextVar[ProgressFn | None] = contextvars.ContextVar(
+    "forgeos_progress_emitter", default=None,
+)
 
 
 SHELL_ALLOWLIST = {
@@ -210,34 +228,127 @@ def _per_invocation_workdir(agent_context: dict | None) -> str:
 
 
 def _run(argv: list[str], cwd: Path, timeout: int, env: dict[str, str] | None = None) -> dict[str, Any]:
+    """Run a subprocess with line-by-line capture + periodic progress
+    heartbeats so long-running tools (pnpm build, qwen-code, cargo check)
+    show streaming output via `forgeos logs --follow` instead of going
+    silent until they return.
+
+    The heartbeat is emitted via the `_progress_emitter` ContextVar that
+    `tool_executor` sets before dispatching this tool. If no emitter is
+    bound (e.g. running outside the platform), behaviour matches the old
+    `subprocess.run` path.
+    """
     full_env = os.environ.copy()
     if env:
         full_env.update(env)
+
+    emitter = _progress_emitter.get()
+
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             argv,
             cwd=str(cwd),
             env=full_env,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
-            check=False,
+            bufsize=1,  # line-buffered so heartbeats see fresh output
         )
-    except subprocess.TimeoutExpired as e:
+    except FileNotFoundError as e:
+        return {"ok": False, "error": f"binary not found: {e.filename}", "returncode": -1}
+
+    # Bounded ring-buffers: cap memory at ~MAX_OUTPUT_BYTES per stream.
+    stdout_buf: list[str] = []
+    stderr_buf: list[str] = []
+    stdout_size = [0]  # mutable ints so threads can update
+    stderr_size = [0]
+
+    def _reader(stream, buf, size_ref):
+        try:
+            for line in iter(stream.readline, ""):
+                buf.append(line)
+                size_ref[0] += len(line)
+                # Drop from the head when we exceed the cap by 2× — keeps
+                # the tail bounded without thrashing for every line.
+                if size_ref[0] > 2 * MAX_OUTPUT_BYTES:
+                    drop_until = size_ref[0] - MAX_OUTPUT_BYTES
+                    dropped = 0
+                    while buf and dropped < drop_until:
+                        dropped += len(buf[0])
+                        buf.pop(0)
+                    size_ref[0] -= dropped
+        finally:
+            try:
+                stream.close()
+            except Exception:
+                pass
+
+    t_out = threading.Thread(target=_reader, args=(proc.stdout, stdout_buf, stdout_size), daemon=True)
+    t_err = threading.Thread(target=_reader, args=(proc.stderr, stderr_buf, stderr_size), daemon=True)
+    t_out.start()
+    t_err.start()
+
+    start = time.monotonic()
+    deadline = start + timeout
+    last_emit = start
+    last_stdout_size = -1
+    last_stderr_size = -1
+    timed_out = False
+
+    while True:
+        rc = proc.poll()
+        if rc is not None:
+            break
+        now = time.monotonic()
+        if now > deadline:
+            timed_out = True
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            break
+        if emitter and (now - last_emit) >= _PROGRESS_INTERVAL_S:
+            # Skip the emit if neither stream grew since last tick — keeps
+            # the audit log quiet during long silent waits (e.g. network).
+            so_size = stdout_size[0]
+            se_size = stderr_size[0]
+            if so_size != last_stdout_size or se_size != last_stderr_size:
+                try:
+                    emitter(
+                        ("".join(stdout_buf))[-2000:],
+                        ("".join(stderr_buf))[-2000:],
+                        int((now - start) * 1000),
+                    )
+                except Exception:
+                    pass  # heartbeat is best-effort; never fail the run on it
+                last_stdout_size = so_size
+                last_stderr_size = se_size
+            last_emit = now
+        # Sleep a short tick — long enough to keep CPU low, short enough
+        # to detect process exit and emit heartbeats on schedule.
+        time.sleep(0.25)
+
+    # Drain any remaining output the readers haven't picked up.
+    t_out.join(timeout=2.0)
+    t_err.join(timeout=2.0)
+
+    stdout = _truncate("".join(stdout_buf))
+    stderr = _truncate("".join(stderr_buf))
+    returncode = proc.returncode if proc.returncode is not None else -1
+
+    if timed_out:
         return {
             "ok": False,
             "error": f"timeout after {timeout}s",
-            "stdout": _truncate(e.stdout or ""),
-            "stderr": _truncate(e.stderr or ""),
+            "stdout": stdout,
+            "stderr": stderr,
             "returncode": -1,
         }
-    except FileNotFoundError as e:
-        return {"ok": False, "error": f"binary not found: {e.filename}", "returncode": -1}
     return {
-        "ok": proc.returncode == 0,
-        "stdout": _truncate(proc.stdout),
-        "stderr": _truncate(proc.stderr),
-        "returncode": proc.returncode,
+        "ok": returncode == 0,
+        "stdout": stdout,
+        "stderr": stderr,
+        "returncode": returncode,
     }
 
 
