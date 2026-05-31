@@ -135,6 +135,9 @@ class Kernel:
     def check_license(self, tenant_id: str, **kw: Any) -> KernelDecision:
         return KernelDecision.allow(reason="community edition — no license enforcement")
 
+    def effective_policy(self, agent_id: str) -> dict:
+        return {}
+
     def admit(self, contract: dict[str, Any], **kw: Any) -> AdmissionResult:
         return AdmissionResult(admitted=True, reason="community edition")
 

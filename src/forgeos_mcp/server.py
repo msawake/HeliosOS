@@ -374,6 +374,16 @@ async def forgeos_fire_event(name: str, payload: dict[str, Any] | None = None) -
 
 
 @server.tool()
+async def forgeos_effective_policy(agent_id: str) -> str:
+    """View the effective policy for an agent after merging Global > Namespace > Agent.
+
+    Shows the tightest constraints that actually apply — denied tools, budget
+    caps, required audit level, required HITL events, and PII policy.
+    """
+    return _fmt(await _api("GET", f"/api/platform/kernel/effective-policy/{agent_id}"))
+
+
+@server.tool()
 async def forgeos_billing_usage() -> str:
     """View billing and metering data — token usage, cost breakdown,
     and plan limits."""

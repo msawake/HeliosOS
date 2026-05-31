@@ -239,6 +239,52 @@ class Dependencies(BaseModel):
     mcp_servers: list[str] = Field(default_factory=list, description="Required MCP server names")
 
 
+class Scope(BaseModel):
+    """Organizational taxonomy — where this agent sits in the company.
+
+    Used by the kernel to resolve hierarchical policies (Global > Namespace >
+    Agent) and by RAG pipelines to filter knowledge by department/team/role.
+    """
+
+    department: str = Field("", description="Department (finance, hr, sales, engineering, ...)")
+    team: str = Field("", description="Team within department (treasury, payroll, ...)")
+    role: str = Field("", description="Job role this agent serves (treasury-analyst, ...)")
+    job_id: str = Field("", description="Internal job code (e.g. TRS-001)")
+
+
+class KnowledgeSource(BaseModel):
+    """A knowledge source the agent may access."""
+
+    path: str = Field(..., description="Path or URI (e.g. knowledge/departments/finance/)")
+    type: Literal["markdown", "rag", "google_sheet", "google_doc", "database", "api"] = "markdown"
+    description: str = ""
+
+
+class Knowledge(BaseModel):
+    """Knowledge scoping — what data this agent can see.
+
+    Controls RAG retrieval filters and declares which knowledge sources
+    (Wiki.js paths, Google Sheets, databases) the agent may access.
+    """
+
+    rag_filter: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Metadata filter applied to RAG queries (e.g. {department: finance, team: treasury})",
+    )
+    allowed_sources: list[str] = Field(
+        default_factory=list,
+        description="Paths the agent may read (e.g. knowledge/departments/finance/)",
+    )
+    blocked_sources: list[str] = Field(
+        default_factory=list,
+        description="Paths explicitly denied",
+    )
+    sources: list[KnowledgeSource] = Field(
+        default_factory=list,
+        description="Typed knowledge source declarations",
+    )
+
+
 class Runtime(BaseModel):
     """Which framework runs this agent."""
 
@@ -381,6 +427,8 @@ class Spec(BaseModel):
     triggers: list[Trigger] = Field(default_factory=list, description="Unified trigger list")
     governance: Governance | None = None
     dependencies: Dependencies | None = None
+    scope: Scope | None = Field(None, description="Organizational taxonomy (department, team, role)")
+    knowledge: Knowledge | None = Field(None, description="Knowledge scoping (RAG filters, allowed sources)")
 
     # Advanced (shared v1/v2)
     memory: MemoryConfig | None = None

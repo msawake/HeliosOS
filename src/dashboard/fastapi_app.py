@@ -2440,6 +2440,12 @@ def create_fastapi_app(
         result = k.admit(contract)
         return result.to_dict()
 
+    @app.get("/api/platform/kernel/effective-policy/{agent_id}", tags=["kernel"])
+    async def kernel_effective_policy(agent_id: str):
+        """Return the merged effective policy for an agent (Global > Namespace > Agent)."""
+        k = _require_kernel()
+        return k.effective_policy(agent_id)
+
     @app.post("/api/platform/kernel/check-license", tags=["kernel"])
     async def kernel_check_license(req: dict):
         """Check if a tenant's license is valid."""

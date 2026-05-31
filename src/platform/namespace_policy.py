@@ -138,6 +138,103 @@ class NamespacePolicyStore:
         )
 
 
+@dataclass
+class GlobalPolicy:
+    """Company-wide policy — highest precedence, overrides everything.
+
+    Global policies define hard limits that no namespace or agent can relax.
+    They can only be tightened by lower levels.
+    """
+    max_daily_budget_usd: float | None = None
+    max_per_task_budget_usd: float | None = None
+    denied_tools: list[str] = field(default_factory=list)
+    required_audit_level: Literal["none", "basic", "full"] = "basic"
+    required_hitl_events: list[str] = field(default_factory=list)
+    pii_policy: Literal["allow", "detect", "mask", "redact", "block"] = "detect"
+    max_a2a_depth: int = 5
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def is_tool_denied(self, tool_name: str) -> bool:
+        for pattern in self.denied_tools:
+            if fnmatch.fnmatch(tool_name, pattern):
+                return True
+        return False
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def resolve_effective_policy(
+    global_policy: GlobalPolicy | None,
+    namespace_policy: NamespacePolicy | None,
+    agent_contract: dict,
+) -> dict[str, Any]:
+    """Merge policies with precedence: Global > Namespace > Agent.
+
+    Returns a dict of effective constraints. Higher levels can only
+    tighten rules — a namespace cannot relax a global deny, and an
+    agent cannot relax a namespace restriction.
+
+    The returned dict contains:
+      - denied_tools: union of all denied tools
+      - max_daily_budget_usd: minimum across all levels
+      - max_per_task_budget_usd: minimum across all levels
+      - required_audit_level: highest across all levels
+      - required_hitl_events: union of all required events
+      - pii_policy: strictest across all levels
+    """
+    level_order = {"none": 0, "basic": 1, "full": 2}
+    pii_order = {"allow": 0, "detect": 1, "mask": 2, "redact": 3, "block": 4}
+
+    denied_tools: list[str] = []
+    daily_budgets: list[float] = []
+    per_task_budgets: list[float] = []
+    audit_levels: list[str] = []
+    hitl_events: set[str] = set()
+    pii_policies: list[str] = []
+
+    if global_policy:
+        denied_tools.extend(global_policy.denied_tools)
+        if global_policy.max_daily_budget_usd is not None:
+            daily_budgets.append(global_policy.max_daily_budget_usd)
+        if global_policy.max_per_task_budget_usd is not None:
+            per_task_budgets.append(global_policy.max_per_task_budget_usd)
+        audit_levels.append(global_policy.required_audit_level)
+        hitl_events.update(global_policy.required_hitl_events)
+        pii_policies.append(global_policy.pii_policy)
+
+    if namespace_policy:
+        denied_tools.extend(namespace_policy.denied_tools)
+        if namespace_policy.max_cost_per_agent_day is not None:
+            daily_budgets.append(namespace_policy.max_cost_per_agent_day)
+        audit_levels.append(namespace_policy.required_audit_level)
+        hitl_events.update(namespace_policy.required_hitl_events)
+        pii_policies.append(namespace_policy.pii_policy)
+
+    boundaries = agent_contract.get("metadata", {}).get("_boundaries", {})
+    budgets = boundaries.get("budgets", {})
+    if budgets.get("daily_usd") is not None:
+        daily_budgets.append(budgets["daily_usd"])
+    if budgets.get("per_task_usd") is not None:
+        per_task_budgets.append(budgets["per_task_usd"])
+
+    governance = agent_contract.get("metadata", {}).get("_governance", {})
+    agent_audit = governance.get("audit_level", "full")
+    audit_levels.append(agent_audit)
+    for h in governance.get("human_in_loop", []):
+        if h.get("event"):
+            hitl_events.add(h["event"])
+
+    return {
+        "denied_tools": denied_tools,
+        "max_daily_budget_usd": min(daily_budgets) if daily_budgets else None,
+        "max_per_task_budget_usd": min(per_task_budgets) if per_task_budgets else None,
+        "required_audit_level": max(audit_levels, key=lambda x: level_order.get(x, 0)) if audit_levels else "basic",
+        "required_hitl_events": sorted(hitl_events),
+        "pii_policy": max(pii_policies, key=lambda x: pii_order.get(x, 0)) if pii_policies else "detect",
+    }
+
+
 NAMESPACE_POLICY_SCHEMA: dict[str, Any] = {
     "name": "namespace_policy",
     "description": "Apply a governance policy to an entire namespace.",

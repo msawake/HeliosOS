@@ -734,10 +734,14 @@ class Kernel:
         audit_log=None,
         capability_store=None,
         license_manager=None,
+        namespace_policy_store=None,
+        global_policy=None,
     ):
         self._registry = registry
         self._audit_log = audit_log
         self.license = license_manager
+        self._namespace_policy_store = namespace_policy_store
+        self._global_policy = global_policy
 
         # Phase A #3 — process-level contract registry. The admission
         # controller registers agents' typed A2A surfaces here as they're
@@ -927,7 +931,25 @@ class Kernel:
         tool_input: dict | None = None,
         estimated_cost_usd: float | None = None,
     ) -> KernelDecision:
-        """Composite check: permissions + budget + policy."""
+        """Composite check: hierarchical policy + permissions + budget + policy."""
+        # 0. Hierarchical policy (Global > Namespace denied tools)
+        if self._global_policy and self._global_policy.is_tool_denied(tool_name):
+            self._audit("tool.denied", agent_id, tool=tool_name, reason="global policy")
+            return KernelDecision.deny(
+                reason=f"Tool '{tool_name}' denied by global policy",
+                tool=tool_name, stage="global_policy",
+            )
+        if self._namespace_policy_store and self._registry:
+            agent = self._registry.get(agent_id)
+            if agent:
+                ns = getattr(agent, "namespace", "default")
+                ns_policy = self._namespace_policy_store.get(ns)
+                if ns_policy and not ns_policy.is_tool_allowed(tool_name):
+                    self._audit("tool.denied", agent_id, tool=tool_name, reason="namespace policy")
+                    return KernelDecision.deny(
+                        reason=f"Tool '{tool_name}' denied by namespace policy for '{ns}'",
+                        tool=tool_name, stage="namespace_policy",
+                    )
         # 1. Permissions (whitelist + deny list)
         perm = self.permissions.check_tool_call(agent_id, tool_name, tool_input)
         if perm.denied:
@@ -978,6 +1000,23 @@ class Kernel:
         if self.license is None:
             return KernelDecision.allow(reason="no license manager wired")
         return self.license.check_license(tenant_id)
+
+    def effective_policy(self, agent_id: str) -> dict:
+        """Return the merged effective policy for an agent.
+
+        Merges Global > Namespace > Agent with tighten-only semantics.
+        """
+        from src.platform.namespace_policy import resolve_effective_policy
+
+        agent = self._registry.get(agent_id) if self._registry else None
+        contract = agent.to_dict() if agent and hasattr(agent, "to_dict") else {}
+        namespace = getattr(agent, "namespace", "default") if agent else "default"
+
+        ns_policy = None
+        if self._namespace_policy_store:
+            ns_policy = self._namespace_policy_store.get(namespace)
+
+        return resolve_effective_policy(self._global_policy, ns_policy, contract)
 
     def admit(self, contract: dict) -> AdmissionResult:
         result = self.admission.admit(contract)
