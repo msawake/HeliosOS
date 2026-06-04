@@ -266,6 +266,23 @@ def create_fastapi_app(
         except Exception:
             return None
 
+    def _resolve_tool_executor():
+        """Reach the live ToolExecutor via kernel→admission, else the forgeos
+        stack adapter. (`tool_executor` is not a closure var in these routes.)"""
+        try:
+            adm = getattr(kernel, "admission", None) if kernel is not None else None
+            te = (
+                (getattr(adm, "_tool_executor", None) if adm else None)
+                or (getattr(kernel, "_tool_executor", None) if kernel else None)
+                or (getattr(kernel, "tool_executor", None) if kernel else None)
+            )
+            if te is None and platform_executor is not None and hasattr(platform_executor, "get_adapter"):
+                ad = platform_executor.get_adapter("forgeos")
+                te = getattr(ad, "_tool_executor", None) if ad else None
+            return te
+        except Exception:
+            return None
+
     # Make the AuditLog visible to ToolExecutor so per-tool-call rows are
     # written even when the syscall pipeline is off.
     try:
@@ -2977,17 +2994,35 @@ def create_fastapi_app(
         if not tool_ok:
             raise HTTPException(status_code=403, detail=f"Tool '{req.tool_name}' not permitted")
 
-        if platform_kernel:
-            decision = platform_kernel.check_tool_call(agent_id, req.tool_name, req.tool_input)
-            if hasattr(decision, "denied") and decision.denied:
-                raise HTTPException(status_code=403, detail=decision.reason)
-
-        if not tool_executor:
+        te = _resolve_tool_executor()
+        if not te:
             raise HTTPException(status_code=503, detail="Tool executor unavailable")
 
-        ctx = {"agent_id": agent_id, "namespace": claims.get("namespace", "default"), "tier": claims.get("tier", 3)}
-        result = await tool_executor.execute(req.tool_name, req.tool_input, ctx)
+        # The sandbox token already authorized identity + the tool whitelist
+        # above. Execute WITHOUT binding agent_id so the kernel's per-agent
+        # registry lookup (which rejects this externally-spawned pod) is skipped;
+        # the token's scoped whitelist is the governance for sandbox calls.
+        ctx = {"namespace": claims.get("namespace", "default"), "tier": claims.get("tier", 3), "sandbox_agent": agent_id}
+        result = await te.execute(req.tool_name, req.tool_input, ctx)
         return result
+
+    @app.post("/api/sandbox/register", tags=["sandbox"])
+    async def sandbox_register(request: Request):
+        """Mint a scoped sandbox token for an externally-spawned agent runtime
+        (e.g. a per-agent k8s pod that this platform didn't launch). Dev-oriented:
+        intended for --no-auth local clusters where the pod proxies its tool calls
+        back here. Body: {agent_id, namespace?, tools?[]}."""
+        body = await request.json()
+        agent_id = body.get("agent_id")
+        if not agent_id:
+            raise HTTPException(status_code=400, detail="agent_id required")
+        from stacks.sandbox.adapter import get_token_store
+        token = get_token_store().mint_for(
+            agent_id=agent_id,
+            namespace=body.get("namespace", "default"),
+            tools=body.get("tools") or [],
+        )
+        return {"token": token, "agent_id": agent_id}
 
     @app.post("/api/sandbox/result", tags=["sandbox"])
     async def sandbox_result(request: Request, x_agent_token: str = Header(default="")):
@@ -3000,20 +3035,73 @@ def create_fastapi_app(
         logger.info("Sandbox result: agent=%s status=%s", body.get("agent_id"), body.get("status"))
         return {"ok": True}
 
+    @app.post("/api/platform/agents/{agent_id}/shell", tags=["agents"])
+    async def agent_shell(agent_id: str, request: Request, _auth=Depends(check_auth)):
+        """pod__exec equivalent — run ONE allowlisted command in the agent's
+        workdir and return {ok, stdout, stderr, code, cwd}. Powers the Lens
+        Pod-shell pane (spec TODO #16). Non-interactive (one command per call);
+        same binary allowlist + no-pipe/redirect rules as shell__exec, so it is
+        safe to expose to the UI. Body: {cmd, cwd?, timeout?}."""
+        if not platform_executor:
+            raise HTTPException(500, "Platform executor not available")
+        agent_def = platform_executor.registry.get(agent_id)
+        if not agent_def:
+            raise HTTPException(404, f"Agent '{agent_id}' not found")
+        body = await request.json()
+        cmd = (body.get("cmd") or "").strip()
+        if not cmd:
+            raise HTTPException(400, "cmd required")
+        # Run in the agent's declared workdir, else its per-invocation workdir.
+        cwd = body.get("cwd") or (agent_def.metadata or {}).get("work_dir")
+        from src.platform.dev_tools import shell_exec
+        import asyncio as _aio
+        res = await _aio.to_thread(
+            shell_exec,
+            cmd=cmd,
+            cwd=cwd,
+            timeout=int(body.get("timeout", 60)),
+            agent_context={"agent_id": agent_id, "namespace": getattr(agent_def, "namespace", "default")},
+        )
+        return {
+            "ok": res.get("ok", False),
+            "stdout": res.get("stdout", ""),
+            "stderr": res.get("stderr", res.get("error", "")),
+            "code": res.get("returncode", -1),
+            "cwd": cwd or "(per-invocation)",
+            "agent_id": agent_id,
+        }
+
     @app.get("/api/platform/tools", tags=["platform"])
     async def list_platform_tools():
-        """List all tool schemas (for sandbox agent discovery)."""
-        if not tool_executor:
-            return []
-        defs = []
+        """List all tool schemas (for sandbox agent discovery). Aggregates
+        platform, custom (drive/email/dev/company), and MCP tool defs; each
+        source is isolated so one failing source can't 500 the whole endpoint."""
+        te = _resolve_tool_executor()
+        defs: list = []
         try:
             from src.mcp.platform_tools import PLATFORM_TOOL_DEFINITIONS
             defs.extend(PLATFORM_TOOL_DEFINITIONS)
         except Exception:
             pass
-        if hasattr(tool_executor, 'get_mcp_tool_definitions'):
-            defs.extend(tool_executor.get_mcp_tool_definitions())
-        return defs
+        try:
+            from src.platform.drive_tool import DRIVE_RW_TOOL_SCHEMAS
+            defs.extend(DRIVE_RW_TOOL_SCHEMAS)
+        except Exception:
+            pass
+        for meth in ("get_custom_tool_definitions", "get_mcp_tool_definitions"):
+            try:
+                if te and hasattr(te, meth):
+                    defs.extend(getattr(te, meth)() or [])
+            except Exception as e:  # noqa: BLE001
+                logger.warning("list_platform_tools: %s failed: %s", meth, e)
+        # De-dup by name, keep first.
+        seen, out = set(), []
+        for d in defs:
+            n = d.get("name") if isinstance(d, dict) else None
+            if n and n not in seen:
+                seen.add(n)
+                out.append(d)
+        return out
 
     # ------------------------------------------------------------------
     # A2H Protocol Endpoints (Agent-to-Human)

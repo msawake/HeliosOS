@@ -110,7 +110,7 @@ class AgentWorkload(pulumi.ComponentResource):
         )
 
         # KEDA ScaledObject — scales from 0..max_replicas on Pub/Sub backlog
-        k8s.apiextensions.CustomResource(
+        scaledobject = k8s.apiextensions.CustomResource(
             f"{name}-scaler",
             api_version="keda.sh/v1alpha1",
             kind="ScaledObject",
@@ -140,4 +140,5 @@ class AgentWorkload(pulumi.ComponentResource):
 
         self.deployment = deployment
         self.subscription = subscription
+        self.scaledobject = scaledobject
         self.register_outputs({})

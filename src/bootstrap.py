@@ -473,6 +473,12 @@ class PlatformBootstrap:
         atlas_key = os.environ.get("ATLAS_GATEWAY_KEY", "")
         if atlas_key:
             api_keys["atlas"] = atlas_key
+        # vLLM / OpenAI-compatible gateway (e.g. the Qwen atlas-router). The router
+        # builds an authenticated client when VLLM_API_KEY + VLLM_BASE_URL are set;
+        # without the key it falls back to an "EMPTY" bearer and the gateway 401s.
+        vllm_key = os.environ.get("VLLM_API_KEY", "")
+        if vllm_key:
+            api_keys["vllm"] = vllm_key
         gcp_project = os.environ.get("GCP_PROJECT_ID", "")
         if gcp_project:
             api_keys["vertex"] = gcp_project

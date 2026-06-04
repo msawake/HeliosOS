@@ -18,8 +18,8 @@ spec:
   execution_type: reflex
   ownership: shared
   llm:
-    chat_model: gemini-2.5-pro
-    provider: google
+    chat_model: qwen3.6-27b
+    provider: vllm          # OpenAI-compatible Qwen gateway (base URL via platform VLLM_BASE_URL)
   tools:
     - shell__exec
     - fs__write_file
@@ -42,3 +42,4 @@ spec:
     repo_url: "https://github.com/antonibergas-hue/forgeos-lens.git"
     branch_prefix: "feat/lens-"
     pr_base: "main"
+    max_turns: 120   # code-builder needs many turns (clone→edit→build→PR→merge)

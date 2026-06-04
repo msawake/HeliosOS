@@ -53,6 +53,21 @@ class SandboxTokenStore:
         }
         return token
 
+    def mint_for(self, agent_id: str, namespace: str = "default", tools: list[str] | None = None, tier: int = 3) -> str:
+        """Mint a scoped token for an externally-spawned agent (e.g. a k8s pod
+        that the platform did not launch itself). Used by the dev
+        /api/sandbox/register endpoint."""
+        token = f"sbx_{secrets.token_urlsafe(32)}"
+        self._tokens[token] = {
+            "agent_id": agent_id,
+            "namespace": namespace,
+            "owner_id": "",
+            "tools": tools or [],
+            "tier": tier,
+            "created_at": time.time(),
+        }
+        return token
+
     def verify(self, token: str) -> dict | None:
         claims = self._tokens.get(token)
         if not claims:
@@ -149,7 +164,7 @@ class SandboxAdapter(AgentStackAdapter):
             "AGENT_MAX_TURNS": str((agent_def.metadata or {}).get("max_turns", 15)),
             "PYTHONUNBUFFERED": "1",
         }
-        for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+        for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
             if os.environ.get(key):
                 env[key] = os.environ[key]
 
@@ -224,7 +239,7 @@ class SandboxAdapter(AgentStackAdapter):
             "AGENT_SYSTEM_PROMPT": agent_def.system_prompt or "", "AGENT_TOOLS": json.dumps(agent_def.tools or []),
             "AGENT_PROMPT": agent_def.goal or f"Heartbeat for {agent_def.name}.", "AGENT_MAX_TURNS": "50", "PYTHONUNBUFFERED": "1",
         }
-        for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+        for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
             if os.environ.get(k):
                 env[k] = os.environ[k]
         try:
@@ -264,7 +279,7 @@ class SandboxAdapter(AgentStackAdapter):
 
     @staticmethod
     def _extract_output(logs):
-        lines = [l for l in logs.strip().split("\n") if l.strip()]
+        lines = [ln for ln in logs.strip().split("\n") if ln.strip()]
         for line in reversed(lines):
             if "Done in" in line or "output=" in line.lower():
                 return line

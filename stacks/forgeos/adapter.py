@@ -40,6 +40,33 @@ class ForgeOSAdapter(AgentStackAdapter):
         logger.info("ForgeOS agent created: %s (%s)", agent_def.name, agent_def.agent_id)
         return agent_def.agent_id
 
+    async def _forward_to_pod(self, agent_id: str, pod_url: str, prompt: str) -> AgentResult:
+        """Forward an invoke to a pod-backed agent's HTTP /invoke (P1.7)."""
+        import time
+
+        import httpx
+
+        start = time.time()
+        try:
+            async with httpx.AsyncClient(timeout=180) as client:
+                resp = await client.post(f"{pod_url.rstrip('/')}/invoke", json={"prompt": prompt})
+            resp.raise_for_status()
+            data = resp.json()
+            ok = data.get("status") == "completed"
+            return AgentResult(
+                agent_id=agent_id,
+                status=AgentStatus.COMPLETED if ok else AgentStatus.FAILED,
+                output=data.get("output", ""),
+                error=None if ok else data.get("error", "pod returned non-completed status"),
+                elapsed_ms=(time.time() - start) * 1000,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.error("pod forward failed for %s -> %s: %s", agent_id, pod_url, e)
+            return AgentResult(
+                agent_id=agent_id, status=AgentStatus.FAILED,
+                error=f"pod forward failed: {e}", elapsed_ms=(time.time() - start) * 1000,
+            )
+
     async def invoke(
         self, agent_id: str, prompt: str, context: dict | None = None,
         history: list[dict] | None = None,
@@ -47,6 +74,15 @@ class ForgeOSAdapter(AgentStackAdapter):
         agent_def = self._agents.get(agent_id)
         if not agent_def:
             return AgentResult(agent_id=agent_id, status=AgentStatus.FAILED, error="Agent not found")
+
+        # P1.7 — pod-backed dispatch. If the agent is bound to a pod's HTTP
+        # service (metadata.pod_service_url), forward the invoke there instead of
+        # running the loop in-process. Lets `forgeos invoke <id>` execute IN the
+        # agent's Kubernetes pod. On GKE the URL is the in-cluster Service DNS;
+        # locally it's a kubectl port-forward to the pod's Service.
+        pod_url = (agent_def.metadata or {}).get("pod_service_url")
+        if pod_url:
+            return await self._forward_to_pod(agent_id, str(pod_url), prompt)
 
         if self._llm_router:
             if not self._tool_executor:

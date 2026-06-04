@@ -1,0 +1,63 @@
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: law-firm-associate
+  namespace: default
+  description: >-
+    The firm's AI associate at Marbury & Stone LLP. Works the matter files in
+    Google Drive via a dedicated service account (forgeos-drive-agent,
+    impersonated keylessly — it only sees folders shared with its email). Two
+    jobs: (1) new-client intake — reads the intake form, runs a conflicts check
+    through the Conflicts Clerk (A2A, across an ethical wall), drafts an
+    engagement letter into the matter folder, and pauses for partner sign-off
+    before it is "sent"; (2) contract / due-diligence review — reads deal-room
+    contracts, extracts the key terms, flags risky clauses, and writes a review
+    memo back to Drive. You drive it via `forgeos chat <id>`.
+  department: legal
+  labels:
+    category: legal-associate
+    execution: reflex
+    model: qwen3.6-27b
+spec:
+  stack: forgeos
+  execution_type: reflex   # responds to invoke / chat — no scheduler, no event subscription
+  ownership: shared
+  llm:
+    chat_model: qwen3.6-27b
+    provider: vllm           # OpenAI-compatible atlas-router gateway (OPENAI_BASE_URL/OPENAI_API_KEY at boot)
+  tools:
+    # Drive (service-account, keyless) — read the matter files, write memos/letters
+    - drive__list_files
+    - drive__find_by_name
+    - drive__read_file
+    - drive__create_file
+    - drive__update_file
+    # A2A — call the Conflicts Clerk across the ethical wall (ACL-gated)
+    - agent__call
+    - agent__list_available
+    # HITL — pause for partner sign-off before anything leaves the firm.
+    # company__request_approval lands in the dashboard Approvals queue and works
+    # on any boot. (The A2H human__chat tools need the optional `a2h` package;
+    # they're added here too so the agent uses them when that package is present.)
+    - company__request_approval
+    - company__check_approval
+    - human__chat
+    - human__chat_check
+    # Working memory (per-matter notes, dedupe)
+    - memory__read
+    - memory__write
+  system_prompt:
+    file: system_prompt.md
+  # Per-matter cost guardrails — the demo's stand-in for billable-hour control.
+  guardrails:
+    max_cost_usd_per_day: 25.0
+    max_tokens_per_run: 200000
+  metadata:
+    # The service account whose shared folders the associate can read/write.
+    # (Same SA proven by examples/drive-chat-agent.)
+    drive_agent_sa: "forgeos-drive-agent@admachina-atomic-test-84.iam.gserviceaccount.com"
+    # The firm's Drive root — seeded by examples/law-firm/seed_drive.py.
+    # Set this to the "Marbury & Stone — Demo" folder id printed by the seeder.
+    firm_root_folder_id: ""
+    # The Conflicts Clerk the associate calls for intake.
+    conflicts_clerk: "conflicts/conflicts-clerk"

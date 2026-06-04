@@ -1,0 +1,21 @@
+FROM python:3.12-slim AS agent-base
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir httpx anthropic openai pyyaml
+
+# The long-running agent runtime + the agentic loop it reuses.
+COPY src/agent_runtime/ /app/src/agent_runtime/
+COPY src/forgeos_sandbox/ /app/src/forgeos_sandbox/
+COPY src/forgeos_sdk/client.py /app/src/forgeos_sdk/client.py
+COPY src/forgeos_sdk/__init__.py /app/src/forgeos_sdk/__init__.py
+
+RUN groupadd -g 1000 agent && useradd -u 1000 -g agent -m agent
+USER 1000
+WORKDIR /app
+ENV PYTHONPATH=/app PYTHONUNBUFFERED=1 FORGEOS_AGENT_PORT=8080
+EXPOSE 8080
+
+HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
+  CMD curl -fsS http://localhost:8080/healthz || exit 1
+
+CMD ["python", "-m", "src.agent_runtime.server"]

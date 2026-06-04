@@ -40,3 +40,4 @@ infrastructure/docker/.env
 /site/
 .venv-mc-test/
 .venv-platform/
+.qwen/
