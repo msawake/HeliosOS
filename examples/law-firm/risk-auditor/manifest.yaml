@@ -41,10 +41,18 @@ spec:
     max_tokens_per_run: 120000
   governance:
     audit_level: full         # every finding is recorded in the hash-chained audit log
-    human_in_loop:
-      - event: privilege.public_exposure
+    # Per-tool human approval (runtime-v2): emailing the managing partner about
+    # a privilege exposure is kernel-gated. The auditor calls notify__email
+    # normally; the kernel returns ask_human, the run suspends durably, and it
+    # resumes (sending once) only after the partner approves. forgeos stack is
+    # suspendable, so this is honoured as true human-in-the-loop.
+    approvals:
+      - tool: notify__email
+        mode: always
         approvers: [managing-partner]
         sla_hours: 4
+        on_timeout: abort
+        reason: "Partner notification about a privilege exposure must be reviewed before sending."
   metadata:
     report_to: "antoni.bergas@makingscience.com"
     memory_key_prefix: "risk-audit/"
