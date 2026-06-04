@@ -23,6 +23,14 @@ import httpx
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | sandbox | %(levelname)-7s | %(message)s", datefmt="%H:%M:%S")
 logger = logging.getLogger("forgeos_sandbox")
 
+# Explicit output budget for the OpenAI/vLLM path. Without it the OpenAI SDK
+# defaults to a model-specific cap (~4096), which isn't enough for a reasoning
+# model like Qwen 3.6 to fit its chain-of-thought AND the content + tool_call —
+# the response truncates and the loop sees content=None, tool_calls=[] (an empty
+# turn). Qwen 3.6's context is 131k, so 65k output headroom is safe; vLLM only
+# allocates what's generated. Mirrors src/platform/llm_router._OPENAI_MAX_TOKENS.
+_OPENAI_MAX_TOKENS = int(os.environ.get("FORGEOS_OPENAI_MAX_TOKENS", "65536"))
+
 
 class SandboxRunner:
     """Agentic loop running inside a sandboxed container."""
@@ -40,6 +48,7 @@ class SandboxRunner:
             self.allowed_tools: list[str] = json.loads(os.environ.get("AGENT_TOOLS", "[]"))
         except json.JSONDecodeError:
             self.allowed_tools = []
+        self._fn_names: dict[str, str] = {}  # gemini functionCall id -> name
 
         self._http = httpx.Client(
             base_url=self.api_url,
@@ -51,12 +60,14 @@ class SandboxRunner:
             sys.exit(1)
         logger.info("Sandbox starting: agent=%s model=%s tools=%d", self.agent_id, self.model, len(self.allowed_tools))
 
-    def run(self) -> dict:
-        if not self.prompt:
+    def run(self, prompt: str | None = None) -> dict:
+        prompt = prompt if prompt is not None else self.prompt
+        if not prompt:
             return {"status": "failed", "error": "No AGENT_PROMPT"}
+        self._fn_names = {}  # reset per-invocation gemini functionCall id map
 
         tool_schemas = self._build_tool_schemas()
-        messages = [{"role": "user", "content": self.prompt}]
+        messages = [{"role": "user", "content": prompt}]
         all_tool_calls: list[dict] = []
         final_text = ""
         start = time.time()
@@ -73,10 +84,15 @@ class SandboxRunner:
                 final_text = text
                 break
 
-            # Build assistant message
+            # Build assistant message. Carry a reasoning model's chain-of-thought
+            # forward as a <think> block so it doesn't re-derive its plan from
+            # scratch each turn (the symptom: Qwen re-exploring the same files
+            # and never converging). Matches src/platform/llm_router's loop.
+            reasoning = response.get("reasoning")
             assistant_content = []
-            if text:
-                assistant_content.append({"type": "text", "text": text})
+            carried = (f"<think>{reasoning}</think>\n" if reasoning else "") + (text or "")
+            if carried:
+                assistant_content.append({"type": "text", "text": carried})
             for tc in tool_calls:
                 assistant_content.append({"type": "tool_use", "id": tc["id"], "name": tc["name"], "input": tc["input"]})
             messages.append({"role": "assistant", "content": assistant_content})
@@ -96,16 +112,70 @@ class SandboxRunner:
         result = {"status": "completed", "agent_id": self.agent_id, "output": final_text, "tool_calls": all_tool_calls, "turns": min(turn + 1, self.max_turns), "elapsed_seconds": round(elapsed, 2)}
         self._report_result(result)
         logger.info("Done in %.1fs (%d turns, %d tools)", elapsed, result["turns"], len(all_tool_calls))
+        logger.info("Output: %s", (final_text or "").strip()[:1000])
         return result
 
     def _call_llm(self, messages, tools):
         try:
             if self.provider == "anthropic":
                 return self._call_anthropic(messages, tools)
+            if self.provider in ("google", "vertex"):
+                return self._call_google(messages, tools)
             return self._call_openai(messages, tools)
         except Exception as e:
             logger.error("LLM error: %s", e)
             return None
+
+    def _call_google(self, messages, tools):
+        """Google AI Studio (Gemini) via REST — sandbox agents on gemini-* models.
+        Converts the runner's anthropic-style message blocks to Gemini `contents`."""
+        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY", "")
+        if not api_key:
+            raise RuntimeError("no GEMINI_API_KEY/GOOGLE_API_KEY in sandbox env")
+        contents = []
+        for msg in messages:
+            role, content = msg["role"], msg["content"]
+            g_role = "model" if role == "assistant" else "user"
+            if isinstance(content, str):
+                contents.append({"role": g_role, "parts": [{"text": content}]})
+                continue
+            parts = []
+            for b in content:
+                t = b.get("type")
+                if t == "text" and b.get("text"):
+                    parts.append({"text": b["text"]})
+                elif t == "tool_use":
+                    parts.append({"functionCall": {"name": b["name"], "args": b.get("input", {})}})
+                elif t == "tool_result":
+                    nm = self._fn_names.get(b.get("tool_use_id"), "tool")
+                    parts.append({"text": f"Result of {nm}: {b.get('content', '')}"})
+            if parts:
+                contents.append({"role": g_role, "parts": parts})
+        payload: dict = {"contents": contents}
+        if self.system_prompt:
+            payload["systemInstruction"] = {"parts": [{"text": self.system_prompt}]}
+        if tools:
+            payload["tools"] = [{"functionDeclarations": [
+                {"name": t["name"], "description": t.get("description", ""),
+                 "parameters": t.get("input_schema") or {"type": "object", "properties": {}}}
+                for t in tools]}]
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={api_key}"
+        resp = httpx.post(url, json=payload, timeout=120)
+        resp.raise_for_status()
+        data = resp.json()
+        cand = (data.get("candidates") or [{}])[0]
+        out_parts = cand.get("content", {}).get("parts", []) or []
+        text = "".join(p["text"] for p in out_parts if "text" in p)
+        tcs = []
+        for p in out_parts:
+            if "functionCall" in p:
+                fc = p["functionCall"]
+                fid = f"g_{fc.get('name', 'fn')}_{len(tcs)}"
+                tcs.append({"id": fid, "name": fc.get("name", ""), "input": fc.get("args", {})})
+                self._fn_names[fid] = fc.get("name", "")
+        usage = data.get("usageMetadata", {})
+        return {"text": text, "tool_calls": tcs,
+                "tokens": usage.get("promptTokenCount", 0) + usage.get("candidatesTokenCount", 0)}
 
     def _call_anthropic(self, messages, tools):
         import anthropic
@@ -136,12 +206,24 @@ class SandboxRunner:
                 continue
             oai_msgs.append(msg)
         oai_tools = [{"type": "function", "function": {"name": t["name"], "description": t.get("description", ""), "parameters": t.get("input_schema", {})}} for t in tools] if tools else None
-        resp = client.chat.completions.create(model=self.model, messages=oai_msgs, tools=oai_tools)
+        resp = client.chat.completions.create(model=self.model, messages=oai_msgs, tools=oai_tools, max_tokens=_OPENAI_MAX_TOKENS)
         choice = resp.choices[0]
+        msg = choice.message
         tc = []
-        if choice.message.tool_calls:
-            tc = [{"id": t.id, "name": t.function.name, "input": json.loads(t.function.arguments)} for t in choice.message.tool_calls]
-        return {"text": choice.message.content or "", "tool_calls": tc, "tokens": resp.usage.total_tokens if resp.usage else 0}
+        if msg.tool_calls:
+            tc = [{"id": t.id, "name": t.function.name, "input": json.loads(t.function.arguments)} for t in msg.tool_calls]
+        # Reasoning models (Qwen 3.x via vLLM --reasoning-parser, DeepSeek-R1)
+        # surface their chain-of-thought in a separate field — `reasoning`
+        # (vLLM) or `reasoning_content` (R1-style) — leaving `content` empty.
+        # Capture it so (a) when the model emits ONLY reasoning + no content +
+        # no tool calls we surface it as text instead of returning an empty turn,
+        # and (b) the loop can echo it back so the model keeps its plan across
+        # turns. Mirrors src/platform/llm_router._call_openai.
+        reasoning = getattr(msg, "reasoning", None) or getattr(msg, "reasoning_content", None)
+        text = msg.content or ""
+        if not text and not tc and reasoning:
+            text = reasoning
+        return {"text": text, "reasoning": reasoning, "tool_calls": tc, "tokens": resp.usage.total_tokens if resp.usage else 0}
 
     def _proxy_tool(self, tool_name, tool_input):
         try:
