@@ -561,27 +561,89 @@ def create_fastapi_app(
             raise HTTPException(404, "Not found")
         return item
 
+    def _resume_v2_continuation(request_id: str, accept: bool, responded_by: str | None) -> bool:
+        """Resume a runtime-v2 continuation parked on this approval request.
+
+        Finds the continuation across adapter step engines by external_ref,
+        mints the approval capability token (on accept), and schedules an async
+        resume so the HTTP request returns immediately (the worker does the
+        heavy LLM continuation). Returns True if a continuation was resumed.
+        """
+        if not platform_executor:
+            return False
+        from src.runtime import Resolution, ResolutionOutcome
+        for adapter in getattr(platform_executor, "_adapters", {}).values():
+            engine = getattr(adapter, "step_engine", None)
+            store = getattr(engine, "_store", None)
+            if store is None:
+                continue
+            try:
+                cont = store.find_by_external_ref(request_id)
+            except Exception:
+                cont = None
+            if cont is None:
+                continue
+            rec = next((r for r in cont.pending_calls if r.external_ref == request_id), None)
+            if rec is None:
+                continue
+            token_id = None
+            kernel = getattr(engine, "_kernel", None)
+            if accept and kernel is not None and hasattr(kernel, "issue_capability"):
+                tok = kernel.issue_capability(
+                    subject=cont.pid, target=f"tool:{rec.name}", verb="tool.call",
+                    ttl_seconds=3600,
+                    metadata={"external_ref": request_id, "continuation_id": cont.continuation_id},
+                )
+                token_id = tok.id
+            resolution = Resolution(
+                continuation_id=cont.continuation_id, tool_use_id=rec.tool_use_id,
+                outcome=ResolutionOutcome.ACCEPT if accept else ResolutionOutcome.REJECT,
+                capability_token=token_id, responded_by=responded_by,
+            )
+            import asyncio as _asyncio
+            _asyncio.create_task(
+                engine.resume(resolution, tool_executor=getattr(adapter, "_tool_executor", None))
+            )
+            return True
+        return False
+
     @app.post("/api/approvals/{request_id}/approve", tags=["approvals"])
     async def approve_request(request_id: str, body: ApprovalAction = ApprovalAction()):
-        """Approve a HITL request."""
-        if not company_system:
-            raise HTTPException(500, "System not initialized")
-        company_system.hitl.approve(request_id, approver=body.approved_by or "api", reason=body.reason)
+        """Approve a HITL request. Best-effort on the legacy company HITL store,
+        then resume any runtime-v2 continuation parked on this request."""
+        handled = False
+        if company_system:
+            try:
+                company_system.hitl.approve(request_id, approver=body.approved_by or "api", reason=body.reason)
+                handled = True
+            except Exception:
+                logger.debug("legacy hitl.approve did not handle %s", request_id)
+        resumed = _resume_v2_continuation(request_id, accept=True, responded_by=body.approved_by or "api")
+        if not handled and not resumed:
+            raise HTTPException(404, f"No pending approval '{request_id}'")
         _audit("approval.approve", actor=body.approved_by or "api",
                resource_type="approval", resource_id=request_id,
-               details={"reason": body.reason})
-        return {"success": True}
+               details={"reason": body.reason, "resumed_run": resumed})
+        return {"success": True, "resumed": resumed}
 
     @app.post("/api/approvals/{request_id}/reject", tags=["approvals"])
     async def reject_request(request_id: str, body: ApprovalAction = ApprovalAction()):
-        """Reject a HITL request."""
-        if not company_system:
-            raise HTTPException(500, "System not initialized")
-        company_system.hitl.reject(request_id, reason=body.reason)
+        """Reject a HITL request, then resume the parked continuation (if any)
+        with a rejection so the agent can handle it."""
+        handled = False
+        if company_system:
+            try:
+                company_system.hitl.reject(request_id, reason=body.reason)
+                handled = True
+            except Exception:
+                logger.debug("legacy hitl.reject did not handle %s", request_id)
+        resumed = _resume_v2_continuation(request_id, accept=False, responded_by=body.rejected_by or "api")
+        if not handled and not resumed:
+            raise HTTPException(404, f"No pending approval '{request_id}'")
         _audit("approval.reject", actor=body.rejected_by or "api",
                resource_type="approval", resource_id=request_id,
-               details={"reason": body.reason})
-        return {"success": True}
+               details={"reason": body.reason, "resumed_run": resumed})
+        return {"success": True, "resumed": resumed}
 
     # ------------------------------------------------------------------
     # Workflows
@@ -857,7 +919,7 @@ def create_fastapi_app(
                     missing_tools = (agent_def.metadata or {}).get("_missing_tools_at_deploy")
                     if missing_tools:
                         warnings.append(f"Tools unavailable at deploy time: {missing_tools}")
-                    return {
+                    resp = {
                         "agent_id": agent_id,
                         "status": result.status.value if hasattr(result.status, "value") else str(result.status),
                         "result": output[:2000],
@@ -868,6 +930,28 @@ def create_fastapi_app(
                         "tool_calls": len(result.tool_calls) if result.tool_calls else 0,
                         "tokens_used": result.tokens_used,
                     }
+                    # Runtime-v2 run-handle: when the run parked on a human
+                    # approval (or external wait), surface the continuation as
+                    # the run id plus the pending approvals so clients (CLI /
+                    # Lens) can show "awaiting approval" and poll/resume.
+                    meta = getattr(result, "metadata", None) or {}
+                    cont_id = meta.get("continuation_id")
+                    if cont_id:
+                        resp["run_id"] = cont_id
+                        resp["continuation_id"] = cont_id
+                    if meta.get("suspend_reason"):
+                        resp["suspend_reason"] = meta["suspend_reason"]
+                    if meta.get("pending"):
+                        resp["pending"] = [
+                            {
+                                "request_id": p.get("external_ref"),
+                                "tool": p.get("name"),
+                                "tool_use_id": p.get("tool_use_id"),
+                                "suspend_reason": p.get("suspend_reason"),
+                            }
+                            for p in meta["pending"]
+                        ]
+                    return resp
                 except Exception as e:
                     logger.exception("Agent invocation failed for %s", agent_id)
                     raise HTTPException(500, "Agent invocation failed")
@@ -893,6 +977,63 @@ def create_fastapi_app(
         # If the agent_id is simply unknown to whichever invoker IS configured,
         # we want a 404 here too, but we can't tell without trying.
         raise HTTPException(503, "No invoker available")
+
+    def _find_continuation(run_id: str):
+        """Locate a runtime-v2 continuation by id across adapter step engines.
+
+        The run handle returned by invoke is the continuation id; suspendable
+        adapters (forgeos/sandbox/anthropic) own a StepEngine whose store holds
+        it. Returns the Continuation or None.
+        """
+        if not platform_executor:
+            return None
+        for adapter in getattr(platform_executor, "_adapters", {}).values():
+            engine = getattr(adapter, "step_engine", None)
+            store = getattr(engine, "_store", None)
+            if store is None:
+                continue
+            try:
+                cont = store.load(run_id)
+            except Exception:
+                cont = None
+            if cont is not None:
+                return cont
+        return None
+
+    _CONT_STATUS_TO_RUN = {
+        "running": "running", "resuming": "running", "suspended": "paused",
+        "done": "completed", "failed": "failed",
+    }
+
+    @app.get("/api/platform/runs/{run_id}", tags=["agents"])
+    async def get_run(run_id: str, _auth=Depends(check_auth)):
+        """Poll a runtime-v2 run by its handle (the continuation id).
+
+        Returns ``{run_id, status, continuation_id, pending?, result?, error?}``
+        where status is running|paused|completed|failed. 404 if unknown (e.g.
+        a legacy run that never went through the durable engine)."""
+        cont = _find_continuation(run_id)
+        if cont is None:
+            raise HTTPException(404, f"Run '{run_id}' not found")
+        status = _CONT_STATUS_TO_RUN.get(cont.status, cont.status)
+        out = {
+            "run_id": run_id,
+            "continuation_id": cont.continuation_id,
+            "agent_id": cont.pid,
+            "status": status,
+            "suspend_reason": cont.suspend_reason,
+        }
+        pending = [
+            {"request_id": r.external_ref, "tool": r.name, "tool_use_id": r.tool_use_id}
+            for r in cont.pending_calls if r.status == "pending"
+        ]
+        if pending:
+            out["pending"] = pending
+        if status == "completed":
+            out["result"] = cont.final_output
+        if status == "failed":
+            out["error"] = cont.last_error
+        return out
 
     # ------------------------------------------------------------------
     # Agent Update (edit in-place)
