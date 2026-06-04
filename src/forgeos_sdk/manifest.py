@@ -200,27 +200,131 @@ class Trigger(BaseModel):
 
 
 class HITLApproval(BaseModel):
-    """Human-in-the-loop approval requirement."""
+    """Legacy human-in-the-loop requirement (event-keyed, global).
+
+    DEPRECATED — superseded by :class:`ApprovalRule` (per-tool + heuristic).
+    Kept for one release; :class:`Governance` folds any ``human_in_loop``
+    entries into ``approvals`` automatically.
+    """
 
     event: str = Field(..., description="Action/event that triggers approval (e.g. 'email.send')")
     approvers: list[str] = Field(default_factory=list, description="Role or user names")
     sla_hours: float = 24.0
 
 
+APPROVAL_MODES = Literal["always", "never", "conditional"]
+APPROVAL_PRIORITIES = Literal["low", "medium", "high", "critical"]
+APPROVAL_ON_TIMEOUT = Literal["proceed", "abort", "reask"]
+
+
+class ApprovalRule(BaseModel):
+    """A per-tool / heuristic human-approval rule.
+
+    The kernel matches an agent's ``approvals`` against every tool call. A
+    matching rule whose condition fires makes the kernel return ``ask_human``
+    instead of executing — the runtime then suspends the agent durably and
+    resumes once a human approves (executing the gated tool with a capability
+    token). The agent never calls ``ask_human()`` itself; it calls the normal
+    tool and the kernel intercepts.
+
+    Examples::
+
+        # Always require approval before sending email.
+        - tool: notify__email
+          mode: always
+          approvers: [ceo-office]
+          sla_hours: 4
+
+        # Only when the recipient is external.
+        - tool: notify__email
+          mode: conditional
+          when:
+            ask_human_if: {op: not_endswith_any, field: tool_input.to, value: ["@acme.com"]}
+
+        # Only when spend exceeds a threshold.
+        - tool: payments__charge
+          mode: conditional
+          when:
+            ask_human_if: {op: gt, field: tool_input.amount_usd, value: 500}
+    """
+
+    tool: str = Field(..., description="Tool name or wildcard prefix (e.g. 'notify__*')")
+    mode: APPROVAL_MODES = Field("always", description="always | never | conditional")
+    when: dict[str, Any] | None = Field(
+        None,
+        description="JSON-logic clause for conditional mode, e.g. {ask_human_if: {op, field, value}}",
+    )
+    approvers: list[str] = Field(default_factory=list, description="Roles or user names who may approve")
+    sla_hours: float = Field(24.0, description="Approval deadline before escalation/timeout")
+    priority: APPROVAL_PRIORITIES = "medium"
+    on_timeout: APPROVAL_ON_TIMEOUT = Field(
+        "abort", description="What to do if the SLA expires with no human response"
+    )
+    reason: str = Field("", description="Human-readable rationale shown to the approver")
+
+    @model_validator(mode="after")
+    def _require_when_for_conditional(self):
+        if self.mode == "conditional" and not self.when:
+            raise ValueError("conditional approval rules require a 'when' clause")
+        return self
+
+
 class PolicyRef(BaseModel):
-    """Reference to a policy file (OPA/Rego or JSON-logic)."""
+    """A policy: either a file reference (OPA/Rego or JSON-logic) or an inline
+    JSON-logic rule declared directly in the manifest.
+
+    Inline rules support tri-state JSON-logic: a ``deny_if`` clause denies the
+    action; an ``ask_human_if`` clause routes it through human approval. Both
+    may appear in one rule (deny wins)::
+
+        - name: external-email-guard
+          inline:
+            ask_human_if: {op: not_endswith_any, field: tool_input.to, value: ["@acme.com"]}
+    """
 
     name: str
-    ref: str = Field(..., description="Path to .rego or .json policy file")
+    ref: str | None = Field(None, description="Path to a .rego or .json policy file")
+    inline: dict[str, Any] | None = Field(
+        None, description="Inline JSON-logic rule (deny_if / ask_human_if)"
+    )
+
+    @model_validator(mode="after")
+    def _require_ref_or_inline(self):
+        if not self.ref and not self.inline:
+            raise ValueError("policy must declare either 'ref' or 'inline'")
+        return self
 
 
 class Governance(BaseModel):
     """Governance rules (audit, approval, signatures, policies)."""
 
-    human_in_loop: list[HITLApproval] = Field(default_factory=list)
+    approvals: list[ApprovalRule] = Field(
+        default_factory=list,
+        description="Per-tool / heuristic human-approval rules (kernel-enforced)",
+    )
+    human_in_loop: list[HITLApproval] = Field(
+        default_factory=list, description="DEPRECATED — folded into 'approvals'"
+    )
     policies: list[PolicyRef] = Field(default_factory=list)
     audit_level: Literal["none", "basic", "full"] = "full"
     signing_required: bool = False
+
+    @model_validator(mode="after")
+    def _fold_legacy_hitl(self):
+        """Map any legacy ``human_in_loop`` entries into ``approvals`` so the
+        kernel only has to read one shape. The legacy ``event`` becomes the
+        ``tool`` match (events were already action-keyed)."""
+        if self.human_in_loop and not self.approvals:
+            self.approvals = [
+                ApprovalRule(
+                    tool=h.event,
+                    mode="always",
+                    approvers=h.approvers,
+                    sla_hours=h.sla_hours,
+                )
+                for h in self.human_in_loop
+            ]
+        return self
 
 
 class AgentDependency(BaseModel):

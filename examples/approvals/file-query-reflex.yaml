@@ -1,0 +1,23 @@
+# Scenario D — reflex agent: invoked with a query, searches a file and answers.
+# No approvals — read-only tools run without human gating.
+apiVersion: agentos/v1
+kind: AgentContract
+metadata:
+  name: file-query
+  namespace: operations
+  description: Answers questions by searching a local data file.
+spec:
+  stack: forgeos
+  execution_type: reflex
+  llm:
+    chat_model: claude-sonnet-4-6
+    provider: anthropic
+  tools:
+    - fs__read_file
+    - search__files
+  system_prompt:
+    content: |
+      Given a user query, locate the relevant data in the mounted files and
+      answer concisely. You only read; you never write or send anything.
+  governance:
+    audit_level: basic

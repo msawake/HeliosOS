@@ -27,9 +27,6 @@ Every check returns a ``KernelDecision``. Every admission returns an
 
 from __future__ import annotations
 
-import functools
-import hashlib
-import json
 import logging
 import re
 import threading
@@ -303,11 +300,73 @@ class PermissionManager:
                     namespace=agent.namespace,
                     allowed=allowed,
                 )
+
+        # Human-in-the-loop: does an approval rule gate this tool? When one
+        # fires the kernel returns ``ask_human`` carrying the captured action
+        # so the runtime can suspend now and replay the exact tool on approval.
+        approval = self._check_approvals(agent, tool_name, tool_input)
+        if approval is not None:
+            return approval
+
         return KernelDecision.allow(
             reason="tool permitted",
             tool=tool_name,
             namespace=agent.namespace,
         )
+
+    def _check_approvals(
+        self, agent, tool_name: str, tool_input: dict | None,
+    ) -> KernelDecision | None:
+        """Evaluate the agent's ``governance.approvals`` against a tool call.
+
+        Returns an ``ask_human`` (or ``deny``) decision when a rule fires,
+        ``None`` when nothing gates the call. ``mode: never`` short-circuits to
+        ``None`` so a specific tool can be exempted.
+        """
+        governance = read_v2_section(agent, "governance", {}) or {}
+        rules = list(governance.get("approvals") or [])
+        # Legacy fallback: fold any event-keyed human_in_loop into rules.
+        if not rules and governance.get("human_in_loop"):
+            rules = [
+                {"tool": h.get("event", ""), "mode": "always",
+                 "approvers": h.get("approvers", []), "sla_hours": h.get("sla_hours", 24.0)}
+                for h in governance["human_in_loop"]
+            ]
+        if not rules:
+            return None
+
+        ctx = {"tool_name": tool_name, "tool_input": tool_input or {}}
+        for rule in rules:
+            if not self._matches(tool_name, rule.get("tool", "")):
+                continue
+            mode = rule.get("mode", "always")
+            if mode == "never":
+                return None  # explicit exemption
+            if mode == "conditional":
+                verdict = evaluate_rule_tristate(rule.get("when") or {}, ctx)
+                if verdict == "deny":
+                    return KernelDecision.deny(
+                        reason=rule.get("reason") or f"Tool '{tool_name}' denied by approval policy",
+                        tool=tool_name,
+                    )
+                if verdict != "ask_human":
+                    continue
+            # mode == "always", or conditional clause fired -> require approval.
+            return KernelDecision.ask_human(
+                reason=rule.get("reason") or f"tool '{tool_name}' requires human approval",
+                tool=tool_name,
+                suspend_reason="human_approval",
+                captured_action={
+                    "verb": "tool.call",
+                    "tool_name": tool_name,
+                    "tool_input": tool_input or {},
+                },
+                approvers=list(rule.get("approvers") or []),
+                sla_hours=rule.get("sla_hours", 24.0),
+                priority=rule.get("priority", "medium"),
+                on_timeout=rule.get("on_timeout", "abort"),
+            )
+        return None
 
     def check_a2a(
         self,
@@ -558,13 +617,79 @@ class BudgetManager:
             return self._reserved_by_agent.get(agent_id, 0.0)
 
 
+def _get_field(context: dict, path: str) -> Any:
+    """Traverse a nested dict via a dotted path (``tool_input.to``)."""
+    current: Any = context
+    for part in (path or "").split("."):
+        if isinstance(current, dict):
+            current = current.get(part)
+        else:
+            return None
+    return current
+
+
+def _eval_predicate(pred: dict, context: dict) -> bool:
+    """Evaluate one ``{op, field, value}`` predicate against a context.
+
+    Supported ops:
+      equals, contains, startswith, endswith, gt, lt, in, not_in,
+      endswith_any, not_endswith_any.
+    """
+    op = pred.get("op", "equals")
+    actual = _get_field(context, pred.get("field", ""))
+    target = pred.get("value")
+    if op == "equals":
+        return actual == target
+    if op == "contains":
+        return isinstance(actual, str) and str(target) in actual
+    if op == "startswith":
+        return isinstance(actual, str) and actual.startswith(str(target))
+    if op == "endswith":
+        return isinstance(actual, str) and actual.endswith(str(target))
+    if op in ("gt", "lt"):
+        try:
+            return float(actual) > float(target) if op == "gt" else float(actual) < float(target)
+        except (TypeError, ValueError):
+            return False
+    if op == "in":
+        return actual in (target or [])
+    if op == "not_in":
+        return actual not in (target or [])
+    if op == "endswith_any":
+        return isinstance(actual, str) and any(actual.endswith(str(s)) for s in (target or []))
+    if op == "not_endswith_any":
+        return isinstance(actual, str) and not any(actual.endswith(str(s)) for s in (target or []))
+    return False
+
+
+def evaluate_rule_tristate(rule: dict, context: dict) -> str:
+    """Evaluate a JSON-logic rule to a tri-state verdict.
+
+    A rule may carry a ``deny_if`` and/or an ``ask_human_if`` clause. Deny
+    wins over ask_human; absent any firing clause the verdict is ``allow``.
+    Returns one of ``"deny" | "ask_human" | "allow"``.
+    """
+    deny_if = rule.get("deny_if")
+    if deny_if and _eval_predicate(deny_if, context):
+        return "deny"
+    ask_if = rule.get("ask_human_if")
+    if ask_if and _eval_predicate(ask_if, context):
+        return "ask_human"
+    return "allow"
+
+
 class PolicyEngine:
-    """Evaluates declarative policies from manifest.
+    """Evaluates declarative policies from a manifest.
 
-    Supports a simple JSON-logic subset (no external dependencies):
-      {"deny_if": {"op": "contains", "field": "tool_name", "value": "shell"}}
+    Supports a small JSON-logic subset (no external dependencies) with
+    tri-state verdicts::
 
-    Full OPA/Rego integration is a future upgrade.
+        {"deny_if":      {"op": "contains", "field": "tool_name", "value": "shell"}}
+        {"ask_human_if": {"op": "gt", "field": "tool_input.amount_usd", "value": 500}}
+
+    Rules are referenced by name (loaded via :meth:`load_policy`) or supplied
+    inline on the policy ref (``ref["inline"]``). Full OPA/Rego integration is
+    a future upgrade.
     """
 
     def __init__(self):
@@ -572,91 +697,46 @@ class PolicyEngine:
 
     def load_policy(self, name: str, rule: dict) -> None:
         self._policies[name] = rule
-        # Clear cache when policies change
-        self._evaluate_rule_cached.cache_clear()
 
-    def evaluate(
-        self,
-        policy_refs: list[dict],
-        context: dict,
-    ) -> KernelDecision:
-        """Evaluate a list of policy references against a context dict.
+    def evaluate(self, policy_refs: list[dict], context: dict) -> KernelDecision:
+        """Evaluate policy references against a context dict.
 
-        Returns deny if any policy denies, else allow.
+        Deny short-circuits immediately. If no policy denies but at least one
+        requires human approval, returns ``ask_human``. Else ``allow``. A
+        referenced-but-missing policy (no inline, not loaded) denies.
         """
-        # Create a deterministic hash of the context for caching
-        try:
-            # Sort keys to ensure consistent hashing
-            context_str = json.dumps(context, sort_keys=True, default=str)
-            context_hash = hashlib.md5(context_str.encode()).hexdigest()
-        except Exception:
-            # Fallback if context is not JSON serializable
-            context_hash = None
-
+        ask_human_policy: str | None = None
         for ref in policy_refs:
             policy_name = ref.get("name")
-            rule = self._policies.get(policy_name)
+            rule = ref.get("inline") or self._policies.get(policy_name)
             if not rule:
                 logger.warning("Policy '%s' referenced but not loaded — denying action", policy_name)
                 return KernelDecision.deny(
                     reason=f"Policy '{policy_name}' not loaded (referenced but missing)",
                     policy=policy_name,
                 )
-            
-            # Use cached evaluation if possible
-            if context_hash:
-                rule_str = json.dumps(rule, sort_keys=True)
-                rule_hash = hashlib.md5(rule_str.encode()).hexdigest()
-                is_denied = self._evaluate_rule_cached(rule_hash, context_hash, rule_str, context_str)
-            else:
-                is_denied = self._evaluate_rule(rule, context)
-                
-            if is_denied:
+            verdict = evaluate_rule_tristate(rule, context)
+            if verdict == "deny":
                 return KernelDecision.deny(
                     reason=f"Policy '{policy_name}' denies action",
                     policy=policy_name,
                 )
+            if verdict == "ask_human" and ask_human_policy is None:
+                ask_human_policy = policy_name
+        if ask_human_policy is not None:
+            return KernelDecision.ask_human(
+                reason=f"Policy '{ask_human_policy}' requires human approval",
+                policy=ask_human_policy,
+            )
         return KernelDecision.allow(reason="all policies permit")
 
-    @functools.lru_cache(maxsize=10000)
-    def _evaluate_rule_cached(self, rule_hash: str, context_hash: str, rule_str: str, context_str: str) -> bool:
-        """Cached version of rule evaluation."""
-        rule = json.loads(rule_str)
-        context = json.loads(context_str)
-        return self._evaluate_rule(rule, context)
-
     def _evaluate_rule(self, rule: dict, context: dict) -> bool:
-        """Return True if the rule should DENY."""
-        deny_if = rule.get("deny_if")
-        if not deny_if:
-            return False
-        op = deny_if.get("op", "equals")
-        field_path = deny_if.get("field", "")
-        target = deny_if.get("value")
-        actual = self._get_field(context, field_path)
-        if op == "equals":
-            return actual == target
-        if op == "contains":
-            return isinstance(actual, str) and target in actual
-        if op == "gt":
-            try:
-                return float(actual) > float(target)
-            except (TypeError, ValueError):
-                return False
-        if op == "in":
-            return actual in (target or [])
-        return False
+        """Back-compat shim: True iff the rule denies."""
+        return evaluate_rule_tristate(rule, context) == "deny"
 
     @staticmethod
     def _get_field(context: dict, path: str) -> Any:
-        """Traverse nested dict via dotted path."""
-        current: Any = context
-        for part in path.split("."):
-            if isinstance(current, dict):
-                current = current.get(part)
-            else:
-                return None
-        return current
+        return _get_field(context, path)
 
 
 class DataBoundaryManager:
@@ -884,7 +964,7 @@ class Kernel:
         return SyscallPipeline(
             stages={
                 "identity": make_license_stage(self.license),
-                "capability": make_capability_stage(self.permissions),
+                "capability": make_capability_stage(self.permissions, self.capabilities_mgr),
                 "quota": make_quota_stage(self.budgets),
                 "policy": make_policy_stage(self.policies),
                 "boundary": make_boundary_stage(self.data),
@@ -950,10 +1030,13 @@ class Kernel:
                         reason=f"Tool '{tool_name}' denied by namespace policy for '{ns}'",
                         tool=tool_name, stage="namespace_policy",
                     )
-        # 1. Permissions (whitelist + deny list)
+        # 1. Permissions (whitelist + deny list + approval rules)
         perm = self.permissions.check_tool_call(agent_id, tool_name, tool_input)
         if perm.denied:
             self._audit("tool.denied", agent_id, tool=tool_name, reason=perm.reason)
+            return perm
+        if perm.needs_human:
+            self._audit("tool.ask_human", agent_id, tool=tool_name, reason=perm.reason)
             return perm
         # 2. Budget (if cost estimate provided)
         if estimated_cost_usd is not None:
@@ -977,6 +1060,9 @@ class Kernel:
                 policy_result = self.policies.evaluate(policy_refs, context)
                 if policy_result.denied:
                     self._audit("tool.policy_denied", agent_id, tool=tool_name, reason=policy_result.reason)
+                    return policy_result
+                if policy_result.needs_human:
+                    self._audit("tool.policy_ask_human", agent_id, tool=tool_name, reason=policy_result.reason)
                     return policy_result
         self._audit("tool.allowed", agent_id, tool=tool_name)
         return KernelDecision.allow(reason="tool call permitted", tool=tool_name)

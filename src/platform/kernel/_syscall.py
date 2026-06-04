@@ -189,23 +189,45 @@ class SyscallPipeline:
 # ---------------------------------------------------------------------------
 
 
-def make_capability_stage(permission_manager: Any) -> Stage:
+def make_capability_stage(permission_manager: Any, capability_manager: Any = None) -> Stage:
     """Capability stage that delegates to ``PermissionManager``.
 
     Supports these verbs today:
       * ``tool.call`` -> ``check_tool_call``
       * ``a2a.invoke`` -> ``check_a2a``
       * ``data.read`` -> ``check_data_access``
+
+    When a ``capability_token`` is present in ``syscall.args`` and a
+    ``capability_manager`` is wired, the token is checked *first*. A valid
+    token (positive runtime authority — e.g. minted on human approval) skips
+    the ACL/approval path and lets the pipeline continue to quota/policy. This
+    is how an approved tool re-executes on resume: the token flips what would
+    have been ``ask_human`` into ``allow`` without bypassing budget or policy.
     """
 
     def _stage(syscall: Syscall) -> KernelDecision | None:
         pm = permission_manager
-        if pm is None:
-            return None
         if syscall.verb == "tool.call":
+            token = (syscall.args or {}).get("capability_token")
+            if (
+                token
+                and capability_manager is not None
+                and capability_manager.authorize(
+                    token_id=token,
+                    subject=syscall.subject,
+                    target=f"tool:{syscall.object}",
+                    verb="tool.call",
+                )
+            ):
+                # Positive authority — skip ACL/approval, continue pipeline.
+                return None
+            if pm is None:
+                return None
             return pm.check_tool_call(
                 syscall.subject, syscall.object, syscall.args.get("tool_input")
             )
+        if pm is None:
+            return None
         if syscall.verb == "a2a.invoke":
             return pm.check_a2a(
                 syscall.subject,
