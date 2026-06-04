@@ -514,11 +514,57 @@ def create_fastapi_app(
     # Approvals
     # ------------------------------------------------------------------
 
+    def _list_v2_pending_approvals() -> list:
+        """Pending human approvals from runtime-v2 suspended continuations.
+
+        A run parked on ask_human is held in the adapter's StepEngine store
+        (indexed by external_ref), not in the legacy HITL store — so without
+        this it would be invisible to `forgeos approvals list` / Lens. We scan
+        the suspended continuations and emit an approval item per pending,
+        human-gated tool call, carrying run_id/tool so clients can correlate
+        the approval to the run it blocks."""
+        out: list = []
+        if not platform_executor:
+            return out
+        for adapter in getattr(platform_executor, "_adapters", {}).values():
+            engine = getattr(adapter, "step_engine", None)
+            store = getattr(engine, "_store", None)
+            if store is None or not hasattr(store, "list_suspended"):
+                continue
+            try:
+                suspended = store.list_suspended()
+            except Exception:
+                continue
+            for cont in suspended:
+                if (cont.suspend_reason or "") not in ("human_approval", "human_input"):
+                    continue
+                for rec in cont.pending_calls:
+                    if rec.status != "pending" or not rec.external_ref:
+                        continue
+                    q = f"Approve tool '{rec.name}' for agent {cont.pid}?"
+                    out.append({
+                        "source": "runtime",
+                        "id": rec.external_ref,
+                        "request_id": rec.external_ref,
+                        "run_id": cont.continuation_id,
+                        "continuation_id": cont.continuation_id,
+                        "tool": rec.name,
+                        "agent_id": cont.pid,
+                        "agent": cont.pid,
+                        "status": "pending",
+                        "risk": "high",
+                        "created_at": cont.updated_at,
+                        "title": q,
+                        "question": q,
+                        "content": {"question": q},
+                    })
+        return out
+
     @app.get("/api/approvals", tags=["approvals"])
     async def list_approvals(category: str = None):
-        """List pending HITL requests — both the legacy company HITL store and
-        the A2H gateway (human__ask). Merged so `forgeos approvals` / the CLI
-        surface A2H requests, not just legacy approvals."""
+        """List pending HITL requests — the legacy company HITL store, the A2H
+        gateway (human__ask), and runtime-v2 suspended continuations. Merged so
+        `forgeos approvals` / Lens surface every kind of pending approval."""
         pending: list = []
         if company_system:
             try:
@@ -547,6 +593,11 @@ def create_fastapi_app(
                         "response_type": content.get("response_type") or it.get("response_type"),
                         "description": (content.get("context") or it.get("context") or {}),
                     })
+        except Exception:
+            pass
+        # Runtime-v2 continuations parked on a human approval.
+        try:
+            pending.extend(_list_v2_pending_approvals())
         except Exception:
             pass
         return pending

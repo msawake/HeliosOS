@@ -115,6 +115,13 @@ async def test_runs_endpoint_and_approve_resume(monkeypatch):
     # Unknown run -> 404.
     assert client.get("/api/platform/runs/cont_does_not_exist").status_code == 404
 
+    # GET /api/approvals surfaces the parked run's approval, with run_id + tool.
+    approvals = client.get("/api/approvals").json()
+    v2 = [a for a in approvals if a.get("id") == request_id]
+    assert v2, f"v2 approval {request_id} not surfaced in {approvals}"
+    assert v2[0]["run_id"] == cont_id
+    assert v2[0]["tool"] == "notify__email"
+
     # Approve -> finds the parked continuation, schedules resume.
     a = client.post(f"/api/approvals/{request_id}/approve", json={})
     assert a.status_code == 200, a.text
