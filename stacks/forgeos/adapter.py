@@ -30,11 +30,55 @@ class ForgeOSAdapter(AgentStackAdapter):
     stack_name = "forgeos"
     supports_suspend = True  # platform owns the loop -> durable ask_human
 
-    def __init__(self, llm_router=None, tool_executor=None):
+    def __init__(self, llm_router=None, tool_executor=None, kernel=None):
         self._llm_router = llm_router
         self._tool_executor = tool_executor
+        self._kernel = kernel  # optional; falls back to the SDK runtime singleton
         self._agents: dict[str, AgentDefinition] = {}
         self._loops: dict[str, asyncio.Task] = {}
+        self._step_engine = None  # lazily built when runtime-v2 is enabled
+
+    # -- runtime-v2 (durable continuation engine) --------------------------
+
+    @staticmethod
+    def _runtime_v2_enabled() -> bool:
+        import os
+        return os.environ.get("FORGEOS_RUNTIME_V2", "").lower() in ("1", "true", "yes", "on")
+
+    def _resolve_kernel(self):
+        """The kernel exposing .syscall — explicit param first, else the
+        bootstrap-registered SDK runtime singleton."""
+        if self._kernel is not None:
+            return self._kernel
+        try:
+            from src.forgeos_sdk.runtime import runtime as _rt
+            if _rt.is_registered:
+                return _rt._kernel
+        except Exception:
+            pass
+        return None
+
+    def _get_step_engine(self, kernel):
+        """Lazily build the StepEngine. Uses a durable SQLite continuation store
+        when FORGEOS_RUNTIME_DB is set, else an in-process store."""
+        if self._step_engine is not None:
+            return self._step_engine
+        import os
+
+        from src.runtime import MemoryContinuationStore, StepEngine
+        db = os.environ.get("FORGEOS_RUNTIME_DB")
+        if db:
+            from src.runtime import SqliteContinuationStore
+            store = SqliteContinuationStore(db)
+        else:
+            store = MemoryContinuationStore()
+        self._step_engine = StepEngine(llm_router=self._llm_router, kernel=kernel, store=store)
+        return self._step_engine
+
+    @property
+    def step_engine(self):
+        """The StepEngine if runtime-v2 has been used (else None). For resume."""
+        return self._step_engine
 
     async def create_agent(self, agent_def: AgentDefinition) -> str:
         self._agents[agent_def.agent_id] = agent_def
@@ -106,6 +150,18 @@ class ForgeOSAdapter(AgentStackAdapter):
                 )
             system = agent_def.system_prompt or f"You are {agent_def.name}. {agent_def.description}"
             cb_registry = (context or {}).get("_callback_registry")
+
+            # Runtime-v2 (opt-in): route suspendable runs through the durable
+            # StepEngine so an ask_human parks the run instead of erroring. Falls
+            # straight back to the legacy loop when the flag is off or no kernel
+            # is wired — fully additive.
+            if self._runtime_v2_enabled():
+                kernel = self._resolve_kernel()
+                if kernel is not None:
+                    return await self._invoke_via_engine(
+                        agent_def, agent_id, prompt, tools, system, context, history, kernel,
+                    )
+
             result = await run_agentic_loop(
                 llm_router=self._llm_router,
                 llm_config=agent_def.llm_config,
@@ -131,6 +187,63 @@ class ForgeOSAdapter(AgentStackAdapter):
             output=f"[SIMULATED - No LLM API key configured] Agent '{agent_def.name}' received: {prompt[:100]}. "
                    f"Configure ANTHROPIC_API_KEY or OPENAI_API_KEY in .env for real LLM execution.",
             error="No LLM provider available. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.",
+        )
+
+    async def _invoke_via_engine(
+        self, agent_def, agent_id, prompt, tools, system, context, history, kernel,
+    ) -> AgentResult:
+        """Run via the durable StepEngine and map RunOutcome -> AgentResult.
+
+        A SUSPENDED outcome is NOT a failure: the run parked on human approval
+        (or an external wait). It maps to PAUSED with the continuation id +
+        pending approvals in ``metadata`` so the resume service / dashboard can
+        approve it later. The worker is freed immediately.
+        """
+        from src.runtime import RunStatus
+
+        engine = self._get_step_engine(kernel)
+        ctx = context or {}
+        outcome = await engine.run(
+            pid=agent_id,
+            system_prompt=system,
+            user_prompt=prompt,
+            provider=agent_def.llm_config.provider,
+            chat_model=agent_def.llm_config.chat_model,
+            tools=tools or None,
+            tool_executor=self._tool_executor,
+            agent_context=build_agent_context(
+                agent_def, agent_id, invocation_id=ctx.get("invocation_id"),
+            ),
+            history=history,
+            context=context,
+            goal=agent_def.goal or None,
+            tenant_id=ctx.get("tenant_id", "default"),
+            namespace=getattr(agent_def, "namespace", "default"),
+            source=ctx.get("_trigger", "manual"),
+        )
+        if outcome.status is RunStatus.SUSPENDED:
+            return AgentResult(
+                agent_id=agent_id,
+                status=AgentStatus.PAUSED,
+                output="",
+                tokens_used=outcome.tokens_used,
+                metadata={
+                    "continuation_id": outcome.continuation_id,
+                    "suspend_reason": outcome.suspend_reason,
+                    "pending": outcome.pending,
+                },
+            )
+        if outcome.status is RunStatus.FAILED:
+            return AgentResult(
+                agent_id=agent_id, status=AgentStatus.FAILED, error=outcome.error,
+                metadata={"continuation_id": outcome.continuation_id},
+            )
+        return AgentResult(
+            agent_id=agent_id,
+            status=AgentStatus.COMPLETED,
+            output=outcome.output,
+            tokens_used=outcome.tokens_used,
+            metadata={"continuation_id": outcome.continuation_id},
         )
 
     async def start_loop(self, agent_id: str) -> None:

@@ -121,6 +121,10 @@ class AgentResult:
     output_tokens: int = 0
     model: str | None = None
     elapsed_ms: float = 0.0
+    # Free-form result metadata. The durable runtime uses it to surface a
+    # suspension: {"continuation_id", "suspend_reason", "pending": [...]} when
+    # status is PAUSED (the run parked on human approval / an external wait).
+    metadata: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -134,6 +138,7 @@ class AgentResult:
             "output_tokens": self.output_tokens,
             "model": self.model,
             "elapsed_ms": self.elapsed_ms,
+            "metadata": self.metadata,
         }
 
 
