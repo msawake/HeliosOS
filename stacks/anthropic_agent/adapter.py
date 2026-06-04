@@ -189,6 +189,7 @@ class AnthropicAgentSDKAdapter(AgentStackAdapter):
     """Stack adapter for the Anthropic Claude Agent SDK."""
 
     stack_name = "anthropic-agent-sdk"
+    supports_suspend = True  # platform owns the loop -> durable ask_human
 
     def __init__(self, tool_executor=None, llm_router=None):
         self._stack_name = self.stack_name

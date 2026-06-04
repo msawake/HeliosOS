@@ -92,6 +92,7 @@ class SandboxAdapter(AgentStackAdapter):
     """Spawns agents in isolated Docker containers."""
 
     stack_name = "sandbox"
+    supports_suspend = True  # platform owns the loop -> durable ask_human
 
     def __init__(self, llm_router=None, tool_executor=None, api_url: str = "http://localhost:5000"):
         self._llm_router = llm_router

@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 class ForgeOSAdapter(AgentStackAdapter):
     stack_name = "forgeos"
+    supports_suspend = True  # platform owns the loop -> durable ask_human
 
     def __init__(self, llm_router=None, tool_executor=None):
         self._llm_router = llm_router

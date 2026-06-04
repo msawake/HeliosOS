@@ -147,6 +147,15 @@ class AgentStackAdapter(ABC):
 
     stack_name: str
 
+    #: Whether this stack can be suspended mid-tool by the durable continuation
+    #: runtime. Only stacks where the *platform* owns the LLM->tool loop
+    #: (ForgeOS, Sandbox, Anthropic SDK) can park on ``ask_human`` and resume
+    #: later. Frameworks that own their own loop or run in a subprocess
+    #: (CrewAI, ADK, LangChain, OpenAI Agents, OpenClaw) cannot — for those the
+    #: kernel downgrades a fine-grained ``ask_human`` to ``deny`` (you can't
+    #: freeze a Crew.kickoff() between tool calls). Default: not suspendable.
+    supports_suspend: bool = False
+
     @abstractmethod
     async def create_agent(self, agent_def: AgentDefinition) -> str:
         """Provision an agent from the definition. Returns agent_id."""

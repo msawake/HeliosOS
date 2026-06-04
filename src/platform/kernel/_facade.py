@@ -46,6 +46,14 @@ logger = logging.getLogger(__name__)
 
 DecisionAction = Literal["allow", "deny", "mask", "ask_human", "rate_limit"]
 
+# Stacks whose LLM->tool loop the platform owns and can therefore suspend
+# mid-tool for durable human approval. For any other stack (CrewAI, ADK,
+# LangChain, OpenAI Agents, OpenClaw — they own their own loop / run in a
+# subprocess) a fine-grained ``ask_human`` cannot be honoured, so the kernel
+# downgrades it to ``deny`` with an explicit reason. Mirror of
+# ``AgentStackAdapter.supports_suspend``.
+SUSPENDABLE_STACKS = frozenset({"forgeos", "sandbox", "anthropic-agent-sdk"})
+
 
 @dataclass
 class KernelDecision:
@@ -200,6 +208,16 @@ class AdmissionController:
                     else:
                         errors.append(msg)
 
+        # 7. Approval feasibility — warn when a non-suspendable stack declares
+        # per-tool approvals: the kernel will have to downgrade ask_human to
+        # deny at runtime (the stack can't park mid-tool).
+        governance = read_v2_section(contract, "governance", {}) or {}
+        if governance.get("approvals") and stack not in SUSPENDABLE_STACKS:
+            warnings.append(
+                f"stack '{stack}' cannot suspend mid-tool; declared approvals "
+                f"will be enforced as DENY, not human-in-the-loop"
+            )
+
         if errors:
             return AdmissionResult(
                 admitted=False,
@@ -352,6 +370,20 @@ class PermissionManager:
                 if verdict != "ask_human":
                     continue
             # mode == "always", or conditional clause fired -> require approval.
+            # Downgrade to deny on stacks that cannot suspend mid-tool: you
+            # can't freeze a Crew.kickoff()/Runner.run() between tool calls, so
+            # honouring the approval is impossible — fail closed, explicitly.
+            stack = getattr(agent, "stack", None)
+            if stack is not None and stack not in SUSPENDABLE_STACKS:
+                return KernelDecision.deny(
+                    reason=(
+                        f"tool '{tool_name}' requires human approval, but stack "
+                        f"'{stack}' cannot suspend mid-tool (no durable A2H); denied"
+                    ),
+                    tool=tool_name,
+                    downgraded_from="ask_human",
+                    stack=stack,
+                )
             return KernelDecision.ask_human(
                 reason=rule.get("reason") or f"tool '{tool_name}' requires human approval",
                 tool=tool_name,
