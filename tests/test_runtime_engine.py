@@ -296,6 +296,38 @@ async def test_openai_dialect_resume_injects_tool_message():
     assert tool_msgs and tool_msgs[0]["tool_call_id"] == "call_9"
 
 
+async def test_resume_threads_capability_token_to_tool_executor():
+    """Regression: on approval the engine must pass the capability token into
+    the agent_context so the tool executor's OWN kernel gate also short-circuits
+    (otherwise it re-gates the approved tool back to ask_human and it never runs)."""
+    class CtxRecordingTool:
+        def __init__(self):
+            self.contexts = []
+
+        async def execute(self, name, tool_input, agent_context=None):
+            self.contexts.append(dict(agent_context or {}))
+            return {"sent": True}
+
+    llm = FakeLLM([_tool_response("notify__email", {"to": "x"}), _final_response("sent")])
+    kernel = FakeKernel(approve_tools={"notify__email"})
+    tx = CtxRecordingTool()
+    store = MemoryContinuationStore()
+    eng = _engine(llm, kernel, store=store)
+
+    out = await eng.run(pid="agent1", system_prompt="s", user_prompt="email",
+                        provider="anthropic", chat_model="claude-x",
+                        tools=[{"name": "notify__email"}], tool_executor=tx)
+    assert out.status is RunStatus.SUSPENDED
+    token = kernel.issue_capability(subject="agent1", target="tool:notify__email", verb="tool.call")
+    await eng.resume(
+        Resolution(continuation_id=out.continuation_id, tool_use_id=out.pending[0]["tool_use_id"],
+                   outcome=ResolutionOutcome.ACCEPT, capability_token=token.id),
+        tool_executor=tx,
+    )
+    # The (single) execution happened on resume and carried the token in context.
+    assert tx.contexts and tx.contexts[-1].get("capability_token") == token.id
+
+
 async def test_denied_tool_returns_error_result_not_suspend():
     """A denied tool yields an error tool_result; the loop continues (no park)."""
     llm = FakeLLM([_tool_response("shell__exec", {"cmd": "rm"}), _final_response("blocked, moving on")])

@@ -373,7 +373,14 @@ class StepEngine:
             return self._error_result(f"{action}: {getattr(decision, 'reason', action)}")
         ticket = (getattr(decision, "details", {}) or {}).get("ticket")
         try:
-            return await self._execute_tool(rec.name, rec.arguments, tool_executor, agent_context)
+            # Pass the approval token through to the tool executor so its OWN
+            # kernel gate (the syscall pipeline it runs independently) also
+            # short-circuits — otherwise it re-gates the approved tool back to
+            # ask_human and the run can never actually send/execute it.
+            return await self._execute_tool(
+                rec.name, rec.arguments, tool_executor, agent_context,
+                capability_token=rec.capability_token,
+            )
         finally:
             self._commit_ticket(ticket)
 
@@ -395,13 +402,17 @@ class StepEngine:
             dispatcher=None,
         )
 
-    async def _execute_tool(self, name: str, tool_input: dict, tool_executor, agent_context) -> Any:
-        # Reuse the hardened retry/timeout executor from the legacy loop. Its
-        # embedded SDK-runtime gate is a no-op when the runtime isn't bound
-        # (tests) and idempotent otherwise — admission already happened here.
+    async def _execute_tool(self, name: str, tool_input: dict, tool_executor, agent_context,
+                            *, capability_token: str | None = None) -> Any:
+        # Reuse the hardened retry/timeout executor from the legacy loop. When a
+        # capability token is present (resumed approved tool), thread it through
+        # the agent_context so the tool executor's own kernel gate honours it.
         from src.platform.agentic_loop import _execute_tool as _legacy_execute_tool
 
-        return await _legacy_execute_tool(name, tool_input, tool_executor, agent_context)
+        ctx = agent_context
+        if capability_token:
+            ctx = {**(agent_context or {}), "capability_token": capability_token}
+        return await _legacy_execute_tool(name, tool_input, tool_executor, ctx)
 
     # -- suspend / resume helpers -----------------------------------------
 
