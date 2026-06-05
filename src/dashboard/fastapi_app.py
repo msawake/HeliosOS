@@ -235,6 +235,7 @@ def create_fastapi_app(
     tenant_id: str = "default",
     kernel=None,  # AgentOS kernel facade
     credential_store=None,
+    runtime_service=None,  # runtime-v2 worker tier (FORGEOS_RUNTIME_WORKERS)
 ) -> FastAPI:
 
     app = FastAPI(
@@ -245,6 +246,23 @@ def create_fastapi_app(
         docs_url="/docs",
         redoc_url="/redoc",
     )
+
+    # Runtime-v2 worker tier: start the worker pool + queue consumer on the
+    # uvicorn loop, drain on shutdown. No-op when not wired.
+    if runtime_service is not None:
+        @app.on_event("startup")
+        async def _start_runtime_workers():  # pragma: no cover - lifecycle
+            try:
+                await runtime_service.start()
+            except Exception:
+                logger.exception("runtime workers failed to start")
+
+        @app.on_event("shutdown")
+        async def _stop_runtime_workers():  # pragma: no cover - lifecycle
+            try:
+                await runtime_service.stop()
+            except Exception:
+                pass
 
     # Audit log (falls back to in-memory ring buffer when no DB)
     from src.platform.audit import AuditLog
@@ -669,7 +687,12 @@ def create_fastapi_app(
                 handled = True
             except Exception:
                 logger.debug("legacy hitl.approve did not handle %s", request_id)
-        resumed = _resume_v2_continuation(request_id, accept=True, responded_by=body.approved_by or "api")
+        # Worker tier: enqueue a resume task (worker re-runs the gated tool).
+        # Else: resume inline in-process.
+        if runtime_service is not None:
+            resumed = bool(await runtime_service.resume.approve(request_id, responded_by=body.approved_by or "api"))
+        else:
+            resumed = _resume_v2_continuation(request_id, accept=True, responded_by=body.approved_by or "api")
         if not handled and not resumed:
             raise HTTPException(404, f"No pending approval '{request_id}'")
         _audit("approval.approve", actor=body.approved_by or "api",
@@ -688,7 +711,10 @@ def create_fastapi_app(
                 handled = True
             except Exception:
                 logger.debug("legacy hitl.reject did not handle %s", request_id)
-        resumed = _resume_v2_continuation(request_id, accept=False, responded_by=body.rejected_by or "api")
+        if runtime_service is not None:
+            resumed = bool(await runtime_service.resume.reject(request_id, responded_by=body.rejected_by or "api"))
+        else:
+            resumed = _resume_v2_continuation(request_id, accept=False, responded_by=body.rejected_by or "api")
         if not handled and not resumed:
             raise HTTPException(404, f"No pending approval '{request_id}'")
         _audit("approval.reject", actor=body.rejected_by or "api",

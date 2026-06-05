@@ -38,6 +38,7 @@ from src.runtime.queue import (
     RunnableQueue,
 )
 from src.runtime.resume_service import ResumeService
+from src.runtime.service import RuntimeService
 from src.runtime.signals import Resolution, ResolutionOutcome, Suspend, SuspendReason
 from src.runtime.worker import Worker
 
@@ -57,6 +58,7 @@ __all__ = [
     "Resolution",
     "ResolutionOutcome",
     "ResumeService",
+    "RuntimeService",
     "RunOutcome",
     "RunStatus",
     "RunnableItem",

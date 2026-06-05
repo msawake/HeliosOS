@@ -40,6 +40,7 @@ class Worker:
         ledger: Ledger,
         tool_executor=None,
         agent_context: dict | None = None,
+        context_builder=None,
         worker_id: str | None = None,
         lease_s: float = DEFAULT_LEASE_S,
         max_crashes: int = MAX_CRASHES,
@@ -49,6 +50,10 @@ class Worker:
         self._ledger = ledger
         self._tool_executor = tool_executor
         self._agent_context = agent_context
+        # Optional per-continuation resolver: cont_id -> (tool_executor,
+        # agent_context). Lets one worker pool serve many agents (each run
+        # needs its own tool context). Falls back to the fixed pair above.
+        self._context_builder = context_builder
         self.worker_id = worker_id or f"w_{uuid.uuid4().hex[:8]}"
         self._lease_s = lease_s
         self._max_crashes = max_crashes
@@ -68,18 +73,25 @@ class Worker:
             await self._queue.ack(item)  # stale/duplicate — drop
             return None
 
+        tool_executor, agent_context = self._tool_executor, self._agent_context
+        if self._context_builder is not None:
+            try:
+                tool_executor, agent_context = self._context_builder(item.cont_id)
+            except Exception:
+                logger.exception("worker %s: context_builder failed for %s", self.worker_id, item.cont_id)
+
         try:
             if item.resolution:
                 outcome = await self._engine.resume(
                     Resolution(**item.resolution),
-                    tool_executor=self._tool_executor,
-                    agent_context=self._agent_context,
+                    tool_executor=tool_executor,
+                    agent_context=agent_context,
                 )
             else:
                 outcome = await self._engine.drive(
                     item.cont_id,
-                    tool_executor=self._tool_executor,
-                    agent_context=self._agent_context,
+                    tool_executor=tool_executor,
+                    agent_context=agent_context,
                 )
         except Exception as exc:  # noqa: BLE001 - worker must not die on a task
             logger.exception("worker %s: task %s crashed", self.worker_id, item.cont_id)

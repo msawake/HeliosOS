@@ -139,6 +139,7 @@ class PlatformBootstrap:
         self.event_bus = None
         self.llm_router: LLMRouter | None = None
         self.executor: PlatformExecutor | None = None
+        self._runtime_service = None  # runtime-v2 worker tier (FORGEOS_RUNTIME_WORKERS)
 
         self.legacy_registry = None
         self.legacy_invoker = None
@@ -745,11 +746,53 @@ class PlatformBootstrap:
         if self._db:
             self._db.close()
 
+    def _maybe_build_runtime_service(self):
+        """Build + bind the runtime-v2 worker tier when FORGEOS_RUNTIME_WORKERS
+        is set: a Redis-Streams (or in-memory) runnable queue + a stateless
+        worker pool + resume service. Invokes then ENQUEUE a continuation and
+        the workers drive it (no inline execution). Returns the service or None."""
+        import os
+        if self._runtime_service is not None:
+            return self._runtime_service
+        flag = os.environ.get("FORGEOS_RUNTIME_WORKERS", "").lower()
+        if flag not in ("1", "true", "yes", "on"):
+            return None
+        try:
+            from src.runtime import RuntimeService
+            adapter = self.executor.get_adapter("forgeos") if self.executor else None
+            kernel = getattr(self, "_kernel", None)
+            if adapter is None or self.llm_router is None or kernel is None:
+                logger.warning("runtime workers: missing deps (adapter/llm/kernel) — not starting")
+                return None
+            if self._db and getattr(self._db, "is_connected", False):
+                from src.runtime import PostgresContinuationStore
+                store = PostgresContinuationStore(self._db)
+            else:
+                from src.runtime import MemoryContinuationStore
+                store = MemoryContinuationStore()
+            svc = RuntimeService(
+                kernel=kernel, llm_router=self.llm_router,
+                tool_executor=self._tool_executor, registry=self.platform_registry,
+                store=store, db=self._db,
+            )
+            # Share the engine so the adapter enqueues into the same store the
+            # API reads (GET /runs, approvals) and the workers drive.
+            adapter._step_engine = svc.engine
+            adapter._runtime_service = svc
+            self._runtime_service = svc
+            logger.info("runtime workers: wired (queue + worker pool + resume service)")
+            return svc
+        except Exception:
+            logger.exception("runtime workers: build failed — falling back to inline execution")
+            return None
+
     def create_api_app(self, auth_enabled: bool = True):
         """Create the FastAPI app."""
         from src.dashboard.fastapi_app import create_fastapi_app
         company_name = self.config.get("company", {}).get("name", "AI Company")
+        runtime_service = self._maybe_build_runtime_service()
         return create_fastapi_app(
+            runtime_service=runtime_service,
             company_system=self.system,
             workflow_engine=self.workflow_engine,
             company_name=company_name,

@@ -37,6 +37,7 @@ class ForgeOSAdapter(AgentStackAdapter):
         self._agents: dict[str, AgentDefinition] = {}
         self._loops: dict[str, asyncio.Task] = {}
         self._step_engine = None  # lazily built when runtime-v2 is enabled
+        self._runtime_service = None  # set by bootstrap when the worker tier is on
 
     # -- runtime-v2 (durable continuation engine) --------------------------
 
@@ -215,6 +216,19 @@ class ForgeOSAdapter(AgentStackAdapter):
         approve it later. The worker is freed immediately.
         """
         from src.runtime import RunStatus
+
+        # Worker tier: when the bootstrap wired a RuntimeService, ENQUEUE the
+        # run instead of driving it inline. The worker pool claims it off the
+        # (Redis Streams / in-memory) queue and drives it; we return the run
+        # handle immediately so no request is held across the agentic loop.
+        if self._runtime_service is not None:
+            run_id = await self._runtime_service.enqueue_invoke(agent_def, prompt, context)
+            return AgentResult(
+                agent_id=agent_id,
+                status=AgentStatus.RUNNING,
+                output="",
+                metadata={"continuation_id": run_id, "run_id": run_id, "queued": True},
+            )
 
         engine = self._get_step_engine(kernel)
         ctx = context or {}
