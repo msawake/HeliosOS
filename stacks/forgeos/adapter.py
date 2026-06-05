@@ -66,11 +66,26 @@ class ForgeOSAdapter(AgentStackAdapter):
         import os
 
         from src.runtime import MemoryContinuationStore, StepEngine
-        db = os.environ.get("FORGEOS_RUNTIME_DB")
-        if db:
+
+        store = None
+        # Production: when DATABASE_URL is set, persist continuations in Postgres
+        # (migration 013) so suspend/resume survives a platform restart.
+        if os.environ.get("DATABASE_URL"):
+            try:
+                from src.core.database import create_database_client
+                from src.runtime import PostgresContinuationStore
+                _db = create_database_client()
+                if getattr(_db, "is_connected", False):
+                    store = PostgresContinuationStore(_db)
+                    logger.info("runtime-v2: continuations persisted in Postgres")
+            except Exception:
+                logger.exception("runtime-v2: Postgres continuation store unavailable; falling back")
+        # Dev durable: a SQLite file (survives restart, no DB needed).
+        if store is None and os.environ.get("FORGEOS_RUNTIME_DB"):
             from src.runtime import SqliteContinuationStore
-            store = SqliteContinuationStore(db)
-        else:
+            store = SqliteContinuationStore(os.environ["FORGEOS_RUNTIME_DB"])
+        # Default: in-process (ephemeral).
+        if store is None:
             store = MemoryContinuationStore()
         self._step_engine = StepEngine(llm_router=self._llm_router, kernel=kernel, store=store)
         return self._step_engine
