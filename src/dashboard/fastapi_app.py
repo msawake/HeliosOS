@@ -3574,19 +3574,30 @@ def create_fastapi_app(
             raise HTTPException(503, "A2H chat not available")
         body = await request.json()
         agent_ns = body.get("agent_namespace", "default")
-        agent_name = body["agent_name"]
+        # Accept either {agent_name[, agent_namespace]} (CLI) or {agent_id} (Lens).
+        agent_name = body.get("agent_name")
+        agent_pid = body.get("agent_pid") or body.get("agent_id") or ""
         human_name = body.get("human_name", "operator")
         human_ns = body.get("human_namespace", agent_ns)
         topic = body.get("topic", "")
         context = body.get("context") or {}
 
-        # Look up the agent id by name (best-effort) so the session links a pid.
-        agent_pid = body.get("agent_pid", "")
-        if not agent_pid and platform_executor and hasattr(platform_executor, "registry"):
-            for a in platform_executor.registry.list_all():
-                if getattr(a, "name", "") == agent_name and getattr(a, "namespace", "default") == agent_ns:
-                    agent_pid = getattr(a, "agent_id", "")
-                    break
+        # Resolve name/namespace/pid from the registry (by id, else by name).
+        if platform_executor and hasattr(platform_executor, "registry"):
+            resolved = None
+            if agent_pid:
+                resolved = platform_executor.registry.get(agent_pid)
+            if resolved is None and agent_name:
+                for a in platform_executor.registry.list_all():
+                    if getattr(a, "name", "") == agent_name and getattr(a, "namespace", "default") == agent_ns:
+                        resolved = a
+                        break
+            if resolved is not None:
+                agent_name = agent_name or getattr(resolved, "name", "")
+                agent_ns = getattr(resolved, "namespace", agent_ns)
+                agent_pid = getattr(resolved, "agent_id", "") or agent_pid
+        if not agent_name:
+            agent_name = agent_pid or "agent"
 
         session = gw.open_for_human(
             agent_pid=agent_pid or f"{agent_ns}/{agent_name}",
@@ -3606,14 +3617,45 @@ def create_fastapi_app(
         if gw is None:
             raise HTTPException(503, "A2H chat not available")
         body = await request.json()
-        result = gw.post(
-            chat_id=chat_id,
-            role=body.get("role", "human"),
-            sender=body.get("sender", ""),
-            content=body.get("content", ""),
-        )
+        role = body.get("role", "human")
+        content = body.get("content", "")
+        result = gw.post(chat_id=chat_id, role=role, sender=body.get("sender", ""), content=content)
         if not result.get("ok"):
             raise HTTPException(400, result.get("error", "post failed"))
+
+        # When a human speaks, invoke the target agent and post its reply back
+        # so the chat is conversational (the CLI drives this client-side; Lens
+        # only posts + polls, so the server must do it). Inline invoke (bypasses
+        # the worker tier) to get the reply text; async so this POST returns now
+        # and the client's poll picks up the reply.
+        if role == "human" and content and platform_executor:
+            agent_pid = None
+            agent_name = "agent"
+            try:
+                sess = gw.get_session(chat_id, include_messages=False) if hasattr(gw, "get_session") else None
+                if isinstance(sess, dict):
+                    agent_pid = sess.get("agent_pid")
+                    agent_name = sess.get("agent_name") or "agent"
+            except Exception:
+                logger.debug("chat: could not resolve session agent", exc_info=True)
+            if agent_pid:
+                import asyncio as _aio
+
+                async def _agent_reply():
+                    try:
+                        r = await platform_executor.invoke(
+                            agent_pid, content, {"_inline": True, "_trigger": "chat"},
+                            session_id=chat_id,
+                        )
+                        txt = (getattr(r, "output", "") or "").strip() or "(no response)"
+                    except Exception as exc:  # noqa: BLE001
+                        txt = f"(agent error: {exc})"
+                    try:
+                        gw.post(chat_id=chat_id, role="agent", sender=agent_name, content=txt)
+                    except Exception:
+                        logger.debug("chat: posting agent reply failed", exc_info=True)
+
+                _aio.create_task(_agent_reply())
         return result
 
     @app.get("/api/a2h/v1/chats/{chat_id}/messages", tags=["a2h-chat"])

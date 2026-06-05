@@ -221,7 +221,9 @@ class ForgeOSAdapter(AgentStackAdapter):
         # run instead of driving it inline. The worker pool claims it off the
         # (Redis Streams / in-memory) queue and drives it; we return the run
         # handle immediately so no request is held across the agentic loop.
-        if self._runtime_service is not None:
+        # ``_inline`` forces synchronous execution (e.g. interactive chat needs
+        # the agent's reply text, not a queued handle).
+        if self._runtime_service is not None and not (context or {}).get("_inline"):
             run_id = await self._runtime_service.enqueue_invoke(agent_def, prompt, context)
             return AgentResult(
                 agent_id=agent_id,
