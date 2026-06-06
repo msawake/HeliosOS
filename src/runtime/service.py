@@ -38,9 +38,30 @@ def build_queue():
             import redis.asyncio as aioredis
 
             from src.runtime.queue import RedisRunnableQueue
-            client = aioredis.from_url(url)
-            logger.info("runtime workers: using Redis Streams queue (%s)", url)
-            return RedisRunnableQueue(client), "redis"
+            # Long-lived worker connections go stale between claims (the pool
+            # idles, then a read on a dead socket times out — seen as repeated
+            # "Timeout reading from <host>" / CancelledError storms that can
+            # interrupt a resume mid-flight). Keep them alive + auto-retry so the
+            # worker tier (and the durable HITL resume) stays healthy across idle.
+            client = aioredis.from_url(
+                url,
+                socket_keepalive=True,
+                health_check_interval=30,
+                retry_on_timeout=True,
+                socket_timeout=60,
+                socket_connect_timeout=10,
+            )
+            # Unique consumer name per process. Redis Streams splits a group's
+            # entries across DISTINCT consumer names; if every process used the
+            # same name ("w0"), multiple servers/pods (or a stray leftover
+            # instance) sharing one Redis would steal each other's tasks
+            # non-deterministically. host+pid keeps each process its own
+            # consumer; orphaned entries from a dead consumer are recovered by
+            # the XAUTOCLAIM reclaim path in claim().
+            import socket as _socket
+            consumer = f"w-{_socket.gethostname()}-{os.getpid()}"
+            logger.info("runtime workers: using Redis Streams queue (%s) consumer=%s", url, consumer)
+            return RedisRunnableQueue(client, consumer=consumer), "redis"
         except Exception:
             logger.exception("runtime workers: Redis queue unavailable; using in-memory")
     return InMemoryRunnableQueue(), "memory"
@@ -73,7 +94,10 @@ class RuntimeService:
         workers: int = 4,
         lease_s: float = 600.0,
     ) -> None:
-        self.engine = StepEngine(llm_router=llm_router, kernel=kernel, store=store)
+        # single_step=True: one LLM turn per worker claim. The worker re-enqueues
+        # the continuation after each turn (one turn == one runnable Redis task).
+        self.engine = StepEngine(llm_router=llm_router, kernel=kernel, store=store,
+                                 single_step=True)
         self.store = store
         self.ledger = ledger or build_ledger(db)
         self.queue = queue or build_queue()[0]
@@ -84,7 +108,7 @@ class RuntimeService:
         self._n = max(1, workers)
         self._worker = Worker(
             engine=self.engine, queue=self.queue, ledger=self.ledger,
-            lease_s=lease_s, context_builder=self._context_for,
+            enqueuer=self.enqueuer, lease_s=lease_s, context_builder=self._context_for,
         )
         self._tasks: list[asyncio.Task] = []
         self._stop = False
@@ -110,10 +134,26 @@ class RuntimeService:
         """Create a continuation from an agent + prompt and enqueue it.
         Returns the run handle (continuation id). Workers drive it."""
         from src.platform.agentic_loop import build_tool_definitions
+        from src.runtime.shaping import extract_chat_history
 
         ctx = context or {}
         tools = build_tool_definitions(self._tool_executor, agent_def.tools or None)
         system = agent_def.system_prompt or f"You are {agent_def.name}. {getattr(agent_def, 'description', '')}"
+
+        # Cross-turn chat memory: when a session_id is present, re-seed this
+        # turn's continuation with the prior conversation. Each chat turn is its
+        # own continuation (one turn == one runnable Redis task), so memory is
+        # carried by re-loading the previous DONE continuation for the session.
+        session_id = ctx.get("session_id")
+        history = None
+        if session_id:
+            try:
+                prev = self.store.load_latest_for_session(session_id, status="done")
+                if prev is not None:
+                    history = extract_chat_history(prev.messages) or None
+            except Exception:
+                logger.debug("session history lookup failed for %s", session_id)
+
         cont = self.engine.create_continuation(
             pid=agent_def.agent_id,
             system_prompt=system,
@@ -121,6 +161,8 @@ class RuntimeService:
             provider=agent_def.llm_config.provider,
             chat_model=agent_def.llm_config.chat_model,
             tools=tools or None,
+            session_id=session_id,
+            history=history,
             context=context,
             goal=getattr(agent_def, "goal", None) or None,
             tenant_id=ctx.get("tenant_id", (agent_def.metadata or {}).get("tenant_id", "default")),

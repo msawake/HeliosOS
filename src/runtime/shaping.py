@@ -41,6 +41,40 @@ def _content_str(result: Any) -> str:
     return json.dumps(result) if isinstance(result, dict) else str(result)
 
 
+def _text_of(content: Any) -> str:
+    """Best-effort plain text from a message's content (string or block list)."""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict):
+                if isinstance(block.get("text"), str):
+                    parts.append(block["text"])
+            elif isinstance(block, str):
+                parts.append(block)
+        return "\n".join(p for p in parts if p).strip()
+    return ""
+
+
+def extract_chat_history(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Reduce a stored (provider-shaped) message list to a clean conversational
+    history of ``{role, content}`` text turns suitable for re-seeding a fresh
+    continuation: keep user + assistant TEXT turns, drop the system turn and all
+    tool_use / tool_result plumbing. Tolerant of both OpenAI (string content)
+    and Anthropic (list-of-blocks) dialects. This is what gives a chat agent
+    cross-turn memory when every turn is its own durable continuation."""
+    out: list[dict[str, Any]] = []
+    for m in messages:
+        role = m.get("role")
+        if role not in ("user", "assistant"):
+            continue  # drop system + tool-result turns
+        text = _text_of(m.get("content"))
+        if text:
+            out.append({"role": role, "content": text})
+    return out
+
+
 def shape_initial(
     system_prompt: str,
     history: list[dict[str, Any]] | None,

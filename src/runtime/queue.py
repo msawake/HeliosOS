@@ -20,9 +20,12 @@ from __future__ import annotations
 
 import heapq
 import itertools
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
+
+logger = logging.getLogger(__name__)
 
 PRIORITIES = ("p0", "p1", "p2")
 
@@ -138,12 +141,20 @@ class RedisRunnableQueue:
     """
 
     def __init__(self, redis, *, group: str = "workers", consumer: str = "w0",
-                 maxlen: int = 100_000) -> None:
+                 maxlen: int = 100_000, reclaim_idle_ms: int = 120_000) -> None:
         self._r = redis
         self._group = group
         self._consumer = consumer
         self._maxlen = maxlen
         self._sched_key = "forgeos:sched"
+        # Entries delivered to the group but never acked (a worker died/errored
+        # before ack) sit in the Pending Entries List forever — XREADGROUP '>'
+        # only ever returns NEW messages, so without recovery an orphaned task
+        # (notably a resume) is lost. Reclaim entries idle longer than this so
+        # they get reprocessed; the ledger CAS makes reprocessing exactly-once.
+        # Must exceed normal handle_one time (an LLM turn) so healthy in-flight
+        # entries are not stolen mid-processing.
+        self._reclaim_idle_ms = reclaim_idle_ms
 
     @staticmethod
     def _stream(priority: str) -> str:
@@ -181,8 +192,37 @@ class RedisRunnableQueue:
             moved += 1
         return moved
 
-    async def claim(self, *, count: int = 1, block_ms: int = 0) -> list[RunnableItem]:
+    def _item_from(self, stream: str, entry_id, fields) -> RunnableItem:
         import json
+        payload = json.loads(fields[b"d"] if b"d" in fields else fields["d"])
+        item = RunnableItem(**{k: payload.get(k) for k in
+                               ("cont_id", "tenant_id", "priority", "enqueue_epoch",
+                                "resolution", "attempt")})
+        item.handle = (stream, entry_id)
+        return item
+
+    async def _reclaim_idle(self, stream: str, count: int) -> list[RunnableItem]:
+        """Reclaim orphaned pending entries (delivered but never acked) idle
+        longer than ``reclaim_idle_ms`` via XAUTOCLAIM, so a task lost to a
+        worker crash is retried instead of stranded. Reprocessing is safe — the
+        ledger CAS drops any genuine duplicate."""
+        out: list[RunnableItem] = []
+        try:
+            resp = await self._r.xautoclaim(
+                stream, self._group, self._consumer,
+                min_idle_time=self._reclaim_idle_ms, start_id="0-0", count=count,
+            )
+        except Exception:
+            return out  # XAUTOCLAIM unsupported (Redis < 6.2) or transient — skip
+        # redis-py returns (next_cursor, claimed_entries[, deleted_ids]).
+        entries = resp[1] if isinstance(resp, (list, tuple)) and len(resp) >= 2 else []
+        for entry_id, fields in (entries or []):
+            if not fields:  # tombstone for an already-deleted id
+                continue
+            out.append(self._item_from(stream, entry_id, fields))
+        return out
+
+    async def claim(self, *, count: int = 1, block_ms: int = 0) -> list[RunnableItem]:
         await self.promote_due()
         out: list[RunnableItem] = []
         for prio in PRIORITIES:
@@ -190,18 +230,22 @@ class RedisRunnableQueue:
                 break
             stream = self._stream(prio)
             await self._ensure_group(stream)
+            # 1. Recover orphaned pending entries first (idle > reclaim_idle_ms).
+            reclaimed = await self._reclaim_idle(stream, count - len(out))
+            for it in reclaimed:
+                logger.info("[queue] RECLAIM %s epoch=%s resolution=%s", it.cont_id,
+                            it.enqueue_epoch, "yes" if it.resolution else "no")
+            out.extend(reclaimed)
+            if len(out) >= count:
+                break
+            # 2. Then read new messages.
             resp = await self._r.xreadgroup(
                 self._group, self._consumer, {stream: ">"},
                 count=count - len(out), block=block_ms or None,
             )
             for _stream_name, entries in (resp or []):
                 for entry_id, fields in entries:
-                    payload = json.loads(fields[b"d"] if b"d" in fields else fields["d"])
-                    item = RunnableItem(**{k: payload.get(k) for k in
-                                           ("cont_id", "tenant_id", "priority", "enqueue_epoch",
-                                            "resolution", "attempt")})
-                    item.handle = (stream, entry_id)
-                    out.append(item)
+                    out.append(self._item_from(stream, entry_id, fields))
         return out
 
     async def ack(self, item: RunnableItem) -> None:

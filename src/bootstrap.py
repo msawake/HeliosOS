@@ -55,6 +55,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("bootstrap")
 
+# FORGEOS_KERNEL_VERBOSE: narrate every kernel admission decision live. The
+# kernel emits these at INFO under src.platform.kernel.*; ensure that logger is
+# at INFO regardless of any later level tweaks so the operator can watch it.
+if os.environ.get("FORGEOS_KERNEL_VERBOSE", "0").strip().lower() in ("1", "true", "yes", "on"):
+    logging.getLogger("src.platform.kernel").setLevel(logging.INFO)
+    logger.info("FORGEOS_KERNEL_VERBOSE=1 — kernel admission decisions will be logged")
+
 
 def _repo_root() -> Path:
     """Directory containing `pyproject.toml` (parent of `src/`)."""

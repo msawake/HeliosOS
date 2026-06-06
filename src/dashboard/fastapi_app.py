@@ -1025,6 +1025,7 @@ def create_fastapi_app(
                                 "tool": p.get("name"),
                                 "tool_use_id": p.get("tool_use_id"),
                                 "suspend_reason": p.get("suspend_reason"),
+                                "args": p.get("arguments"),
                             }
                             for p in meta["pending"]
                         ]
@@ -1056,12 +1057,24 @@ def create_fastapi_app(
         raise HTTPException(503, "No invoker available")
 
     def _find_continuation(run_id: str):
-        """Locate a runtime-v2 continuation by id across adapter step engines.
+        """Locate a runtime-v2 continuation by id.
 
-        The run handle returned by invoke is the continuation id; suspendable
-        adapters (forgeos/sandbox/anthropic) own a StepEngine whose store holds
-        it. Returns the Continuation or None.
+        The run handle returned by invoke is the continuation id. It may live in
+        the worker tier's own store (when FORGEOS_RUNTIME_WORKERS drives the run)
+        or in a suspendable adapter's StepEngine store (inline runs). With a
+        Postgres store both point at the same table; with in-memory/sqlite they
+        diverge, so check the worker-tier store FIRST. Returns the Continuation
+        or None.
         """
+        # Worker tier (RuntimeService) — its store is where enqueued runs live.
+        rs_store = getattr(runtime_service, "store", None)
+        if rs_store is not None:
+            try:
+                cont = rs_store.load(run_id)
+            except Exception:
+                cont = None
+            if cont is not None:
+                return cont
         if not platform_executor:
             return None
         for adapter in getattr(platform_executor, "_adapters", {}).values():
@@ -1101,7 +1114,8 @@ def create_fastapi_app(
             "suspend_reason": cont.suspend_reason,
         }
         pending = [
-            {"request_id": r.external_ref, "tool": r.name, "tool_use_id": r.tool_use_id}
+            {"request_id": r.external_ref, "tool": r.name, "tool_use_id": r.tool_use_id,
+             "args": r.arguments}
             for r in cont.pending_calls if r.status == "pending"
         ]
         if pending:
@@ -3624,11 +3638,14 @@ def create_fastapi_app(
             raise HTTPException(400, result.get("error", "post failed"))
 
         # When a human speaks, invoke the target agent and post its reply back
-        # so the chat is conversational (the CLI drives this client-side; Lens
-        # only posts + polls, so the server must do it). Inline invoke (bypasses
-        # the worker tier) to get the reply text; async so this POST returns now
-        # and the client's poll picks up the reply.
-        if role == "human" and content and platform_executor:
+        # so the chat is conversational. Lens only posts + polls, so the server
+        # must drive the agent. A client that drives its OWN invoke (the
+        # `forgeos chat` [Y/n] flow uses /invoke + /runs + /approvals so it can
+        # show approvals inline) sets ``client_drives: true`` to suppress this —
+        # otherwise the agent runs twice per turn (a second, inline continuation
+        # parks its own approval). Inline invoke (bypasses the worker tier);
+        # async so this POST returns now and the client's poll picks up the reply.
+        if role == "human" and content and platform_executor and not body.get("client_drives"):
             agent_pid = None
             agent_name = "agent"
             try:

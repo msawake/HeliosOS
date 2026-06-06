@@ -147,6 +147,9 @@ class ContinuationStore(Protocol):
     def save(self, cont: Continuation) -> None: ...
     def load(self, continuation_id: str) -> Continuation | None: ...
     def load_for_pid(self, pid: str, *, status: str = "suspended") -> Continuation | None: ...
+    def load_latest_for_session(
+        self, session_id: str, *, status: str | None = "done"
+    ) -> Continuation | None: ...
     def find_by_external_ref(self, external_ref: str) -> Continuation | None: ...
     def index_ref(self, external_ref: str, continuation_id: str) -> None: ...
     def delete(self, continuation_id: str) -> bool: ...
@@ -177,6 +180,20 @@ class MemoryContinuationStore:
         matches = [
             c for c in self._by_id.values()
             if c.pid == pid and (status is None or c.status == status)
+        ]
+        if not matches:
+            return None
+        return max(matches, key=lambda c: c.updated_at)
+
+    def load_latest_for_session(
+        self, session_id: str, *, status: str | None = "done"
+    ) -> Continuation | None:
+        """Most-recently-updated continuation for a chat session — the source
+        of cross-turn memory: each chat turn is its own continuation keyed by
+        ``session_id``; the next turn re-seeds from the previous DONE one."""
+        matches = [
+            c for c in self._by_id.values()
+            if c.session_id == session_id and (status is None or c.status == status)
         ]
         if not matches:
             return None

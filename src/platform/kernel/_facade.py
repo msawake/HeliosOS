@@ -28,6 +28,7 @@ Every check returns a ``KernelDecision``. Every admission returns an
 from __future__ import annotations
 
 import logging
+import os
 import re
 import threading
 import uuid
@@ -38,6 +39,24 @@ from typing import Any, Literal
 from src.forgeos_sdk.manifest import read_v2_section
 
 logger = logging.getLogger(__name__)
+
+KERNEL_VERBOSE_ENV = "FORGEOS_KERNEL_VERBOSE"
+
+
+def kernel_verbose_enabled() -> bool:
+    """When set, the kernel narrates every admission decision to its loggers
+    (``src.platform.kernel.*``) at INFO so an operator can watch the behaviour
+    live: which stage fired, what action it returned and why, the final
+    decision, and when an approval capability token short-circuits a check.
+
+    Read once and cached by callers; toggle with ``FORGEOS_KERNEL_VERBOSE=1``.
+    """
+    return os.environ.get(KERNEL_VERBOSE_ENV, "0").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+KERNEL_VERBOSE = kernel_verbose_enabled()
 
 
 # ---------------------------------------------------------------------------
@@ -363,6 +382,9 @@ class PermissionManager:
             if mode == "conditional":
                 verdict = evaluate_rule_tristate(rule.get("when") or {}, ctx)
                 if verdict == "deny":
+                    if KERNEL_VERBOSE:
+                        logger.info("[kernel] approval rule DENY tool=%s reason=%s",
+                                    tool_name, rule.get("reason") or "conditional deny_if fired")
                     return KernelDecision.deny(
                         reason=rule.get("reason") or f"Tool '{tool_name}' denied by approval policy",
                         tool=tool_name,
@@ -375,6 +397,11 @@ class PermissionManager:
             # honouring the approval is impossible — fail closed, explicitly.
             stack = getattr(agent, "stack", None)
             if stack is not None and stack not in SUSPENDABLE_STACKS:
+                if KERNEL_VERBOSE:
+                    logger.info(
+                        "[kernel] approval ask_human DOWNGRADED->deny tool=%s stack=%s "
+                        "(stack cannot suspend mid-tool)", tool_name, stack,
+                    )
                 return KernelDecision.deny(
                     reason=(
                         f"tool '{tool_name}' requires human approval, but stack "
@@ -383,6 +410,13 @@ class PermissionManager:
                     tool=tool_name,
                     downgraded_from="ask_human",
                     stack=stack,
+                )
+            if KERNEL_VERBOSE:
+                logger.info(
+                    "[kernel] approval ASK_HUMAN tool=%s approvers=%s sla=%sh on_timeout=%s "
+                    "-> run will SUSPEND until a human decides",
+                    tool_name, list(rule.get("approvers") or []),
+                    rule.get("sla_hours", 24.0), rule.get("on_timeout", "abort"),
                 )
             return KernelDecision.ask_human(
                 reason=rule.get("reason") or f"tool '{tool_name}' requires human approval",

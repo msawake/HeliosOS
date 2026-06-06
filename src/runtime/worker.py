@@ -38,6 +38,7 @@ class Worker:
         engine: StepEngine,
         queue: RunnableQueue,
         ledger: Ledger,
+        enqueuer=None,
         tool_executor=None,
         agent_context: dict | None = None,
         context_builder=None,
@@ -48,6 +49,10 @@ class Worker:
         self._engine = engine
         self._queue = queue
         self._ledger = ledger
+        # Required for per-turn mode: when the engine returns CONTINUE the worker
+        # re-enqueues the continuation for the next turn through this enqueuer
+        # (which bumps the fencing epoch). Absent → CONTINUE is treated terminal.
+        self._enqueuer = enqueuer
         self._tool_executor = tool_executor
         self._agent_context = agent_context
         # Optional per-continuation resolver: cont_id -> (tool_executor,
@@ -70,8 +75,14 @@ class Worker:
         if not self._ledger.try_mark_running(
             item.cont_id, worker=self.worker_id, epoch=item.enqueue_epoch, lease_s=self._lease_s,
         ):
+            if item.resolution:
+                logger.info("[worker %s] DROP resume %s epoch=%s (CAS lost — duplicate)",
+                            self.worker_id, item.cont_id, item.enqueue_epoch)
             await self._queue.ack(item)  # stale/duplicate — drop
             return None
+        if item.resolution:
+            logger.info("[worker %s] CLAIM resume %s epoch=%s", self.worker_id,
+                        item.cont_id, item.enqueue_epoch)
 
         tool_executor, agent_context = self._tool_executor, self._agent_context
         if self._context_builder is not None:
@@ -108,7 +119,31 @@ class Worker:
                 await self._queue.ack(item)
             return RunStatus.FAILED
 
-        # 2. Durable state is already persisted by the engine; settle ledger,
+        # 2a. Per-turn mode: the turn finished with tool results appended and the
+        #     run is not terminal. Re-enqueue the NEXT turn (this bumps the
+        #     fencing epoch and writes a fresh queued ledger row) BEFORE acking
+        #     this delivery — commit-before-ack again: if we crash after the
+        #     re-enqueue, the old delivery is dropped on redelivery (epoch
+        #     mismatch) and the new epoch's item carries the run forward; if we
+        #     crashed before it, the row is still 'running' at this epoch and a
+        #     lease-expiry recovery re-enqueues it. No double-run either way.
+        if outcome.status is RunStatus.CONTINUE:
+            if self._enqueuer is None:
+                # Misconfigured: a single-step engine without an enqueuer can't
+                # advance. Fail loudly rather than silently dropping the run.
+                logger.error(
+                    "worker %s: engine returned CONTINUE but no enqueuer wired; "
+                    "marking %s failed", self.worker_id, item.cont_id,
+                )
+                self._ledger.finalize(item.cont_id, status="failed",
+                                      error="CONTINUE without enqueuer")
+                await self._queue.ack(item)
+                return RunStatus.FAILED
+            await self._enqueuer.enqueue_runnable(item.cont_id, priority=item.priority)
+            await self._queue.ack(item)
+            return RunStatus.CONTINUE
+
+        # 2b. Durable state is already persisted by the engine; settle ledger,
         #    THEN ack (commit-before-ack ordering => no double-run on redelivery).
         ledger_status = "done" if outcome.status in (
             RunStatus.DONE, RunStatus.SUSPENDED, RunStatus.MAX_TURNS,

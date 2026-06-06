@@ -56,6 +56,10 @@ class RunStatus(str, Enum):
     SUSPENDED = "suspended"
     FAILED = "failed"
     MAX_TURNS = "max_turns"
+    # Single-step mode only: the turn finished with tool results appended and
+    # the run should continue on a FRESH worker. The worker re-enqueues the
+    # continuation (one LLM turn == one runnable Redis task).
+    CONTINUE = "continue"
 
 
 @dataclass
@@ -77,6 +81,10 @@ class RunOutcome:
     @property
     def done(self) -> bool:
         return self.status is RunStatus.DONE
+
+    @property
+    def should_continue(self) -> bool:
+        return self.status is RunStatus.CONTINUE
 
 
 class _Suspended:
@@ -105,6 +113,7 @@ class StepEngine:
         process_table=None,
         gateway=None,
         max_turns: int = MAX_TOOL_TURNS,
+        single_step: bool = False,
     ) -> None:
         self._llm = llm_router
         self._kernel = kernel
@@ -114,6 +123,13 @@ class StepEngine:
         # engine mints a synthetic ref so suspend/resume still round-trips.
         self._gateway = gateway
         self._max_turns = max_turns
+        # Per-turn worker mode: when True, ``drive``/``resume`` advance exactly
+        # ONE LLM turn and return ``CONTINUE`` so the worker re-enqueues the
+        # continuation for a fresh worker (the model the operator watches:
+        # user -> query -> worker -> one LLM call -> tool via kernel -> new
+        # worker with history + tool result, or final response ends the run).
+        # The inline adapter engine keeps single_step=False (full internal loop).
+        self._single_step = single_step
 
     # -- public API --------------------------------------------------------
 
@@ -196,7 +212,7 @@ class StepEngine:
         cont.status = "running"
         self._store.save(cont)
         self._transition(cont, "running")
-        return await self._drive(cont, tool_executor, agent_context)
+        return await self._drive_or_step(cont, tool_executor, agent_context)
 
     async def resume(
         self,
@@ -210,8 +226,13 @@ class StepEngine:
         if cont is None:
             return RunOutcome(RunStatus.FAILED, resolution.continuation_id,
                               error="continuation not found")
+        logger.info("[resume] cont=%s status=%s outcome=%s token=%s tool_use=%s",
+                    cont.continuation_id, cont.status, resolution.outcome,
+                    "yes" if resolution.capability_token else "NO", resolution.tool_use_id)
         if cont.status != "suspended":
             # Already resumed / done / stale — idempotent no-op.
+            logger.info("[resume] cont=%s SKIP — not suspended (status=%s)",
+                        cont.continuation_id, cont.status)
             return RunOutcome(RunStatus.FAILED, cont.continuation_id,
                               error=f"continuation not suspended (status={cont.status})")
 
@@ -223,6 +244,8 @@ class StepEngine:
             return RunOutcome(RunStatus.FAILED, cont.continuation_id,
                               error=f"no pending tool_use {resolution.tool_use_id}")
 
+        logger.info("[resume] cont=%s rec.status=%s -> %s", cont.continuation_id, rec.status,
+                    "apply_resolution" if rec.status != "executed" else "SKIP (already executed)")
         if rec.status != "executed":
             await self._apply_resolution(cont, rec, resolution, tool_executor, agent_context)
 
@@ -241,11 +264,19 @@ class StepEngine:
         cont.step_index += 1
         self._store.save(cont)
         self._transition(cont, "running")
-        return await self._drive(cont, tool_executor, agent_context)
+        return await self._drive_or_step(cont, tool_executor, agent_context)
 
     # -- core loop ---------------------------------------------------------
 
+    async def _drive_or_step(self, cont: Continuation, tool_executor, agent_context) -> RunOutcome:
+        """Drive the whole loop (inline) or exactly one turn (worker tier)."""
+        if self._single_step:
+            return await self._step(cont, tool_executor, agent_context)
+        return await self._drive(cont, tool_executor, agent_context)
+
     async def _drive(self, cont: Continuation, tool_executor, agent_context) -> RunOutcome:
+        """Inline mode: drive the whole loop in one worker until the run
+        completes, suspends, fails, or hits max turns."""
         from stacks.base import LLMConfig
 
         llm_config = LLMConfig(chat_model=cont.chat_model, provider=cont.provider)
@@ -255,62 +286,125 @@ class StepEngine:
 
         turn = cont.step_index
         while turn < cont.max_turns:
-            cont.step_index = turn
-            response = await self._llm.chat(llm_config, cont.messages, tools=tools)
-
-            if response.error:
-                return self._fail(cont, response.error)
-
-            tokens += response.tokens_used
-            self._account(cont, response)
-
-            if not response.has_tool_calls:
-                return self._complete(cont, response.text, tokens)
-
-            # 1. Record the assistant turn (with native tool-call ids).
-            shape_assistant_turn(cont.messages, response, kind)
-
-            # 2. Build records + dispatch every tool through the kernel.
-            records = [
-                ToolCallRecord(tool_use_id=tc.id, name=tc.name, arguments=tc.input)
-                for tc in (response.tool_calls or [])
-            ]
-            results = await asyncio.gather(
-                *(self._dispatch(cont, rec, tool_executor, agent_context) for rec in records),
-                return_exceptions=True,
+            outcome, tokens = await self._run_one_turn(
+                cont, llm_config, kind, tools, turn, tokens, tool_executor, agent_context,
             )
-
-            # 3. Resolve outcomes; collect any suspensions.
-            suspended_any = False
-            for rec, res in zip(records, results):
-                if isinstance(res, _Suspended):
-                    rec.status = "pending"
-                    rec.suspend_reason = res.signal.reason
-                    rec.external_ref = res.signal.external_ref
-                    suspended_any = True
-                elif isinstance(res, BaseException):
-                    rec.status = "executed"
-                    rec.result = {"error": str(res)}
-                    rec.result_is_error = True
-                else:
-                    rec.status = "executed"
-                    rec.result = res
-
-            if suspended_any:
-                return await self._suspend(cont, records, tokens)
-
-            # 4. No suspension — append tool results and continue the loop.
-            shape_tool_results(cont.messages, records, kind)
-            self._store.save(cont)
-
-            # Cooperative preemption at the tool boundary (reuses kernel signals).
-            if self._kernel is not None and hasattr(self._kernel, "check_signals"):
-                if "SIGTERM" in (self._kernel.check_signals(cont.pid) or []):
-                    return self._complete(cont, response.text or "", tokens)
-
+            if outcome is not None:
+                return outcome
             turn += 1
 
         return self._max_turns_reached(cont, tokens)
+
+    async def _step(self, cont: Continuation, tool_executor, agent_context) -> RunOutcome:
+        """Worker-tier mode: drive exactly ONE turn, then return a terminal
+        outcome (DONE/SUSPENDED/FAILED/MAX_TURNS — the process ends or parks) or
+        ``CONTINUE`` to tell the worker to re-enqueue the continuation so a fresh
+        worker runs the next turn. This is what makes "one LLM turn == one
+        runnable Redis task" hold: the agent never knows whether the previous
+        tool was executed inline or took three hours behind a human approval —
+        it just resumes from the persisted history + tool result."""
+        from stacks.base import LLMConfig
+
+        turn = cont.step_index
+        if turn >= cont.max_turns:
+            return self._max_turns_reached(cont, 0)
+
+        llm_config = LLMConfig(chat_model=cont.chat_model, provider=cont.provider)
+        kind = provider_kind(cont.provider, cont.chat_model)
+        tools = cont.tool_definitions or None
+
+        outcome, tokens = await self._run_one_turn(
+            cont, llm_config, kind, tools, turn, 0, tool_executor, agent_context,
+        )
+        if outcome is not None:
+            return outcome  # DONE / SUSPENDED / FAILED — end or park here.
+
+        # The turn appended tool results (this is also the text+tool_call edge
+        # case: has_tool_calls=True keeps us here, never at _complete). Advance
+        # the step index, persist, and hand the next turn to a fresh worker.
+        cont.step_index = turn + 1
+        cont.status = "running"
+        self._store.save(cont)
+        if turn + 1 >= cont.max_turns:
+            return self._max_turns_reached(cont, tokens)
+        return RunOutcome(RunStatus.CONTINUE, cont.continuation_id, tokens_used=tokens)
+
+    async def _run_one_turn(
+        self,
+        cont: Continuation,
+        llm_config,
+        kind: str,
+        tools,
+        turn: int,
+        tokens_in: int,
+        tool_executor,
+        agent_context,
+    ) -> tuple[RunOutcome | None, int]:
+        """Run a single LLM turn (one ``chat`` call → admit+dispatch any tool
+        calls through the kernel → append results). Returns
+        ``(terminal_outcome, tokens)`` where ``terminal_outcome`` is None when
+        the turn finished without a terminal result (the caller continues).
+
+        This is the ONE place the LLM→tool_use→tool_result step lives, shared by
+        :meth:`_drive` (inline loop) and :meth:`_step` (per-turn worker mode), so
+        the edge case — an assistant turn carrying BOTH text and a tool call
+        must dispatch the tool and continue, never finalize at the text — cannot
+        diverge between the two modes (``response.has_tool_calls`` is True
+        whenever a tool call exists, regardless of accompanying text)."""
+        cont.step_index = turn
+        response = await self._llm.chat(llm_config, cont.messages, tools=tools)
+
+        if response.error:
+            return self._fail(cont, response.error), tokens_in
+
+        tokens = tokens_in + response.tokens_used
+        self._account(cont, response)
+
+        if not response.has_tool_calls:
+            return self._complete(cont, response.text, tokens), tokens
+
+        # 1. Record the assistant turn (with native tool-call ids).
+        shape_assistant_turn(cont.messages, response, kind)
+
+        # 2. Build records + dispatch every tool through the kernel.
+        records = [
+            ToolCallRecord(tool_use_id=tc.id, name=tc.name, arguments=tc.input)
+            for tc in (response.tool_calls or [])
+        ]
+        results = await asyncio.gather(
+            *(self._dispatch(cont, rec, tool_executor, agent_context) for rec in records),
+            return_exceptions=True,
+        )
+
+        # 3. Resolve outcomes; collect any suspensions.
+        suspended_any = False
+        for rec, res in zip(records, results):
+            if isinstance(res, _Suspended):
+                rec.status = "pending"
+                rec.suspend_reason = res.signal.reason
+                rec.external_ref = res.signal.external_ref
+                suspended_any = True
+            elif isinstance(res, BaseException):
+                rec.status = "executed"
+                rec.result = {"error": str(res)}
+                rec.result_is_error = True
+            else:
+                rec.status = "executed"
+                rec.result = res
+
+        if suspended_any:
+            return await self._suspend(cont, records, tokens), tokens
+
+        # 4. No suspension — append tool results; the caller continues.
+        shape_tool_results(cont.messages, records, kind)
+        self._store.save(cont)
+
+        # Cooperative preemption at the tool boundary (reuses kernel signals).
+        if self._kernel is not None and hasattr(self._kernel, "check_signals"):
+            if "SIGTERM" in (self._kernel.check_signals(cont.pid) or []):
+                return self._complete(cont, response.text or "", tokens), tokens
+
+        return None, tokens
 
     # -- dispatch ----------------------------------------------------------
 
@@ -492,6 +586,7 @@ class StepEngine:
                 {
                     "tool_use_id": r.tool_use_id,
                     "name": r.name,
+                    "arguments": r.arguments,
                     "suspend_reason": r.suspend_reason,
                     "external_ref": r.external_ref,
                 }

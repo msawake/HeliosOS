@@ -104,6 +104,24 @@ class SqliteContinuationStore:
             ).fetchone()
         return Continuation.from_dict(json.loads(row["data"])) if row else None
 
+    def load_latest_for_session(
+        self, session_id: str, *, status: str | None = "done"
+    ) -> Continuation | None:
+        # session_id lives inside the JSON blob; json_extract avoids a schema bump.
+        if status is None:
+            row = self._conn.execute(
+                "SELECT data FROM continuations WHERE json_extract(data,'$.session_id') = ? "
+                "ORDER BY updated_at DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+        else:
+            row = self._conn.execute(
+                "SELECT data FROM continuations WHERE json_extract(data,'$.session_id') = ? "
+                "AND status = ? ORDER BY updated_at DESC LIMIT 1",
+                (session_id, status),
+            ).fetchone()
+        return Continuation.from_dict(json.loads(row["data"])) if row else None
+
     def find_by_external_ref(self, external_ref: str) -> Continuation | None:
         row = self._conn.execute(
             "SELECT continuation_id FROM continuation_refs WHERE external_ref = ?",
@@ -292,6 +310,24 @@ class PostgresContinuationStore:
                     "SELECT * FROM continuations WHERE pid = %s AND status = %s "
                     "ORDER BY updated_at DESC LIMIT 1",
                     (pid, status),
+                )
+        return self._hydrate(row)
+
+    def load_latest_for_session(
+        self, session_id: str, *, status: str | None = "done"
+    ) -> Continuation | None:
+        with self._db.admin() as conn:
+            if status is None:
+                row = conn.execute_one(
+                    "SELECT * FROM continuations WHERE session_id = %s "
+                    "ORDER BY updated_at DESC LIMIT 1",
+                    (session_id,),
+                )
+            else:
+                row = conn.execute_one(
+                    "SELECT * FROM continuations WHERE session_id = %s AND status = %s "
+                    "ORDER BY updated_at DESC LIMIT 1",
+                    (session_id, status),
                 )
         return self._hydrate(row)
 

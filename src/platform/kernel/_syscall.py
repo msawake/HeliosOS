@@ -34,9 +34,31 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol, runtime_checkable
 
-from src.platform.kernel._facade import KernelDecision
+from src.platform.kernel._facade import KernelDecision, kernel_verbose_enabled
 
 logger = logging.getLogger(__name__)
+
+# Narrate every stage decision when FORGEOS_KERNEL_VERBOSE is set (read once).
+KERNEL_VERBOSE = kernel_verbose_enabled()
+
+
+def _redact_args(args: dict[str, Any] | None) -> str:
+    """Compact, secret-safe one-liner of syscall args for verbose logs.
+
+    Never prints capability-token values or large tool payloads verbatim — a
+    token is shown as ``<token>`` and tool_input is truncated."""
+    if not args:
+        return "{}"
+    out: dict[str, Any] = {}
+    for k, v in args.items():
+        if k == "capability_token":
+            out[k] = "<token>" if v else None
+        elif k == "tool_input":
+            s = str(v)
+            out[k] = s if len(s) <= 200 else s[:200] + "…"
+        else:
+            out[k] = v
+    return str(out)
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +163,11 @@ class SyscallPipeline:
 
     def run(self, syscall: Syscall) -> KernelDecision:
         """Run every configured stage and return the final decision."""
+        if KERNEL_VERBOSE:
+            logger.info(
+                "[kernel] syscall verb=%s subject=%s object=%s args=%s",
+                syscall.verb, syscall.subject, syscall.object, _redact_args(syscall.args),
+            )
         for stage_name in STAGE_ORDER:
             stage = self._stages[stage_name]
             if stage is None:
@@ -158,11 +185,20 @@ class SyscallPipeline:
                     verb=syscall.verb,
                 )
             if decision is None:
+                if KERNEL_VERBOSE:
+                    logger.info("[kernel]   stage=%-10s -> pass", stage_name)
                 continue
+            if KERNEL_VERBOSE:
+                logger.info("[kernel]   stage=%-10s -> %-10s %s",
+                            stage_name, decision.action, decision.reason or "")
             # Any non-allow decision short-circuits.
             if decision.action != "allow":
                 if stage_name != "audit":
                     self._run_audit_on_deny(syscall, decision)
+                if KERNEL_VERBOSE:
+                    logger.info("[kernel] DECISION verb=%s object=%s -> %s (%s) [stage=%s]",
+                                syscall.verb, syscall.object, decision.action,
+                                decision.reason or "", stage_name)
                 return decision
         # All stages allowed — fall through to a permissive result.
         # Propagate any budget ticket the quota stage attached to the syscall
@@ -170,6 +206,9 @@ class SyscallPipeline:
         details: dict[str, Any] = {"verb": syscall.verb, "subject": syscall.subject}
         if syscall.budget_ticket is not None:
             details["ticket"] = syscall.budget_ticket
+        if KERNEL_VERBOSE:
+            logger.info("[kernel] DECISION verb=%s object=%s -> allow (all stages passed)",
+                        syscall.verb, syscall.object)
         return KernelDecision.allow(reason="syscall allowed", **details)
 
     def _run_audit_on_deny(self, syscall: Syscall, decision: KernelDecision) -> None:
@@ -220,6 +259,12 @@ def make_capability_stage(permission_manager: Any, capability_manager: Any = Non
                 )
             ):
                 # Positive authority — skip ACL/approval, continue pipeline.
+                if KERNEL_VERBOSE:
+                    logger.info(
+                        "[kernel]   capability TOKEN short-circuit: subject=%s tool=%s "
+                        "(approved token authorizes; skipping ACL/approval)",
+                        syscall.subject, syscall.object,
+                    )
                 return None
             if pm is None:
                 return None
