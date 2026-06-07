@@ -1,0 +1,41 @@
+# A plain, NON-agentic conversational assistant that can send email — and every
+# send is kernel-gated on human approval. There is no agentic/loop system
+# prompt: it just chats, and when you ask it to send an email it calls
+# notify__email. The kernel returns ask_human, the run SUSPENDS durably, and it
+# resumes (sending exactly once) only after you approve in the `forgeos` chat
+# with `[Y/n]`. Use it to watch the per-turn runtime + A2H flow live.
+apiVersion: agentos/v1
+kind: AgentContract
+metadata:
+  name: email-assistant
+  namespace: default
+  description: A helpful assistant that can send emails when asked (approval-gated).
+spec:
+  stack: forgeos
+  execution_type: reflex
+  llm:
+    chat_model: qwen3.6-27b
+    provider: vllm
+  tools:
+    - notify__email
+  system_prompt:
+    content: |
+      You are a helpful, concise assistant. You can send emails on the user's
+      behalf. When the user asks you to send an email, call the notify__email
+      tool with the recipient, a subject, and a body. If any of those are
+      missing, ask a brief follow-up question first. Otherwise just reply
+      helpfully in 1-3 sentences. Do not pretend to have sent an email — only
+      the tool sends it.
+  governance:
+    audit_level: full
+    # Per-tool human approval (runtime-v2): the assistant calls notify__email
+    # normally; the kernel returns ask_human, the run suspends durably, and it
+    # resumes (sending once) only after the human approves. forgeos is a
+    # suspendable stack, so this is honoured as true human-in-the-loop.
+    approvals:
+      - tool: notify__email
+        mode: always
+        approvers: [user]
+        sla_hours: 4
+        on_timeout: abort
+        reason: "Sending an email requires human approval before it goes out."

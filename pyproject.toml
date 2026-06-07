@@ -62,6 +62,11 @@ dev = [
     "pytest-asyncio>=0.24",
     "ruff>=0.8",
     "mypy>=1.13",
+    # Always-on tools notify__email / drive__audit_sharing resolve their GWS
+    # OAuth creds from Secret Manager when not in env. Without this the local
+    # dev install (`pip install -e ".[dev]"`) can't send email / audit Drive,
+    # even with valid secrets + ADC. (Also in the gcp/production extras.)
+    "google-cloud-secret-manager>=2.16",
 ]
 docs = [
     "mkdocs-material>=9.5",

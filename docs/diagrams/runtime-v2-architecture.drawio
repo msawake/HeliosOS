@@ -1,0 +1,128 @@
+<mxfile host="app.diagrams.net" agent="forgeos" version="24.0.0">
+  <diagram id="runtime-v2" name="ForgeOS Runtime v2 — Durable Continuations">
+    <mxGraphModel dx="1100" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="ForgeOS Runtime v2 — durable continuations (suspend on ask_human, resume on approval)" style="text;html=1;fontStyle=1;fontSize=15;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="900" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Clients -->
+        <mxCell id="cli" value="forgeos-cli&#10;(Rust binary)&#10;invoke · runs · approvals" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="170" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="lens" value="forgeos-lens&#10;(Tauri desktop)&#10;Fleet · Governance · paused runs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="230" y="60" width="190" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="dash" value="Dashboard&#10;(Next.js)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="440" y="60" width="120" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- HTTP API -->
+        <mxCell id="api" value="FastAPI HTTP API&#10;&#10;POST /platform/agents/{id}/invoke  →  run-handle {run_id,status,pending}&#10;GET  /platform/runs/{run_id}        (poll: running|paused|completed|failed)&#10;GET  /api/approvals                  (incl. v2 paused continuations)&#10;POST /api/approvals/{id}/approve|reject  →  resume" style="rounded=1;whiteSpace=wrap;html=1;align=left;fillColor=#e1d5e7;strokeColor=#9673a6;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="155" width="520" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- Triggers + Enqueuer -->
+        <mxCell id="triggers" value="Triggers&#10;scheduled · reflex · event&#10;autonomous · a2a" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="315" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="enqueuer" value="Enqueuer&#10;(the single enqueue path:&#10;bump epoch → ledger → queue)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="290" y="310" width="230" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- Ledger + Queue -->
+        <mxCell id="ledger" value="Runnable Ledger (Postgres)&#10;CAS exactly-once · fencing epoch&#10;source of truth (rebuilds queue)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="415" width="230" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="queue" value="Runnable Queue&#10;Redis Streams / in-memory&#10;priority p0·p1·p2 + delay" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="290" y="415" width="230" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- Worker -->
+        <mxCell id="worker" value="Stateless Worker  —  claim → run → (suspend frees the worker) → ack&#10;crash → retry/backoff → dead-letter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="515" width="480" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- StepEngine -->
+        <mxCell id="engine" value="StepEngine&#10;LLM → tool_use → tool_result loop&#10;suspendable / resumable&#10;(injects approved result into the tool_use slot)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b9e0a5;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="610" width="250" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Kernel -->
+        <mxCell id="kernel" value="Kernel.syscall pipeline&#10;identity → capability → quota →&#10;policy → boundary → dispatch → audit&#10;&#10;⇒ allow | deny | mask | ask_human&#10;(ApprovalRule / heuristics; token short-circuits)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="320" y="595" width="300" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- Process state -->
+        <mxCell id="proc" value="Process phase&#10;AWAITING_HUMAN / AWAITING_EXTERNAL&#10;(~0 RAM while parked)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="660" y="595" width="230" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- Continuation store -->
+        <mxCell id="contstore" value="Continuation Store&#10;Postgres / SQLite / memory&#10;full message history + pending tool_use&#10;(survives restart)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="320" y="745" width="300" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- Capability tokens -->
+        <mxCell id="captokens" value="Capability Tokens&#10;durable; minted on approval&#10;flips ask_human → allow" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="660" y="745" width="230" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Resume service -->
+        <mxCell id="resume" value="Resume Service&#10;on approve/reject (or a2a/timer):&#10;find continuation by external_ref →&#10;mint token → re-enqueue (p0)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="660" y="415" width="230" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- LLM router + providers -->
+        <mxCell id="llmrouter" value="LLM Router" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5f5f0;strokeColor=#2e8b87;" vertex="1" parent="1">
+          <mxGeometry x="40" y="730" width="250" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="providers" value="Qwen 3.6 27B via vLLM (atlas-router)&#10;· Anthropic · OpenAI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5f5f0;strokeColor=#2e8b87;" vertex="1" parent="1">
+          <mxGeometry x="40" y="795" width="250" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- Edges: clients -> api -->
+        <mxCell id="e_cli" style="endArrow=block;html=1;" edge="1" parent="1" source="cli" target="api"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_lens" style="endArrow=block;html=1;" edge="1" parent="1" source="lens" target="api"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_dash" style="endArrow=block;html=1;" edge="1" parent="1" source="dash" target="api"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- API invoke -> engine (sync), API approve -> resume, API reads -> stores -->
+        <mxCell id="e_invoke" value="invoke (sync)" style="endArrow=block;html=1;dashed=1;" edge="1" parent="1" source="api" target="engine"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_approve" value="approve / reject" style="endArrow=block;html=1;strokeColor=#d79b00;" edge="1" parent="1" source="api" target="resume"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_runsread" value="GET /runs + /approvals (read)" style="endArrow=open;html=1;dashed=1;strokeColor=#9673a6;" edge="1" parent="1" source="api" target="contstore"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- durable path -->
+        <mxCell id="e_trig" style="endArrow=block;html=1;" edge="1" parent="1" source="triggers" target="enqueuer"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_enq_led" value="write" style="endArrow=block;html=1;" edge="1" parent="1" source="enqueuer" target="ledger"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_enq_q" value="push" style="endArrow=block;html=1;" edge="1" parent="1" source="enqueuer" target="queue"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_q_w" value="claim" style="endArrow=block;html=1;" edge="1" parent="1" source="queue" target="worker"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_w_eng" value="drive / resume" style="endArrow=block;html=1;" edge="1" parent="1" source="worker" target="engine"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- engine <-> kernel -->
+        <mxCell id="e_eng_k" value="every tool.call" style="endArrow=block;html=1;" edge="1" parent="1" source="engine" target="kernel"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_k_eng" value="ask_human ⇒ Suspend" style="endArrow=block;html=1;dashed=1;strokeColor=#d79b00;" edge="1" parent="1" source="kernel" target="engine"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- engine -> stores / proc / llm -->
+        <mxCell id="e_eng_cont" value="persist continuation" style="endArrow=block;html=1;" edge="1" parent="1" source="engine" target="contstore"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_k_proc" value="park" style="endArrow=block;html=1;dashed=1;" edge="1" parent="1" source="kernel" target="proc"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_eng_llm" value="chat" style="endArrow=block;html=1;" edge="1" parent="1" source="engine" target="llmrouter"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_llm_prov" style="endArrow=block;html=1;" edge="1" parent="1" source="llmrouter" target="providers"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- resume -> tokens / queue / contstore -->
+        <mxCell id="e_res_tok" value="mint token" style="endArrow=block;html=1;strokeColor=#d79b00;" edge="1" parent="1" source="resume" target="captokens"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_res_q" value="re-enqueue (p0)" style="endArrow=block;html=1;strokeColor=#d79b00;" edge="1" parent="1" source="resume" target="queue"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e_res_cont" value="find_by_external_ref" style="endArrow=open;html=1;dashed=1;strokeColor=#d79b00;" edge="1" parent="1" source="resume" target="contstore"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- token feeds kernel -->
+        <mxCell id="e_tok_k" value="token short-circuits ACL" style="endArrow=open;html=1;dashed=1;" edge="1" parent="1" source="captokens" target="kernel"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- ledger backs queue -->
+        <mxCell id="e_led_q" value="rebuild on Redis loss" style="endArrow=open;html=1;dashed=1;" edge="1" parent="1" source="ledger" target="queue"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

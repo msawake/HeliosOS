@@ -447,6 +447,10 @@ class ToolExecutor:
                     "tool_input": tool_input,
                     "estimated_cost_usd": agent_context.get("estimated_cost_usd", 0.0),
                     "estimated_tokens": agent_context.get("estimated_tokens"),
+                    # A capability token (minted on human approval) short-circuits
+                    # the capability stage so an approved tool actually executes
+                    # on resume instead of being re-gated to ask_human.
+                    "capability_token": agent_context.get("capability_token"),
                 },
             )
             if decision.action != "allow":

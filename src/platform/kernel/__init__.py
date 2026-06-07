@@ -92,6 +92,7 @@ try:
         CapabilityStore,
         CapabilityToken,
         InMemoryCapabilityStore,
+        PostgresCapabilityStore,
     )
 except ImportError:
     from src.platform.kernel_stubs._capabilities_stub import (  # type: ignore[assignment]  # noqa: F401

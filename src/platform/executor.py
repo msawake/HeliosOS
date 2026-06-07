@@ -464,6 +464,17 @@ class PlatformExecutor:
                             )
                 except Exception:
                     logger.debug("AWAITING_HUMAN transition failed", exc_info=True)
+                # Worker-tier invokes return immediately after ENQUEUING (the
+                # worker pool does the real run async). The agent itself is not
+                # executing inline, so don't leave it stuck as RUNNING — the
+                # live run state lives in the continuation/runs, not the agent's
+                # top-level status.
+                try:
+                    _r = locals().get("result")
+                    if _r is not None and (getattr(_r, "metadata", None) or {}).get("queued"):
+                        self.registry.set_status(agent_id, AgentStatus.IDLE)
+                except Exception:
+                    logger.debug("queued-run status reset failed", exc_info=True)
                 try:
                     _final = locals().get("result")
                     if _final is not None:

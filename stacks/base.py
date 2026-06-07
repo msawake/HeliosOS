@@ -121,6 +121,10 @@ class AgentResult:
     output_tokens: int = 0
     model: str | None = None
     elapsed_ms: float = 0.0
+    # Free-form result metadata. The durable runtime uses it to surface a
+    # suspension: {"continuation_id", "suspend_reason", "pending": [...]} when
+    # status is PAUSED (the run parked on human approval / an external wait).
+    metadata: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -134,6 +138,7 @@ class AgentResult:
             "output_tokens": self.output_tokens,
             "model": self.model,
             "elapsed_ms": self.elapsed_ms,
+            "metadata": self.metadata,
         }
 
 
@@ -146,6 +151,15 @@ class AgentStackAdapter(ABC):
     """
 
     stack_name: str
+
+    #: Whether this stack can be suspended mid-tool by the durable continuation
+    #: runtime. Only stacks where the *platform* owns the LLM->tool loop
+    #: (ForgeOS, Sandbox, Anthropic SDK) can park on ``ask_human`` and resume
+    #: later. Frameworks that own their own loop or run in a subprocess
+    #: (CrewAI, ADK, LangChain, OpenAI Agents, OpenClaw) cannot — for those the
+    #: kernel downgrades a fine-grained ``ask_human`` to ``deny`` (you can't
+    #: freeze a Crew.kickoff() between tool calls). Default: not suspendable.
+    supports_suspend: bool = False
 
     @abstractmethod
     async def create_agent(self, agent_def: AgentDefinition) -> str:

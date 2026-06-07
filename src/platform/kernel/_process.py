@@ -60,7 +60,8 @@ class Phase(Enum):
     ADMITTED = "admitted"        # admission passed; adapter not yet invoked
     STARTING = "starting"        # adapter.create_agent() in flight
     RUNNING = "running"          # agent is live (idle-between-invocations or invoking)
-    AWAITING_HUMAN = "awaiting_human"  # paused on a pending A2H human__ask; auto-resumes on response
+    AWAITING_HUMAN = "awaiting_human"  # paused on a pending A2H human approval; resumes on response
+    AWAITING_EXTERNAL = "awaiting_external"  # paused on an A2A await / external wait; resumes on result
     DRAINING = "draining"        # graceful stop requested; finishing in-flight work
     STOPPED = "stopped"          # clean shutdown
     FAILED = "failed"            # sideband: crashed / unrecoverable error
@@ -74,8 +75,9 @@ _ALLOWED_TRANSITIONS: dict[Phase, set[Phase]] = {
     Phase.PENDING: {Phase.ADMITTED, Phase.FAILED, Phase.QUARANTINED},
     Phase.ADMITTED: {Phase.STARTING, Phase.FAILED, Phase.QUARANTINED, Phase.EVICTED, Phase.STOPPED},
     Phase.STARTING: {Phase.RUNNING, Phase.FAILED, Phase.QUARANTINED, Phase.EVICTED, Phase.STOPPED},
-    Phase.RUNNING: {Phase.AWAITING_HUMAN, Phase.DRAINING, Phase.FAILED, Phase.QUARANTINED, Phase.EVICTED, Phase.STOPPED},
-    Phase.AWAITING_HUMAN: {Phase.RUNNING, Phase.DRAINING, Phase.FAILED, Phase.QUARANTINED, Phase.EVICTED, Phase.STOPPED},
+    Phase.RUNNING: {Phase.AWAITING_HUMAN, Phase.AWAITING_EXTERNAL, Phase.DRAINING, Phase.FAILED, Phase.QUARANTINED, Phase.EVICTED, Phase.STOPPED},
+    Phase.AWAITING_HUMAN: {Phase.RUNNING, Phase.AWAITING_EXTERNAL, Phase.DRAINING, Phase.FAILED, Phase.QUARANTINED, Phase.EVICTED, Phase.STOPPED},
+    Phase.AWAITING_EXTERNAL: {Phase.RUNNING, Phase.AWAITING_HUMAN, Phase.DRAINING, Phase.FAILED, Phase.QUARANTINED, Phase.EVICTED, Phase.STOPPED},
     Phase.DRAINING: {Phase.STOPPED, Phase.FAILED, Phase.EVICTED},
     Phase.STOPPED: set(),
     Phase.FAILED: {Phase.QUARANTINED, Phase.STOPPED},
@@ -276,6 +278,7 @@ _PHASE_TO_STATUS_VALUE: dict[Phase, str] = {
     Phase.STARTING: "idle",
     Phase.RUNNING: "running",
     Phase.AWAITING_HUMAN: "paused",  # legacy callers see it as paused
+    Phase.AWAITING_EXTERNAL: "paused",
     Phase.DRAINING: "paused",
     Phase.STOPPED: "stopped",
     Phase.FAILED: "failed",

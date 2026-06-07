@@ -1,0 +1,34 @@
+# Scenario A — scheduled agent: every morning audit GCP and email the CEO a digest.
+# Sending the email always requires human approval (kernel-gated). The agent
+# calls notify__email normally; the kernel returns ask_human, the runtime
+# suspends durably and resumes once approved (executing the email with a
+# capability token). No worker blocks while waiting for the human.
+apiVersion: agentos/v1
+kind: AgentContract
+metadata:
+  name: gcp-ceo-digest
+  namespace: operations
+  description: Daily GCP posture review emailed to the CEO.
+spec:
+  stack: forgeos
+  execution_type: scheduled
+  schedule: "0 8 * * *"          # 08:00 every day
+  llm:
+    chat_model: claude-sonnet-4-6
+    provider: anthropic
+  tools:
+    - gcp__audit
+    - notify__email
+  system_prompt:
+    content: |
+      You are an SRE agent. Each morning, audit the GCP project's IAM,
+      networking, and cost posture, then email a concise digest to the CEO.
+  governance:
+    approvals:
+      - tool: notify__email
+        mode: always
+        approvers: [ceo-office]
+        sla_hours: 4
+        on_timeout: abort
+        reason: "Outbound email to the CEO must be reviewed before sending."
+    audit_level: full

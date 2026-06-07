@@ -1,0 +1,31 @@
+# Scenario C — conditional approval on a numeric threshold: a charge above
+# $500 requires human sign-off; smaller charges proceed automatically.
+apiVersion: agentos/v1
+kind: AgentContract
+metadata:
+  name: spend-controller
+  namespace: finance
+  description: Executes payments; large charges require approval.
+spec:
+  stack: forgeos
+  execution_type: reflex
+  llm:
+    chat_model: claude-sonnet-4-6
+    provider: anthropic
+  tools:
+    - payments__charge
+  system_prompt:
+    content: You process approved vendor payments.
+  governance:
+    approvals:
+      - tool: payments__charge
+        mode: conditional
+        when:
+          ask_human_if:
+            op: gt
+            field: tool_input.amount_usd
+            value: 500
+        approvers: [finance-controller]
+        priority: high
+        sla_hours: 2
+        on_timeout: abort

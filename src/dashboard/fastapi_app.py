@@ -235,6 +235,7 @@ def create_fastapi_app(
     tenant_id: str = "default",
     kernel=None,  # AgentOS kernel facade
     credential_store=None,
+    runtime_service=None,  # runtime-v2 worker tier (FORGEOS_RUNTIME_WORKERS)
 ) -> FastAPI:
 
     app = FastAPI(
@@ -245,6 +246,23 @@ def create_fastapi_app(
         docs_url="/docs",
         redoc_url="/redoc",
     )
+
+    # Runtime-v2 worker tier: start the worker pool + queue consumer on the
+    # uvicorn loop, drain on shutdown. No-op when not wired.
+    if runtime_service is not None:
+        @app.on_event("startup")
+        async def _start_runtime_workers():  # pragma: no cover - lifecycle
+            try:
+                await runtime_service.start()
+            except Exception:
+                logger.exception("runtime workers failed to start")
+
+        @app.on_event("shutdown")
+        async def _stop_runtime_workers():  # pragma: no cover - lifecycle
+            try:
+                await runtime_service.stop()
+            except Exception:
+                pass
 
     # Audit log (falls back to in-memory ring buffer when no DB)
     from src.platform.audit import AuditLog
@@ -514,11 +532,57 @@ def create_fastapi_app(
     # Approvals
     # ------------------------------------------------------------------
 
+    def _list_v2_pending_approvals() -> list:
+        """Pending human approvals from runtime-v2 suspended continuations.
+
+        A run parked on ask_human is held in the adapter's StepEngine store
+        (indexed by external_ref), not in the legacy HITL store — so without
+        this it would be invisible to `forgeos approvals list` / Lens. We scan
+        the suspended continuations and emit an approval item per pending,
+        human-gated tool call, carrying run_id/tool so clients can correlate
+        the approval to the run it blocks."""
+        out: list = []
+        if not platform_executor:
+            return out
+        for adapter in getattr(platform_executor, "_adapters", {}).values():
+            engine = getattr(adapter, "step_engine", None)
+            store = getattr(engine, "_store", None)
+            if store is None or not hasattr(store, "list_suspended"):
+                continue
+            try:
+                suspended = store.list_suspended()
+            except Exception:
+                continue
+            for cont in suspended:
+                if (cont.suspend_reason or "") not in ("human_approval", "human_input"):
+                    continue
+                for rec in cont.pending_calls:
+                    if rec.status != "pending" or not rec.external_ref:
+                        continue
+                    q = f"Approve tool '{rec.name}' for agent {cont.pid}?"
+                    out.append({
+                        "source": "runtime",
+                        "id": rec.external_ref,
+                        "request_id": rec.external_ref,
+                        "run_id": cont.continuation_id,
+                        "continuation_id": cont.continuation_id,
+                        "tool": rec.name,
+                        "agent_id": cont.pid,
+                        "agent": cont.pid,
+                        "status": "pending",
+                        "risk": "high",
+                        "created_at": cont.updated_at,
+                        "title": q,
+                        "question": q,
+                        "content": {"question": q},
+                    })
+        return out
+
     @app.get("/api/approvals", tags=["approvals"])
     async def list_approvals(category: str = None):
-        """List pending HITL requests — both the legacy company HITL store and
-        the A2H gateway (human__ask). Merged so `forgeos approvals` / the CLI
-        surface A2H requests, not just legacy approvals."""
+        """List pending HITL requests — the legacy company HITL store, the A2H
+        gateway (human__ask), and runtime-v2 suspended continuations. Merged so
+        `forgeos approvals` / Lens surface every kind of pending approval."""
         pending: list = []
         if company_system:
             try:
@@ -549,6 +613,11 @@ def create_fastapi_app(
                     })
         except Exception:
             pass
+        # Runtime-v2 continuations parked on a human approval.
+        try:
+            pending.extend(_list_v2_pending_approvals())
+        except Exception:
+            pass
         return pending
 
     @app.get("/api/approvals/{request_id}", tags=["approvals"])
@@ -561,27 +630,97 @@ def create_fastapi_app(
             raise HTTPException(404, "Not found")
         return item
 
+    def _resume_v2_continuation(request_id: str, accept: bool, responded_by: str | None) -> bool:
+        """Resume a runtime-v2 continuation parked on this approval request.
+
+        Finds the continuation across adapter step engines by external_ref,
+        mints the approval capability token (on accept), and schedules an async
+        resume so the HTTP request returns immediately (the worker does the
+        heavy LLM continuation). Returns True if a continuation was resumed.
+        """
+        if not platform_executor:
+            return False
+        from src.runtime import Resolution, ResolutionOutcome
+        for adapter in getattr(platform_executor, "_adapters", {}).values():
+            engine = getattr(adapter, "step_engine", None)
+            store = getattr(engine, "_store", None)
+            if store is None:
+                continue
+            try:
+                cont = store.find_by_external_ref(request_id)
+            except Exception:
+                cont = None
+            if cont is None:
+                continue
+            rec = next((r for r in cont.pending_calls if r.external_ref == request_id), None)
+            if rec is None:
+                continue
+            token_id = None
+            kernel = getattr(engine, "_kernel", None)
+            if accept and kernel is not None and hasattr(kernel, "issue_capability"):
+                tok = kernel.issue_capability(
+                    subject=cont.pid, target=f"tool:{rec.name}", verb="tool.call",
+                    ttl_seconds=3600,
+                    metadata={"external_ref": request_id, "continuation_id": cont.continuation_id},
+                )
+                token_id = tok.id
+            resolution = Resolution(
+                continuation_id=cont.continuation_id, tool_use_id=rec.tool_use_id,
+                outcome=ResolutionOutcome.ACCEPT if accept else ResolutionOutcome.REJECT,
+                capability_token=token_id, responded_by=responded_by,
+            )
+            import asyncio as _asyncio
+            _asyncio.create_task(
+                engine.resume(resolution, tool_executor=getattr(adapter, "_tool_executor", None))
+            )
+            return True
+        return False
+
     @app.post("/api/approvals/{request_id}/approve", tags=["approvals"])
     async def approve_request(request_id: str, body: ApprovalAction = ApprovalAction()):
-        """Approve a HITL request."""
-        if not company_system:
-            raise HTTPException(500, "System not initialized")
-        company_system.hitl.approve(request_id, approver=body.approved_by or "api", reason=body.reason)
+        """Approve a HITL request. Best-effort on the legacy company HITL store,
+        then resume any runtime-v2 continuation parked on this request."""
+        handled = False
+        if company_system:
+            try:
+                company_system.hitl.approve(request_id, approver=body.approved_by or "api", reason=body.reason)
+                handled = True
+            except Exception:
+                logger.debug("legacy hitl.approve did not handle %s", request_id)
+        # Worker tier: enqueue a resume task (worker re-runs the gated tool).
+        # Else: resume inline in-process.
+        if runtime_service is not None:
+            resumed = bool(await runtime_service.resume.approve(request_id, responded_by=body.approved_by or "api"))
+        else:
+            resumed = _resume_v2_continuation(request_id, accept=True, responded_by=body.approved_by or "api")
+        if not handled and not resumed:
+            raise HTTPException(404, f"No pending approval '{request_id}'")
         _audit("approval.approve", actor=body.approved_by or "api",
                resource_type="approval", resource_id=request_id,
-               details={"reason": body.reason})
-        return {"success": True}
+               details={"reason": body.reason, "resumed_run": resumed})
+        return {"success": True, "resumed": resumed}
 
     @app.post("/api/approvals/{request_id}/reject", tags=["approvals"])
     async def reject_request(request_id: str, body: ApprovalAction = ApprovalAction()):
-        """Reject a HITL request."""
-        if not company_system:
-            raise HTTPException(500, "System not initialized")
-        company_system.hitl.reject(request_id, reason=body.reason)
+        """Reject a HITL request, then resume the parked continuation (if any)
+        with a rejection so the agent can handle it."""
+        handled = False
+        if company_system:
+            try:
+                company_system.hitl.reject(request_id, reason=body.reason)
+                handled = True
+            except Exception:
+                logger.debug("legacy hitl.reject did not handle %s", request_id)
+        if runtime_service is not None:
+            resumed = bool(await runtime_service.resume.reject(request_id, responded_by=body.rejected_by or "api"))
+        else:
+            resumed = _resume_v2_continuation(request_id, accept=False, responded_by=body.rejected_by or "api")
+        if not handled and not resumed:
+            raise HTTPException(404, f"No pending approval '{request_id}'")
         _audit("approval.reject", actor=body.rejected_by or "api",
                resource_type="approval", resource_id=request_id,
-               details={"reason": body.reason})
-        return {"success": True}
+               details={"reason": body.reason, "resumed_run": resumed})
+        return {"success": True, "resumed": resumed}
 
     # ------------------------------------------------------------------
     # Workflows
@@ -857,7 +996,7 @@ def create_fastapi_app(
                     missing_tools = (agent_def.metadata or {}).get("_missing_tools_at_deploy")
                     if missing_tools:
                         warnings.append(f"Tools unavailable at deploy time: {missing_tools}")
-                    return {
+                    resp = {
                         "agent_id": agent_id,
                         "status": result.status.value if hasattr(result.status, "value") else str(result.status),
                         "result": output[:2000],
@@ -868,6 +1007,29 @@ def create_fastapi_app(
                         "tool_calls": len(result.tool_calls) if result.tool_calls else 0,
                         "tokens_used": result.tokens_used,
                     }
+                    # Runtime-v2 run-handle: when the run parked on a human
+                    # approval (or external wait), surface the continuation as
+                    # the run id plus the pending approvals so clients (CLI /
+                    # Lens) can show "awaiting approval" and poll/resume.
+                    meta = getattr(result, "metadata", None) or {}
+                    cont_id = meta.get("continuation_id")
+                    if cont_id:
+                        resp["run_id"] = cont_id
+                        resp["continuation_id"] = cont_id
+                    if meta.get("suspend_reason"):
+                        resp["suspend_reason"] = meta["suspend_reason"]
+                    if meta.get("pending"):
+                        resp["pending"] = [
+                            {
+                                "request_id": p.get("external_ref"),
+                                "tool": p.get("name"),
+                                "tool_use_id": p.get("tool_use_id"),
+                                "suspend_reason": p.get("suspend_reason"),
+                                "args": p.get("arguments"),
+                            }
+                            for p in meta["pending"]
+                        ]
+                    return resp
                 except Exception as e:
                     logger.exception("Agent invocation failed for %s", agent_id)
                     raise HTTPException(500, "Agent invocation failed")
@@ -893,6 +1055,76 @@ def create_fastapi_app(
         # If the agent_id is simply unknown to whichever invoker IS configured,
         # we want a 404 here too, but we can't tell without trying.
         raise HTTPException(503, "No invoker available")
+
+    def _find_continuation(run_id: str):
+        """Locate a runtime-v2 continuation by id.
+
+        The run handle returned by invoke is the continuation id. It may live in
+        the worker tier's own store (when FORGEOS_RUNTIME_WORKERS drives the run)
+        or in a suspendable adapter's StepEngine store (inline runs). With a
+        Postgres store both point at the same table; with in-memory/sqlite they
+        diverge, so check the worker-tier store FIRST. Returns the Continuation
+        or None.
+        """
+        # Worker tier (RuntimeService) — its store is where enqueued runs live.
+        rs_store = getattr(runtime_service, "store", None)
+        if rs_store is not None:
+            try:
+                cont = rs_store.load(run_id)
+            except Exception:
+                cont = None
+            if cont is not None:
+                return cont
+        if not platform_executor:
+            return None
+        for adapter in getattr(platform_executor, "_adapters", {}).values():
+            engine = getattr(adapter, "step_engine", None)
+            store = getattr(engine, "_store", None)
+            if store is None:
+                continue
+            try:
+                cont = store.load(run_id)
+            except Exception:
+                cont = None
+            if cont is not None:
+                return cont
+        return None
+
+    _CONT_STATUS_TO_RUN = {
+        "running": "running", "resuming": "running", "suspended": "paused",
+        "done": "completed", "failed": "failed",
+    }
+
+    @app.get("/api/platform/runs/{run_id}", tags=["agents"])
+    async def get_run(run_id: str, _auth=Depends(check_auth)):
+        """Poll a runtime-v2 run by its handle (the continuation id).
+
+        Returns ``{run_id, status, continuation_id, pending?, result?, error?}``
+        where status is running|paused|completed|failed. 404 if unknown (e.g.
+        a legacy run that never went through the durable engine)."""
+        cont = _find_continuation(run_id)
+        if cont is None:
+            raise HTTPException(404, f"Run '{run_id}' not found")
+        status = _CONT_STATUS_TO_RUN.get(cont.status, cont.status)
+        out = {
+            "run_id": run_id,
+            "continuation_id": cont.continuation_id,
+            "agent_id": cont.pid,
+            "status": status,
+            "suspend_reason": cont.suspend_reason,
+        }
+        pending = [
+            {"request_id": r.external_ref, "tool": r.name, "tool_use_id": r.tool_use_id,
+             "args": r.arguments}
+            for r in cont.pending_calls if r.status == "pending"
+        ]
+        if pending:
+            out["pending"] = pending
+        if status == "completed":
+            out["result"] = cont.final_output
+        if status == "failed":
+            out["error"] = cont.last_error
+        return out
 
     # ------------------------------------------------------------------
     # Agent Update (edit in-place)
@@ -3356,19 +3588,30 @@ def create_fastapi_app(
             raise HTTPException(503, "A2H chat not available")
         body = await request.json()
         agent_ns = body.get("agent_namespace", "default")
-        agent_name = body["agent_name"]
+        # Accept either {agent_name[, agent_namespace]} (CLI) or {agent_id} (Lens).
+        agent_name = body.get("agent_name")
+        agent_pid = body.get("agent_pid") or body.get("agent_id") or ""
         human_name = body.get("human_name", "operator")
         human_ns = body.get("human_namespace", agent_ns)
         topic = body.get("topic", "")
         context = body.get("context") or {}
 
-        # Look up the agent id by name (best-effort) so the session links a pid.
-        agent_pid = body.get("agent_pid", "")
-        if not agent_pid and platform_executor and hasattr(platform_executor, "registry"):
-            for a in platform_executor.registry.list_all():
-                if getattr(a, "name", "") == agent_name and getattr(a, "namespace", "default") == agent_ns:
-                    agent_pid = getattr(a, "agent_id", "")
-                    break
+        # Resolve name/namespace/pid from the registry (by id, else by name).
+        if platform_executor and hasattr(platform_executor, "registry"):
+            resolved = None
+            if agent_pid:
+                resolved = platform_executor.registry.get(agent_pid)
+            if resolved is None and agent_name:
+                for a in platform_executor.registry.list_all():
+                    if getattr(a, "name", "") == agent_name and getattr(a, "namespace", "default") == agent_ns:
+                        resolved = a
+                        break
+            if resolved is not None:
+                agent_name = agent_name or getattr(resolved, "name", "")
+                agent_ns = getattr(resolved, "namespace", agent_ns)
+                agent_pid = getattr(resolved, "agent_id", "") or agent_pid
+        if not agent_name:
+            agent_name = agent_pid or "agent"
 
         session = gw.open_for_human(
             agent_pid=agent_pid or f"{agent_ns}/{agent_name}",
@@ -3388,14 +3631,48 @@ def create_fastapi_app(
         if gw is None:
             raise HTTPException(503, "A2H chat not available")
         body = await request.json()
-        result = gw.post(
-            chat_id=chat_id,
-            role=body.get("role", "human"),
-            sender=body.get("sender", ""),
-            content=body.get("content", ""),
-        )
+        role = body.get("role", "human")
+        content = body.get("content", "")
+        result = gw.post(chat_id=chat_id, role=role, sender=body.get("sender", ""), content=content)
         if not result.get("ok"):
             raise HTTPException(400, result.get("error", "post failed"))
+
+        # When a human speaks, invoke the target agent and post its reply back
+        # so the chat is conversational. Lens only posts + polls, so the server
+        # must drive the agent. A client that drives its OWN invoke (the
+        # `forgeos chat` [Y/n] flow uses /invoke + /runs + /approvals so it can
+        # show approvals inline) sets ``client_drives: true`` to suppress this —
+        # otherwise the agent runs twice per turn (a second, inline continuation
+        # parks its own approval). Inline invoke (bypasses the worker tier);
+        # async so this POST returns now and the client's poll picks up the reply.
+        if role == "human" and content and platform_executor and not body.get("client_drives"):
+            agent_pid = None
+            agent_name = "agent"
+            try:
+                sess = gw.get_session(chat_id, include_messages=False) if hasattr(gw, "get_session") else None
+                if isinstance(sess, dict):
+                    agent_pid = sess.get("agent_pid")
+                    agent_name = sess.get("agent_name") or "agent"
+            except Exception:
+                logger.debug("chat: could not resolve session agent", exc_info=True)
+            if agent_pid:
+                import asyncio as _aio
+
+                async def _agent_reply():
+                    try:
+                        r = await platform_executor.invoke(
+                            agent_pid, content, {"_inline": True, "_trigger": "chat"},
+                            session_id=chat_id,
+                        )
+                        txt = (getattr(r, "output", "") or "").strip() or "(no response)"
+                    except Exception as exc:  # noqa: BLE001
+                        txt = f"(agent error: {exc})"
+                    try:
+                        gw.post(chat_id=chat_id, role="agent", sender=agent_name, content=txt)
+                    except Exception:
+                        logger.debug("chat: posting agent reply failed", exc_info=True)
+
+                _aio.create_task(_agent_reply())
         return result
 
     @app.get("/api/a2h/v1/chats/{chat_id}/messages", tags=["a2h-chat"])

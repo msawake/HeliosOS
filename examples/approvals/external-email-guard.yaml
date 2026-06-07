@@ -1,0 +1,33 @@
+# Scenario B — conditional approval (heuristic): email needs approval ONLY when
+# the recipient is external (not an @acme.com address). Internal mail flows
+# without interruption. The condition is a JSON-logic ask_human_if clause
+# evaluated by the kernel against the tool arguments at call time.
+apiVersion: agentos/v1
+kind: AgentContract
+metadata:
+  name: external-email-guard
+  namespace: sales
+  description: Sends outreach email; external recipients require approval.
+spec:
+  stack: forgeos
+  execution_type: reflex
+  llm:
+    chat_model: claude-sonnet-4-6
+    provider: anthropic
+  tools:
+    - crm__lookup
+    - notify__email
+  system_prompt:
+    content: You draft and send sales follow-up emails.
+  governance:
+    approvals:
+      - tool: notify__email
+        mode: conditional
+        when:
+          ask_human_if:
+            op: not_endswith_any
+            field: tool_input.to
+            value: ["@acme.com"]
+        approvers: [sales-ops]
+        sla_hours: 8
+        on_timeout: reask

@@ -5,7 +5,19 @@ config:
   forgeos-gcp:pods_cidr: 10.40.0.0/14
   forgeos-gcp:services_cidr: 10.44.0.0/20
   forgeos-gcp:cloud_sql_tier: db-f1-micro
-  forgeos-gcp:enable_redis: "false"
+  # platform-api image carrying the per-turn runtime (built from commit c86be13e
+  # on feat/runtime-v2-continuations). Used by platform-api AND the worker tier.
+  forgeos-gcp:platform_api_tag: runtime-v2-c86be13e
+  # Redis (Memorystore) backs the durable per-turn worker tier (Redis Streams).
+  forgeos-gcp:enable_redis: "true"
+  forgeos-gcp:redis_memory_gb: "1"
+  # Always-on GKE worker that drains the queue / resumes HITL runs.
+  forgeos-gcp:worker_replicas: "1"
+  # Kernel enforcement mode. "production" enforces real kernel checks INCLUDING
+  # licensing (requires a license row per tenant, else tool calls are denied
+  # "Unknown tenant"). Empty = permissive (local-dev) licensing — kernel still
+  # enforces ACL/approvals/budgets, just skips the commercial license gate.
+  forgeos-gcp:kernel_mode: ""
   forgeos-gcp:namespaces:
     - sales-team
     - legal

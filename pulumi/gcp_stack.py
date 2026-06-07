@@ -33,6 +33,7 @@ from components.observability import Observability
 from components.platform_api import PlatformApi
 from components.registry import Registry
 from components.secrets import Secrets
+from components.worker import WorkerTier
 
 
 config = pulumi.Config()
@@ -48,6 +49,13 @@ cloud_sql_tier: str = config.require("cloud_sql_tier")
 enable_redis: bool = config.get_bool("enable_redis") or False
 redis_memory_gb: int = config.get_int("redis_memory_gb") or 1
 forgeos_namespaces: list[str] = config.require_object("namespaces")
+
+# Durable runtime (per-turn worker tier) + kernel enforcement mode.
+#   kernel_mode="production" turns on real kernel enforcement INCLUDING license
+#   checks — it requires a license row for each tenant or every tool call is
+#   denied "Unknown tenant". Leave unset/empty for permissive (local-dev) mode.
+kernel_mode: str = config.get("kernel_mode") or ""
+worker_replicas: int = config.get_int("worker_replicas") or 1
 
 # Image tags — set per deploy. Defaults assume `:latest` for first-boot bootstrap.
 platform_api_tag: str = config.get("platform_api_tag") or "latest"
@@ -177,6 +185,16 @@ _pa_secret_refs: dict[str, pulumi.Input[str]] = {
 }
 _pa_deps = [secrets.versions[key] for _, key, _ in _pa_secret_specs if key in secrets.versions]
 
+# Durable runtime env: enable the continuation engine + worker tier so invokes
+# ENQUEUE to the shared Redis queue (the always-on GKE WorkerTier drains it).
+_pa_extra_env: dict[str, pulumi.Input[str]] = {
+    "FORGEOS_RUNTIME_V2": "1",
+    "FORGEOS_RUNTIME_WORKERS": "1",
+    "GCP_PROJECT_ID": project,
+}
+if kernel_mode:
+    _pa_extra_env["FORGEOS_KERNEL_MODE"] = kernel_mode
+
 platform_api = PlatformApi(
     "forgeos",
     region=region,
@@ -186,7 +204,36 @@ platform_api = PlatformApi(
     vpc_subnet=network.subnet.id,
     secret_refs=_pa_secret_refs,
     pubsub_topic=data.agent_triggers.name,
+    extra_env=_pa_extra_env,
     opts=pulumi.ResourceOptions(depends_on=_pa_deps),
+)
+
+# 10b. Durable worker tier — always-on GKE Deployment that drains the Redis
+# queue and resumes parked (HITL) runs. Gets the same env the app reads
+# directly (DB/Redis + the configured LLM provider key), synced into a k8s
+# Secret from the same Pulumi sources platform-api uses.
+_worker_env_secrets: dict[str, pulumi.Input[str]] = {}
+for _env_name, _cfg_key in [
+    ("ANTHROPIC_API_KEY", "anthropic_api_key"),
+    ("OPENAI_API_KEY", "openai_api_key"),
+    ("GEMINI_API_KEY", "gemini_api_key"),
+]:
+    _val = config.get_secret(_cfg_key)
+    if _val is not None:
+        _worker_env_secrets[_env_name] = _val
+
+worker = WorkerTier(
+    "forgeos",
+    image=_img("platform-api", platform_api_tag),
+    project=project,
+    k8s_provider=gke.provider,
+    agent_runtime_gsa=identity.agent_runtime,
+    database_url=data.database_url,
+    redis_url=data.redis_url,
+    env_secrets=_worker_env_secrets,
+    kernel_mode=kernel_mode,
+    replicas=worker_replicas,
+    opts=pulumi.ResourceOptions(depends_on=[keda.release]),
 )
 
 # 11. Mission Control

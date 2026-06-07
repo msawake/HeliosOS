@@ -102,6 +102,14 @@ async def run_agentic_loop(
 ) -> AgentResult:
     """Run an agentic tool-use loop.
 
+    .. deprecated::
+        Superseded by :class:`src.runtime.engine.StepEngine`, the suspendable,
+        resumable loop behind the runtime-v2 rewrite (durable human-in-the-loop
+        via ``ask_human`` -> suspend -> resume). This non-resumable loop remains
+        the path for stacks that cannot suspend and during migration; it will be
+        removed once every caller (adapters, executor.invoke, scheduler) is
+        moved onto the StepEngine + worker tier.
+
     1. Send system + user messages (with tool definitions) to the LLM.
     2. If the LLM returns tool_use blocks, execute each tool via
        *tool_executor* and append the results as tool_result messages.
