@@ -21,6 +21,7 @@ class PlatformApi(pulumi.ComponentResource):
         vpc_subnet: pulumi.Input[str],
         secret_refs: dict[str, pulumi.Input[str]],
         pubsub_topic: pulumi.Input[str],
+        extra_env: dict[str, pulumi.Input[str]] | None = None,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
         super().__init__("forgeos:platform_api:PlatformApi", name, None, opts)
@@ -50,6 +51,12 @@ class PlatformApi(pulumi.ComponentResource):
                 value="1",
             )
         )
+        # Runtime/kernel flags (FORGEOS_RUNTIME_V2/WORKERS, FORGEOS_KERNEL_MODE,
+        # GCP_PROJECT_ID, …). platform-api enqueues to the shared Redis worker
+        # tier and also processes opportunistically while an instance is warm;
+        # the always-on GKE worker (WorkerTier) guarantees draining/resume.
+        for _k, _v in (extra_env or {}).items():
+            envs.append(gcp.cloudrunv2.ServiceTemplateContainerEnvArgs(name=_k, value=_v))
 
         self.service = gcp.cloudrunv2.Service(
             f"{name}-svc",

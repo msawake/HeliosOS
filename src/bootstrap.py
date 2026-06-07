@@ -302,6 +302,20 @@ class PlatformBootstrap:
 
             # AgentOS: construct the Kernel facade + publish for in-process SDK use
             from src.platform.kernel import Kernel as PlatformKernel
+            # Shared capability-token store. Capability tokens are minted on
+            # approval (often in the API process) and validated on resume (often
+            # in a separate worker process); with the default in-memory store the
+            # worker can't see the token and HITL resume fails. A Postgres-backed
+            # store makes tokens visible across processes. Falls back to in-memory
+            # when there's no DB (single-process dev) or the community stub kernel.
+            capability_store = None
+            if self._db is not None and getattr(self._db, "is_connected", False):
+                try:
+                    from src.platform.kernel import PostgresCapabilityStore
+                    capability_store = PostgresCapabilityStore(self._db)
+                    logger.info("  Capability store: Postgres (shared across processes)")
+                except ImportError:
+                    logger.debug("  Capability store: PostgresCapabilityStore unavailable; in-memory")
             self._kernel = PlatformKernel(
                 registry=self.platform_registry,
                 tool_executor=self._tool_executor,
@@ -309,6 +323,7 @@ class PlatformBootstrap:
                 usage_enforcer=getattr(self, '_usage_enforcer', None),
                 audit_log=None,  # wired by FastAPI layer which owns the AuditLog
                 license_manager=self._license_manager,
+                capability_store=capability_store,
             )
             # Wire kernel into tool executor for mandatory policy enforcement
             self._tool_executor._kernel = self._kernel

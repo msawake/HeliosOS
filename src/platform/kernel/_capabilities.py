@@ -148,6 +148,82 @@ class InMemoryCapabilityStore:
         return list(self._by_id.values())
 
 
+class PostgresCapabilityStore:
+    """Capability store backed by the ``capability_tokens`` table (migration 013).
+
+    The crucial property the in-memory store lacks: tokens are SHARED ACROSS
+    PROCESSES. In a multi-process deployment the approval HTTP request (which
+    mints the token) and the worker that resumes the run (which validates it)
+    are different processes — with an in-memory store the worker can't see the
+    token and the resume fails ``approval token did not authorize``. A durable
+    store fixes that. The table is cross-tenant (no RLS), so reads/writes use an
+    admin connection."""
+
+    def __init__(self, db) -> None:
+        self._db = db
+
+    @staticmethod
+    def _hydrate(row) -> "CapabilityToken | None":
+        if not row:
+            return None
+        md = row["metadata"]
+        if isinstance(md, str):
+            import json
+            md = json.loads(md or "{}")
+
+        def _iso(v):
+            return v.isoformat() if hasattr(v, "isoformat") else (v or None)
+
+        return CapabilityToken(
+            id=row["id"], subject=row["subject"], target=row["target"], verb=row["verb"],
+            issued_at=_iso(row["issued_at"]) or _now().isoformat(),
+            expires_at=_iso(row["expires_at"]),
+            metadata=md or {},
+        )
+
+    def save(self, token: CapabilityToken) -> None:
+        import json
+        with self._db.admin() as conn:
+            conn.execute(
+                """
+                INSERT INTO capability_tokens (id, subject, target, verb, issued_at, expires_at, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE SET
+                    subject=EXCLUDED.subject, target=EXCLUDED.target, verb=EXCLUDED.verb,
+                    issued_at=EXCLUDED.issued_at, expires_at=EXCLUDED.expires_at,
+                    metadata=EXCLUDED.metadata
+                """,
+                (token.id, token.subject, token.target, token.verb,
+                 token.issued_at, token.expires_at, json.dumps(token.metadata or {})),
+            )
+            conn.commit()
+
+    def load(self, token_id: str) -> CapabilityToken | None:
+        with self._db.admin() as conn:
+            row = conn.execute_one("SELECT * FROM capability_tokens WHERE id=%s", (token_id,))
+        return self._hydrate(row)
+
+    def delete(self, token_id: str) -> bool:
+        with self._db.admin() as conn:
+            row = conn.execute_one(
+                "DELETE FROM capability_tokens WHERE id=%s RETURNING id", (token_id,)
+            )
+            conn.commit()
+        return row is not None
+
+    def list_for_subject(self, subject: str) -> list[CapabilityToken]:
+        with self._db.admin() as conn:
+            rows = conn.execute_many(
+                "SELECT * FROM capability_tokens WHERE subject=%s", (subject,)
+            )
+        return [t for t in (self._hydrate(r) for r in rows) if t is not None]
+
+    def list_all(self) -> list[CapabilityToken]:
+        with self._db.admin() as conn:
+            rows = conn.execute_many("SELECT * FROM capability_tokens")
+        return [t for t in (self._hydrate(r) for r in rows) if t is not None]
+
+
 # ---------------------------------------------------------------------------
 # CapabilityManager — public issue/revoke/check API
 # ---------------------------------------------------------------------------
@@ -242,4 +318,5 @@ __all__ = [
     "CapabilityStore",
     "CapabilityToken",
     "InMemoryCapabilityStore",
+    "PostgresCapabilityStore",
 ]
