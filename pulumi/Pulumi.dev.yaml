@@ -5,9 +5,9 @@ config:
   forgeos-gcp:pods_cidr: 10.40.0.0/14
   forgeos-gcp:services_cidr: 10.44.0.0/20
   forgeos-gcp:cloud_sql_tier: db-f1-micro
-  # platform-api image carrying the per-turn runtime (built from commit c86be13e
-  # on feat/runtime-v2-continuations). Used by platform-api AND the worker tier.
-  forgeos-gcp:platform_api_tag: runtime-v2-c86be13e
+  # platform-api image carrying the per-turn runtime + shared capability-token
+  # store (commit 9d93e015). Used by platform-api AND the worker tier.
+  forgeos-gcp:platform_api_tag: runtime-v2-9d93e015
   # Redis (Memorystore) backs the durable per-turn worker tier (Redis Streams).
   forgeos-gcp:enable_redis: "true"
   forgeos-gcp:redis_memory_gb: "1"
