@@ -184,18 +184,60 @@ memory:
 
 ```yaml
 governance:
-  human_in_loop:
-    - event: email.send
-      approvers: [team-lead, owner]
-      sla_hours: 4.0
+  approvals:                          # per-tool, kernel-enforced human approval
+    - tool: notify__email             # exact name or wildcard prefix (e.g. notify__*)
+      mode: always                    # always | never | conditional
+      approvers: [ceo-office]         # roles or user names who may approve
+      sla_hours: 4.0                  # deadline before on_timeout fires
+      priority: high                  # low | medium | high | critical
+      on_timeout: abort               # proceed | abort | reask
+      reason: "External comms require sign-off"
+    - tool: notify__email             # conditional: only fire for external recipients
+      mode: conditional
+      when:
+        ask_human_if: {op: not_endswith_any, field: tool_input.to, value: ["@acme.com"]}
+    - tool: payments__charge          # conditional: only above a threshold
+      mode: conditional
+      when:
+        ask_human_if: {op: gt, field: tool_input.amount_usd, value: 500}
   policies:
-    - name: no-pii-egress
+    - name: no-pii-egress             # external policy file (OPA/Rego or JSON-logic)
       ref: policies/pii-egress.rego
-    - name: no-shell-tools
-      ref: policies/no-shell.json
-  audit_level: full          # none | basic | full
+    - name: external-email-guard      # inline JSON-logic (deny_if / ask_human_if; deny wins)
+      inline:
+        ask_human_if: {op: not_endswith_any, field: tool_input.to, value: ["@acme.com"]}
+  audit_level: full                   # none | basic | full
   signing_required: false
 ```
+
+**`approvals`** is the modern, kernel-enforced approval mechanism. The kernel
+matches every tool call against these rules; when one fires it returns
+`ask_human` instead of executing — the runtime then suspends the agent
+**durably** and resumes once a human approves, running the gated tool with a
+capability token. The agent never calls an approval function itself; it makes
+the normal tool call and the kernel intercepts.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `tool` | string | — (required) | Tool name or wildcard prefix (`notify__*`) |
+| `mode` | enum | `always` | `always`, `never`, `conditional` |
+| `when` | object | — | JSON-logic clause; **required** when `mode: conditional` (e.g. `{ask_human_if: {op, field, value}}`) |
+| `approvers` | list | `[]` | Roles or user names who may approve |
+| `sla_hours` | float | `24.0` | Deadline before `on_timeout` fires |
+| `priority` | enum | `medium` | `low`, `medium`, `high`, `critical` |
+| `on_timeout` | enum | `abort` | `proceed`, `abort`, `reask` |
+| `reason` | string | `""` | Rationale shown to the approver |
+
+`policies` entries take **either** `ref` (a `.rego`/`.json` file) **or**
+`inline` JSON-logic. Inline rules are tri-state: a `deny_if` clause denies the
+action, an `ask_human_if` clause routes it through approval (if both appear,
+deny wins).
+
+!!! note "`human_in_loop` is deprecated"
+    The older `human_in_loop` list (keyed by `event:`) still validates but is
+    **automatically folded into `approvals`** — each entry becomes an `always`
+    rule whose `tool` is the legacy `event`. Prefer `approvals` for new
+    manifests.
 
 ### `spec.dependencies` (systemd-like ordering)
 
@@ -210,6 +252,47 @@ dependencies:
 ```
 
 Admission fails if non-optional dependencies are missing.
+
+### `spec.scope` (organizational taxonomy)
+
+Where the agent sits in the company. Used by the kernel to resolve hierarchical
+policies (Global > Namespace > Agent) and by RAG pipelines to filter knowledge
+by department/team/role. All fields are optional strings (default `""`).
+
+```yaml
+scope:
+  department: finance          # finance, hr, sales, engineering, ...
+  team: treasury               # team within the department
+  role: treasury-analyst       # job role this agent serves
+  job_id: TRS-001              # internal job code
+```
+
+### `spec.knowledge` (RAG / knowledge scoping)
+
+What data the agent can see — RAG retrieval filters plus the knowledge sources
+it may access.
+
+```yaml
+knowledge:
+  rag_filter:                  # metadata filter applied to every RAG query
+    department: finance
+    team: treasury
+  allowed_sources:             # paths the agent may read
+    - knowledge/departments/finance/
+  blocked_sources:             # paths explicitly denied
+    - knowledge/departments/hr/
+  sources:                     # typed source declarations
+    - path: knowledge/departments/finance/
+      type: markdown           # markdown | rag | google_sheet | google_doc | database | api
+      description: "Finance SOPs and treasury playbooks"
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `rag_filter` | object | `{}` | Metadata filter applied to RAG queries |
+| `allowed_sources` | list | `[]` | Paths the agent may read |
+| `blocked_sources` | list | `[]` | Paths explicitly denied |
+| `sources` | list | `[]` | Typed `{path, type, description}` declarations |
 
 ### `spec.ownership`
 
@@ -335,10 +418,13 @@ spec:
         max_chars: 1500
 
   governance:
-    human_in_loop:
-      - event: email.send
+    approvals:
+      - tool: notify__email
+        mode: conditional
         approvers: [team-lead]
         sla_hours: 4.0
+        when:
+          ask_human_if: {op: not_endswith_any, field: tool_input.to, value: ["@acme.com"]}
     policies:
       - name: no-pii-egress
         ref: policies/pii-egress.rego
@@ -349,6 +435,21 @@ spec:
       - namespace: sales-team
         name: crm-sync
         optional: false
+
+  scope:
+    department: sales
+    team: pipeline
+    role: sales-researcher
+
+  knowledge:
+    rag_filter:
+      department: sales
+    allowed_sources:
+      - knowledge/departments/sales/
+    sources:
+      - path: knowledge/departments/sales/
+        type: markdown
+        description: "Sales playbooks and ICP definitions"
 
   system_prompt:
     file: ./prompts/sales-researcher.md
