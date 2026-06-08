@@ -244,30 +244,60 @@ def build_agent_context(
     agent_id: str,
     *,
     invocation_id: str | None = None,
+    context: dict | None = None,
 ) -> dict:
     """Shared helper: build the per-invocation agent_context dict.
 
     Every adapter should pass the result of this function as `agent_context`
     to `run_agentic_loop()`. Fields carried through:
         - agent_id, department
-        - client_id (if ownership is CLIENT)
+        - client_id (MCP routing key — see precedence below)
+        - user_id (the acting user, from the invoke context)
         - allowed_tools (for whitelist enforcement)
         - tenant_id, plan, monthly_limit_usd (for cost tracking in the loop)
-        - invocation_id (so per-call tool handlers can derive a per-run
-          workdir; populated from executor.invoke()'s run_id)
+        - invocation_id (so per-call tool handlers can derive a per-run workdir)
+        - _credentials (per-invocation secrets the executor injected, e.g. a
+          GitHub PAT read by dev_tools — carried through from `context`)
+
+    `client_id` selects which per-client MCP connection serves this agent's
+    `mcp__*` calls (see `tool_executor._execute_mcp_tool`). Precedence:
+        1. context["client_id"] if explicitly set
+        2. agent_def.owner_id when ownership is CLIENT (existing behavior)
+        3. `user:<user_id>` for agents that opt into per-user MCP
+           (metadata.per_user_mcp truthy, or any `mcp__atlassian__` tool) — so a
+           single shared agent serves each user with their own credentials.
     """
     metadata = agent_def.metadata or {}
+    ctx = context or {}
+    user_id = ctx.get("user_id") or "default"
+
+    client_id = ctx.get("client_id")
+    if not client_id and agent_def.ownership == OwnershipType.CLIENT:
+        client_id = agent_def.owner_id
+    if not client_id:
+        tools = agent_def.tools or []
+        wants_per_user = bool(metadata.get("per_user_mcp")) or any(
+            isinstance(t, str) and t.startswith("mcp__atlassian__") for t in tools
+        )
+        if wants_per_user and user_id and user_id != "default":
+            client_id = f"user:{user_id}"
+
     out = {
         "agent_id": agent_id,
         "agent_name": agent_def.name,
         "namespace": agent_def.namespace,
         "department": agent_def.department,
-        "client_id": agent_def.owner_id if agent_def.ownership == OwnershipType.CLIENT else None,
+        "client_id": client_id,
+        "user_id": user_id,
         "allowed_tools": agent_def.tools or None,
-        "tenant_id": metadata.get("tenant_id", "default"),
+        "tenant_id": ctx.get("tenant_id") or metadata.get("tenant_id", "default"),
         "plan": metadata.get("plan", "starter"),
         "monthly_limit_usd": metadata.get("monthly_limit_usd"),
     }
+    # Carry per-invocation injected secrets (e.g. dev_tools gh_token) through to
+    # the tool handlers, which read them from agent_context["_credentials"].
+    if isinstance(ctx.get("_credentials"), dict):
+        out["_credentials"] = ctx["_credentials"]
     if invocation_id:
         out["invocation_id"] = invocation_id
     return out

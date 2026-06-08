@@ -167,6 +167,7 @@ class StepEngine:
             run_id=run_id,
             session_id=session_id,
             tenant_id=tenant_id,
+            user_id=(context or {}).get("user_id") or "default",
             namespace=namespace,
             messages=messages,
             provider=provider,

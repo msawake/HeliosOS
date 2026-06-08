@@ -79,6 +79,7 @@ class Continuation:
     run_id: str | None = None
     session_id: str | None = None
     tenant_id: str = "default"
+    user_id: str = "default"  # acting user — drives per-user creds + MCP routing
     namespace: str = "default"
 
     # -- the resumable program --

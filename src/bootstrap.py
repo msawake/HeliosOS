@@ -220,9 +220,24 @@ class PlatformBootstrap:
             # an audit row via the platform audit log when the FastAPI
             # layer wires it (via self._kernel.audit_log setter below).
             from src.core.secrets import SecretsManager
-            self.secrets = SecretsManager(audit_recorder=None)  # recorder bound after kernel
+            # Encrypted Postgres backend for credentials (works locally without
+            # GCP Secret Manager; also lets `secret:<name>` MCP env refs resolve
+            # to per-user credentials). No-op when DB is absent.
+            _secret_backend = None
+            if getattr(self, "_db", None) is not None and self._db.is_connected:
+                try:
+                    from src.core.secret_backends import PostgresSecretBackend
+                    _secret_backend = PostgresSecretBackend(self._db, tenant_id=self.tenant_id)
+                    logger.info("  Secret backend: POSTGRES (encrypted)")
+                except Exception as e:
+                    logger.warning("  Postgres secret backend unavailable: %s", e)
+            self.secrets = SecretsManager(
+                audit_recorder=None,  # recorder bound after kernel
+                db_backend=_secret_backend,
+                cache_ttl=60,
+            )
             from src.platform.credentials import CredentialStore
-            self.credentials = CredentialStore(self.secrets)
+            self.credentials = CredentialStore(self.secrets, tenant_id=self.tenant_id)
 
             logger.info("[Phase 3] Registering stack adapters...")
             self._register_adapters()

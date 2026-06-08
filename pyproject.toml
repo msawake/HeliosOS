@@ -26,6 +26,7 @@ scheduler = ["apscheduler>=3.10"]
 database = [
     "psycopg[binary,pool]>=3.2",
     "redis>=5.0",
+    "cryptography>=42.0",
 ]
 gcp = [
     "google-cloud-sql-connector[pg8000]>=1.4",

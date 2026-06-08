@@ -181,6 +181,12 @@ class CredentialPutGithubRequest(BaseModel):
     pat: str = Field(..., min_length=20, description="GitHub PAT (repo+workflow scopes)")
     user_id: str = Field("default", description="Identifier under which to scope the secret")
 
+class CredentialPutJiraRequest(BaseModel):
+    url: str = Field(..., description="Atlassian Cloud base URL, e.g. https://org.atlassian.net")
+    email: str = Field(..., description="Atlassian account email")
+    token: str = Field(..., min_length=8, description="Atlassian Cloud API token")
+    user_id: str = Field("default", description="Identifier under which to scope the secret")
+
 class EventFireRequest(BaseModel):
     name: str
     payload: dict = {}
@@ -418,6 +424,16 @@ def create_fastapi_app(
         if not api_key:
             raise HTTPException(status_code=401, detail="API key or Bearer token required")
         return api_key
+
+    async def current_user(request: Request, _auth=Depends(check_auth)) -> str:
+        """Resolve the acting user identity for per-user credentials + MCP.
+
+        Read from the ``X-Forgeos-User`` header (set by the forgeos CLI from the
+        active context's user). Defaults to ``"default"`` so unauthenticated /
+        legacy callers keep working unchanged. Runs ``check_auth`` first so the
+        usual gatekeeping still applies.
+        """
+        return request.headers.get("X-Forgeos-User") or "default"
 
     # Session stores (protected by async locks)
     _admin_sessions: dict[str, list[dict]] = {}
@@ -960,13 +976,19 @@ def create_fastapi_app(
         return await create_agent(req, _auth=_auth)
 
     @app.post("/api/platform/agents/{agent_id}/invoke", tags=["agents"])
-    async def invoke_agent(agent_id: str, req: InvokeRequest, async_mode: bool = False, _auth=Depends(check_auth)):
+    async def invoke_agent(agent_id: str, req: InvokeRequest, async_mode: bool = False,
+                           _auth=Depends(check_auth), user: str = Depends(current_user)):
         """Invoke an agent with a prompt.
 
         Tries the platform executor first (agents deployed via the new
         multi-stack system), then falls back to the legacy admin_invoker
         (pre-registered company agents from config).
         """
+        # Thread the acting user into the invoke context so the executor
+        # resolves per-user credentials + per-user MCP connections.
+        if not req.context:
+            req.context = {}
+        req.context.setdefault("user_id", user)
         # Path 1: Platform executor (new multi-stack agents)
         if platform_executor:
             agent_def = platform_executor.registry.get(agent_id)
@@ -3576,7 +3598,7 @@ def create_fastapi_app(
         return gw.chat
 
     @app.post("/api/a2h/v1/chats", tags=["a2h-chat"], status_code=201)
-    async def a2h_chat_open(request: Request, _auth=Depends(check_auth)):
+    async def a2h_chat_open(request: Request, _auth=Depends(check_auth), user: str = Depends(current_user)):
         """Open a chat session. Body: {agent_namespace, agent_name, human_name?,
         human_namespace?, topic?, context?}.
 
@@ -3595,6 +3617,9 @@ def create_fastapi_app(
         human_ns = body.get("human_namespace", agent_ns)
         topic = body.get("topic", "")
         context = body.get("context") or {}
+        # Persist the acting user on the session so chat-driven agent runs
+        # resolve per-user credentials + MCP (see a2h_chat_post).
+        context.setdefault("user_id", body.get("user_id") or user)
 
         # Resolve name/namespace/pid from the registry (by id, else by name).
         if platform_executor and hasattr(platform_executor, "registry"):
@@ -3648,11 +3673,13 @@ def create_fastapi_app(
         if role == "human" and content and platform_executor and not body.get("client_drives"):
             agent_pid = None
             agent_name = "agent"
+            chat_user = None
             try:
                 sess = gw.get_session(chat_id, include_messages=False) if hasattr(gw, "get_session") else None
                 if isinstance(sess, dict):
                     agent_pid = sess.get("agent_pid")
                     agent_name = sess.get("agent_name") or "agent"
+                    chat_user = (sess.get("context") or {}).get("user_id")
             except Exception:
                 logger.debug("chat: could not resolve session agent", exc_info=True)
             if agent_pid:
@@ -3661,7 +3688,8 @@ def create_fastapi_app(
                 async def _agent_reply():
                     try:
                         r = await platform_executor.invoke(
-                            agent_pid, content, {"_inline": True, "_trigger": "chat"},
+                            agent_pid, content,
+                            {"_inline": True, "_trigger": "chat", "user_id": chat_user or "default"},
                             session_id=chat_id,
                         )
                         txt = (getattr(r, "output", "") or "").strip() or "(no response)"
@@ -3747,6 +3775,127 @@ def create_fastapi_app(
             details={"kind": "github"},
         )
         return {"stored": True, "user_id": req.user_id, "kind": "github"}
+
+    @app.post("/api/credentials/jira", tags=["credentials"])
+    async def put_jira_credential(req: CredentialPutJiraRequest, request: Request,
+                                  user: str = Depends(current_user)):
+        """Store a user's Atlassian Cloud credential (url + email + token).
+
+        Encrypted at rest via the credential store. Write-only — never returned
+        by any read endpoint. The three secrets resolve into the per-user JIRA
+        MCP env at connect time (see POST /api/users/{user_id}/mcp/jira).
+        """
+        if credential_store is None:
+            raise HTTPException(503, "Credential store not configured")
+        uid = req.user_id if req.user_id and req.user_id != "default" else user
+        caller = request.headers.get("x-forgeos-caller") or (request.client.host if request.client else "api")
+        try:
+            ok = credential_store.put_jira(
+                url=req.url, email=req.email, token=req.token, user_id=uid, caller=caller,
+            )
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        if not ok:
+            raise HTTPException(503, "No writable secret backend; credential was not stored")
+        _audit(
+            "credential.write", actor=caller, resource_type="credential",
+            resource_id=f"jira:{uid}", details={"kind": "jira"},
+        )
+        return {"stored": True, "user_id": uid, "kind": "jira"}
+
+    @app.post("/api/users/{user_id}/mcp/jira", tags=["mcp"], status_code=201)
+    async def enroll_user_jira_mcp(user_id: str, _auth=Depends(check_auth)):
+        """Wire a per-user JIRA (mcp-atlassian) MCP connection for ``user_id``.
+
+        Seeds a clients row (client_id = ``user:<user_id>``) so the
+        ``client_mcp_configs`` FK is satisfied, then registers an ``atlassian``
+        MCP server whose env resolves to the user's stored JIRA credential via
+        ``secret:`` references. Idempotent. The token itself must already be
+        stored via POST /api/credentials/jira.
+        """
+        from src.platform.credentials import jira_secret_names
+        cid = f"user:{user_id}"
+        try:
+            if not client_store.exists(cid):
+                client_store.create(cid, f"user:{user_id}", {"kind": "user-mcp"})
+        except Exception as e:
+            logger.warning("enroll jira: client seed failed for %s: %s", cid, e)
+        names = jira_secret_names(user_id)
+        env_vars = {
+            "JIRA_URL": f"secret:{names['url']}",
+            "JIRA_USERNAME": f"secret:{names['email']}",
+            "JIRA_API_TOKEN": f"secret:{names['token']}",
+        }
+        try:
+            client_mcp_store.add(cid, "atlassian", "mcp-atlassian", env_vars, [])
+        except ValueError:
+            client_mcp_store.update(cid, "atlassian", "mcp-atlassian", env_vars, [])
+        _refresh_client_mcp_cache(cid)
+        _audit(
+            "user_mcp.enroll", resource_type="user_mcp", resource_id=cid,
+            details={"server": "atlassian", "package": "mcp-atlassian"},
+        )
+        return {"enrolled": True, "client_id": cid, "server_name": "atlassian"}
+
+    @app.post("/api/users/{user_id}/mcp/{server_name}", tags=["mcp"], status_code=201)
+    async def enroll_user_mcp(user_id: str, server_name: str, request: Request, _auth=Depends(check_auth)):
+        """Register ANY MCP server for a single user (generic per-user MCP).
+
+        Body: {package, env_vars?: {plain}, secrets?: {KEY: value}, args?: []}.
+        Secret values are stored encrypted (key `forgeos-mcp-<user>-<server>-<KEY>`)
+        and referenced from the MCP env as `secret:<key>`; plain env_vars pass
+        through. Seeds the `clients` row (FK) and upserts the per-user
+        `client_mcp_configs` row. Idempotent. The agent that uses it just needs
+        `metadata.per_user_mcp: true` and `mcp__<server_name>__*` tools.
+        """
+        body = await request.json()
+        package = (body.get("package") or "").strip()
+        if not package:
+            raise HTTPException(400, "`package` is required")
+        env_vars = dict(body.get("env_vars") or {})
+        secrets = dict(body.get("secrets") or {})
+        args = body.get("args") or []
+        caller = request.headers.get("x-forgeos-caller") or (request.client.host if request.client else "api")
+        cid = f"user:{user_id}"
+
+        # Seed the clients row (client_mcp_configs.client_id FK target).
+        try:
+            if not client_store.exists(cid):
+                client_store.create(cid, cid, {"kind": "user-mcp"})
+        except Exception as e:
+            logger.warning("enroll mcp: client seed failed for %s: %s", cid, e)
+
+        # Store each secret encrypted; wire a `secret:` ref into the env.
+        if secrets:
+            if credential_store is None:
+                raise HTTPException(503, "Credential store not configured")
+            for key, value in secrets.items():
+                sname = f"forgeos-mcp-{user_id}-{server_name}-{key}"
+                try:
+                    ok = credential_store.put_secret(
+                        sname, str(value), user_id=user_id,
+                        kind=f"mcp:{server_name}", caller=caller,
+                    )
+                except ValueError as e:
+                    raise HTTPException(400, str(e))
+                if not ok:
+                    raise HTTPException(503, f"No writable secret backend; secret '{key}' not stored")
+                env_vars[key] = f"secret:{sname}"
+
+        try:
+            client_mcp_store.add(cid, server_name, package, env_vars, args)
+        except ValueError:
+            client_mcp_store.update(cid, server_name, package, env_vars, args)
+        _refresh_client_mcp_cache(cid)
+        _audit(
+            "user_mcp.enroll", resource_type="user_mcp", resource_id=cid,
+            details={"server": server_name, "package": package, "secret_keys": list(secrets.keys())},
+        )
+        return {
+            "enrolled": True, "client_id": cid, "server_name": server_name,
+            "package": package, "env_keys": list(env_vars.keys()),
+            "secret_keys": list(secrets.keys()),
+        }
 
     return app
 

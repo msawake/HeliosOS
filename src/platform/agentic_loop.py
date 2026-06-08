@@ -754,3 +754,53 @@ def build_tool_definitions(tool_executor, agent_tools: list[str] | None = None) 
         return filtered
 
     return all_tools
+
+
+def _tool_name_matches(name: str, agent_tools: list[str]) -> bool:
+    """Exact-or-wildcard-prefix match (same rule as build_tool_definitions)."""
+    if name in agent_tools:
+        return True
+    return any(name.startswith(p.rstrip("*")) for p in agent_tools if p.endswith("*"))
+
+
+async def append_client_mcp_tools(
+    tool_defs: list[dict],
+    tool_executor,
+    client_id: str | None,
+    agent_tools: list[str] | None,
+) -> list[dict]:
+    """Append a client's per-user MCP tool schemas to *tool_defs*.
+
+    Platform-global MCP tools are advertised by build_tool_definitions, but
+    per-client connections (e.g. a user's JIRA via mcp-atlassian) are discovered
+    lazily and keyed by client_id — so their schemas must be merged in at invoke
+    time or the LLM never sees them. Names are prefixed `mcp__<server>__<tool>`
+    to match `tool_executor._execute_mcp_tool` routing. No-op without a
+    client_id or a ClientMCPManager. Connecting here also warms the connection.
+    """
+    mgr = getattr(tool_executor, "_client_mcp_manager", None)
+    if not (mgr and client_id):
+        return tool_defs
+    try:
+        by_server = await mgr.get_all_client_tools(client_id)
+    except Exception:
+        logger.debug("append_client_mcp_tools failed for %s", client_id, exc_info=True)
+        return tool_defs
+    existing = {t.get("name") for t in tool_defs}
+    for server_name, schemas in (by_server or {}).items():
+        for schema in schemas:
+            name = f"mcp__{server_name}__{schema.get('name', '')}"
+            if name in existing:
+                continue
+            if agent_tools and not _tool_name_matches(name, agent_tools):
+                continue
+            tool_defs.append({
+                "name": name,
+                "description": schema.get("description", ""),
+                "input_schema": schema.get(
+                    "inputSchema",
+                    schema.get("input_schema", {"type": "object", "properties": {}}),
+                ),
+            })
+            existing.add(name)
+    return tool_defs

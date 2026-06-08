@@ -148,7 +148,9 @@ class ForgeOSAdapter(AgentStackAdapter):
         if self._llm_router:
             if not self._tool_executor:
                 logger.warning("ForgeOS invoke for %s: no tool_executor — agent will run without tools", agent_id)
-            from src.platform.agentic_loop import run_agentic_loop, build_tool_definitions
+            from src.platform.agentic_loop import (
+                run_agentic_loop, build_tool_definitions, append_client_mcp_tools,
+            )
             # LLM-routing keys live in agent_def.metadata (where the YAML/PUT
             # endpoint stores them), but llm_router.chat() reads them from
             # llm_config.metadata. Mirror the relevant ones across so per-agent
@@ -158,6 +160,15 @@ class ForgeOSAdapter(AgentStackAdapter):
                 if v and not agent_def.llm_config.metadata.get(k):
                     agent_def.llm_config.metadata[k] = v
             tools = build_tool_definitions(self._tool_executor, agent_def.tools or None)
+            # Merge the acting user's per-user MCP tool schemas (e.g. their JIRA
+            # via mcp-atlassian) so the LLM sees them on the inline path too.
+            try:
+                _cid = build_agent_context(agent_def, agent_id, context=context).get("client_id")
+                tools = await append_client_mcp_tools(
+                    tools, self._tool_executor, _cid, agent_def.tools or None,
+                )
+            except Exception:
+                logger.debug("client MCP tool merge failed for %s", agent_id, exc_info=True)
             # Warn if agent expects MCP tools but none were resolved
             if agent_def.tools and not tools:
                 logger.warning(
@@ -188,6 +199,7 @@ class ForgeOSAdapter(AgentStackAdapter):
                 agent_context=build_agent_context(
                     agent_def, agent_id,
                     invocation_id=(context or {}).get("invocation_id"),
+                    context=context,
                 ),
                 context=context,
                 history=history,
@@ -244,6 +256,7 @@ class ForgeOSAdapter(AgentStackAdapter):
             tool_executor=self._tool_executor,
             agent_context=build_agent_context(
                 agent_def, agent_id, invocation_id=ctx.get("invocation_id"),
+                context=context,
             ),
             history=history,
             context=context,

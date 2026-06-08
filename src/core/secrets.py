@@ -44,6 +44,7 @@ class SecretsManager:
         project_id: str | None = None,
         cache_ttl: int = 300,
         audit_recorder: Any = None,
+        db_backend: Any = None,
     ):
         self._project_id = project_id or os.environ.get("GCP_PROJECT_ID", "")
         self._cache: dict[str, tuple[str, float]] = {}  # name -> (value, expires_at)
@@ -51,6 +52,11 @@ class SecretsManager:
         self._client = None
         # Phase 3 #4 — optional audit sink. Any object with ``record(action, ...)``.
         self._audit_recorder = audit_recorder
+        # Optional encrypted Postgres backend (see src/core/secret_backends.py).
+        # Consulted between the cache and GCP Secret Manager, and used as the
+        # write target when Secret Manager is unavailable (local dev + per-user
+        # credentials). Lets `secret:<name>` MCP refs resolve without GCP.
+        self._db_backend = db_backend
 
         if HAS_SECRET_MANAGER and self._project_id:
             try:
@@ -134,6 +140,21 @@ class SecretsManager:
             del self._cache[name]
             self._emit_audit("secret.lease_expired", name=name, caller=caller)
 
+        # Try the encrypted Postgres backend (local dev + per-user creds).
+        if self._db_backend is not None:
+            try:
+                val = self._db_backend.get(name)
+            except Exception:
+                logger.debug("Secret backend get failed for '%s'", name, exc_info=True)
+                val = None
+            if val is not None:
+                self._cache[name] = (val, time.time() + self._cache_ttl)
+                self._emit_audit(
+                    "secret.read", name=name, source="postgres",
+                    caller=caller, reason=reason,
+                )
+                return val
+
         # Try Secret Manager
         if self._client and self._project_id:
             try:
@@ -199,16 +220,30 @@ class SecretsManager:
         *,
         caller: str = "",
         reason: str = "",
+        user_id: str = "default",
+        kind: str = "generic",
     ) -> bool:
-        """Write or overwrite a Secret Manager secret.
+        """Write or overwrite a secret.
 
-        Creates the secret resource on first call and always adds a new
-        version. Returns True on success, False if Secret Manager is not
-        available (env-var fallback is intentionally write-disabled — secrets
-        must land in the configured secret store, not the process env).
+        Prefers GCP Secret Manager (creates the resource on first call, always
+        adds a new version). When Secret Manager is unavailable, falls back to
+        the encrypted Postgres backend if one is wired (local dev + per-user
+        credentials). ``user_id``/``kind`` are recorded by the Postgres backend
+        for lookup; they are ignored by Secret Manager. Returns True on success,
+        False if no writable backend exists (env-var fallback is intentionally
+        write-disabled — secrets must land in a real store, not the process env).
         """
         if not (self._client and self._project_id):
-            logger.warning("Secret Manager unavailable; refusing to put '%s'", name)
+            if self._db_backend is not None:
+                ok = self._db_backend.put(name, value, user_id=user_id, kind=kind)
+                if ok:
+                    self._cache.pop(name, None)
+                    self._emit_audit(
+                        "secret.write", name=name, source="postgres",
+                        caller=caller, reason=reason,
+                    )
+                return ok
+            logger.warning("No writable secret backend; refusing to put '%s'", name)
             return False
         parent = f"projects/{self._project_id}"
         try:

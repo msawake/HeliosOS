@@ -123,7 +123,10 @@ class RuntimeService:
         if agent_def is not None:
             try:
                 from stacks.base import build_agent_context
-                ctx = build_agent_context(agent_def, agent_def.agent_id)
+                # Carry the continuation's acting user so per-user credentials +
+                # MCP routing apply on worker-tier (durable) runs too.
+                cont_ctx = {"user_id": getattr(cont, "user_id", "default")} if cont else None
+                ctx = build_agent_context(agent_def, agent_def.agent_id, context=cont_ctx)
             except Exception:
                 logger.debug("build_agent_context failed; using minimal context")
         return self._tool_executor, ctx
@@ -133,11 +136,17 @@ class RuntimeService:
     async def enqueue_invoke(self, agent_def, prompt: str, context: dict | None = None) -> str:
         """Create a continuation from an agent + prompt and enqueue it.
         Returns the run handle (continuation id). Workers drive it."""
-        from src.platform.agentic_loop import build_tool_definitions
+        from src.platform.agentic_loop import build_tool_definitions, append_client_mcp_tools
         from src.runtime.shaping import extract_chat_history
+        from stacks.base import build_agent_context
 
         ctx = context or {}
         tools = build_tool_definitions(self._tool_executor, agent_def.tools or None)
+        # Merge the acting user's per-user MCP tool schemas (e.g. their JIRA via
+        # mcp-atlassian) so the LLM sees them. client_id is derived the same way
+        # the run-time agent_context derives it (user:<user_id> for opted agents).
+        _client_id = build_agent_context(agent_def, agent_def.agent_id, context=ctx).get("client_id")
+        tools = await append_client_mcp_tools(tools, self._tool_executor, _client_id, agent_def.tools or None)
         system = agent_def.system_prompt or f"You are {agent_def.name}. {getattr(agent_def, 'description', '')}"
 
         # Cross-turn chat memory: when a session_id is present, re-seed this

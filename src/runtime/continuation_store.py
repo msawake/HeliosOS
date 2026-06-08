@@ -183,7 +183,8 @@ class PostgresContinuationStore:
                     suspend_reason, provider, chat_model, message_history,
                     pending_calls, tool_definitions, step_index, max_turns, goal,
                     resource_usage, budget_tickets, enqueue_epoch, session_id,
-                    run_id, parent_continuation_id, last_error, final_output, updated_at
+                    run_id, parent_continuation_id, last_error, final_output,
+                    user_id, updated_at
                 ) VALUES (
                     %(id)s, %(tenant_id)s, %(pid)s, %(generation)s, %(namespace)s,
                     %(source)s, %(status)s, %(suspend_reason)s, %(provider)s,
@@ -191,7 +192,7 @@ class PostgresContinuationStore:
                     %(tool_definitions)s, %(step_index)s, %(max_turns)s, %(goal)s,
                     %(resource_usage)s, %(budget_tickets)s, %(enqueue_epoch)s,
                     %(session_id)s, %(run_id)s, %(parent_continuation_id)s,
-                    %(last_error)s, %(final_output)s, NOW()
+                    %(last_error)s, %(final_output)s, %(user_id)s, NOW()
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     status=EXCLUDED.status, suspend_reason=EXCLUDED.suspend_reason,
@@ -234,6 +235,7 @@ class PostgresContinuationStore:
             "parent_continuation_id": cont.parent_continuation_id,
             "last_error": cont.last_error,
             "final_output": cont.final_output,
+            "user_id": cont.user_id,
         }
 
     def index_ref(self, external_ref: str, continuation_id: str) -> None:
@@ -288,6 +290,7 @@ class PostgresContinuationStore:
                 "parent_continuation_id": d["parent_continuation_id"],
                 "last_error": d["last_error"],
                 "final_output": d["final_output"],
+                "user_id": d.get("user_id", "default"),
             }
         )
 

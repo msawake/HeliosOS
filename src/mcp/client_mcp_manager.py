@@ -201,14 +201,16 @@ class ClientMCPManager:
         if client_id in self._config_cache:
             return self._config_cache[client_id]
 
-        # Try database
-        if self._db:
+        # Try database (tenant-scoped connection — DatabaseClient has no bare
+        # .execute(); queries run through db.tenant(...) so RLS applies).
+        if self._db and getattr(self._db, "is_connected", False):
             try:
-                rows = self._db.execute(
-                    "SELECT server_name, package, env_vars, args, enabled "
-                    "FROM client_mcp_configs WHERE client_id = %s AND enabled = true",
-                    (client_id,),
-                )
+                with self._db.tenant(self._tenant_id) as conn:
+                    rows = conn.execute(
+                        "SELECT server_name, package, env_vars, args, enabled "
+                        "FROM client_mcp_configs WHERE client_id = %s AND enabled = true",
+                        (client_id,),
+                    )
                 return [
                     {
                         "server_name": r["server_name"],

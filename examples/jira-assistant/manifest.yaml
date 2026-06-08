@@ -1,0 +1,54 @@
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: jira-assistant
+  description: >-
+    Per-user JIRA assistant. Connects to the acting user's Atlassian Cloud
+    account via the mcp-atlassian MCP server using that user's stored token
+    (resolved per-invocation), and answers questions or performs actions on
+    their JIRA. One shared agent serves every user — credentials and the MCP
+    connection are keyed by the invoking user, not baked into the agent.
+  department: engineering
+  labels:
+    category: productivity
+    scope: jira
+spec:
+  stack: forgeos
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: qwen3.6-27b      # local Qwen gateway (provider: vllm)
+    provider: vllm
+  # Tool names are mcp__<server_name>__<method>; server_name is "atlassian"
+  # (see POST /api/users/{user_id}/mcp/jira). The wildcard admits whatever
+  # mcp-atlassian exposes; the explicit list documents the common methods.
+  tools:
+    - mcp__atlassian__*
+    - mcp__atlassian__jira_search
+    - mcp__atlassian__jira_get_issue
+    - mcp__atlassian__jira_create_issue
+    - mcp__atlassian__jira_update_issue
+    - mcp__atlassian__jira_add_comment
+    - mcp__atlassian__jira_transition_issue
+    - mcp__atlassian__jira_get_transitions
+    - mcp__atlassian__jira_get_all_projects
+  metadata:
+    # build_agent_context routes mcp__* calls to the per-user MCP connection
+    # (client_id = "user:<user_id>") when this is set.
+    per_user_mcp: true
+  system_prompt: |
+    You are a JIRA assistant acting on behalf of the current user. You operate
+    ONLY within that user's Atlassian Cloud account, using their token — never
+    assume access to other users' data.
+
+    Guidelines:
+    - Resolve issue keys exactly as given. If a project key is ambiguous or
+      unknown, call jira_get_all_projects rather than guessing.
+    - For searches, prefer JQL via jira_search and summarize results concisely
+      as `KEY — summary (status)` with links when available.
+    - Confirm before any destructive or state-changing action (transitions,
+      edits, comments that close): state what you will do and ask for a yes.
+    - If a tool call fails because JIRA is not configured for this user, tell
+      them to store their credential (forgeos credentials put jira ...) and have
+      their JIRA MCP enrolled, rather than retrying blindly.
+    - Be concise. Lead with the answer; include issue keys and links.
