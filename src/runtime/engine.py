@@ -73,6 +73,12 @@ class RunOutcome:
     suspend_reason: str | None = None
     pending: list[dict[str, Any]] = field(default_factory=list)
     tokens_used: int = 0
+    # Run rollup, surfaced so the adapter can populate the agent_runs row
+    # (otherwise tool_calls / input+output token split / model show as 0/null).
+    input_tokens: int = 0
+    output_tokens: int = 0
+    tool_calls: int = 0
+    model: str | None = None
 
     @property
     def suspended(self) -> bool:
@@ -372,6 +378,10 @@ class StepEngine:
             ToolCallRecord(tool_use_id=tc.id, name=tc.name, arguments=tc.input)
             for tc in (response.tool_calls or [])
         ]
+        # Accumulate the tool-call count across turns for the run rollup.
+        cont.resource_usage["tool_calls"] = (
+            cont.resource_usage.get("tool_calls", 0) + len(records)
+        )
         results = await asyncio.gather(
             *(self._dispatch(cont, rec, tool_executor, agent_context) for rec in records),
             return_exceptions=True,
@@ -504,9 +514,15 @@ class StepEngine:
         # the agent_context so the tool executor's own kernel gate honours it.
         from src.platform.agentic_loop import _execute_tool as _legacy_execute_tool
 
-        ctx = agent_context
+        # The engine already ran the full admission pipeline (capability + quota
+        # reservation) in ``_admit`` just above. Mark the context so the tool
+        # executor's OWN kernel gate does NOT re-admit — re-gating here is not
+        # only redundant kernel work, it reserves a SECOND budget ticket for the
+        # same call (double-counting quota). The legacy inline loop (no engine
+        # pre-admission) never sets this flag, so it still admits normally.
+        ctx = {**(agent_context or {}), "_kernel_admitted": True}
         if capability_token:
-            ctx = {**(agent_context or {}), "capability_token": capability_token}
+            ctx["capability_token"] = capability_token
         return await _legacy_execute_tool(name, tool_input, tool_executor, ctx)
 
     # -- suspend / resume helpers -----------------------------------------
@@ -605,7 +621,10 @@ class StepEngine:
         cont.status = "done"
         cont.final_output = text
         self._store.save(cont)
-        return RunOutcome(RunStatus.DONE, cont.continuation_id, output=text, tokens_used=tokens)
+        return self._with_rollup(
+            RunOutcome(RunStatus.DONE, cont.continuation_id, output=text, tokens_used=tokens),
+            cont,
+        )
 
     def _fail(self, cont: Continuation, error: str) -> RunOutcome:
         cont.status = "failed"
@@ -618,8 +637,22 @@ class StepEngine:
         cont.status = "done"
         cont.final_output = "[max tool turns reached]"
         self._store.save(cont)
-        return RunOutcome(RunStatus.MAX_TURNS, cont.continuation_id,
-                          output=cont.final_output, tokens_used=tokens)
+        return self._with_rollup(
+            RunOutcome(RunStatus.MAX_TURNS, cont.continuation_id,
+                       output=cont.final_output, tokens_used=tokens),
+            cont,
+        )
+
+    @staticmethod
+    def _with_rollup(out: RunOutcome, cont: Continuation) -> RunOutcome:
+        """Attach the per-run rollup (tool calls, token split, model) gathered on
+        the continuation so the adapter can persist it on the agent_runs row."""
+        usage = cont.resource_usage or {}
+        out.input_tokens = int(usage.get("tokens_in", 0) or 0)
+        out.output_tokens = int(usage.get("tokens_out", 0) or 0)
+        out.tool_calls = int(usage.get("tool_calls", 0) or 0)
+        out.model = cont.chat_model or None
+        return out
 
     # -- side effects ------------------------------------------------------
 

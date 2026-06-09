@@ -331,7 +331,16 @@ class ClientMCPManager:
                 await conn.session.__aexit__(None, None, None)
                 await conn.transport.__aexit__(None, None, None)
             except Exception as e:
-                logger.warning("Error disconnecting client MCP %s/%s: %s", key[0], key[1], e)
+                # The MCP stdio transport's anyio cancel scope is task-bound; when
+                # a connection is established in one task (e.g. a runtime worker)
+                # and torn down in another, anyio raises "Attempted to exit cancel
+                # scope in a different task". The reconnect on next use succeeds,
+                # so this is expected noise rather than a real failure.
+                if "cancel scope in a different task" in str(e):
+                    logger.debug("client MCP %s/%s cross-task teardown (benign): %s",
+                                 key[0], key[1], e)
+                else:
+                    logger.warning("Error disconnecting client MCP %s/%s: %s", key[0], key[1], e)
 
     async def _evict_oldest(self) -> None:
         """Evict the least-recently-used connection."""

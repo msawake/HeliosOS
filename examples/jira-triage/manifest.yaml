@@ -59,8 +59,9 @@ spec:
             * <criterion 3>
        c. DELEGATE — call agent__call with namespace="default", name="forgeos-coder",
           and task = "Ticket <KEY>. Summary: <summary>. Enriched description: <the
-          enriched text>. Create a branch, write a proposal+DoD doc, open a PR in
-          antonibergas-hue/forgeos-lens, and return ONLY the PR URL."
+          enriched text>. Create a branch, IMPLEMENT the solution as real, runnable
+          code (plus a short README), open a PR in antonibergas-hue/forgeos-lens,
+          and return ONLY the PR URL."
           Read the coder's reply and extract the PR URL (an
           https://github.com/antonibergas-hue/forgeos-lens/pull/<N> link).
        d. LINK BACK — mcp__atlassian__jira_add_comment on <KEY>:

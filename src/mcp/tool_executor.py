@@ -443,14 +443,23 @@ class ToolExecutor:
 
         from src.platform.syscall import syscall_pipeline_enabled
 
+        # The runtime engine admits + reserves quota for the call BEFORE handing
+        # it to this executor (see runtime/engine.py:_execute_tool). When it set
+        # ``_kernel_admitted`` we must NOT re-admit, or we double-gate the call
+        # and reserve a second budget ticket for the same tool use.
+        already_admitted = bool((agent_context or {}).get("_kernel_admitted"))
+
         use_pipeline = (
-            syscall_pipeline_enabled()
+            not already_admitted
+            and syscall_pipeline_enabled()
             and self._kernel is not None
             and agent_context is not None
             and agent_context.get("agent_id")
         )
 
-        if use_pipeline:
+        if already_admitted:
+            pass  # engine already enforced capability/quota/policy/boundary
+        elif use_pipeline:
             decision = self._kernel.syscall(
                 verb="tool.call",
                 subject=agent_context["agent_id"],
@@ -498,9 +507,10 @@ class ToolExecutor:
                                tool_name, agent_context["agent_id"], decision.reason)
                 return {"success": False, "error": f"Kernel denied: {decision.reason}"}
 
-        if not use_pipeline:
+        if not use_pipeline and not already_admitted:
             # Legacy whitelist check — the syscall pipeline's capability stage
-            # already enforces this when enabled.
+            # already enforces this when enabled, and the engine's pre-admission
+            # covers the ``already_admitted`` path.
             allowed_tools = (agent_context or {}).get("allowed_tools")
             if allowed_tools:
                 is_allowed = tool_name in allowed_tools or any(
@@ -696,6 +706,24 @@ class ToolExecutor:
             try:
                 client_session = await self._client_mcp_manager.get_client(client_id, server_name)
                 if client_session:
+                    # Per-user MCP servers connect lazily and never went through
+                    # ``register_mcp_tools`` at boot, so ``_get_tool_schema`` was
+                    # missing their schemas — logging a warning on every call and
+                    # skipping local input validation. Populate the cache once,
+                    # from the schemas discovered at connect, so subsequent calls
+                    # validate locally and stay quiet.
+                    if server_name not in self._mcp_tool_definitions:
+                        try:
+                            schemas = await self._client_mcp_manager.get_tool_schemas(
+                                client_id, server_name,
+                            )
+                            if schemas:
+                                self.register_mcp_tools(server_name, schemas)
+                        except Exception:
+                            logger.debug(
+                                "could not cache schemas for %s/%s",
+                                client_id, server_name, exc_info=True,
+                            )
                     result = await client_session.call_tool(method_name, tool_input)
                     ok, body = _flatten(result)
                     return {"success": ok, "result": body}

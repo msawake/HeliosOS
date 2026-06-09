@@ -213,7 +213,12 @@ class MCPServerManager:
                 await session.__aexit__(None, None, None)
                 await transport.__aexit__(None, None, None)
             except Exception as e:
-                logger.warning("Error disconnecting MCP server: %s", e)
+                # Benign anyio cross-task teardown (the stdio transport's cancel
+                # scope is task-bound). Not a real failure — see ClientMCPManager.
+                if "cancel scope in a different task" in str(e):
+                    logger.debug("MCP server cross-task teardown (benign): %s", e)
+                else:
+                    logger.warning("Error disconnecting MCP server: %s", e)
         self._sessions.clear()
         self._clients.clear()
         self._tool_schemas.clear()
