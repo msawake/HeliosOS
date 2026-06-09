@@ -70,7 +70,7 @@ class ToolExecutor:
     Custom company tools are routed to the CompanySystem subsystems.
     """
 
-    def __init__(self, company_system=None, mcp_clients: dict | None = None, client_mcp_manager=None, a2a_handler=None, kernel=None, a2h_gateway=None, memory_store=None):
+    def __init__(self, company_system=None, mcp_clients: dict | None = None, client_mcp_manager=None, a2a_handler=None, kernel=None, a2h_gateway=None, memory_store=None, environment_manager=None):
         self._system = company_system
         self._mcp_clients = mcp_clients or {}
         self._client_mcp_manager = client_mcp_manager
@@ -78,6 +78,7 @@ class ToolExecutor:
         self._kernel = kernel  # AgentOS kernel for policy enforcement
         self._a2h_gateway = a2h_gateway
         self._memory_store = memory_store
+        self._environment_manager = environment_manager  # per-agent exec environments (pods)
         self._custom_handlers = self._register_custom_tools()
         self._mcp_tool_definitions: dict[str, list[dict]] = {}
 
@@ -132,6 +133,13 @@ class ToolExecutor:
         from src.platform.drive_tool import DRIVE_RW_TOOL_HANDLERS
         handlers.update(DRIVE_RW_TOOL_HANDLERS)
 
+        # Execution-environment tools (env__exec / bash) — run shell commands in
+        # the agent's pod, gated by the kernel `env.exec` syscall. Available
+        # whenever an EnvironmentManager is wired.
+        if self._environment_manager is not None:
+            from src.platform.env_tools import make_env_tool_handlers
+            handlers.update(make_env_tool_handlers(self._environment_manager, lambda: self._kernel))
+
         if not self._system:
             return handlers
 
@@ -185,6 +193,10 @@ class ToolExecutor:
 
         from src.platform.drive_tool import DRIVE_RW_TOOL_SCHEMAS
         schemas.extend(DRIVE_RW_TOOL_SCHEMAS)
+
+        if self._environment_manager is not None:
+            from src.platform.env_tools import ENV_TOOL_SCHEMAS
+            schemas.extend(ENV_TOOL_SCHEMAS)
 
         if not self._system:
             return schemas
@@ -431,14 +443,23 @@ class ToolExecutor:
 
         from src.platform.syscall import syscall_pipeline_enabled
 
+        # The runtime engine admits + reserves quota for the call BEFORE handing
+        # it to this executor (see runtime/engine.py:_execute_tool). When it set
+        # ``_kernel_admitted`` we must NOT re-admit, or we double-gate the call
+        # and reserve a second budget ticket for the same tool use.
+        already_admitted = bool((agent_context or {}).get("_kernel_admitted"))
+
         use_pipeline = (
-            syscall_pipeline_enabled()
+            not already_admitted
+            and syscall_pipeline_enabled()
             and self._kernel is not None
             and agent_context is not None
             and agent_context.get("agent_id")
         )
 
-        if use_pipeline:
+        if already_admitted:
+            pass  # engine already enforced capability/quota/policy/boundary
+        elif use_pipeline:
             decision = self._kernel.syscall(
                 verb="tool.call",
                 subject=agent_context["agent_id"],
@@ -486,9 +507,10 @@ class ToolExecutor:
                                tool_name, agent_context["agent_id"], decision.reason)
                 return {"success": False, "error": f"Kernel denied: {decision.reason}"}
 
-        if not use_pipeline:
+        if not use_pipeline and not already_admitted:
             # Legacy whitelist check — the syscall pipeline's capability stage
-            # already enforces this when enabled.
+            # already enforces this when enabled, and the engine's pre-admission
+            # covers the ``already_admitted`` path.
             allowed_tools = (agent_context or {}).get("allowed_tools")
             if allowed_tools:
                 is_allowed = tool_name in allowed_tools or any(
@@ -684,6 +706,24 @@ class ToolExecutor:
             try:
                 client_session = await self._client_mcp_manager.get_client(client_id, server_name)
                 if client_session:
+                    # Per-user MCP servers connect lazily and never went through
+                    # ``register_mcp_tools`` at boot, so ``_get_tool_schema`` was
+                    # missing their schemas — logging a warning on every call and
+                    # skipping local input validation. Populate the cache once,
+                    # from the schemas discovered at connect, so subsequent calls
+                    # validate locally and stay quiet.
+                    if server_name not in self._mcp_tool_definitions:
+                        try:
+                            schemas = await self._client_mcp_manager.get_tool_schemas(
+                                client_id, server_name,
+                            )
+                            if schemas:
+                                self.register_mcp_tools(server_name, schemas)
+                        except Exception:
+                            logger.debug(
+                                "could not cache schemas for %s/%s",
+                                client_id, server_name, exc_info=True,
+                            )
                     result = await client_session.call_tool(method_name, tool_input)
                     ok, body = _flatten(result)
                     return {"success": ok, "result": body}

@@ -157,11 +157,35 @@ class ToolACL(BaseModel):
     denied: list[str] = Field(default_factory=list, description="Deny list (evaluated after allowed)")
 
 
+class ExecCapability(BaseModel):
+    """Permission to run shell commands in the agent's execution environment.
+
+    The kernel's ``env.exec`` admission allows a command only when ``enabled`` is
+    true (and, if ``allowed_commands`` is set, the command's leading binary is in
+    it). A capability token (target ``env:<id>``, verb ``exec``) can override.
+    """
+
+    enabled: bool = False
+    allowed_commands: list[str] | None = Field(
+        None, description="If set, only these leading binaries may run (e.g. [ls, cat, python])"
+    )
+
+
 class Capabilities(BaseModel):
     """What the agent is permitted to do."""
 
     tools: ToolACL | None = None
     a2a: A2AConfig | None = None
+    exec: ExecCapability | None = None
+
+
+class Environment(BaseModel):
+    """A per-agent execution environment: a pod spawned from a Docker image that
+    the agent's `env__exec`/`bash` commands run inside (kernel-gated)."""
+
+    image: str = Field(..., description="Docker image, e.g. 'python:3.12'")
+    namespace: str | None = Field(None, description="Override the env pod namespace")
+    keepalive_cmd: str | None = Field(None, description="Override the pod keepalive command")
 
 
 class DataBoundaries(BaseModel):
@@ -533,6 +557,7 @@ class Spec(BaseModel):
     dependencies: Dependencies | None = None
     scope: Scope | None = Field(None, description="Organizational taxonomy (department, team, role)")
     knowledge: Knowledge | None = Field(None, description="Knowledge scoping (RAG filters, allowed sources)")
+    environment: Environment | None = Field(None, description="Per-agent execution environment (pod from a Docker image)")
 
     # Advanced (shared v1/v2)
     memory: MemoryConfig | None = None
@@ -769,6 +794,8 @@ class AgentManifest(BaseModel):
             extra_metadata["_governance"] = self.spec.governance.model_dump()
         if self.spec.dependencies:
             extra_metadata["_dependencies"] = self.spec.dependencies.model_dump()
+        if self.spec.environment:
+            extra_metadata["_environment"] = self.spec.environment.model_dump()
         # Metadata identity
         extra_metadata["_namespace"] = self.metadata.namespace
         extra_metadata["_agent_version"] = self.metadata.version

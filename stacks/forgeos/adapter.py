@@ -287,6 +287,12 @@ class ForgeOSAdapter(AgentStackAdapter):
             status=AgentStatus.COMPLETED,
             output=outcome.output,
             tokens_used=outcome.tokens_used,
+            # Surface the engine's run rollup so the agent_runs row records the
+            # real tool-call count, token split, and model (not 0/0/null).
+            tool_calls=[{}] * (outcome.tool_calls or 0),
+            input_tokens=outcome.input_tokens,
+            output_tokens=outcome.output_tokens,
+            model=outcome.model,
             metadata={"continuation_id": outcome.continuation_id},
         )
 

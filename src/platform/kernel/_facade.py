@@ -296,6 +296,8 @@ class PermissionManager:
     def __init__(self, registry=None, a2a_handler=None):
         self._registry = registry
         self._a2a_handler = a2a_handler
+        # Set by Kernel.attach_environment_manager — maps agent_id -> bound env_id.
+        self._env_binding_lookup = None
 
     def check_tool_call(
         self,
@@ -350,6 +352,54 @@ class PermissionManager:
             tool=tool_name,
             namespace=agent.namespace,
         )
+
+    def check_env_exec(
+        self,
+        agent_id: str,
+        env_id: str,
+        args: dict | None = None,
+    ) -> KernelDecision:
+        """Check if an agent may run a shell command in environment ``env_id``.
+
+        Allowed iff the agent is BOUND to ``env_id`` AND its manifest
+        ``capabilities.exec.enabled`` is true AND (if ``allowed_commands`` is
+        set) the command's leading binary is in it. A valid capability token
+        (handled in the capability stage) bypasses this.
+        """
+        args = args or {}
+        if not self._registry:
+            return KernelDecision.allow(reason="no registry; wire registry for enforcement")
+        agent = self._registry.get(agent_id)
+        if not agent:
+            return KernelDecision.deny(reason=f"Agent {agent_id} not found", env_id=env_id)
+
+        # Ownership: the agent must be bound to this environment.
+        lookup = getattr(self, "_env_binding_lookup", None)
+        bound = lookup(agent_id) if callable(lookup) else None
+        if not bound or bound != env_id:
+            return KernelDecision.deny(
+                reason=f"Agent not bound to environment '{env_id}'", env_id=env_id,
+            )
+
+        # Manifest must opt into exec.
+        capabilities = read_v2_section(agent, "capabilities", {}) or {}
+        exec_cap = capabilities.get("exec", {}) or {}
+        if not exec_cap.get("enabled"):
+            return KernelDecision.deny(
+                reason="capabilities.exec.enabled is not set", env_id=env_id,
+            )
+
+        # Optional command allowlist (leading binary).
+        allowed = exec_cap.get("allowed_commands")
+        if allowed:
+            parts = str(args.get("command", "")).strip().split()
+            leading = parts[0] if parts else ""
+            if leading not in allowed:
+                return KernelDecision.deny(
+                    reason=f"Command '{leading}' not in allowed_commands", env_id=env_id,
+                )
+
+        return KernelDecision.allow(reason="env exec permitted", env_id=env_id)
 
     def _check_approvals(
         self, agent, tool_name: str, tool_input: dict | None,
@@ -1012,6 +1062,15 @@ class Kernel:
         ``check_signals`` can reach the same table the executor uses.
         """
         self.process_table = table
+
+    def attach_environment_manager(self, env_mgr) -> None:
+        """Bind the EnvironmentManager so ``env.exec`` admission can verify that
+        an agent is bound to the environment it's trying to exec in."""
+        self.environment_manager = env_mgr
+        try:
+            self.permissions._env_binding_lookup = env_mgr.bound_env_id
+        except Exception:
+            logger.debug("attach_environment_manager: could not wire binding lookup", exc_info=True)
 
     # ---- Syscall pipeline (Phase 1 #2) ----------------------------------
 

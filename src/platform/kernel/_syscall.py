@@ -271,6 +271,25 @@ def make_capability_stage(permission_manager: Any, capability_manager: Any = Non
             return pm.check_tool_call(
                 syscall.subject, syscall.object, syscall.args.get("tool_input")
             )
+        if syscall.verb == "env.exec":
+            # Shell exec inside the agent's execution environment (pod). A valid
+            # capability token (target env:<id>, verb exec) is positive authority
+            # and short-circuits the binding/manifest ACL.
+            token = (syscall.args or {}).get("capability_token")
+            if (
+                token
+                and capability_manager is not None
+                and capability_manager.authorize(
+                    token_id=token,
+                    subject=syscall.subject,
+                    target=f"env:{syscall.object}",
+                    verb="exec",
+                )
+            ):
+                return None
+            if pm is None:
+                return None
+            return pm.check_env_exec(syscall.subject, syscall.object, syscall.args)
         if pm is None:
             return None
         if syscall.verb == "a2a.invoke":

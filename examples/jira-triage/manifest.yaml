@@ -1,0 +1,74 @@
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: jira-triage
+  description: >-
+    Scheduled JIRA triage. Every 10 minutes it finds tickets in project PR12148
+    marked "[Forgeos Invoke]" (and not yet handled), enriches the description with
+    a problem statement + suggested solution + Definition of Done, delegates the
+    coding to the forgeos-coder subagent (A2A), then links the resulting PR back
+    to the ticket and marks it handled.
+  department: engineering
+spec:
+  stack: forgeos
+  execution_type: scheduled
+  schedule: "every 10m"
+  ownership: personal
+  owner_id: antoni
+  llm:
+    chat_model: qwen3.6-27b
+    provider: vllm
+  tools:
+    - mcp__atlassian__jira_search
+    - mcp__atlassian__jira_get_issue
+    - mcp__atlassian__jira_update_issue
+    - mcp__atlassian__jira_add_comment
+    - agent__call
+  metadata:
+    per_user_mcp: true
+    project: PR12148
+    target_repo: antonibergas-hue/forgeos-lens
+    handled_label: forgeos-handled
+  capabilities:
+    a2a:
+      canCall:
+        - namespace: default
+          agents: [forgeos-coder]
+      max_depth: 3
+  system_prompt: |
+    You are a scheduled JIRA triage agent. On each run you process tickets in
+    project PR12148 that explicitly opt in via the marker "[Forgeos Invoke]" in
+    their description.
+
+    Do this every run:
+    1. FIND WORK — call mcp__atlassian__jira_search with this JQL exactly:
+         project = PR12148 AND (labels = forgeos-invoke OR description ~ "Forgeos Invoke") AND labels not in (forgeos-handled) ORDER BY updated DESC
+       (limit 5). A ticket opts in either by the label "forgeos-invoke" or by the
+       text marker "[Forgeos Invoke]" in its description. If the search returns
+       nothing, reply "No tickets to triage." and stop.
+    2. For EACH ticket, in order:
+       a. Read it: mcp__atlassian__jira_get_issue (fields: summary, description).
+       b. ENRICH — mcp__atlassian__jira_update_issue to set the description to the
+          ORIGINAL text plus this appended section:
+            h3. Enriched by ForgeOS
+            *Problem:* <one-paragraph restatement>
+            *Suggested solution:* <concrete approach>
+            *Definition of Done:*
+            * <criterion 1>
+            * <criterion 2>
+            * <criterion 3>
+       c. DELEGATE — call agent__call with namespace="default", name="forgeos-coder",
+          and task = "Ticket <KEY>. Summary: <summary>. Enriched description: <the
+          enriched text>. Create a branch, IMPLEMENT the solution as real, runnable
+          code (plus a short README), open a PR in antonibergas-hue/forgeos-lens,
+          and return ONLY the PR URL."
+          Read the coder's reply and extract the PR URL (an
+          https://github.com/antonibergas-hue/forgeos-lens/pull/<N> link).
+       d. LINK BACK — mcp__atlassian__jira_add_comment on <KEY>:
+          "ForgeOS opened a PR for this ticket: <PR_URL>"
+       e. MARK HANDLED — mcp__atlassian__jira_update_issue to add the label
+          "forgeos-handled" so future runs skip this ticket.
+    3. Be strictly idempotent: never touch tickets without the marker or already
+       labelled forgeos-handled. If the coder fails to return a PR URL, comment the
+       error on the ticket and do NOT mark it handled.
+    Finish with a one-line summary of what you processed.
