@@ -1,8 +1,15 @@
+#!/usr/bin/env python3
 # Copyright 2024-2026 Awake Venture Studio (awakeventurestudio.co),
 # a Making Science Group, SA company.
 # SPDX-License-Identifier: Apache-2.0
 """
 ForgeOS MCP Server — expose the full agent fleet to any MCP-compatible client.
+
+Self-contained single file: the only third-party dependencies are ``mcp`` and
+``httpx``, and it imports nothing from the ForgeOS source tree, so it runs from
+any working directory without ``PYTHONPATH``. This is the file that ``.mcp.json``
+launches; the importable package ``src/forgeos_mcp`` mirrors it (a parity test
+keeps the two tool sets in sync).
 
 Four capabilities:
   1. Human-Agent Chat    — talk to any deployed agent
@@ -11,17 +18,22 @@ Four capabilities:
   4. Agent-as-a-Tool     — invoke any agent as a one-shot function call
 
 Run:
-    python3 -m src.forgeos_mcp                           # stdio (Claude Code, Cursor)
-    python3 -m src.forgeos_mcp --transport sse           # SSE (web clients)
-    python3 -m src.forgeos_mcp --transport streamable-http  # HTTP
+    python3 tools/forgeos-mcp-server.py                          # stdio (Claude Code, Cursor)
+    python3 tools/forgeos-mcp-server.py --transport sse          # SSE (web clients)
+    python3 tools/forgeos-mcp-server.py --transport streamable-http  # HTTP
+
+Install deps:
+    pip install mcp httpx
 
 Env vars:
     FORGEOS_URL       — API base URL (default http://localhost:5000)
-    FORGEOS_API_KEY   — API key for authenticated endpoints
+    FORGEOS_API_KEY   — API key for authenticated endpoints (optional)
+    FORGEOS_USER      — acting user id sent as X-Forgeos-User (optional)
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import os
@@ -173,7 +185,7 @@ async def forgeos_chat(
             elif ev.get("type") == "tool_call":
                 tool_calls.append({"tool": ev.get("name"), "input": ev.get("input")})
             elif ev.get("type") == "tool_result":
-                tool_calls.append({"tool": ev.get("name"), "result": ev.get("result", "")[:500]})
+                tool_calls.append({"tool": ev.get("name"), "result": str(ev.get("result", ""))[:500]})
             elif ev.get("type") == "done":
                 if not text_parts and ev.get("text"):
                     text_parts.append(ev["text"])
@@ -525,3 +537,31 @@ async def agent_diagnostics(agent_id: str) -> str:
         f"## Governance Contract\n```json\n{_fmt(contract)}\n```\n\n"
         f"## Recent Audit Events\n```json\n{_fmt(audit)}\n```"
     )
+
+
+# =========================================================================
+# Entrypoint
+# =========================================================================
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="ForgeOS MCP Server")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse", "streamable-http"],
+        default="stdio",
+        help="MCP transport (default: stdio)",
+    )
+    parser.add_argument("--port", type=int, default=8000, help="Port for SSE/HTTP transport")
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO)
+    logger.info("ForgeOS MCP Server — url=%s transport=%s", FORGEOS_URL, args.transport)
+
+    if args.transport != "stdio":
+        server.settings.port = args.port
+
+    server.run(transport=args.transport)
+
+
+if __name__ == "__main__":
+    main()
