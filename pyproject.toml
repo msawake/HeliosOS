@@ -18,8 +18,8 @@ dependencies = [
 
 [project.optional-dependencies]
 openai = ["openai>=1.0"]
-mcp = ["mcp>=1.0"]
-all-providers = ["openai>=1.0", "mcp>=1.0"]
+mcp = ["mcp>=1.2"]
+all-providers = ["openai>=1.0", "mcp>=1.2"]
 crewai = ["crewai>=0.80"]
 adk = ["google-adk[extensions]>=1.29"]
 scheduler = ["apscheduler>=3.10"]
@@ -43,7 +43,7 @@ observability = [
 ]
 production = [
     "openai>=1.0",
-    "mcp>=1.0",
+    "mcp>=1.2",
     "apscheduler>=3.10",
     "psycopg[binary,pool]>=3.2",
     "redis>=5.0",

@@ -4,7 +4,9 @@
       "command": "python3",
       "args": ["tools/forgeos-mcp-server.py"],
       "env": {
-        "FORGEOS_URL": "http://localhost:5000"
+        "FORGEOS_URL": "http://localhost:5000",
+        "FORGEOS_API_KEY": "",
+        "FORGEOS_USER": ""
       }
     }
   }
