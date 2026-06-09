@@ -238,6 +238,14 @@ class PlatformBootstrap:
             )
             from src.platform.credentials import CredentialStore
             self.credentials = CredentialStore(self.secrets, tenant_id=self.tenant_id)
+            # The MCP managers were constructed in Phase 2 (_init_legacy_subsystems)
+            # before self.secrets existed, so they captured secrets_manager=None and
+            # could not resolve `secret:<name>` env refs (per-user MCP creds). Back-fill
+            # now that the SecretsManager exists.
+            for _mgr_attr in ("_client_mcp_manager", "_mcp_manager"):
+                _mgr = getattr(self, _mgr_attr, None)
+                if _mgr is not None and getattr(_mgr, "_secrets_manager", None) is None:
+                    _mgr._secrets_manager = self.secrets
 
             logger.info("[Phase 3] Registering stack adapters...")
             self._register_adapters()

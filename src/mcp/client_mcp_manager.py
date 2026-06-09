@@ -258,7 +258,7 @@ class ClientMCPManager:
                     secret_name = v[7:]
                     if self._secrets_manager:
                         resolved_val = self._secrets_manager.get(
-                            secret_name, 
+                            secret_name,
                             caller=f"client_mcp_{client_id}_{server_name}",
                             reason="client_mcp_boot"
                         )
@@ -285,10 +285,18 @@ class ClientMCPManager:
         read_stream, write_stream = await transport.__aenter__()
         session = ClientSession(read_stream, write_stream)
         await session.__aenter__()
+        # uvx/npx-launched servers (esp. heavy Python ones like mcp-atlassian on
+        # first run) can take well over 10s to import + handshake. Configurable
+        # via FORGEOS_MCP_INIT_TIMEOUT; default generous.
+        import os as _os2
+        _init_timeout = float(_os2.environ.get("FORGEOS_MCP_INIT_TIMEOUT", "45"))
         try:
-            await asyncio.wait_for(session.initialize(), timeout=10.0)
+            await asyncio.wait_for(session.initialize(), timeout=_init_timeout)
         except asyncio.TimeoutError:
-            logger.error("MCP session.initialize() timed out for %s/%s", client_id, server_name)
+            logger.error(
+                "MCP session.initialize() timed out (%.0fs) for %s/%s",
+                _init_timeout, client_id, server_name,
+            )
             try:
                 await session.__aexit__(None, None, None)
                 await transport.__aexit__(None, None, None)
