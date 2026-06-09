@@ -83,6 +83,9 @@ class PermissionManager:
     def check_data_access(self, *args: Any, **kw: Any) -> KernelDecision:
         return KernelDecision.allow()
 
+    def check_env_exec(self, *args: Any, **kw: Any) -> KernelDecision:
+        return KernelDecision.allow()
+
 
 class BudgetManager:
     def __init__(self, **kw: Any) -> None:

@@ -70,7 +70,7 @@ class ToolExecutor:
     Custom company tools are routed to the CompanySystem subsystems.
     """
 
-    def __init__(self, company_system=None, mcp_clients: dict | None = None, client_mcp_manager=None, a2a_handler=None, kernel=None, a2h_gateway=None, memory_store=None):
+    def __init__(self, company_system=None, mcp_clients: dict | None = None, client_mcp_manager=None, a2a_handler=None, kernel=None, a2h_gateway=None, memory_store=None, environment_manager=None):
         self._system = company_system
         self._mcp_clients = mcp_clients or {}
         self._client_mcp_manager = client_mcp_manager
@@ -78,6 +78,7 @@ class ToolExecutor:
         self._kernel = kernel  # AgentOS kernel for policy enforcement
         self._a2h_gateway = a2h_gateway
         self._memory_store = memory_store
+        self._environment_manager = environment_manager  # per-agent exec environments (pods)
         self._custom_handlers = self._register_custom_tools()
         self._mcp_tool_definitions: dict[str, list[dict]] = {}
 
@@ -132,6 +133,13 @@ class ToolExecutor:
         from src.platform.drive_tool import DRIVE_RW_TOOL_HANDLERS
         handlers.update(DRIVE_RW_TOOL_HANDLERS)
 
+        # Execution-environment tools (env__exec / bash) — run shell commands in
+        # the agent's pod, gated by the kernel `env.exec` syscall. Available
+        # whenever an EnvironmentManager is wired.
+        if self._environment_manager is not None:
+            from src.platform.env_tools import make_env_tool_handlers
+            handlers.update(make_env_tool_handlers(self._environment_manager, lambda: self._kernel))
+
         if not self._system:
             return handlers
 
@@ -185,6 +193,10 @@ class ToolExecutor:
 
         from src.platform.drive_tool import DRIVE_RW_TOOL_SCHEMAS
         schemas.extend(DRIVE_RW_TOOL_SCHEMAS)
+
+        if self._environment_manager is not None:
+            from src.platform.env_tools import ENV_TOOL_SCHEMAS
+            schemas.extend(ENV_TOOL_SCHEMAS)
 
         if not self._system:
             return schemas

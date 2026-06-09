@@ -272,6 +272,16 @@ class A2AHandler:
             "namespace": caller_namespace,
             "agent_name": caller_agent_name,
         }
+        # Run the callee synchronously even under the runtime-v2 worker tier so
+        # this (synchronous) A2A call returns the callee's real output rather
+        # than a queued/"running" handle.
+        callee_context["_inline"] = True
+        # Carry the caller's acting user so the callee routes the same user's
+        # per-user MCP / credentials (unless the task context set one explicitly).
+        if "user_id" not in callee_context:
+            _cu = (caller_context or {}).get("user_id")
+            if _cu:
+                callee_context["user_id"] = _cu
 
         # Session inheritance: only pass session_id when inheriting history
         session_id = None

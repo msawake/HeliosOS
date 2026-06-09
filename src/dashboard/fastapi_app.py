@@ -242,6 +242,7 @@ def create_fastapi_app(
     kernel=None,  # AgentOS kernel facade
     credential_store=None,
     runtime_service=None,  # runtime-v2 worker tier (FORGEOS_RUNTIME_WORKERS)
+    environment_manager=None,  # per-agent execution environments (k8s pods)
 ) -> FastAPI:
 
     app = FastAPI(
@@ -3896,6 +3897,48 @@ def create_fastapi_app(
             "package": package, "env_keys": list(env_vars.keys()),
             "secret_keys": list(secrets.keys()),
         }
+
+    @app.post("/api/platform/agents/{agent_id}/environment", tags=["environments"], status_code=201)
+    async def attach_environment(agent_id: str, request: Request, _auth=Depends(check_auth)):
+        """Spawn (or reuse) the agent's execution environment pod and bind it.
+
+        Body: {image?}. If omitted, uses the agent manifest's spec.environment.image.
+        The agent's `bash`/`env__exec` tool then runs commands in this pod
+        (kernel-gated via `env.exec`).
+        """
+        if environment_manager is None:
+            raise HTTPException(503, "Environments are not enabled on this server")
+        body = {}
+        try:
+            body = await request.json()
+        except Exception:
+            pass
+        image = (body.get("image") or "").strip()
+        if not image and platform_registry:
+            agent = platform_registry.get(agent_id)
+            if agent:
+                image = ((agent.metadata or {}).get("_environment") or {}).get("image", "")
+        if not image:
+            raise HTTPException(400, "no image — pass {\"image\": ...} or set spec.environment.image on the agent")
+        try:
+            b = await environment_manager.spawn(agent_id, image)
+        except Exception as e:
+            raise HTTPException(500, f"environment spawn failed: {e}")
+        _audit("env.attach", resource_type="agent", resource_id=agent_id,
+               details={"env_id": b.env_id, "image": image, "status": b.status})
+        return {
+            "attached": b.status == "running", "agent_id": agent_id, "env_id": b.env_id,
+            "pod": b.pod_name, "namespace": b.namespace, "image": image, "status": b.status,
+        }
+
+    @app.delete("/api/platform/agents/{agent_id}/environment", tags=["environments"])
+    async def detach_environment(agent_id: str, _auth=Depends(check_auth)):
+        """Tear down the agent's execution environment pod."""
+        if environment_manager is None:
+            raise HTTPException(503, "Environments are not enabled on this server")
+        ok = await environment_manager.teardown(agent_id)
+        _audit("env.detach", resource_type="agent", resource_id=agent_id, details={"removed": ok})
+        return {"detached": ok, "agent_id": agent_id}
 
     return app
 

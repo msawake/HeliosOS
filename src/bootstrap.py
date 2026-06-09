@@ -351,6 +351,12 @@ class PlatformBootstrap:
             # Wire kernel into tool executor for mandatory policy enforcement
             self._tool_executor._kernel = self._kernel
             logger.info("  Kernel: wired into ToolExecutor (policy enforcement active)")
+            # Let the kernel verify env.exec ownership via the EnvironmentManager.
+            if getattr(self, "_environment_manager", None) is not None:
+                try:
+                    self._kernel.attach_environment_manager(self._environment_manager)
+                except Exception:
+                    logger.debug("could not attach environment manager to kernel", exc_info=True)
 
             # A2H Gateway — agent-to-human interaction
             self._a2h_gateway = None
@@ -623,11 +629,18 @@ class PlatformBootstrap:
         from src.platform.a2a import A2AHandler
         self._a2a_handler = A2AHandler()
 
+        # Per-agent execution environments (k8s pods, kernel-gated env.exec).
+        from src.platform.environments import EnvironmentManager
+        self._environment_manager = EnvironmentManager(
+            db_client=self._db, tenant_id=self.tenant_id,
+        )
+
         tool_executor = ToolExecutor(
             company_system=self.system,
             mcp_clients=mcp_clients,
             client_mcp_manager=self._client_mcp_manager,
             a2a_handler=self._a2a_handler,
+            environment_manager=self._environment_manager,
         )
 
         # Attach UsageEnforcer so the agentic loop can record tokens/cost.
@@ -854,6 +867,7 @@ class PlatformBootstrap:
             tenant_id=self.tenant_id,
             kernel=getattr(self, '_kernel', None),
             credential_store=getattr(self, 'credentials', None),
+            environment_manager=getattr(self, '_environment_manager', None),
         )
 
     def start_api_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):

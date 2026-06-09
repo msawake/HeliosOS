@@ -343,16 +343,21 @@ class PlatformExecutor:
                     invoke_ctx["invocation_id"] = run_id
                 if self.callback_registry:
                     invoke_ctx["_callback_registry"] = self.callback_registry
+                # Resolve the acting user and surface it on the invoke context so
+                # build_agent_context routes per-user MCP / credentials for
+                # scheduled + A2A runs too (those carry no HTTP X-Forgeos-User
+                # header — only the HTTP /invoke path sets user_id itself).
+                user_id = (
+                    invoke_ctx.get("user_id")
+                    or getattr(agent_def, "owner_id", None)
+                    or "default"
+                )
+                invoke_ctx["user_id"] = user_id
                 # Per-user credentials (GH PAT, etc.) — injected into the
                 # invocation context only, never on os.environ, so concurrent
                 # invocations for different users don't race.
                 if self.credential_store is not None:
                     try:
-                        user_id = (
-                            invoke_ctx.get("user_id")
-                            or getattr(agent_def, "owner_id", None)
-                            or "default"
-                        )
                         self.credential_store.inject_for_invocation(
                             invoke_ctx,
                             user_id=user_id,
