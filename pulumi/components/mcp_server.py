@@ -68,7 +68,7 @@ class McpServer(pulumi.ComponentResource):
                         image=image,
                         # Reuse the platform-api image; run the MCP server on
                         # streamable-http bound to 0.0.0.0:8080 (Cloud Run port).
-                        command=["python", "-m", "src.forgeos_mcp"],
+                        commands=["python", "-m", "src.forgeos_mcp"],
                         args=["--transport", "streamable-http", "--port", "8080", "--host", "0.0.0.0"],
                         ports=gcp.cloudrunv2.ServiceTemplateContainerPortsArgs(
                             container_port=8080,
