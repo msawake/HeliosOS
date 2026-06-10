@@ -12,14 +12,16 @@ GKE Autopilot for agent workloads, Cloud SQL + Memorystore + Pub/Sub for data.
 | 1 | `network.py` | VPC, subnet (with pods/services secondary ranges), Cloud NAT, Private Services Access |
 | 2 | `registry.py` | Artifact Registry Docker repo (`forgeos`) |
 | 3 | `data.py` | Cloud SQL Postgres 15 (private IP), Memorystore Redis, Pub/Sub topic for agent triggers |
-| 4 | `identity.py` | 4 GSAs (`platform-api`, `mc`, `agent-runtime`, `migrations`) + project IAM roles |
-| 5 | `secrets.py` | Secret Manager entries: `database-url`, `redis-url`, `anthropic-api-key`, `openai-api-key`, `mc-admin-password`, `slack-webhook-url` |
+| 4 | `identity.py` | 5 GSAs (`platform-api`, `mc`, `agent-runtime`, `migrations`, `mcp`) + project IAM roles |
+| 5 | `secrets.py` | Secret Manager entries: `database-url`, `redis-url`, `anthropic-api-key`, `openai-api-key`, `gemini-api-key`, `mc-admin-password`, `slack-webhook-url`, `jira-*`, `api-token`, `api-key` |
 | 6 | `gke.py` | GKE Autopilot regional cluster, private nodes, synthesized kubeconfig + k8s Provider |
 | 7 | `keda.py` | KEDA Helm release in `keda` namespace |
 | 8 | `namespaces.py` | One k8s namespace per ForgeOS namespace + `forgeos-agent` KSA (WI-bound) + ResourceQuota + default-deny NetworkPolicy |
+| 8b | `exec_environments.py` | `forgeos-envs` sandbox namespace + ResourceQuota + default-deny NetworkPolicy + namespaced pod/exec Role/RoleBinding to the platform-api GSA + `container.clusterViewer` IAM |
 | 9 | `migrations.py` | Cloud Run Job that runs `infrastructure/database/*.sql` against Cloud SQL via Direct VPC Egress |
-| 10 | `platform_api.py` | Cloud Run service for FastAPI :5099, Direct VPC Egress, secret env, public invoker |
-| 11 | `mission_control.py` | Cloud Run service for FastAPI :8888 + bundled SPA, env points at platform API |
+| 10 | `platform_api.py` | Cloud Run service for FastAPI (:5000), Direct VPC Egress, secret env, public invoker |
+| 11 | `mission_control.py` | Cloud Run service for FastAPI + bundled SPA, env points at platform API |
+| 11b | `mcp_server.py` | Cloud Run service running the MCP server (FastMCP streamable-http) on the platform-api image, pointed at the platform API |
 | 12 | `agent_base.py` | Per-agent Deployment + per-agent Pub/Sub subscription + KEDA ScaledObject (0→N on backlog) |
 | 13 | `observability.py` | PodMonitoring CR per namespace for Google Managed Service for Prometheus |
 
