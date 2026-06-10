@@ -17,6 +17,7 @@ Production hardening:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import random
@@ -417,6 +418,19 @@ class LLMRouter:
             async for ev in self._stream_openai(client, model, messages, tools):
                 yield ev
             return
+        # vLLM and atlas expose OpenAI-compatible APIs — reuse the OpenAI
+        # streamer. Mirrors the provider branches in _call().
+        if provider == "vllm":
+            metadata = getattr(llm_config, "metadata", None) or {}
+            vllm_client = self._get_vllm_client(metadata.get("base_url"))
+            if vllm_client:
+                async for ev in self._stream_openai(vllm_client, model, messages, tools):
+                    yield ev
+                return
+        if provider == "atlas" and client:
+            async for ev in self._stream_openai(client, model, messages, tools):
+                yield ev
+            return
 
         # Simulated fallback
         yield {
@@ -534,7 +548,10 @@ class LLMRouter:
                 try:
                     stream = client.chat.completions.create(**kwargs)
                     text_acc = ""
-                    tool_calls: list[dict] = []
+                    # Tool calls arrive as deltas spread across chunks: the
+                    # first chunk for an index carries id + function.name,
+                    # subsequent ones append function.arguments fragments.
+                    pending: dict[int, dict] = {}
                     for chunk in stream:
                         try:
                             choice = chunk.choices[0]
@@ -550,7 +567,34 @@ class LLMRouter:
                                 q.put({"type": "text_delta", "content": content}),
                                 loop,
                             )
-                        # tool calls aggregate across chunks; skip for now
+                        for tc in getattr(delta, "tool_calls", None) or []:
+                            idx = getattr(tc, "index", 0) or 0
+                            slot = pending.setdefault(idx, {"id": "", "name": "", "args": ""})
+                            if getattr(tc, "id", None):
+                                slot["id"] = tc.id
+                            fn = getattr(tc, "function", None)
+                            if fn is not None:
+                                if getattr(fn, "name", None):
+                                    slot["name"] = fn.name
+                                if getattr(fn, "arguments", None):
+                                    slot["args"] += fn.arguments
+                    tool_calls: list[dict] = []
+                    for idx in sorted(pending):
+                        slot = pending[idx]
+                        if not slot["name"]:
+                            continue
+                        try:
+                            args = json.loads(slot["args"]) if slot["args"] else {}
+                        except json.JSONDecodeError:
+                            logger.warning(
+                                "Discarding unparseable streamed tool args for %s", slot["name"],
+                            )
+                            args = {}
+                        tool_calls.append({
+                            "id": slot["id"] or f"call_{idx}",
+                            "name": slot["name"],
+                            "input": args,
+                        })
                     asyncio.run_coroutine_threadsafe(
                         q.put({
                             "type": "done",
