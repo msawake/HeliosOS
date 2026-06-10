@@ -400,8 +400,29 @@ def create_fastapi_app(
         "/api/approvals",  # GET list is public, POST approve/reject requires auth
     )
 
+    # Real authentication: per-tenant API key (X-API-Key) or Firebase JWT
+    # (Authorization: Bearer), resolved through AuthManager against the DB.
+    # The legacy "any Bearer dev-* string is accepted" path is now gated behind
+    # FORGEOS_ALLOW_DEV_LOGIN so production never trusts an unsigned token.
+    from src.api.auth import AuthManager, AuthUser, UserRole
+    _auth_manager = AuthManager(db_client=db_client) if auth_enabled else None
+    _allow_dev_login = os.environ.get("FORGEOS_ALLOW_DEV_LOGIN", "").lower() in ("1", "true", "yes")
+
+    class _AuthReqShim:
+        """Adapt a Starlette Request to the Flask-shaped surface AuthManager
+        reads (``headers.get`` + ``remote_addr`` for per-IP rate limiting)."""
+
+        def __init__(self, request: Request):
+            self.headers = request.headers
+            self.remote_addr = request.client.host if request.client else "unknown"
+
     async def check_auth(request: Request, api_key: str = Security(api_key_header)):
-        """Verify API key or Bearer token. Public/read paths are open. Write paths require auth."""
+        """Verify API key or Bearer JWT and attach the principal to request.state.
+
+        Public/read paths are open; everything else requires a valid credential
+        when auth is enabled. The authenticated AuthUser is stored on
+        ``request.state.auth_user`` for RBAC (``require_role``) and audit.
+        """
         path = request.url.path
         method = request.method
 
@@ -416,15 +437,43 @@ def create_fastapi_app(
 
         if not auth_enabled:
             return None
-        # Accept Authorization: Bearer dev-* tokens (issued by POST /api/auth/token)
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-            if token.startswith("dev-"):
-                return token
-        if not api_key:
-            raise HTTPException(status_code=401, detail="API key or Bearer token required")
-        return api_key
+
+        # Real auth: API key (X-API-Key) or Firebase JWT (Authorization: Bearer).
+        user = _auth_manager.authenticate(_AuthReqShim(request)) if _auth_manager else None
+        if user is not None:
+            request.state.auth_user = user
+            return user
+
+        # Dev escape hatch — only when explicitly enabled. Grants admin so local
+        # tooling works; never trusted in production (flag unset → rejected).
+        if _allow_dev_login:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer ") and auth_header[7:].startswith("dev-"):
+                request.state.auth_user = AuthUser(
+                    user_id="dev", email="dev@local", tenant_id=tenant_id,
+                    role=UserRole.ADMIN, name="dev",
+                )
+                return auth_header[7:]
+
+        raise HTTPException(status_code=401, detail="Valid API key or Bearer token required")
+
+    def require_role(*roles: str):
+        """Dependency factory: require an authenticated principal whose role is
+        in ``roles``. No-op when auth is disabled (dev/test). Runs check_auth
+        first, then inspects ``request.state.auth_user``."""
+        async def _dep(request: Request, _auth=Depends(check_auth)):
+            if not auth_enabled:
+                return None
+            user = getattr(request.state, "auth_user", None)
+            if user is None:
+                raise HTTPException(status_code=401, detail="Authentication required")
+            if user.role not in roles:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Role '{user.role}' not authorized (requires {', '.join(roles)})",
+                )
+            return user
+        return _dep
 
     async def current_user(request: Request, _auth=Depends(check_auth)) -> str:
         """Resolve the acting user identity for per-user credentials + MCP.
@@ -694,7 +743,8 @@ def create_fastapi_app(
         return False
 
     @app.post("/api/approvals/{request_id}/approve", tags=["approvals"])
-    async def approve_request(request_id: str, body: ApprovalAction = ApprovalAction()):
+    async def approve_request(request_id: str, body: ApprovalAction = ApprovalAction(),
+                              _auth=Depends(require_role("admin", "operator"))):
         """Approve a HITL request. Best-effort on the legacy company HITL store,
         then resume any runtime-v2 continuation parked on this request."""
         handled = False
@@ -719,7 +769,8 @@ def create_fastapi_app(
         return {"success": True, "resumed": resumed}
 
     @app.post("/api/approvals/{request_id}/reject", tags=["approvals"])
-    async def reject_request(request_id: str, body: ApprovalAction = ApprovalAction()):
+    async def reject_request(request_id: str, body: ApprovalAction = ApprovalAction(),
+                             _auth=Depends(require_role("admin", "operator"))):
         """Reject a HITL request, then resume the parked continuation (if any)
         with a rejection so the agent can handle it."""
         handled = False
@@ -841,7 +892,7 @@ def create_fastapi_app(
         raise HTTPException(404, f"Agent {agent_id} not found")
 
     @app.post("/api/platform/agents", tags=["agents"], status_code=201)
-    async def create_agent(req: AgentCreateRequest, _auth=Depends(check_auth)):
+    async def create_agent(req: AgentCreateRequest, _auth=Depends(require_role("admin", "operator"))):
         """Deploy a new agent."""
         if not platform_executor:
             raise HTTPException(500, "Platform executor not available")
@@ -944,7 +995,7 @@ def create_fastapi_app(
             raise HTTPException(400, f"Agent deployment failed: {e}")
 
     @app.post("/api/platform/agents/from-yaml", tags=["agents"], status_code=201)
-    async def create_agent_from_yaml(request: Request, _auth=Depends(check_auth)):
+    async def create_agent_from_yaml(request: Request, _auth=Depends(require_role("admin", "operator"))):
         """Deploy an agent from a raw YAML manifest body (Content-Type: text/yaml).
 
         Accepts an AgentContract manifest (apiVersion: agentos/v1 or forgeos/v1),
@@ -1388,7 +1439,7 @@ def create_fastapi_app(
         return {"ok": True}
 
     @app.post("/api/platform/agents/{agent_id}/stop", tags=["agents"])
-    async def stop_agent(agent_id: str, _auth=Depends(check_auth)):
+    async def stop_agent(agent_id: str, _auth=Depends(require_role("admin", "operator"))):
         """Stop a running agent."""
         if platform_executor:
             await platform_executor.stop_agent(agent_id)
@@ -1396,7 +1447,7 @@ def create_fastapi_app(
         return {"ok": True}
 
     @app.delete("/api/platform/agents/{agent_id}", tags=["agents"])
-    async def delete_agent(agent_id: str, _auth=Depends(check_auth)):
+    async def delete_agent(agent_id: str, _auth=Depends(require_role("admin", "operator"))):
         """Undeploy and delete an agent.
 
         `removed` reports whether the agent actually existed — the Rust CLI
@@ -1502,7 +1553,7 @@ def create_fastapi_app(
         return events[offset:offset+limit]
 
     @app.post("/api/platform/events", tags=["events"])
-    async def fire_event(req: EventFireRequest, _auth=Depends(check_auth)):
+    async def fire_event(req: EventFireRequest, _auth=Depends(require_role("admin", "operator"))):
         """Fire a custom event on the platform event bus (notifies event-driven
         agents), mirroring it onto the company bus when available."""
         if not platform_executor and not company_system:
@@ -2778,7 +2829,7 @@ def create_fastapi_app(
         return policy.to_dict()
 
     @app.put("/api/platform/kernel/namespace-policy/{namespace}", tags=["kernel"])
-    async def put_namespace_policy(namespace: str, body: dict, _auth=Depends(check_auth)):
+    async def put_namespace_policy(namespace: str, body: dict, _auth=Depends(require_role("admin"))):
         """Create or replace a namespace policy. Body is the NamespacePolicy
         shape (the path namespace wins over any in the body)."""
         from src.platform.namespace_policy import NamespacePolicy, _reconstruct
@@ -2790,7 +2841,7 @@ def create_fastapi_app(
         return {"ok": True, "namespace": namespace}
 
     @app.delete("/api/platform/kernel/namespace-policy/{namespace}", tags=["kernel"])
-    async def delete_namespace_policy(namespace: str, _auth=Depends(check_auth)):
+    async def delete_namespace_policy(namespace: str, _auth=Depends(require_role("admin"))):
         """Remove a namespace policy."""
         store = _require_ns_policy_store()
         removed = store.delete(namespace)
@@ -2806,7 +2857,7 @@ def create_fastapi_app(
         return gp.to_dict() if gp is not None else None
 
     @app.put("/api/platform/kernel/global-policy", tags=["kernel"])
-    async def put_global_policy(body: dict, _auth=Depends(check_auth)):
+    async def put_global_policy(body: dict, _auth=Depends(require_role("admin"))):
         """Create or replace the global policy. Persists it and updates the
         live kernel in this process (other processes pick it up on restart)."""
         from src.platform.namespace_policy import GlobalPolicy, _reconstruct
@@ -3117,7 +3168,8 @@ def create_fastapi_app(
         return {"processes": rows, "summary": summary}
 
     @app.post("/api/platform/signals/{pid}", tags=["mission-control"])
-    async def send_signal(pid: str, signal: str = "SIGTERM", reason: str = "operator"):
+    async def send_signal(pid: str, signal: str = "SIGTERM", reason: str = "operator",
+                          _auth=Depends(require_role("admin"))):
         """Send a signal to an agent — like `kill -SIGTERM <pid>`."""
         if not platform_executor:
             return {"error": "Platform not initialized"}
