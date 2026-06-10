@@ -809,7 +809,7 @@ class CompanySystem:
                 knowledge_mod = importlib.import_module(f"{prefix}.{company_id}.knowledge")
                 knowledge_mod.seed_knowledge_base(self.knowledge)
                 return
-            except (ImportError, ModuleNotFoundError):
+            except (ImportError, ModuleNotFoundError, AttributeError):
                 continue
         logger.warning("No knowledge module found for company '%s'", company_id)
 
