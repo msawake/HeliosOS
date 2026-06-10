@@ -108,6 +108,23 @@ def _fmt(data: Any) -> str:
     return json.dumps(data, indent=2, default=str)
 
 
+def _infer_provider(model: str) -> str:
+    """Map a chat model to its provider. Open-weight models (qwen, deepseek,
+    nemotron, llama, mistral) route to the vLLM gateway; the old heuristic sent
+    everything non-Claude to OpenAI, so a Qwen agent deployed via MCP silently
+    fell back to simulation."""
+    m = (model or "").lower()
+    if "claude" in m:
+        return "anthropic"
+    if m.startswith(("gpt-", "o1-", "o3-")):
+        return "openai"
+    if any(k in m for k in ("qwen", "deepseek", "nemotron", "llama", "mistral", "nvidia/")):
+        return "vllm"
+    if "gemini" in m:
+        return "google"
+    return "openai"
+
+
 # =========================================================================
 # 1. HUMAN-AGENT CHAT
 # =========================================================================
@@ -334,6 +351,7 @@ async def forgeos_deploy(
     description: str | None = None,
     goal: str | None = None,
     chat_model: str | None = None,
+    provider: str | None = None,
     daily_budget_usd: float | None = None,
 ) -> str:
     """Deploy a new agent on the ForgeOS platform.
@@ -342,6 +360,9 @@ async def forgeos_deploy(
     anthropic_agent, anthropic_managed, openai_agents.
 
     Execution types: always_on, scheduled, event_driven, reflex, autonomous.
+
+    provider: LLM provider (anthropic, openai, vllm, google, vertex). If omitted
+    it's inferred from chat_model — e.g. qwen3.6-27b -> vllm (the gateway).
     """
     body: dict[str, Any] = {
         "name": name,
@@ -356,7 +377,7 @@ async def forgeos_deploy(
         body["goal"] = goal
     if chat_model:
         body["chat_model"] = chat_model
-        body["provider"] = "anthropic" if "claude" in chat_model else "openai"
+        body["provider"] = provider or _infer_provider(chat_model)
     if daily_budget_usd is not None:
         # Budgets travel in the v2 boundaries bag; the kernel reads
         # metadata["_boundaries"]["budgets"] when enforcing spend caps.
