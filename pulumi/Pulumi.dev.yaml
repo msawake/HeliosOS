@@ -7,7 +7,7 @@ config:
   forgeos-gcp:cloud_sql_tier: db-f1-micro
   # platform-api image carrying the per-turn runtime + shared capability-token
   # store (commit 9d93e015). Used by platform-api AND the worker tier.
-  forgeos-gcp:platform_api_tag: runtime-v2-9d93e015
+  forgeos-gcp:platform_api_tag: 02968ee4
   # Redis (Memorystore) backs the durable per-turn worker tier (Redis Streams).
   forgeos-gcp:enable_redis: "true"
   forgeos-gcp:redis_memory_gb: "1"
@@ -32,4 +32,6 @@ config:
     secure: v1:iZbGddonajeV4s9u:wWi9vTXIbZWoa2U52sRuB3fWyR/MqugrJdZMNhq0LGziy/yC2eE0dIHJdBFpj9c=
   forgeos-gcp:jira_api_token:
     secure: v1:JdaRHGIxV616d8fL:glFId52TRSKKuyHrVCtpM7CBVQirRSlyVE0TNCApFNmvrwJdXAyTaHN0FFxrUYbryBsG55ybmSQ0/k2q2fhD0CjoWUXQEmF/EPQTCKvNs4ce/6dN+ssBjFygAzbMov/P4ZYhEWDSRyqKCRLzBQuli0RIO0GwJEZNktg4cTTjHFGbYg2Ob47RGCshIcDPqNpMFJSBUVqSHkA+22a54OQonGfe9OGb2DDcprrOG4zyMG62adOS5bXuZ8wbbSKdct8PuOoqEiddQ0pjqunZA/VyoA==
+  forgeos-gcp:mcp_api_key:
+    secure: v1:YqAc6AwY6GQEYAuG:bE7VrZhlLDCNzjrF3drNj0sQDncdN5m92967Z5z9dbsz0k7vqOZ7vDl9PLB+vXPPm1/IKi1T4YFFSR/nxfRTIBlpiZ2fPRfegYdsoAAHG1WcwEY+
 encryptionsalt: v1:aAnZL1A6xrw=:v1:RxasCPnystMWc9sM:V2eUSJQDxw4hFLD8DqUsJmlwHldjog==
