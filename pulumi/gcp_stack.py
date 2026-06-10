@@ -22,6 +22,7 @@ import pulumi
 
 from components.agent_base import AgentWorkload
 from components.data import Data
+from components.exec_environments import ExecEnvironments
 from components.gke import Gke
 from components.identity import Identity
 from components.keda import Keda
@@ -150,6 +151,16 @@ namespaces = Namespaces(
     k8s_provider=gke.provider,
 )
 
+# 8b. Exec-environment sandbox — the forgeos-envs namespace + RBAC that lets
+# the platform-api drive per-agent `kubectl exec` sandbox pods (kernel-gated
+# env.exec). Scoped: clusterViewer to authenticate + namespaced pod/exec RBAC.
+exec_environments = ExecEnvironments(
+    "forgeos",
+    project=project,
+    platform_api_gsa=identity.platform_api,
+    k8s_provider=gke.provider,
+)
+
 # 9. Migrations — depends on the database-url SecretVersion (Cloud Run validates
 # secret_key_ref :latest at create-time, so the version must exist first).
 migrations = Migrations(
@@ -191,6 +202,12 @@ _pa_extra_env: dict[str, pulumi.Input[str]] = {
     "FORGEOS_RUNTIME_V2": "1",
     "FORGEOS_RUNTIME_WORKERS": "1",
     "GCP_PROJECT_ID": project,
+    # Exec-environment sandbox: target the forgeos-envs namespace and reach the
+    # cluster via a kubeconfig materialized from this content (no creds inside —
+    # auth is the gke-gcloud-auth-plugin using the platform-api GSA's ADC).
+    "FORGEOS_ENV_NAMESPACE": "forgeos-envs",
+    "FORGEOS_KUBE_CONTEXT": gke.cluster.name,
+    "FORGEOS_KUBECONFIG_CONTENT": gke.kubeconfig,
 }
 if kernel_mode:
     _pa_extra_env["FORGEOS_KERNEL_MODE"] = kernel_mode

@@ -58,6 +58,27 @@ class EnvironmentManager:
         self._context = context or os.environ.get("FORGEOS_KUBE_CONTEXT") or None
         self._kubectl = os.environ.get("FORGEOS_KUBECTL", "kubectl")
         self._mem: dict[str, EnvBinding] = {}  # agent_id -> binding (cache / no-DB fallback)
+        self._materialize_kubeconfig()
+
+    @staticmethod
+    def _materialize_kubeconfig() -> None:
+        """When running on Cloud Run (no kubeconfig on disk), write the one
+        provided via FORGEOS_KUBECONFIG_CONTENT to a temp file and point
+        KUBECONFIG at it. The kubeconfig carries no credentials — it relies on
+        the gke-gcloud-auth-plugin using the container's ADC identity. No-op
+        when KUBECONFIG is already set (local/kind) or the var is absent."""
+        content = os.environ.get("FORGEOS_KUBECONFIG_CONTENT")
+        if not content or os.environ.get("KUBECONFIG"):
+            return
+        import tempfile
+        path = os.path.join(tempfile.gettempdir(), "forgeos-kubeconfig.yaml")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+            os.environ["KUBECONFIG"] = path
+            logger.info("EnvironmentManager: materialized kubeconfig at %s", path)
+        except OSError:
+            logger.exception("EnvironmentManager: failed to write kubeconfig")
 
     # -- kubectl plumbing -----------------------------------------------------
 
