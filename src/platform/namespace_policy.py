@@ -12,9 +12,10 @@ Deployable via: forgeos apply policy.yaml
 from __future__ import annotations
 
 import fnmatch
+import json
 import logging
-import re
-from dataclasses import asdict, dataclass, field
+import time
+from dataclasses import asdict, dataclass, field, fields
 from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
@@ -233,6 +234,169 @@ def resolve_effective_policy(
         "required_hitl_events": sorted(hitl_events),
         "pii_policy": max(pii_policies, key=lambda x: pii_order.get(x, 0)) if pii_policies else "detect",
     }
+
+
+def _reconstruct(cls, data: dict[str, Any]):
+    """Rebuild a policy dataclass from a stored dict, ignoring unknown keys.
+
+    Tolerant of schema drift: a column written by an older/newer build that
+    carries fields this code doesn't know about won't raise; missing fields
+    fall back to the dataclass defaults.
+    """
+    known = {f.name for f in fields(cls)}
+    return cls(**{k: v for k, v in (data or {}).items() if k in known})
+
+
+class PostgresNamespacePolicyStore:
+    """Durable namespace policy store backed by Postgres (RLS, tenant-scoped).
+
+    Drop-in for the in-memory :class:`NamespacePolicyStore` — same surface
+    (``get``/``apply``/``delete``/``list_all``/``count_agents_in_namespace``).
+    The kernel calls ``get(namespace)`` on every tool call, so reads are served
+    from a short-TTL cache; writes invalidate the affected entry. The TTL also
+    lets edits made in one process (the API) propagate to another (the worker)
+    without a restart. Mirrors :class:`~src.core.secret_backends.PostgresSecretBackend`.
+    """
+
+    def __init__(self, db_client: Any, *, tenant_id: str = "default", cache_ttl_s: float = 30.0) -> None:
+        self._db = db_client
+        self._tenant_id = tenant_id
+        self._ttl = cache_ttl_s
+        self._cache: dict[str, tuple[float, NamespacePolicy | None]] = {}
+
+    @property
+    def available(self) -> bool:
+        return bool(getattr(self._db, "is_connected", False))
+
+    def get(self, namespace: str) -> NamespacePolicy | None:
+        hit = self._cache.get(namespace)
+        if hit is not None and hit[0] > time.monotonic():
+            return hit[1]
+        policy: NamespacePolicy | None = None
+        if self.available:
+            try:
+                with self._db.tenant(self._tenant_id) as conn:
+                    row = conn.execute_one(
+                        "SELECT policy_json FROM namespace_policies "
+                        "WHERE tenant_id = %s AND namespace = %s",
+                        (self._tenant_id, namespace),
+                    )
+                if row:
+                    data = row["policy_json"]
+                    if isinstance(data, (str, bytes, bytearray)):
+                        data = json.loads(data)
+                    policy = _reconstruct(NamespacePolicy, data)
+            except Exception:
+                logger.exception("PostgresNamespacePolicyStore.get failed for '%s'", namespace)
+                return None
+        self._cache[namespace] = (time.monotonic() + self._ttl, policy)
+        return policy
+
+    def apply(self, policy: NamespacePolicy) -> None:
+        if not self.available:
+            raise RuntimeError("namespace policy store unavailable (no DB connection)")
+        with self._db.tenant(self._tenant_id) as conn:
+            conn.execute(
+                "INSERT INTO namespace_policies (tenant_id, namespace, policy_json, updated_at) "
+                "VALUES (%s, %s, %s::jsonb, NOW()) "
+                "ON CONFLICT (tenant_id, namespace) DO UPDATE SET "
+                "policy_json = EXCLUDED.policy_json, updated_at = NOW()",
+                (self._tenant_id, policy.namespace, json.dumps(policy.to_dict())),
+            )
+            conn.commit()
+        self._cache.pop(policy.namespace, None)
+        logger.info("Namespace policy applied (postgres): %s", policy.namespace)
+
+    def delete(self, namespace: str) -> bool:
+        if not self.available:
+            return False
+        with self._db.tenant(self._tenant_id) as conn:
+            rows = conn.execute(
+                "DELETE FROM namespace_policies WHERE tenant_id = %s AND namespace = %s",
+                (self._tenant_id, namespace),
+            )
+            conn.commit()
+        self._cache.pop(namespace, None)
+        # psycopg returns the deleted rows (or rowcount-ish); treat truthy as deleted.
+        return bool(rows)
+
+    def list_all(self) -> list[NamespacePolicy]:
+        if not self.available:
+            return []
+        try:
+            with self._db.tenant(self._tenant_id) as conn:
+                rows = conn.execute(
+                    "SELECT policy_json FROM namespace_policies WHERE tenant_id = %s",
+                    (self._tenant_id,),
+                )
+            out: list[NamespacePolicy] = []
+            for row in rows or []:
+                data = row["policy_json"]
+                if isinstance(data, (str, bytes, bytearray)):
+                    data = json.loads(data)
+                out.append(_reconstruct(NamespacePolicy, data))
+            return out
+        except Exception:
+            logger.exception("PostgresNamespacePolicyStore.list_all failed")
+            return []
+
+    def count_agents_in_namespace(self, namespace: str, registry) -> int:
+        if registry is None:
+            return 0
+        return sum(
+            1 for a in registry.list_all()
+            if getattr(a, "namespace", "default") == namespace
+        )
+
+
+class PostgresGlobalPolicyStore:
+    """Durable, tenant-scoped store for the single GlobalPolicy.
+
+    The kernel holds the GlobalPolicy as a value (not a store), so this is used
+    at boot to load it and by the policy-write API to persist edits. Mirrors
+    the PostgresSecretBackend access pattern.
+    """
+
+    def __init__(self, db_client: Any, *, tenant_id: str = "default") -> None:
+        self._db = db_client
+        self._tenant_id = tenant_id
+
+    @property
+    def available(self) -> bool:
+        return bool(getattr(self._db, "is_connected", False))
+
+    def get(self) -> GlobalPolicy | None:
+        if not self.available:
+            return None
+        try:
+            with self._db.tenant(self._tenant_id) as conn:
+                row = conn.execute_one(
+                    "SELECT policy_json FROM global_policies WHERE tenant_id = %s",
+                    (self._tenant_id,),
+                )
+            if not row:
+                return None
+            data = row["policy_json"]
+            if isinstance(data, (str, bytes, bytearray)):
+                data = json.loads(data)
+            return _reconstruct(GlobalPolicy, data)
+        except Exception:
+            logger.exception("PostgresGlobalPolicyStore.get failed")
+            return None
+
+    def put(self, policy: GlobalPolicy) -> None:
+        if not self.available:
+            raise RuntimeError("global policy store unavailable (no DB connection)")
+        with self._db.tenant(self._tenant_id) as conn:
+            conn.execute(
+                "INSERT INTO global_policies (tenant_id, policy_json, updated_at) "
+                "VALUES (%s, %s::jsonb, NOW()) "
+                "ON CONFLICT (tenant_id) DO UPDATE SET "
+                "policy_json = EXCLUDED.policy_json, updated_at = NOW()",
+                (self._tenant_id, json.dumps(policy.to_dict())),
+            )
+            conn.commit()
+        logger.info("Global policy persisted (postgres) for tenant %s", self._tenant_id)
 
 
 NAMESPACE_POLICY_SCHEMA: dict[str, Any] = {

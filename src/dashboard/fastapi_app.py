@@ -2751,6 +2751,75 @@ def create_fastapi_app(
         k.audit(req.agent_id, req.event, req.details)
         return {"ok": True}
 
+    # ---- Durable policy management (namespace + global) ------------------
+    # Read/write the policies the kernel enforces. Backed by Postgres
+    # (src/platform/namespace_policy.Postgres*Store) so edits survive restarts.
+
+    def _require_ns_policy_store():
+        k = _require_kernel()
+        store = getattr(k, "_namespace_policy_store", None)
+        if store is None:
+            raise HTTPException(503, "Namespace policy store not available")
+        return store
+
+    @app.get("/api/platform/kernel/namespace-policies", tags=["kernel"])
+    async def list_namespace_policies():
+        """List all namespace policies for this tenant."""
+        store = _require_ns_policy_store()
+        return [p.to_dict() for p in store.list_all()]
+
+    @app.get("/api/platform/kernel/namespace-policy/{namespace}", tags=["kernel"])
+    async def get_namespace_policy(namespace: str):
+        """Get the policy applied to a namespace, or 404 if none set."""
+        store = _require_ns_policy_store()
+        policy = store.get(namespace)
+        if policy is None:
+            raise HTTPException(404, f"No policy for namespace '{namespace}'")
+        return policy.to_dict()
+
+    @app.put("/api/platform/kernel/namespace-policy/{namespace}", tags=["kernel"])
+    async def put_namespace_policy(namespace: str, body: dict, _auth=Depends(check_auth)):
+        """Create or replace a namespace policy. Body is the NamespacePolicy
+        shape (the path namespace wins over any in the body)."""
+        from src.platform.namespace_policy import NamespacePolicy, _reconstruct
+        store = _require_ns_policy_store()
+        policy = _reconstruct(NamespacePolicy, {**(body or {}), "namespace": namespace})
+        store.apply(policy)
+        _audit("policy.namespace.put", resource_type="namespace_policy",
+               resource_id=namespace, details={"policy": policy.to_dict()})
+        return {"ok": True, "namespace": namespace}
+
+    @app.delete("/api/platform/kernel/namespace-policy/{namespace}", tags=["kernel"])
+    async def delete_namespace_policy(namespace: str, _auth=Depends(check_auth)):
+        """Remove a namespace policy."""
+        store = _require_ns_policy_store()
+        removed = store.delete(namespace)
+        _audit("policy.namespace.delete", resource_type="namespace_policy",
+               resource_id=namespace, details={"removed": removed})
+        return {"ok": True, "removed": removed}
+
+    @app.get("/api/platform/kernel/global-policy", tags=["kernel"])
+    async def get_global_policy():
+        """Return the active global policy, or null if none is set."""
+        k = _require_kernel()
+        gp = getattr(k, "_global_policy", None)
+        return gp.to_dict() if gp is not None else None
+
+    @app.put("/api/platform/kernel/global-policy", tags=["kernel"])
+    async def put_global_policy(body: dict, _auth=Depends(check_auth)):
+        """Create or replace the global policy. Persists it and updates the
+        live kernel in this process (other processes pick it up on restart)."""
+        from src.platform.namespace_policy import GlobalPolicy, _reconstruct
+        k = _require_kernel()
+        policy = _reconstruct(GlobalPolicy, body or {})
+        gstore = getattr(k, "_global_policy_store", None)
+        if gstore is not None:
+            gstore.put(policy)
+        k._global_policy = policy
+        _audit("policy.global.put", resource_type="global_policy",
+               resource_id="global", details={"policy": policy.to_dict()})
+        return {"ok": True, "persisted": gstore is not None}
+
     # ------------------------------------------------------------------
     # Remote Agent Governance (usage reporting, heartbeat, task queue)
     # ------------------------------------------------------------------

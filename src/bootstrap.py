@@ -339,6 +339,29 @@ class PlatformBootstrap:
                     logger.info("  Capability store: Postgres (shared across processes)")
                 except ImportError:
                     logger.debug("  Capability store: PostgresCapabilityStore unavailable; in-memory")
+
+            # Durable policy stores. In-memory policies vanish on restart /
+            # scale-to-zero; the Postgres-backed stores survive and are visible
+            # across the API and worker processes. The kernel holds the
+            # namespace store (queried live per tool call) and a GlobalPolicy
+            # value loaded once here; the global store is stashed on the kernel
+            # so the policy-write API can persist edits.
+            from src.platform.namespace_policy import NamespacePolicyStore
+            namespace_policy_store = NamespacePolicyStore()
+            global_policy = None
+            global_policy_store = None
+            if self._db is not None and getattr(self._db, "is_connected", False):
+                from src.platform.namespace_policy import (
+                    PostgresGlobalPolicyStore,
+                    PostgresNamespacePolicyStore,
+                )
+                namespace_policy_store = PostgresNamespacePolicyStore(self._db, tenant_id=self.tenant_id)
+                global_policy_store = PostgresGlobalPolicyStore(self._db, tenant_id=self.tenant_id)
+                global_policy = global_policy_store.get()
+                logger.info("  Policy stores: Postgres (namespace + global, durable)")
+            else:
+                logger.info("  Policy stores: in-memory (no DB — policies reset on restart)")
+
             self._kernel = PlatformKernel(
                 registry=self.platform_registry,
                 tool_executor=self._tool_executor,
@@ -347,7 +370,12 @@ class PlatformBootstrap:
                 audit_log=None,  # wired by FastAPI layer which owns the AuditLog
                 license_manager=self._license_manager,
                 capability_store=capability_store,
+                namespace_policy_store=namespace_policy_store,
+                global_policy=global_policy,
             )
+            # Stash the global-policy store so the policy-write API can persist
+            # edits (the kernel itself only holds the GlobalPolicy value).
+            self._kernel._global_policy_store = global_policy_store
             # Wire kernel into tool executor for mandatory policy enforcement
             self._tool_executor._kernel = self._kernel
             logger.info("  Kernel: wired into ToolExecutor (policy enforcement active)")
