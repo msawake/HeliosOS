@@ -75,6 +75,10 @@ class Secrets(pulumi.ComponentResource):
         # store its SHA-256 in the tenant row. Versionless until set, so the
         # MCP service only wires FORGEOS_API_KEY when a version exists.
         self.api_key = self._secret("api-key", config.get_secret("mcp_api_key"))
+        # Qwen (vLLM) gateway bearer key — agents on provider=vllm route through
+        # the atlas-router gateway (VLLM_BASE_URL). Operator-supplied via
+        # `pulumi config set --secret forgeos-gcp:vllm_api_key …`.
+        self.vllm_api_key = self._secret("vllm-api-key", config.get_secret("vllm_api_key"))
         # Jira credentials — referenced by leadforge config.yaml via the
         # secret:jira-* fallback chain. Stored as forgeos-jira-* in Secret
         # Manager and injected as JIRA_URL/JIRA_USERNAME/JIRA_API_TOKEN env

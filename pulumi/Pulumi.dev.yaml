@@ -34,4 +34,7 @@ config:
     secure: v1:JdaRHGIxV616d8fL:glFId52TRSKKuyHrVCtpM7CBVQirRSlyVE0TNCApFNmvrwJdXAyTaHN0FFxrUYbryBsG55ybmSQ0/k2q2fhD0CjoWUXQEmF/EPQTCKvNs4ce/6dN+ssBjFygAzbMov/P4ZYhEWDSRyqKCRLzBQuli0RIO0GwJEZNktg4cTTjHFGbYg2Ob47RGCshIcDPqNpMFJSBUVqSHkA+22a54OQonGfe9OGb2DDcprrOG4zyMG62adOS5bXuZ8wbbSKdct8PuOoqEiddQ0pjqunZA/VyoA==
   forgeos-gcp:mcp_api_key:
     secure: v1:YqAc6AwY6GQEYAuG:bE7VrZhlLDCNzjrF3drNj0sQDncdN5m92967Z5z9dbsz0k7vqOZ7vDl9PLB+vXPPm1/IKi1T4YFFSR/nxfRTIBlpiZ2fPRfegYdsoAAHG1WcwEY+
+  forgeos-gcp:vllm_base_url: https://atlas-router.ally-code-dev.makingscience.com/v1
+  forgeos-gcp:vllm_api_key:
+    secure: v1:agBZwddpbTs2BeWU:myoKCTI9E6D2pmRneFvuHosBMg5khNgIpbBWwM911OyX42CYm8i5dUqYPzacoHf0tqvGeiaX5BHMP9I=
 encryptionsalt: v1:aAnZL1A6xrw=:v1:RxasCPnystMWc9sM:V2eUSJQDxw4hFLD8DqUsJmlwHldjog==

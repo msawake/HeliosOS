@@ -65,6 +65,10 @@ mc_tag: str = config.get("mc_tag") or "latest"
 agent_tag: str = config.get("agent_tag") or "latest"
 migrations_tag: str = config.get("migrations_tag") or "latest"
 
+# Qwen (vLLM) gateway — when set, agents on provider=vllm route here. The key
+# rides Secret Manager (vllm-api-key); the URL is plain config.
+vllm_base_url: str = config.get("vllm_base_url") or ""
+
 
 # 1. Network
 network = Network(
@@ -117,6 +121,7 @@ _shared_secrets = [
     ("jira-url", secrets.jira_url),
     ("jira-username", secrets.jira_username),
     ("jira-api-token", secrets.jira_api_token),
+    ("vllm-api-key", secrets.vllm_api_key),
 ]
 if enable_redis:
     _shared_secrets.append(("redis-url", secrets.redis_url))
@@ -189,6 +194,7 @@ _pa_secret_specs = [
     ("JIRA_URL", "jira-url", secrets.jira_url),
     ("JIRA_USERNAME", "jira-username", secrets.jira_username),
     ("JIRA_API_TOKEN", "jira-api-token", secrets.jira_api_token),
+    ("VLLM_API_KEY", "vllm-api-key", secrets.vllm_api_key),
 ]
 if enable_redis:
     _pa_secret_specs.append(("REDIS_URL", "redis-url", secrets.redis_url))
@@ -213,6 +219,8 @@ _pa_extra_env: dict[str, pulumi.Input[str]] = {
 }
 if kernel_mode:
     _pa_extra_env["FORGEOS_KERNEL_MODE"] = kernel_mode
+if vllm_base_url:
+    _pa_extra_env["VLLM_BASE_URL"] = vllm_base_url
 
 platform_api = PlatformApi(
     "forgeos",
@@ -236,10 +244,15 @@ for _env_name, _cfg_key in [
     ("ANTHROPIC_API_KEY", "anthropic_api_key"),
     ("OPENAI_API_KEY", "openai_api_key"),
     ("GEMINI_API_KEY", "gemini_api_key"),
+    ("VLLM_API_KEY", "vllm_api_key"),
 ]:
     _val = config.get_secret(_cfg_key)
     if _val is not None:
         _worker_env_secrets[_env_name] = _val
+# The gateway URL isn't secret, but ride the same env Secret so the worker's
+# vLLM client targets it (agents on provider=vllm resolve their base_url here).
+if vllm_base_url:
+    _worker_env_secrets["VLLM_BASE_URL"] = vllm_base_url
 
 worker = WorkerTier(
     "forgeos",
