@@ -343,10 +343,12 @@ async def forgeos_deploy(
     if goal:
         body["goal"] = goal
     if chat_model:
-        provider = "anthropic" if "claude" in chat_model else "openai"
-        body["llm_config"] = {"chat_model": chat_model, "provider": provider}
+        body["chat_model"] = chat_model
+        body["provider"] = "anthropic" if "claude" in chat_model else "openai"
     if daily_budget_usd is not None:
-        body["boundaries"] = {"budgets": {"daily_usd": daily_budget_usd}}
+        # Budgets travel in the v2 boundaries bag; the kernel reads
+        # metadata["_boundaries"]["budgets"] when enforcing spend caps.
+        body["metadata"] = {"_boundaries": {"budgets": {"daily_usd": daily_budget_usd}}}
     return _fmt(await _api("POST", "/api/platform/agents", body))
 
 
@@ -482,7 +484,7 @@ async def review_approvals() -> str:
     Fetches pending requests and guides you through reviewing each one.
     """
     data = await _api("GET", "/api/approvals")
-    pending = [r for r in (data if isinstance(data, list) else data.get("requests", [])) if r.get("status") == "PENDING"]
+    pending = [r for r in (data if isinstance(data, list) else data.get("requests", [])) if str(r.get("status", "")).upper() == "PENDING"]
     if not pending:
         return "No pending approval requests. The fleet is self-governing right now."
     lines = ["Here are the pending approval requests that need your attention:\n"]
