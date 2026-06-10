@@ -941,7 +941,7 @@ def create_fastapi_app(
             logger.exception("Agent deploy failed: %s", req.name)
             _audit("agent.deploy", outcome="failure", resource_type="agent",
                    resource_id=req.name, details={"error": str(e)})
-            raise HTTPException(400, "Agent deployment failed")
+            raise HTTPException(400, f"Agent deployment failed: {e}")
 
     @app.post("/api/platform/agents/from-yaml", tags=["agents"], status_code=201)
     async def create_agent_from_yaml(request: Request, _auth=Depends(check_auth)):
@@ -1397,11 +1397,18 @@ def create_fastapi_app(
 
     @app.delete("/api/platform/agents/{agent_id}", tags=["agents"])
     async def delete_agent(agent_id: str, _auth=Depends(check_auth)):
-        """Undeploy and delete an agent."""
+        """Undeploy and delete an agent.
+
+        `removed` reports whether the agent actually existed — the Rust CLI
+        keys its success/failure off this field.
+        """
+        removed = False
         if platform_executor:
-            await platform_executor.undeploy(agent_id)
-        _audit("agent.undeploy", resource_type="agent", resource_id=agent_id)
-        return {"ok": True}
+            existed = platform_executor.registry.get(agent_id) is not None
+            removed = bool(await platform_executor.undeploy(agent_id)) and existed
+        _audit("agent.undeploy", resource_type="agent", resource_id=agent_id,
+               details={"removed": removed})
+        return {"ok": True, "removed": removed}
 
     # ------------------------------------------------------------------
     # Teams
