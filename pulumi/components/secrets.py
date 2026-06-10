@@ -56,6 +56,12 @@ class Secrets(pulumi.ComponentResource):
             "api-token",
             config.get_secret("api_token") or _generate_api_token(),
         )
+        # Tenant API key the MCP server presents to the platform API as
+        # X-API-Key (validated against tenants.api_key_hash). Operator-supplied;
+        # set with `pulumi config set --secret forgeos-gcp:mcp_api_key …` and
+        # store its SHA-256 in the tenant row. Versionless until set, so the
+        # MCP service only wires FORGEOS_API_KEY when a version exists.
+        self.api_key = self._secret("api-key", config.get_secret("mcp_api_key"))
         # Jira credentials — referenced by leadforge config.yaml via the
         # secret:jira-* fallback chain. Stored as forgeos-jira-* in Secret
         # Manager and injected as JIRA_URL/JIRA_USERNAME/JIRA_API_TOKEN env

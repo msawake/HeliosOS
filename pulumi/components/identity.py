@@ -48,6 +48,12 @@ class Identity(pulumi.ComponentResource):
             display_name="ForgeOS DB Migrations (Cloud Run Job)",
             opts=child,
         )
+        self.mcp = gcp.serviceaccount.Account(
+            f"{name}-mcp",
+            account_id="forgeos-mcp",
+            display_name="ForgeOS MCP Server (Cloud Run)",
+            opts=child,
+        )
 
         # Project-level roles
         # Cloud SQL client — needed by platform-api, agents, migrations
@@ -86,6 +92,7 @@ class Identity(pulumi.ComponentResource):
             (self.mc, "mc"),
             (self.agent_runtime, "agent"),
             (self.migrations, "migrations"),
+            (self.mcp, "mcp"),
         ]:
             gcp.projects.IAMMember(
                 f"{name}-{suffix}-ar-reader",
@@ -101,6 +108,7 @@ class Identity(pulumi.ComponentResource):
             (self.mc, "mc"),
             (self.agent_runtime, "agent"),
             (self.migrations, "migrations"),
+            (self.mcp, "mcp"),
         ]:
             for role, slug in (
                 ("roles/logging.logWriter", "log-writer"),

@@ -554,6 +554,11 @@ def main() -> None:
         help="MCP transport (default: stdio)",
     )
     parser.add_argument("--port", type=int, default=8000, help="Port for SSE/HTTP transport")
+    parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="Bind host for SSE/HTTP transport (0.0.0.0 for containers/Cloud Run)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
@@ -561,6 +566,7 @@ def main() -> None:
 
     if args.transport != "stdio":
         server.settings.port = args.port
+        server.settings.host = args.host
 
     server.run(transport=args.transport)
 

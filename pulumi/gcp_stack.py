@@ -26,6 +26,7 @@ from components.exec_environments import ExecEnvironments
 from components.gke import Gke
 from components.identity import Identity
 from components.keda import Keda
+from components.mcp_server import McpServer
 from components.migrations import Migrations
 from components.mission_control import MissionControl
 from components.namespaces import Namespaces
@@ -130,6 +131,7 @@ for sa, label in [
 secrets.grant_access("mc-pw-access", secrets.mc_admin_password, identity.mc.email)
 secrets.grant_access("mc-api-token-access", secrets.api_token, identity.mc.email)
 secrets.grant_access("migrations-db-access", secrets.database_url, identity.migrations.email)
+secrets.grant_access("mcp-api-key-access", secrets.api_key, identity.mcp.email)
 
 # 6. GKE
 gke = Gke(
@@ -272,6 +274,22 @@ mc = MissionControl(
     opts=pulumi.ResourceOptions(depends_on=_mc_deps),
 )
 
+# 11b. MCP Server — remote MCP endpoint (FastMCP streamable-http) on the
+# platform-api image, pointed at the platform API. Wires FORGEOS_API_KEY only
+# when the api-key secret has a version (else the Service deploy would fail
+# validating secret_key_ref :latest).
+_mcp_api_key_secret = secrets.api_key.id if "api-key" in secrets.versions else None
+_mcp_deps = [secrets.versions["api-key"]] if "api-key" in secrets.versions else []
+mcp_server = McpServer(
+    "forgeos",
+    region=region,
+    image=_img("platform-api", platform_api_tag),
+    gsa_email=identity.mcp.email,
+    platform_api_url=platform_api.url,
+    api_key_secret=_mcp_api_key_secret,
+    opts=pulumi.ResourceOptions(depends_on=_mcp_deps),
+)
+
 # 12. Agents — list driven from config (empty by default; populate as agents ship)
 declared_agents: list[dict] = config.get_object("agents") or []
 agent_workloads: dict[str, AgentWorkload] = {}
@@ -312,4 +330,5 @@ pulumi.export("gke_cluster_name", gke.cluster.name)
 pulumi.export("gke_endpoint", pulumi.Output.secret(gke.cluster.endpoint))
 pulumi.export("platform_api_url", platform_api.url)
 pulumi.export("mission_control_url", mc.url)
+pulumi.export("mcp_server_url", mcp_server.url)
 pulumi.export("migrations_job", migrations.job.name)
