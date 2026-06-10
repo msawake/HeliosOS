@@ -567,6 +567,13 @@ def main() -> None:
     if args.transport != "stdio":
         server.settings.port = args.port
         server.settings.host = args.host
+        # Behind Cloud Run / a load balancer the inbound Host is the service
+        # domain, not localhost — FastMCP's DNS-rebinding guard would 421 it.
+        # The platform API we proxy to enforces real auth, so disable the guard.
+        from mcp.server.transport_security import TransportSecuritySettings
+        server.settings.transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=False
+        )
 
     server.run(transport=args.transport)
 

@@ -1,6 +1,8 @@
 .git
 .venv
 .venv-platform/
+pulumi/venv/
+.claude/
 __pycache__
 *.pyc
 adk-samples/
