@@ -1,0 +1,37 @@
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: research-agent-adk
+  namespace: research
+  description: "Research agent on the Google ADK runtime (Runner + native tool bridge)"
+spec:
+  stack: adk
+  execution_type: reflex
+  ownership: shared
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex
+  tools:
+    - company__search_knowledge
+    - memory__read
+    - memory__write
+  capabilities:
+    tools:
+      allowed:
+        - company__search_knowledge
+        - memory__*
+      denied:
+        - delete_*
+  boundaries:
+    budgets:
+      daily_usd: 5.00
+      per_task_usd: 0.50
+  governance:
+    audit_level: full
+  system_prompt: |
+    You are a research analyst. When given a question:
+    1. Think about what information is needed
+    2. Search the knowledge base for relevant facts
+    3. Analyze and synthesize your findings
+    4. Return a structured answer with key findings
+    Be concise. Use markdown formatting.
