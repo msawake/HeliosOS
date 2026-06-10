@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import pulumi
 import pulumi_gcp as gcp
+import pulumi_random as random
 
 
 class Secrets(pulumi.ComponentResource):
@@ -51,11 +52,23 @@ class Secrets(pulumi.ComponentResource):
         self.slack_webhook_url = self._secret(
             "slack-webhook-url", config.get_secret("slack_webhook_url")
         )
-        # MC proxy token. Auto-generated dev-… value if not overridden.
-        self.api_token = self._secret(
-            "api-token",
-            config.get_secret("api_token") or _generate_api_token(),
-        )
+        # MC proxy token. Operator-supplied, else an auto-generated dev-… value.
+        # The generated value comes from a stateful RandomString (stored in
+        # Pulumi state) so it's stable across runs — the old inline token_urlsafe
+        # ran at program eval and regenerated every preview/up, churning the
+        # api-token secret version.
+        api_token_value = config.get_secret("api_token")
+        if api_token_value is None:
+            api_token_rng = random.RandomString(
+                "forgeos-api-token-gen",
+                length=32,
+                special=False,
+                opts=child,
+            )
+            api_token_value = pulumi.Output.secret(
+                pulumi.Output.concat("dev-", api_token_rng.result)
+            )
+        self.api_token = self._secret("api-token", api_token_value)
         # Tenant API key the MCP server presents to the platform API as
         # X-API-Key (validated against tenants.api_key_hash). Operator-supplied;
         # set with `pulumi config set --secret forgeos-gcp:mcp_api_key …` and
@@ -119,9 +132,3 @@ class Secrets(pulumi.ComponentResource):
             member=pulumi.Output.concat("serviceAccount:", gsa_email),
             opts=pulumi.ResourceOptions(parent=self),
         )
-
-
-def _generate_api_token() -> pulumi.Output[str]:
-    import secrets as _stdsecrets
-
-    return pulumi.Output.secret(f"dev-{_stdsecrets.token_urlsafe(24)}")

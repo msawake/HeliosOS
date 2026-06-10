@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pulumi
 import pulumi_gcp as gcp
+import pulumi_random as random
 
 
 class Data(pulumi.ComponentResource):
@@ -51,11 +52,23 @@ class Data(pulumi.ComponentResource):
             opts=child,
         )
 
+        # Stateful random password — generated once and stored in Pulumi state,
+        # so it stays stable across previews/ups. (The old inline secrets.choice
+        # ran at program eval, regenerating the password every run → the DB user,
+        # the database-url secret, and the worker env that embeds it all churned.)
+        # alphanumeric only (special=False) so it's safe inside the
+        # postgresql://forgeos:<pw>@… URL.
+        self._db_password = random.RandomPassword(
+            f"{name}-db-pw",
+            length=32,
+            special=False,
+            opts=pulumi.ResourceOptions(parent=self),
+        )
         self.db_password = gcp.sql.User(
             f"{name}-db-user",
             instance=self.sql_instance.name,
             name="forgeos",
-            password=_random_password(f"{name}-db-pw", child),
+            password=self._db_password.result,
             opts=child,
         )
 
@@ -98,14 +111,3 @@ class Data(pulumi.ComponentResource):
                 "redis_host": self.redis.host if self.redis is not None else "",
             }
         )
-
-
-def _random_password(name: str, opts: pulumi.ResourceOptions) -> pulumi.Output[str]:
-    """Inline random password — avoids pulumi-random dep for one value."""
-    import secrets
-    import string
-
-    alphabet = string.ascii_letters + string.digits
-    value = "".join(secrets.choice(alphabet) for _ in range(32))
-    # Wrap as a Pulumi secret so it's not exposed in state plaintext.
-    return pulumi.Output.secret(value)

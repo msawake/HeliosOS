@@ -95,6 +95,9 @@ class WorkerTier(pulumi.ComponentResource):
         for k, v in (env_secrets or {}).items():
             string_data[k] = v
 
+        # delete_before_replace: this Secret has a fixed name, so when its data
+        # changes (e.g. a rotated DATABASE_URL) the default create-before-delete
+        # collides with the existing object ("already exists"). Delete first.
         env_secret = k8s.core.v1.Secret(
             f"{name}-env",
             metadata=k8s.meta.v1.ObjectMetaArgs(
@@ -102,7 +105,7 @@ class WorkerTier(pulumi.ComponentResource):
                 namespace=ns.metadata.name,
             ),
             string_data=string_data,
-            opts=child,
+            opts=pulumi.ResourceOptions(parent=self, provider=k8s_provider, delete_before_replace=True),
         )
 
         labels = {"app": "forgeos-worker", "forgeos.io/system": "worker"}
@@ -161,7 +164,10 @@ class WorkerTier(pulumi.ComponentResource):
                     ),
                 ),
             ),
-            opts=pulumi.ResourceOptions(parent=self, provider=k8s_provider, depends_on=[ksa, env_secret]),
+            opts=pulumi.ResourceOptions(
+                parent=self, provider=k8s_provider, depends_on=[ksa, env_secret],
+                delete_before_replace=True,  # fixed name — delete before recreating on replace
+            ),
         )
 
         self.namespace = ns
