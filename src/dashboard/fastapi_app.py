@@ -700,8 +700,9 @@ def create_fastapi_app(
         handled = False
         if company_system:
             try:
-                company_system.hitl.approve(request_id, approver=body.approved_by or "api", reason=body.reason)
-                handled = True
+                handled = bool(company_system.hitl.approve(
+                    request_id, approved_by=body.approved_by or "api", reason=body.reason
+                ))
             except Exception:
                 logger.debug("legacy hitl.approve did not handle %s", request_id)
         # Worker tier: enqueue a resume task (worker re-runs the gated tool).
@@ -724,8 +725,9 @@ def create_fastapi_app(
         handled = False
         if company_system:
             try:
-                company_system.hitl.reject(request_id, reason=body.reason)
-                handled = True
+                handled = bool(company_system.hitl.reject(
+                    request_id, rejected_by=body.rejected_by or "api", reason=body.reason
+                ))
             except Exception:
                 logger.debug("legacy hitl.reject did not handle %s", request_id)
         if runtime_service is not None:
@@ -1494,17 +1496,26 @@ def create_fastapi_app(
 
     @app.post("/api/platform/events", tags=["events"])
     async def fire_event(req: EventFireRequest, _auth=Depends(check_auth)):
-        """Fire a custom event."""
-        if not company_system:
+        """Fire a custom event on the platform event bus (notifies event-driven
+        agents), mirroring it onto the company bus when available."""
+        if not platform_executor and not company_system:
             raise HTTPException(500, "System not initialized")
-        company_system.event_bus.publish(
-            source_agent=req.source or "api",
-            target_department="all",
-            event_type=req.name,
-            category="NOTIFICATION",
-            payload=req.payload,
-        )
-        return {"event": req.name, "notified": 1}
+        notified = 0
+        if platform_executor:
+            from src.platform.event_bus import Event as PlatformEvent
+            notified = len(await platform_executor.event_bus.fire(
+                PlatformEvent(name=req.name, payload=req.payload, source=req.source or "api")
+            ))
+        if company_system:
+            company_system.event_bus.publish(
+                source_agent=req.source or "api",
+                source_department="api",
+                target_department="all",
+                event_type="NOTIFICATION",
+                category=req.name,
+                payload=req.payload,
+            )
+        return {"event": req.name, "notified": notified}
 
     # ------------------------------------------------------------------
     # Agent Wizard
