@@ -22,6 +22,7 @@ Env vars:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -422,17 +423,50 @@ async def forgeos_invoke(
     prompt: str,
     context: dict[str, Any] | None = None,
     acting_user: str | None = None,
+    wait: bool = True,
+    wait_timeout: float = 120,
 ) -> str:
     """Invoke any deployed agent with a task prompt and get the result.
 
     This is a one-shot invocation — the agent runs, executes tools as
     needed (respecting its governance rules), and returns the output.
     Use forgeos_list_agents to discover available agents.
+
+    On the durable runtime, an invoke is enqueued and returns a ``run_id``.
+    With ``wait=True`` (default) this polls that run to completion and returns
+    its final result/error; set ``wait=False`` to fire-and-return the handle
+    (then poll later with forgeos_run_status).
     """
     body: dict[str, Any] = {"prompt": prompt}
     if context:
         body["context"] = context
-    return _fmt(await _api("POST", f"/api/platform/agents/{agent_id}/invoke", body, acting_user=acting_user))
+    resp = await _api("POST", f"/api/platform/agents/{agent_id}/invoke", body, acting_user=acting_user)
+    if not isinstance(resp, dict):
+        return _fmt(resp)
+    # Inline result already present (sync path), or caller wants the handle.
+    run_id = resp.get("run_id") or resp.get("continuation_id")
+    if not wait or not run_id or resp.get("result") or resp.get("status") in ("idle", "completed", "failed"):
+        return _fmt(resp)
+    elapsed = 0.0
+    while elapsed < wait_timeout:
+        await asyncio.sleep(2)
+        elapsed += 2
+        run = await _api("GET", f"/api/platform/runs/{run_id}", acting_user=acting_user)
+        if isinstance(run, dict) and run.get("status") in ("completed", "failed", "paused"):
+            return _fmt(run)
+    return _fmt({"run_id": run_id, "status": "timeout",
+                 "detail": f"run did not finish within {wait_timeout}s; poll forgeos_run_status",
+                 "accepted": resp})
+
+
+@server.tool()
+async def forgeos_run_status(run_id: str, acting_user: str | None = None) -> str:
+    """Poll an async invocation by its run_id (returned by forgeos_invoke).
+
+    Returns status (running|paused|completed|failed), the result when
+    completed, the error when failed, and any pending HITL calls when paused.
+    """
+    return _fmt(await _api("GET", f"/api/platform/runs/{run_id}", acting_user=acting_user))
 
 
 @server.tool()

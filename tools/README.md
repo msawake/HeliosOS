@@ -69,7 +69,7 @@ Or add it manually:
 claude mcp add forgeos -- python3 tools/forgeos-mcp-server.py
 ```
 
-## Tool catalogue (24 tools, 5 resources, 3 prompts)
+## Tool catalogue (25 tools, 5 resources, 3 prompts)
 
 **Human-Agent Chat** — `forgeos_list_agents`, `forgeos_agent_detail`,
 `forgeos_chat`, `forgeos_chat_history`
@@ -82,7 +82,7 @@ claude mcp add forgeos -- python3 tools/forgeos-mcp-server.py
 `forgeos_process_table`, `forgeos_budget_overview`, `forgeos_deploy`,
 `forgeos_deploy_yaml`, `forgeos_undeploy`, `forgeos_stop`, `forgeos_signal`
 
-**Agent-as-a-Tool** — `forgeos_invoke`, `forgeos_fire_event`,
+**Agent-as-a-Tool** — `forgeos_invoke`, `forgeos_run_status`, `forgeos_fire_event`,
 `forgeos_effective_policy`, `forgeos_billing_usage`
 
 **Resources** — `forgeos://fleet`, `forgeos://health`, `forgeos://budgets`,

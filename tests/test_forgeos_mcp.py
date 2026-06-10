@@ -53,6 +53,7 @@ class TestMCPServerRegistration:
         from src.forgeos_mcp.server import server
         tools = server._tool_manager._tools
         assert "forgeos_invoke" in tools
+        assert "forgeos_run_status" in tools
         assert "forgeos_fire_event" in tools
         assert "forgeos_billing_usage" in tools
 
