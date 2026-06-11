@@ -142,14 +142,11 @@ curl -s -X POST http://localhost:5000/api/platform/agents \
 Without a database, all agents, sessions, and audit logs are lost on restart. To add persistence:
 
 ```bash
-# Start PostgreSQL via Docker
-cd infrastructure/docker
-bash docker-setup.sh                    # Generates .env with random password
-docker compose up -d postgres           # Start only Postgres (port 5433)
+# Start PostgreSQL via Docker (from the repo root)
+docker compose up -d postgres           # Port 5433, password defaults to "forgeoslocal"
 
 # Add DATABASE_URL to project .env
-DB_PASS=$(grep DB_PASSWORD infrastructure/docker/.env | cut -d= -f2)
-echo "DATABASE_URL=postgresql://leadforge_admin:${DB_PASS}@localhost:5433/leadforge" >> ../../.env
+echo "DATABASE_URL=postgresql://leadforge_admin:forgeoslocal@localhost:5433/leadforge" >> .env
 ```
 
 Restart the backend. You should see:

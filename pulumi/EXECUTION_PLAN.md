@@ -65,7 +65,7 @@ everywhere. The deprecated `gcp-pubsub` scaler is avoided entirely.
 |---|-------------|-------|------|
 | P0.1 | **agent-base runtime** — long-running HTTP `POST /invoke` → `run_agentic_loop`, tool-proxy to platform, `/healthz` | `src/agent_runtime/server.py`, `infrastructure/docker/Dockerfile.agent-base` | `docker run` + `POST /invoke` drafts a letter on Gemini |
 | P0.2 | **Pulumi mock-test harness** — assert per-agent graph (N agents → N Deployments + N ScaledObjects; each ns has quota+netpol) | `pulumi/tests/test_agent_graph.py` (uses `pulumi.runtime.set_mocks`) | `pytest pulumi/tests` green, **no infra** |
-| P0.3 | **docker-compose smoke** — platform + Postgres + Redis + a pod-less agent run | reuse `infrastructure/docker/docker-compose.yaml` | `forgeos health` ok; an agent invocation runs |
+| P0.3 | **docker-compose smoke** — platform + Postgres + Redis + a pod-less agent run | reuse the top-level `docker-compose.yaml` | `forgeos health` ok; an agent invocation runs |
 
 ### P1 — Local integration: dual-target spine + per-agent pods (Docker Desktop k8s)
 `forgeos:target` switch + `components/providers.py`; local branches for

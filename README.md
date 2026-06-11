@@ -366,6 +366,27 @@ See [Agent Manifest Reference](docs/reference/agent-manifest.md) for the full sc
 
 ## Quick Start
 
+### Option A — Docker (recommended for a first test drive)
+
+Requires only Docker. From a fresh clone:
+
+```bash
+git clone https://github.com/makingscience-awake/forgeos.git
+cd forgeos
+docker compose up
+```
+
+This boots PostgreSQL (pgvector), Redis, and the platform API on http://localhost:5000 with zero configuration — API auth is disabled for local testing, and without API keys all LLM calls return simulated responses, so you can exercise the full deploy/invoke/governance loop for free.
+
+For real model responses:
+
+```bash
+cp .env.example .env        # set ANTHROPIC_API_KEY (and/or OPENAI_API_KEY)
+docker compose up
+```
+
+### Option B — Run on the host
+
 ```bash
 # Install (Python 3.11+)
 pip install -e ".[dev]"
@@ -378,8 +399,59 @@ PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
 
 # Start the dashboard (separate terminal)
 cd dashboard && npm install && npm run dev
+```
 
-# Deploy an agent
+Dashboard at http://localhost:3000. API docs at http://localhost:5000/docs.
+
+### Install the CLI
+
+The `forgeos` CLI is a single static Rust binary, maintained in its own repo: [antonibergas-hue/forgeos-cli](https://github.com/antonibergas-hue/forgeos-cli).
+
+```bash
+git clone https://github.com/antonibergas-hue/forgeos-cli.git
+cd forgeos-cli
+cargo build --release
+sudo cp target/release/forgeos /usr/local/bin/
+```
+
+(Prefer Python? `pip install -e .` in this repo installs an equivalent `forgeos` CLI from the SDK — use `FORGEOS_API_URL` instead of `FORGEOS_REMOTE` below.)
+
+### Deploy your first agent
+
+Point the CLI at your local stack and deploy:
+
+```bash
+export FORGEOS_REMOTE=http://localhost:5000
+
+forgeos health
+
+cat > hello.yaml <<'EOF'
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: hello
+  description: "A simple test agent"
+spec:
+  stack: forgeos
+  execution_type: reflex
+  llm:
+    chat_model: claude-sonnet-4-6
+    provider: anthropic
+  system_prompt: |
+    You are a friendly hello-world agent. Keep replies short.
+EOF
+
+forgeos deploy hello.yaml      # prints the agent id, e.g. "Deployed agent: 1c5b3f3d-93f"
+forgeos list
+forgeos invoke <agent-id> "Hello, what can you do?" --wait
+forgeos logs <agent-id>
+```
+
+More example manifests (all five lifecycles, multiple stacks) live in [`examples/`](examples/) — try `forgeos deploy examples/forgeos/hello-world.yaml`.
+
+Agents can also be deployed straight via the REST API:
+
+```bash
 curl -s -X POST http://localhost:5000/api/platform/agents \
   -H "Content-Type: application/json" \
   -d '{
@@ -387,16 +459,9 @@ curl -s -X POST http://localhost:5000/api/platform/agents \
     "stack": "forgeos",
     "execution_type": "reflex",
     "description": "A simple test agent",
-    "chat_model": "claude-sonnet-4-5-20250514"
+    "chat_model": "claude-sonnet-4-6"
   }' | python3 -m json.tool
-
-# Or use the CLI
-forgeos deploy agent.yaml
-forgeos list
-forgeos invoke <agent-id> "Hello, what can you do?"
 ```
-
-Dashboard at http://localhost:3000. API at http://localhost:5000/docs.
 
 ---
 

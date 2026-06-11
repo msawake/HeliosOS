@@ -1,0 +1,76 @@
+# ----------------------------------------------------------------------------
+# ForgeOS local stack — Postgres (pgvector) + Redis + platform API.
+#
+# Zero-config quick start:
+#   docker compose up
+#
+# Defaults are tuned for local testing:
+#   - DB_PASSWORD        defaults to "forgeoslocal"
+#   - ANTHROPIC_API_KEY  empty -> LLM calls are simulated (no key required)
+#   - API auth           disabled (set FORGEOS_AUTH_DISABLED= empty to enable)
+#
+# For real LLM calls: `cp .env.example .env`, set ANTHROPIC_API_KEY (and/or
+# OPENAI_API_KEY / GOOGLE_API_KEY), then `docker compose up` again — compose
+# reads ./.env automatically.
+#
+# API: http://localhost:5000  (docs at /docs, health at /api/health)
+# ----------------------------------------------------------------------------
+
+name: forgeos
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: leadforge
+      POSTGRES_USER: leadforge_admin
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-forgeoslocal}
+    ports:
+      # 5433 avoids conflicts with a local Postgres on 5432; bound to loopback
+      # because the default password is well-known.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # No init scripts — the migration runner (src/core/migrations.py)
+      # creates the schema on boot for clean versioning.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U leadforge_admin -d leadforge"]
+      interval: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile
+      target: api
+    ports:
+      - "127.0.0.1:5000:5000"
+    environment:
+      - DATABASE_URL=postgresql://leadforge_admin:${DB_PASSWORD:-forgeoslocal}@postgres:5432/leadforge
+      - REDIS_URL=redis://redis:6379
+      # Empty keys -> simulated LLM responses (graceful degradation).
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      # Local default: no API auth, so the CLI works with just a URL.
+      # Set FORGEOS_AUTH_DISABLED= (empty) to require bearer tokens.
+      - FORGEOS_AUTH_DISABLED=${FORGEOS_AUTH_DISABLED:-1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["python", "-m", "src.bootstrap", "--dashboard", "--loop"]
+
+volumes:
+  postgres_data:

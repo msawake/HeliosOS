@@ -28,29 +28,24 @@ Data is in-memory. Add `DATABASE_URL` for persistence (see below).
 Run PostgreSQL and Redis via Docker for persistent storage:
 
 ```bash
-# 1. Generate credentials
-cd infrastructure/docker
-bash docker-setup.sh
-
-# 2. Start services
+# 1. Start services (from the repo root)
 docker compose up -d postgres redis
 
-# 3. Add DATABASE_URL to project .env
-DB_PASS=$(grep DB_PASSWORD .env | cut -d= -f2)
-echo "DATABASE_URL=postgresql://leadforge_admin:${DB_PASS}@localhost:5433/leadforge" >> ../../.env
-echo "REDIS_URL=redis://localhost:6379" >> ../../.env
+# 2. Add DATABASE_URL to project .env
+echo "DATABASE_URL=postgresql://leadforge_admin:forgeoslocal@localhost:5433/leadforge" >> .env
+echo "REDIS_URL=redis://localhost:6379" >> .env
 
-# 4. Boot the platform (migrations run automatically)
-cd ../..
+# 3. Boot the platform (migrations run automatically)
 PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
 ```
+
+The Postgres password defaults to `forgeoslocal`. To override it, set `DB_PASSWORD` in the project `.env` before the first `docker compose up` (the password is baked into the data volume on first init).
 
 ### Full Stack (API + Postgres + Redis)
 
 To run the API server in Docker too:
 
 ```bash
-cd infrastructure/docker
 docker compose up --build
 ```
 
