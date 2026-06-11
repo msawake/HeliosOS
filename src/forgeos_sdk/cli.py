@@ -133,6 +133,9 @@ def cmd_list(args) -> int:
     try:
         with ForgeOSClient(base_url=args.url, api_key=args.api_key) as client:
             agents = client.list()
+            if args.json:
+                print(json.dumps(agents, indent=2, default=str))
+                return 0
             if not agents:
                 _print_warn("No agents deployed")
                 return 0
@@ -253,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
     p_deploy.set_defaults(func=cmd_deploy)
 
     p_list = sub.add_parser("list", help="List deployed agents")
+    p_list.add_argument("--json", action="store_true", help="Output raw JSON")
     p_list.set_defaults(func=cmd_list)
 
     p_invoke = sub.add_parser("invoke", help="Invoke an agent with a prompt")
@@ -295,7 +299,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     # Resolve url/token from CLI flags → env → config file (kubectl-style).
     try:
-        from .config_file import resolve as _resolve_cfg, ConfigError as _CfgErr
+        from .config_file import resolve as _resolve_cfg
         url, token, _scheme = _resolve_cfg(
             cli_url=args.url,
             cli_token=args.api_key,

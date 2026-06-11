@@ -38,7 +38,10 @@ def provider_kind(provider: str, chat_model: str) -> str:
 
 
 def _content_str(result: Any) -> str:
-    return json.dumps(result) if isinstance(result, dict) else str(result)
+    # default=str so non-JSON-native values that tools legitimately return
+    # (UUIDs from Postgres rows, datetimes, Decimals) serialize instead of
+    # raising TypeError mid-turn and crashing the run.
+    return json.dumps(result, default=str) if isinstance(result, dict) else str(result)
 
 
 def _text_of(content: Any) -> str:
