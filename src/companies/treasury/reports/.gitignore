@@ -1,0 +1,4 @@
+# Agent-generated reconciliation reports land here at runtime.
+*.md
+*.csv
+!.gitignore

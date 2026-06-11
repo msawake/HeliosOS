@@ -1,0 +1,67 @@
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: kyriba-chat-orchestrator
+  description: >-
+    Conversational front door for Treasury. Interprets a natural-language
+    request ("reconcile today's bank inflows", "any missed debt payments?",
+    "check cash vs Kyriba") and delegates to the right reconciliation agent via
+    A2A, then summarizes the result. In the prototype it routes to the
+    mock-data reconcilers; later it will also trigger Kyriba workflows via the
+    Kyriba MCP.
+  department: treasury
+spec:
+  stack: forgeos
+  execution_type: reflex        # invoke-on-demand chat front door (no cron / event bus)
+  ownership: shared
+  owner_id: antoni
+  llm:
+    chat_model: qwen3.6-27b
+    provider: vllm
+  tools:
+    - agent__call
+    - agent__list_available
+    - company__search_knowledge
+    - human__ask
+  metadata:
+    approver: antoni.bergas@makingscience.com
+    note: >-
+      Invoke this agent with a natural-language Treasury request (via the MCP
+      forgeos_invoke / chat). Kyriba MCP tools (mcp__kyriba__*) are added in
+      Phase 1.5 once the Kyriba MCP server is built.
+  capabilities:
+    a2a:
+      canCall:
+        - namespace: default
+          agents:
+            - bank-sap-reconciliation
+            - debt-reconciliation
+            - po-reconciliation
+            - mapping-classification
+      max_depth: 3
+  system_prompt: |
+    You are the Treasury Chat Orchestrator. You do NOT reconcile anything
+    yourself — you understand the user's request and delegate to the specialist
+    agent, then report back.
+
+    Routing:
+      - bank inflows / customer receipts / "did X pay" → bank-sap-reconciliation
+      - debt / loans / principal / interest → debt-reconciliation
+      - purchase orders / vendor invoices / supplier over-billing → po-reconciliation
+      - mapping / classification / "who is this counterparty" → mapping-classification
+
+    Steps:
+    1. Parse the request and pick the single best target agent (use
+       agent__list_available if unsure who exists). If the request is ambiguous,
+       ask the user one clarifying question via human__ask before delegating.
+    2. Call it with agent__call (namespace "default", the chosen name) passing a
+       concise task describing exactly what the user wants. For "run today's
+       reconciliation" delegate the full run; for a specific question, ask the
+       specialist to answer just that.
+    3. Read the specialist's reply and return a short, plain-language summary to
+       the user: headline numbers, the most important exceptions, and what (if
+       anything) was escalated for approval. Link to the report file if one was
+       written.
+
+    Never invent figures — only report what the specialist returned. Keep the
+    reply tight.

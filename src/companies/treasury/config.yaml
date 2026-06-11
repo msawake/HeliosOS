@@ -1,0 +1,38 @@
+company:
+  name: "Treasury"
+  domain: "treasury.internal"
+  mission: "Automate reconciliation, classification and cash quality for the Treasury department."
+
+budgets:
+  daily_token_budget: 2_000_000
+  per_session_cost_limit_usd: 10.00
+
+agent_defaults:
+  max_retries: 3
+
+rate_limits:
+  max_tool_calls_per_session: 80
+  max_api_calls_per_minute: 30
+
+# All Treasury agents default to Qwen via the atlas-router vLLM gateway,
+# matching the rest of the fleet. Override per-agent in the manifest llm block.
+models:
+  orchestrator_default: "qwen3.6-27b"
+  doer_default: "qwen3.6-27b"
+
+# Data sources. While BigQuery access is pending, the reconciliation agents
+# read synthetic CSVs from src/companies/treasury/data/ (see mock_data.py) via
+# shell__exec; no MCP server is needed for the prototype.
+#
+# When BigQuery access lands, add the server below (a real package + required:
+# true) and the agents swap `cat data/*.csv` for `bq query` — no prompt change:
+#   mcp_servers:
+#     tier1:
+#       - name: "bigquery"
+#         package: "<real-bigquery-mcp-package>"   # mcp-server-bigquery is not on npm
+#         required: true
+#         env_vars: { GOOGLE_CLOUD_PROJECT: "secret:treasury-bq-project" }
+# Phase 1.5 / Phase 2 — net-new MCP servers, not built yet:
+#   - kyriba (REST wrapper — Kyriba Chat Orchestrator + Quality agent)
+#   - SAP is intentionally NOT a live MCP: SAP data is consumed via BigQuery.
+mcp_servers: {}

@@ -1,0 +1,10 @@
+sap_doc_id,customer_id,customer_name,invoice_ref,amount_eur,due_date,status
+SAP-90011,C1001,Acme Retail Group SL,INV-5567,12450.00,2026-06-05,open
+SAP-90012,C1002,Bluewave Logistics SA,INV-5571,8800.00,2026-06-06,open
+SAP-90013,C1003,Nordic Foods AB,INV-5572,23100.00,2026-06-07,open
+SAP-90014,C1004,Meridian Media Ltd,INV-5580,4150.50,2026-06-08,open
+SAP-90015,C1005,Orion Pharma GmbH,INV-5583,61000.00,2026-06-08,open
+SAP-90016,C1006,Sunpeak Energy SL,INV-5590,9750.00,2026-06-09,open
+SAP-90017,C1007,Vertex Consulting SA,INV-5592,15200.00,2026-06-10,open
+SAP-90018,C1002,Bluewave Logistics SA,INV-5595,3300.00,2026-06-11,open
+SAP-90019,C1003,Nordic Foods AB,INV-5599,18900.00,2026-06-12,open

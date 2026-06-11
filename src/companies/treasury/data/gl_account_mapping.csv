@@ -1,0 +1,7 @@
+category,gl_account,description
+customer_receipt,411000,Trade receivables - clearing
+debt_principal,511000,Loans payable - principal
+debt_interest,662000,Interest expense
+vendor_payment,401000,Trade payables - clearing
+bank_fee,627000,Bank charges
+unidentified,199999,Suspense - unidentified receipts

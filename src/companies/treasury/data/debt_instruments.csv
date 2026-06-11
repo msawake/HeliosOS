@@ -1,0 +1,4 @@
+loan_id,lender,principal_eur,rate_pct,start_date,maturity_date,currency
+LN-01,Banco Santander,2000000.00,4.25,2024-01-15,2029-01-15,EUR
+LN-02,BBVA,750000.00,3.90,2025-03-01,2028-03-01,EUR
+LN-03,EIB Green Credit,1200000.00,2.75,2025-09-01,2032-09-01,EUR
