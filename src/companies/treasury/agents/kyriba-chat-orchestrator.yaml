@@ -16,8 +16,10 @@ spec:
   ownership: shared
   owner_id: antoni
   llm:
-    chat_model: qwen3.6-27b
-    provider: vllm
+    chat_model: qwen
+    provider: atlas
+    endpoint: https://atlas-router.ally-code-dev.makingscience.com/v1
+    api_key_ref: secret:litellm-allycode-key
   tools:
     - agent__call
     - agent__list_available

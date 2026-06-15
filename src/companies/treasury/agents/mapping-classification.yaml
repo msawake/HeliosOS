@@ -11,13 +11,14 @@ metadata:
   department: treasury
 spec:
   stack: forgeos
-  execution_type: scheduled
-  schedule: "0 6 * * 1-5"          # before the reconcilers run
+  execution_type: reflex          # invoke-on-demand (no cron / event bus)
   ownership: shared
   owner_id: antoni
   llm:
-    chat_model: qwen3.6-27b
-    provider: vllm
+    chat_model: qwen
+    provider: atlas
+    endpoint: https://atlas-router.ally-code-dev.makingscience.com/v1
+    api_key_ref: secret:litellm-allycode-key
   tools:
     - shell__exec
     - company__search_knowledge
