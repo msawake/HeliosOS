@@ -252,6 +252,12 @@ class PlatformBootstrap:
                 if _mgr is not None and getattr(_mgr, "_secrets_manager", None) is None:
                     _mgr._secrets_manager = self.secrets
 
+            # connect_all() ran in Phase 2 with secrets_manager=None, so any
+            # config.yaml MCP server using `secret:` env refs came up with empty
+            # creds (e.g. mcp-atlassian connects but discovers 0 tools). Now that
+            # secrets resolve, reconnect those servers and re-register their tools.
+            await self._reconnect_secret_ref_mcp_servers()
+
             logger.info("[Phase 3] Registering stack adapters...")
             self._register_adapters()
 
@@ -577,11 +583,12 @@ class PlatformBootstrap:
     def _seed_dev_hitl_if_enabled(self) -> None:
         """Seed sample pending approvals for local dashboard testing.
 
-        Disable with FORGEOS_SEED_HITL=0|false|no.
+        Opt-in only: enable with FORGEOS_SEED_HITL=1|true|yes. Off by default so a
+        normal boot doesn't surface phantom demo approvals in the dashboard.
         Skips if two or more items are already pending (idempotent in one process).
         """
-        flag = os.environ.get("FORGEOS_SEED_HITL", "1").lower()
-        if flag in ("0", "false", "no"):
+        flag = os.environ.get("FORGEOS_SEED_HITL", "0").lower()
+        if flag not in ("1", "true", "yes"):
             return
         if not self.system:
             return
@@ -606,7 +613,7 @@ class PlatformBootstrap:
             risk_assessment="low",
             context={"invoice_id": "demo-inv-99"},
         )
-        logger.info("Seeded 2 demo HITL approvals (disable: FORGEOS_SEED_HITL=0)")
+        logger.info("Seeded 2 demo HITL approvals (FORGEOS_SEED_HITL=1)")
 
     async def _init_legacy_subsystems(self):
         """Initialize the existing ForgeOS company subsystems for backward compat."""
@@ -800,6 +807,40 @@ class PlatformBootstrap:
 
             await asyncio.sleep(tick_interval)
 
+    async def _reconnect_secret_ref_mcp_servers(self) -> None:
+        """Reconnect config.yaml MCP servers whose env uses ``secret:`` refs.
+
+        connect_all() runs before the SecretsManager exists, so a server with
+        ``secret:<name>`` env vars first comes up with empty creds (e.g.
+        mcp-atlassian connects but discovers 0 tools). Once secrets resolve we
+        reconnect those servers, re-register their tools, and update the
+        executor's client map so tool *calls* route to the live client.
+        Best-effort: failures are logged and skipped.
+        """
+        mgr = getattr(self, "_mcp_manager", None)
+        te = getattr(self, "_tool_executor", None)
+        if mgr is None or te is None:
+            return
+        for cfg in mgr.get_server_configs():
+            env = cfg.env_vars or {}
+            if not any(isinstance(v, str) and v.startswith("secret:") for v in env.values()):
+                continue
+            # Already discovered tools at boot? Then its creds resolved; skip.
+            if mgr.get_all_tool_schemas().get(cfg.name):
+                continue
+            try:
+                schemas = await mgr.connect_one(cfg.name, cfg.package, env, cfg.args)
+                te.register_mcp_tools(cfg.name, schemas)
+                client = mgr.get_clients().get(cfg.name)
+                if client is not None:
+                    te._mcp_clients[cfg.name] = client
+                if schemas:
+                    logger.info("  Reconnected MCP '%s' with resolved secrets (%d tools)", cfg.name, len(schemas))
+                else:
+                    logger.warning("  MCP '%s' still 0 tools after secret resolution (check credentials)", cfg.name)
+            except Exception as e:
+                logger.warning("  Reconnect of MCP '%s' failed: %s", cfg.name, e)
+
     async def _connect_persisted_platform_mcp(self, tool_executor) -> None:
         """Connect platform MCP servers persisted in Postgres at boot.
 
@@ -836,6 +877,9 @@ class PlatformBootstrap:
                     name, cfg.get("package", ""), cfg.get("env_vars", {}), cfg.get("args", []),
                 )
                 tool_executor.register_mcp_tools(name, schemas)
+                client = self._mcp_manager.get_clients().get(name)
+                if client is not None:
+                    tool_executor._mcp_clients[name] = client
                 connected += 1
                 if not schemas:
                     logger.warning(

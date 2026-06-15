@@ -17,6 +17,8 @@ import json
 import jsonschema
 from jsonschema.exceptions import ValidationError
 
+from src.platform.pod_dev_tools import POD_ROUTABLE_TOOLS
+
 logger = logging.getLogger(__name__)
 
 # Timeout for tool execution (configurable via module attribute)
@@ -569,6 +571,26 @@ class ToolExecutor:
                 _progress_token = None
 
         async def _dispatch() -> dict:
+            # Pod redirect: when the agent has an attached, running environment,
+            # the dev tools run *inside* its pod instead of on the platform host.
+            # Admission already ran above (tool.call); this is a pure backend
+            # swap — we do NOT re-fire env.exec (would double-reserve budget).
+            # No env / pod not running → falls through to the local handler.
+            if (
+                self._environment_manager is not None
+                and _agent_id
+                and tool_name in POD_ROUTABLE_TOOLS
+            ):
+                try:
+                    b = self._environment_manager.binding(_agent_id)  # _mem dict lookup
+                except Exception:
+                    b = None
+                if b is not None and getattr(b, "status", None) == "running":
+                    from src.platform.pod_dev_tools import run_in_pod
+                    return await run_in_pod(
+                        self._environment_manager, _agent_id, tool_name, tool_input, agent_context
+                    )
+
             # Custom company tools + platform tools (both in _custom_handlers)
             if tool_name in self._custom_handlers:
                 try:

@@ -17,8 +17,10 @@ import { AnswerForm } from '@/components/RunPanel';
 function ApprovalCard({ approval, onResolved }: { approval: Approval; onResolved: () => void }) {
   const reqId = approval.request_id ?? approval.id ?? '';
   const runId = approval.run_id ?? approval.continuation_id;
-  const question = approval.content?.question;
-  const context = approval.content?.context;
+  const agent = approval.from_agent ?? approval.requesting_agent;
+  const title = approval.content?.question ?? approval.title;
+  const description = approval.description;
+  const context = approval.content?.context ?? approval.context;
   const kind = (approval.content?.kind ?? '').toLowerCase();
   const isQuestion = ['text', 'choice', 'number', 'question'].includes(kind);
 
@@ -46,15 +48,19 @@ function ApprovalCard({ approval, onResolved }: { approval: Approval; onResolved
       <CardContent className="space-y-3 py-4">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="warning">pending</Badge>
-          {approval.from_agent ? (
+          {approval.risk_assessment ? (
+            <Badge variant="outline">{approval.risk_assessment} risk</Badge>
+          ) : null}
+          {agent ? (
             <span className="text-[13px] text-secondary">
-              from <span className="font-medium text-primary">{approval.from_agent}</span>
+              from <span className="font-medium text-primary">{agent}</span>
             </span>
           ) : null}
           <span className="ml-auto font-mono text-[11px] text-tertiary">{reqId}</span>
         </div>
 
-        {question ? <p className="text-[13px] text-primary">{question}</p> : null}
+        {title ? <p className="text-[13px] text-primary">{title}</p> : null}
+        {description ? <p className="text-[13px] text-secondary">{description}</p> : null}
         {runId ? (
           <p className="text-xs text-tertiary">
             run <span className="font-mono">{runId}</span>

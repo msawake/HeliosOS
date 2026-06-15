@@ -620,6 +620,7 @@ def create_fastapi_app(
         out: list = []
         if not platform_executor:
             return out
+        seen_refs: set = set()  # adapters may share one StepEngine store — dedupe
         for adapter in getattr(platform_executor, "_adapters", {}).values():
             engine = getattr(adapter, "step_engine", None)
             store = getattr(engine, "_store", None)
@@ -635,6 +636,9 @@ def create_fastapi_app(
                 for rec in cont.pending_calls:
                     if rec.status != "pending" or not rec.external_ref:
                         continue
+                    if rec.external_ref in seen_refs:
+                        continue
+                    seen_refs.add(rec.external_ref)
                     q = f"Approve tool '{rec.name}' for agent {cont.pid}?"
                     out.append({
                         "source": "runtime",
@@ -876,6 +880,12 @@ def create_fastapi_app(
         out = []
         for a in agents:
             d = a.to_dict() if hasattr(a, "to_dict") else {"agent_id": str(a)}
+            # The full source manifest is only needed by the edit dialog (which
+            # fetches the detail endpoint), so drop it from the list payload.
+            # Copy first — to_dict() returns the live metadata dict by reference.
+            md = d.get("metadata")
+            if isinstance(md, dict) and "_source_yaml" in md:
+                d["metadata"] = {k: v for k, v in md.items() if k != "_source_yaml"}
             try:
                 aid = getattr(a, "agent_id", None) or d.get("agent_id")
                 if aid:
@@ -1035,6 +1045,9 @@ def create_fastapi_app(
         ns = (deploy_body.get("metadata") or {}).get("_namespace")
         if ns and "namespace" not in deploy_body:
             deploy_body["namespace"] = ns
+        # Preserve the exact manifest the user uploaded so the edit dialog can
+        # show it back verbatim instead of a reconstructed/normalized view.
+        deploy_body.setdefault("metadata", {})["_source_yaml"] = body
         try:
             req = AgentCreateRequest(**deploy_body)
         except Exception as e:
@@ -1055,6 +1068,10 @@ def create_fastapi_app(
         if not req.context:
             req.context = {}
         req.context.setdefault("user_id", user)
+        # Multi-turn memory: the dashboard chat passes a stable session id in the
+        # context (session_id / chat_id). Forward it to the executor so prior
+        # conversation history is loaded and the agent sees earlier turns.
+        sid = req.context.get("session_id") or req.context.get("chat_id")
         # Path 1: Platform executor (new multi-stack agents)
         if platform_executor:
             agent_def = platform_executor.registry.get(agent_id)
@@ -1065,7 +1082,7 @@ def create_fastapi_app(
                 if async_mode:
                     import asyncio as _asyncio
                     from datetime import datetime as _dt, timezone as _tz
-                    _asyncio.create_task(platform_executor.invoke(agent_id, req.prompt, req.context))
+                    _asyncio.create_task(platform_executor.invoke(agent_id, req.prompt, req.context, session_id=sid))
                     return {
                         "agent_id": agent_id,
                         "status": "accepted",
@@ -1073,7 +1090,7 @@ def create_fastapi_app(
                         "queued_at": _dt.now(_tz.utc).isoformat(),
                     }
                 try:
-                    result = await platform_executor.invoke(agent_id, req.prompt, req.context)
+                    result = await platform_executor.invoke(agent_id, req.prompt, req.context, session_id=sid)
                     # Build warnings for simulation or missing tools
                     warnings = []
                     output = result.output or ""
@@ -1239,17 +1256,52 @@ def create_fastapi_app(
         ns = (deploy_body.get("metadata") or {}).get("_namespace")
         if ns and "namespace" not in deploy_body:
             deploy_body["namespace"] = ns
+        # Keep the stored source manifest in sync so the next edit shows the
+        # YAML the user just saved, not the original upload.
+        deploy_body.setdefault("metadata", {})["_source_yaml"] = body
         try:
             req = AgentCreateRequest(**deploy_body)
         except Exception as e:
             raise HTTPException(400, f"Manifest did not match deploy schema: {e}")
-        return await update_agent(agent_id, req, _auth=_auth)
+        return await _apply_agent_update(agent_id, req, _auth)
+
+    async def _coerce_agent_update(request: Request) -> AgentCreateRequest:
+        """Build a flat AgentCreateRequest from the PUT body, accepting either
+        the flat field shape or a k8s-style manifest
+        ({apiVersion, kind, metadata, spec}). Lets the dashboard or a hand-rolled
+        curl send either form to the same endpoint."""
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(400, "Body must be valid JSON")
+        if not isinstance(body, dict):
+            raise HTTPException(400, "Body must be a JSON object")
+        if "spec" in body or "apiVersion" in body or "kind" in body:
+            try:
+                from src.forgeos_sdk.manifest import AgentManifest
+                deploy_body = AgentManifest.from_dict(body).to_deploy_request()
+            except Exception as e:
+                raise HTTPException(400, f"Invalid manifest: {e}")
+            ns = (deploy_body.get("metadata") or {}).get("_namespace")
+            if ns and "namespace" not in deploy_body:
+                deploy_body["namespace"] = ns
+            body = deploy_body
+        try:
+            return AgentCreateRequest(**body)
+        except Exception as e:
+            raise HTTPException(422, f"Body did not match agent schema: {e}")
 
     @app.put("/api/platform/agents/{agent_id}", tags=["agents"])
-    async def update_agent(agent_id: str, req: AgentCreateRequest, _auth=Depends(check_auth)):
-        """Update an existing agent's configuration in-place.
-        Requires authentication. Agents cannot modify security-critical fields
-        (tools, capabilities, boundaries) — only operators via the API can."""
+    async def update_agent(agent_id: str, request: Request, _auth=Depends(check_auth)):
+        """Update an existing agent in-place. Accepts either the flat field
+        shape or a k8s-style manifest ({apiVersion, kind, metadata, spec})."""
+        req = await _coerce_agent_update(request)
+        return await _apply_agent_update(agent_id, req, _auth)
+
+    async def _apply_agent_update(agent_id: str, req: AgentCreateRequest, _auth):
+        """Apply a validated update to an existing agent.
+        Agents cannot modify security-critical fields (tools, capabilities,
+        boundaries) — only operators via the API can."""
         if not platform_registry:
             raise HTTPException(500, "Platform registry not available")
         if not _auth and auth_enabled:
@@ -2513,6 +2565,9 @@ def create_fastapi_app(
                 req.server_name, req.package, req.env_vars, req.args,
             )
             tool_executor.register_mcp_tools(req.server_name, schemas)
+            client = mcp_manager.get_clients().get(req.server_name)
+            if client is not None:
+                tool_executor._mcp_clients[req.server_name] = client
             return {"connected": True, "tools_discovered": len(schemas)}
         except Exception as e:
             logger.warning("Live connect failed for MCP '%s': %s", req.server_name, e)
@@ -3143,6 +3198,28 @@ def create_fastapi_app(
                     "type": ev.get("action") or "tool.call",
                     "description": f"tool {ev.get('resource_id', '?')} → {ev.get('outcome', 'ok')}",
                     "details": ev.get("details") or {},
+                })
+        except Exception:
+            pass
+        # Pending HITL-gated tool calls (runtime-v2 suspended continuations).
+        # These never reach the tool.call audit log because the kernel gates
+        # them BEFORE execution — without this, a paused run shows "0 tools"
+        # and the feed can't say what it's waiting on. Surface one event per
+        # pending, human-gated call carrying the tool + correlation ids.
+        try:
+            for p in _list_v2_pending_approvals():
+                if agent_id and p.get("agent_id") != agent_id:
+                    continue
+                events.append({
+                    "ts": p.get("created_at"),
+                    "agent_id": p.get("agent_id"),
+                    "type": "tool.awaiting_approval",
+                    "description": f"tool {p.get('tool', '?')} → awaiting human approval",
+                    "details": {
+                        "request_id": p.get("request_id"),
+                        "continuation_id": p.get("continuation_id"),
+                        "tool": p.get("tool"),
+                    },
                 })
         except Exception:
             pass

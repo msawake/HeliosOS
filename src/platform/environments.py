@@ -21,9 +21,10 @@ import asyncio
 import logging
 import os
 import re
+import shlex
 import subprocess
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,39 @@ class EnvBinding:
     namespace: str
     pod_name: str
     status: str = "pending"
+    env_def_id: str | None = None
+    # Kept in-memory so a lost pod can be respawned identically. Not persisted in
+    # agent_environments (the template lives in environment_defs); empty after a
+    # cold load from DB, which is fine since a running pod won't trigger respawn.
+    env_vars: dict[str, str] = field(default_factory=dict)
+    resources: dict[str, str] = field(default_factory=dict)
+    last_error: str | None = None
+
+
+@dataclass
+class EnvironmentDef:
+    """A reusable pod template (migration 017): name + image + optional env vars
+    and resource limits. Attaching a def to an agent spawns that agent's own pod
+    cloned from it (one pod per (env, agent))."""
+
+    env_def_id: str
+    name: str
+    image: str
+    env_vars: dict[str, str] = field(default_factory=dict)
+    resources: dict[str, str] = field(default_factory=dict)
+    created_at: str | None = None
+    updated_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "env_def_id": self.env_def_id,
+            "name": self.name,
+            "image": self.image,
+            "env_vars": dict(self.env_vars),
+            "resources": dict(self.resources),
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
 
 
 class EnvironmentManager:
@@ -89,8 +123,13 @@ class EnvironmentManager:
         return cmd + list(args)
 
     def _run(self, args: list[str], timeout: int = 60) -> tuple[int, str, str]:
+        return self._run_io(args, timeout=timeout)
+
+    def _run_io(self, args: list[str], *, stdin: str | None = None,
+                timeout: int = 60) -> tuple[int, str, str]:
         try:
-            p = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+            p = subprocess.run(args, capture_output=True, text=True,
+                               input=stdin, timeout=timeout)
             return p.returncode, p.stdout[:_MAX_OUTPUT], p.stderr[:_MAX_OUTPUT]
         except subprocess.TimeoutExpired:
             return 124, "", f"timeout after {timeout}s"
@@ -114,12 +153,14 @@ class EnvironmentManager:
             with self._db.tenant(self._tenant_id) as conn:
                 conn.execute(
                     "INSERT INTO agent_environments "
-                    "(env_id, tenant_id, agent_id, image, namespace, pod_name, status, updated_at) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s, NOW()) "
+                    "(env_id, tenant_id, agent_id, image, namespace, pod_name, status, env_def_id, updated_at) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s, NOW()) "
                     "ON CONFLICT (tenant_id, agent_id) DO UPDATE SET "
                     "env_id=EXCLUDED.env_id, image=EXCLUDED.image, namespace=EXCLUDED.namespace, "
-                    "pod_name=EXCLUDED.pod_name, status=EXCLUDED.status, updated_at=NOW()",
-                    (b.env_id, self._tenant_id, b.agent_id, b.image, b.namespace, b.pod_name, b.status),
+                    "pod_name=EXCLUDED.pod_name, status=EXCLUDED.status, "
+                    "env_def_id=EXCLUDED.env_def_id, updated_at=NOW()",
+                    (b.env_id, self._tenant_id, b.agent_id, b.image, b.namespace,
+                     b.pod_name, b.status, b.env_def_id),
                 )
                 conn.commit()
         except Exception:
@@ -133,13 +174,14 @@ class EnvironmentManager:
             try:
                 with self._db.tenant(self._tenant_id) as conn:
                     row = conn.execute_one(
-                        "SELECT env_id, agent_id, image, namespace, pod_name, status "
+                        "SELECT env_id, agent_id, image, namespace, pod_name, status, env_def_id "
                         "FROM agent_environments WHERE tenant_id=%s AND agent_id=%s AND status!='deleted'",
                         (self._tenant_id, agent_id),
                     )
                 if row:
                     b = EnvBinding(row["env_id"], row["agent_id"], row["image"],
-                                   row["namespace"], row["pod_name"], row["status"])
+                                   row["namespace"], row["pod_name"], row["status"],
+                                   env_def_id=row.get("env_def_id"))
                     self._mem[agent_id] = b
                     return b
             except Exception:
@@ -152,27 +194,43 @@ class EnvironmentManager:
 
     # -- lifecycle ------------------------------------------------------------
 
-    async def spawn(self, agent_id: str, image: str) -> EnvBinding:
-        """Create (or reuse) the agent's environment pod and wait until Ready."""
+    async def spawn(self, agent_id: str, image: str, *,
+                    env_vars: dict[str, str] | None = None,
+                    resources: dict[str, str] | None = None,
+                    env_def_id: str | None = None) -> EnvBinding:
+        """Create (or reuse) the agent's environment pod and wait until Ready.
+
+        ``env_vars`` are baked into the pod (``kubectl run --env``); ``resources``
+        become CPU/memory limits (``--limits cpu=..,memory=..``). ``env_def_id``
+        links the pod back to the template it was cloned from."""
+        env_vars = env_vars or {}
+        resources = resources or {}
         existing = self.binding(agent_id)
         if existing and existing.image == image and existing.status == "running":
             return existing
         env_id = (existing.env_id if existing else f"env-{uuid.uuid4().hex[:12]}")
         pod = f"forgeos-env-{_sanitize(agent_id)}-{env_id.split('-')[-1]}"
-        b = EnvBinding(env_id, agent_id, image, self._namespace, pod, status="pending")
+        b = EnvBinding(env_id, agent_id, image, self._namespace, pod, status="pending",
+                       env_def_id=env_def_id, env_vars=dict(env_vars), resources=dict(resources))
         self._save(b)
 
         def _spawn_sync() -> EnvBinding:
             self._ensure_namespace()
             # Recreate cleanly (idempotent): drop any prior pod for this env.
             self._run(self._kc("delete", "pod", pod, "-n", self._namespace, "--ignore-not-found"), timeout=30)
-            rc, _, err = self._run(self._kc(
+            run_args = [
                 "run", pod, "--image", image, "--restart", "Never", "-n", self._namespace,
                 "--labels", f"forgeos.env={env_id},forgeos.agent={_sanitize(agent_id)},app=forgeos-env",
-                "--command", "--", "sh", "-c", "sleep infinity",
-            ), timeout=60)
+            ]
+            for k, v in env_vars.items():
+                run_args += ["--env", f"{k}={v}"]
+            limits = ",".join(f"{k}={v}" for k, v in resources.items() if v)
+            if limits:
+                run_args += ["--limits", limits]
+            run_args += ["--command", "--", "sh", "-c", "sleep infinity"]
+            rc, _, err = self._run(self._kc(*run_args), timeout=60)
             if rc != 0:
-                b.status, b.last_error = "failed", err  # type: ignore[attr-defined]
+                b.status, b.last_error = "failed", err
                 self._save(b)
                 logger.error("env spawn failed for %s: %s", agent_id, err)
                 return b
@@ -189,27 +247,44 @@ class EnvironmentManager:
 
         return await asyncio.to_thread(_spawn_sync)
 
-    def exec_sync(self, agent_id: str, command: str, timeout: int = 120) -> dict[str, Any]:
+    def exec_sync(self, agent_id: str, command: str, *,
+                  stdin: str | None = None, env: dict[str, str] | None = None,
+                  timeout: int = 120) -> dict[str, Any]:
         """Synchronously run a command in the agent's env pod (kubectl exec).
 
         Used as the kernel `env.exec` dispatcher (the syscall pipeline is sync).
-        Admission is the caller's responsibility; this only executes."""
+        Admission is the caller's responsibility; this only executes.
+
+        ``env`` is prefixed onto the command (``env K=V sh -c '<command>'``) so
+        per-exec secrets (e.g. a GH token) never land in the pod spec or on the
+        host. ``stdin`` is piped to the command (used to stream file content)."""
         b = self.binding(agent_id)
         if not b:
             return {"ok": False, "stdout": "", "stderr": "no environment bound", "code": -1}
         if b.status != "running":
             return {"ok": False, "stdout": "", "stderr": f"environment not running ({b.status})", "code": -1}
-        rc, out, err = self._run(self._kc(
-            "exec", b.pod_name, "-n", b.namespace, "--", "sh", "-c", command,
-        ), timeout=timeout)
+        prefix = ""
+        if env:
+            prefix = "env " + " ".join(f"{k}={shlex.quote(str(v))}" for k, v in env.items()) + " "
+        full_cmd = f"{prefix}sh -c {shlex.quote(command)}"
+        exec_args = ["exec"]
+        if stdin is not None:
+            exec_args.append("-i")
+        exec_args += [b.pod_name, "-n", b.namespace, "--", "sh", "-c", full_cmd]
+        rc, out, err = self._run_io(self._kc(*exec_args), stdin=stdin, timeout=timeout)
         return {"ok": rc == 0, "stdout": out, "stderr": err, "code": rc}
 
-    async def exec(self, agent_id: str, command: str, timeout: int = 120) -> dict[str, Any]:
+    async def exec(self, agent_id: str, command: str, *,
+                   stdin: str | None = None, env: dict[str, str] | None = None,
+                   timeout: int = 120) -> dict[str, Any]:
         """Async wrapper around :meth:`exec_sync` (lazy-respawns if the pod was lost)."""
         b = self.binding(agent_id)
         if b and b.status != "running":
-            await self.spawn(agent_id, b.image)
-        return await asyncio.to_thread(self.exec_sync, agent_id, command, timeout)
+            await self.spawn(agent_id, b.image, env_vars=b.env_vars,
+                             resources=b.resources, env_def_id=b.env_def_id)
+        return await asyncio.to_thread(
+            lambda: self.exec_sync(agent_id, command, stdin=stdin, env=env, timeout=timeout)
+        )
 
     async def teardown(self, agent_id: str) -> bool:
         b = self.binding(agent_id)

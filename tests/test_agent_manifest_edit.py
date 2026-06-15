@@ -287,6 +287,102 @@ class TestPostgresPersistenceSystemPrompt:
         )
 
 
+class TestSourceManifestRoundTrip:
+    """The EDIT MANIFEST dialog must show the *exact* YAML the user uploaded, not
+    a reconstructed/normalized view. We preserve it under metadata._source_yaml
+    on deploy and keep it in sync on update."""
+
+    MANIFEST = textwrap.dedent("""\
+        # leadgen scout — hand-written manifest with comments + ordering
+        apiVersion: agentos/v1
+        kind: AgentContract
+        metadata:
+          name: source-roundtrip-agent
+          namespace: sales-team
+        spec:
+          runtime:
+            framework: forgeos
+          lifecycle:
+            type: reflex
+          llm:
+            chat_model: claude-sonnet-4-5
+            provider: anthropic
+          capabilities:
+            tools:
+              allowed: []
+          system_prompt: |
+            You scout leads. Be concise.
+    """)
+
+    async def test_get_detail_returns_uploaded_yaml_verbatim(self, app_client):
+        client, _ = app_client
+        resp = client.post(
+            "/api/platform/agents/from-yaml",
+            content=self.MANIFEST.encode(),
+            headers={"Content-Type": "text/yaml"},
+        )
+        assert resp.status_code in (200, 201), f"deploy failed: {resp.text}"
+        agent_id = resp.json()["agent_id"]
+
+        detail = client.get(f"/api/platform/agents/{agent_id}")
+        assert detail.status_code == 200
+        meta = detail.json().get("metadata") or {}
+        assert meta.get("_source_yaml") == self.MANIFEST, (
+            "edit dialog would show reconstructed YAML, not the uploaded source"
+        )
+
+    async def test_list_payload_omits_source_yaml(self, app_client):
+        """The full manifest is only needed by the edit dialog; the list view
+        must not carry it (avoids bloating every list response)."""
+        client, _ = app_client
+        client.post(
+            "/api/platform/agents/from-yaml",
+            content=self.MANIFEST.encode(),
+            headers={"Content-Type": "text/yaml"},
+        )
+        agents = client.get("/api/platform/agents").json()
+        if isinstance(agents, dict):
+            agents = agents.get("agents", [])
+        a = next(a for a in agents if a.get("name") == "source-roundtrip-agent")
+        assert "_source_yaml" not in (a.get("metadata") or {})
+
+    async def test_update_syncs_source_yaml(self, app_client):
+        client, _ = app_client
+        deploy = client.post(
+            "/api/platform/agents/from-yaml",
+            content=self.MANIFEST.encode(),
+            headers={"Content-Type": "text/yaml"},
+        )
+        agent_id = deploy.json()["agent_id"]
+
+        edited = self.MANIFEST.replace("Be concise.", "Be thorough.")
+        upd = client.put(
+            f"/api/platform/agents/{agent_id}/from-yaml",
+            content=edited.encode(),
+            headers={"Content-Type": "text/yaml"},
+        )
+        assert upd.status_code == 200, f"update failed: {upd.text}"
+
+        meta = client.get(f"/api/platform/agents/{agent_id}").json().get("metadata") or {}
+        assert meta.get("_source_yaml") == edited, (
+            "re-opening the editor after save must show the edited YAML"
+        )
+
+    async def test_flat_deploy_has_no_source_yaml(self, app_client):
+        """Agents created via the flat API have no manifest — the editor falls
+        back to the reconstructed view, so _source_yaml must be absent."""
+        _, executor = app_client
+        defn = AgentDefinition(
+            name="flat-agent",
+            stack="forgeos",
+            execution_type=ExecutionType.REFLEX,
+            ownership=OwnershipType.SHARED,
+        )
+        agent_id = await executor.deploy(defn)
+        agent = executor.registry.get(agent_id)
+        assert "_source_yaml" not in (agent.metadata or {})
+
+
 class TestUpdateAgentFromYaml:
     """PUT /api/platform/agents/{id}/from-yaml must update system_prompt in-place
     without requiring DELETE + re-create (the from-yaml POST path fails with

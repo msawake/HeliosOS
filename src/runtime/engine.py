@@ -147,6 +147,8 @@ class StepEngine:
         user_prompt: str,
         provider: str,
         chat_model: str,
+        endpoint: str | None = None,
+        api_key_ref: str | None = None,
         tools: list[dict] | None = None,
         session_id: str | None = None,
         history: list[dict] | None = None,
@@ -178,6 +180,8 @@ class StepEngine:
             messages=messages,
             provider=provider,
             chat_model=chat_model,
+            endpoint=endpoint,
+            api_key_ref=api_key_ref,
             tool_definitions=tools,
             step_index=0,
             max_turns=max_turns or self._max_turns,
@@ -286,7 +290,8 @@ class StepEngine:
         completes, suspends, fails, or hits max turns."""
         from stacks.base import LLMConfig
 
-        llm_config = LLMConfig(chat_model=cont.chat_model, provider=cont.provider)
+        llm_config = LLMConfig(chat_model=cont.chat_model, provider=cont.provider,
+                               endpoint=cont.endpoint, api_key_ref=cont.api_key_ref)
         kind = provider_kind(cont.provider, cont.chat_model)
         tools = cont.tool_definitions or None
         tokens = 0
@@ -316,7 +321,8 @@ class StepEngine:
         if turn >= cont.max_turns:
             return self._max_turns_reached(cont, 0)
 
-        llm_config = LLMConfig(chat_model=cont.chat_model, provider=cont.provider)
+        llm_config = LLMConfig(chat_model=cont.chat_model, provider=cont.provider,
+                               endpoint=cont.endpoint, api_key_ref=cont.api_key_ref)
         kind = provider_kind(cont.provider, cont.chat_model)
         tools = cont.tool_definitions or None
 

@@ -144,12 +144,37 @@ export interface LogEvent {
   details?: Record<string, unknown>;
 }
 
+/** SSE frames emitted by `/api/platform/agents/{id}/chat/stream`. */
+export type ChatStreamEvent =
+  | { type: 'session'; session_id: string }
+  | { type: 'text_delta'; content: string }
+  | { type: 'tool_call'; name: string; input?: Record<string, unknown> }
+  | { type: 'tool_result'; name: string; result?: unknown }
+  | {
+      type: 'hitl_request';
+      request_id: string;
+      title?: string;
+      description?: string;
+      risk?: string;
+      category?: string;
+    }
+  | { type: 'done'; tokens_used?: number; text?: string }
+  | { type: 'error'; error: string };
+
 export interface Approval {
   id?: string;
   request_id?: string;
   run_id?: string;
   continuation_id?: string;
   from_agent?: string;
+  /** Legacy company HITL fields (company__request_approval / hitl.get_pending()). */
+  requesting_agent?: string;
+  department?: string;
+  category?: string;
+  title?: string;
+  description?: string;
+  risk_assessment?: string;
+  context?: Record<string, unknown>;
   content?: {
     question?: string;
     kind?: string;
@@ -197,6 +222,12 @@ export const api = {
   // edit
   updateAgent: (id: string, body: Record<string, unknown>) =>
     request<Agent>(`/api/platform/agents/${encodeURIComponent(id)}`, { method: 'PUT', body }),
+  // edit (raw YAML manifest — preserves the uploaded source verbatim)
+  updateAgentYaml: (id: string, yamlText: string) =>
+    request<Agent>(`/api/platform/agents/${encodeURIComponent(id)}/from-yaml`, {
+      method: 'PUT',
+      yaml: yamlText,
+    }),
 
   // invoke + run watch
   invoke: (
@@ -281,6 +312,73 @@ export const api = {
       method: 'POST',
       body: { reason },
     }),
+
+  /**
+   * Stream a multi-turn chat turn over SSE. Invokes `onEvent` for every frame
+   * (text deltas, tool_call / tool_result, hitl_request, done, error) as it
+   * arrives. Resolves when the stream closes; rejects on a non-2xx response.
+   * EventSource can't POST, so we read the fetch body stream by hand.
+   */
+  async streamChat(
+    agentId: string,
+    opts: { message: string; sessionId?: string; signal?: AbortSignal },
+    onEvent: (ev: ChatStreamEvent) => void
+  ): Promise<void> {
+    const res = await fetch(
+      `${apiBase()}/api/platform/agents/${encodeURIComponent(agentId)}/chat/stream`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-forgeos-caller': 'forgeos-dashboard',
+          ...authHeaders(),
+        },
+        body: JSON.stringify({
+          message: opts.message,
+          ...(opts.sessionId ? { session_id: opts.sessionId } : {}),
+        }),
+        signal: opts.signal,
+        cache: 'no-store',
+      }
+    );
+
+    if (!res.ok || !res.body) {
+      const text = await res.text().catch(() => '');
+      let detail: string | undefined;
+      try {
+        detail = JSON.parse(text)?.detail;
+      } catch {
+        detail = text || undefined;
+      }
+      throw new ApiError(res.status, detail || `${res.status} ${res.statusText}`, detail);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      // SSE frames are separated by a blank line.
+      let sep: number;
+      while ((sep = buf.indexOf('\n\n')) >= 0) {
+        const frame = buf.slice(0, sep);
+        buf = buf.slice(sep + 2);
+        const data = frame
+          .split('\n')
+          .filter((l) => l.startsWith('data:'))
+          .map((l) => l.slice(5).trimStart())
+          .join('\n');
+        if (!data) continue;
+        try {
+          onEvent(JSON.parse(data) as ChatStreamEvent);
+        } catch {
+          // Skip malformed frames rather than tearing down the stream.
+        }
+      }
+    }
+  },
 
   // mcp servers
   listMcp: () => request<McpServer[]>('/api/platform/mcp/servers'),

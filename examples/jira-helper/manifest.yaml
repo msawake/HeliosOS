@@ -1,0 +1,92 @@
+# jira-helper — shared Jira assistant on real Qwen, with human-in-the-loop
+# approval gating for write actions.
+#
+# Deploy / update:
+#   forgeos deploy examples/jira-helper/manifest.yaml
+#   # or update the running agent in place (preserves this YAML as the source):
+#   curl -X PUT http://localhost:5000/api/platform/agents/<id>/from-yaml \
+#        -H 'Content-Type: text/yaml' --data-binary @examples/jira-helper/manifest.yaml
+#
+# Prereqs (one-time, already done in this environment):
+#   - secret  litellm-allycode-key   -> the LiteLLM gateway key (api_key_ref below)
+#   - secrets jira-url / jira-username / jira-api-token  -> consumed by the
+#     platform-level mcp-atlassian server so mcp__atlassian__* tools exist.
+apiVersion: forgeos/v1
+kind: Agent
+
+metadata:
+  name: jira-helper
+  description: >-
+    Shared Jira assistant. Reads freely; create / transition / comment actions
+    require human approval before they run.
+  department: engineering
+  labels:
+    category: productivity
+    scope: jira
+
+spec:
+  stack: forgeos              # suspendable stack — required for park-and-resume HITL
+  execution_type: reflex      # invoke-on-demand (no cron / event bus)
+  ownership: shared
+  owner_id: antoni
+
+  # --- LLM: real Qwen via the atlas-router (LiteLLM) gateway ---
+  llm:
+    chat_model: qwen                                                  # gateway alias (see /v1/models)
+    provider: atlas                                                   # OpenAI-compatible gateway provider
+    endpoint: https://atlas-router.ally-code-dev.makingscience.com/v1
+    api_key_ref: secret:litellm-allycode-key                          # resolved at invoke time; never inlined
+
+  # --- Tools: everything the platform-level atlassian MCP server exposes ---
+  tools:
+    - mcp__atlassian__*
+
+  # --- Governance: human-in-the-loop approval rules (kernel-enforced) ---
+  # Rules are matched top-to-bottom; the FIRST matching rule decides.
+  #   mode: never        -> exempt (run without approval)
+  #   mode: always       -> require human approval before the tool runs
+  #   mode: conditional  -> evaluate `when` (JSON-logic) to allow / ask_human / deny
+  # `tool` supports exact names and `*`-suffix wildcards (e.g. mcp__atlassian__jira_get_*).
+  governance:
+    audit_level: full
+    approvals:
+      # Reads stay frictionless — exempt before the broad write rule below.
+      - tool: mcp__atlassian__jira_search
+        mode: never
+      - tool: mcp__atlassian__jira_get_*
+        mode: never
+
+      # Everything else MCP (create / update / transition / comment / delete /
+      # add_*) requires human sign-off. On a suspendable stack the run PARKS
+      # (status=paused) and resumes once approved; the gated tool then executes.
+      - tool: mcp__*
+        mode: always
+        approvers:
+          - antoni.bergas@makingscience.com
+        sla_hours: 4          # approval deadline before on_timeout fires
+        on_timeout: abort     # proceed | abort | reask
+        priority: high
+        reason: "Jira write/state-changing action requires human approval"
+
+  system_prompt: |
+    You are a Jira assistant for the team's shared Atlassian Cloud instance.
+    You operate ONLY within the "PR12148" project — never touch other projects.
+
+    The Jira connection is ALREADY configured server-side — NEVER ask the user
+    for a URL, email, or credentials.
+
+    Reading:
+      - Use jira_search with JQL to answer questions, always scoped with
+        `project = PR12148`. Summarize results as `KEY — summary (status)` and
+        include the browse link when available.
+      - For "my ..." queries, add `AND assignee = currentUser()`.
+
+    Writing (create / transition / edit / comment):
+      - These require human approval and will pause for sign-off. State plainly
+        what you intend to do, then call the tool — the platform gates it; you
+        do not need to ask for permission yourself.
+      - When CREATING a task, always set the "Component" field to "Ally Partner".
+      - The in-progress status is spelled "In Progress." WITH a trailing dot —
+        use that exact string when transitioning.
+
+    Be concise. Lead with the answer; include issue keys.

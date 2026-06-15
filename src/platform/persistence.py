@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from src.platform.environments import EnvironmentDef
 from stacks.base import (
     AgentDefinition,
     AgentStatus,
@@ -50,6 +52,7 @@ class PostgresAgentRegistry:
                    ON CONFLICT (agent_id) DO UPDATE SET
                      name=EXCLUDED.name, stack=EXCLUDED.stack, status='idle',
                      system_prompt=EXCLUDED.system_prompt,
+                     metadata=EXCLUDED.metadata,
                      updated_at=NOW()""",
                 (
                     agent_def.agent_id, self._tenant_id, agent_def.name,
@@ -289,6 +292,126 @@ class PostgresAgentMessageStore:
                 (message_id,),
             )
             conn.commit()
+
+
+class PostgresEnvDefStore:
+    """Persists reusable environment definitions (pod templates, migration 017).
+
+    Distinct from the per-(env, agent) pod binding in ``agent_environments`` —
+    this is the *template* a binding is cloned from. Falls back to an in-memory
+    dict when no database is wired (mirrors EnvironmentManager._mem)."""
+
+    def __init__(self, db_client, tenant_id: str = "default"):
+        self._db = db_client
+        self._tenant_id = tenant_id
+        self._mem: dict[str, EnvironmentDef] = {}
+
+    def _connected(self) -> bool:
+        return bool(self._db and getattr(self._db, "is_connected", False))
+
+    @staticmethod
+    def _row_to_def(row: dict) -> EnvironmentDef:
+        env_vars = row.get("env_vars") or {}
+        if isinstance(env_vars, str):
+            env_vars = json.loads(env_vars)
+        resources = row.get("resources") or {}
+        if isinstance(resources, str):
+            resources = json.loads(resources)
+        return EnvironmentDef(
+            env_def_id=row["env_def_id"],
+            name=row["name"],
+            image=row["image"],
+            env_vars=env_vars,
+            resources=resources,
+            created_at=row["created_at"].isoformat() if row.get("created_at") else None,
+            updated_at=row["updated_at"].isoformat() if row.get("updated_at") else None,
+        )
+
+    def create(self, *, name: str, image: str,
+               env_vars: dict[str, str] | None = None,
+               resources: dict[str, str] | None = None) -> EnvironmentDef:
+        d = EnvironmentDef(
+            env_def_id=f"envdef-{uuid.uuid4().hex[:12]}",
+            name=name, image=image,
+            env_vars=env_vars or {}, resources=resources or {},
+        )
+        if self._connected():
+            with self._db.tenant(self._tenant_id) as conn:
+                conn.execute(
+                    """INSERT INTO environment_defs
+                       (env_def_id, tenant_id, name, image, env_vars, resources)
+                       VALUES (%s,%s,%s,%s,%s,%s)""",
+                    (d.env_def_id, self._tenant_id, d.name, d.image,
+                     json.dumps(d.env_vars), json.dumps(d.resources)),
+                )
+                conn.commit()
+        self._mem[d.env_def_id] = d
+        return d
+
+    def update(self, env_def_id: str, **fields: Any) -> EnvironmentDef | None:
+        d = self.get(env_def_id)
+        if not d:
+            return None
+        for key in ("name", "image", "env_vars", "resources"):
+            if key in fields and fields[key] is not None:
+                setattr(d, key, fields[key])
+        if self._connected():
+            with self._db.tenant(self._tenant_id) as conn:
+                conn.execute(
+                    """UPDATE environment_defs SET
+                         name=%s, image=%s, env_vars=%s, resources=%s, updated_at=NOW()
+                       WHERE tenant_id=%s AND env_def_id=%s""",
+                    (d.name, d.image, json.dumps(d.env_vars), json.dumps(d.resources),
+                     self._tenant_id, env_def_id),
+                )
+                conn.commit()
+        self._mem[env_def_id] = d
+        return d
+
+    def get(self, env_def_id: str) -> EnvironmentDef | None:
+        if env_def_id in self._mem:
+            return self._mem[env_def_id]
+        if self._connected():
+            with self._db.tenant(self._tenant_id) as conn:
+                row = conn.execute_one(
+                    "SELECT * FROM environment_defs WHERE tenant_id=%s AND env_def_id=%s",
+                    (self._tenant_id, env_def_id),
+                )
+            if row:
+                d = self._row_to_def(row)
+                self._mem[env_def_id] = d
+                return d
+        return None
+
+    def get_by_name(self, name: str) -> EnvironmentDef | None:
+        for d in self.list():
+            if d.name == name:
+                return d
+        return None
+
+    def list(self) -> list[EnvironmentDef]:
+        if self._connected():
+            with self._db.tenant(self._tenant_id) as conn:
+                rows = conn.execute_many(
+                    "SELECT * FROM environment_defs WHERE tenant_id=%s ORDER BY created_at",
+                    (self._tenant_id,),
+                )
+            out = [self._row_to_def(r) for r in rows]
+            self._mem = {d.env_def_id: d for d in out}
+            return out
+        return list(self._mem.values())
+
+    def delete(self, env_def_id: str) -> bool:
+        existed = self.get(env_def_id) is not None
+        if self._connected():
+            with self._db.tenant(self._tenant_id) as conn:
+                conn.execute(
+                    "DELETE FROM environment_defs WHERE tenant_id=%s AND env_def_id=%s",
+                    (self._tenant_id, env_def_id),
+                )
+                conn.commit()
+        self._mem.pop(env_def_id, None)
+        return existed
 
 
 # ---------------------------------------------------------------------------

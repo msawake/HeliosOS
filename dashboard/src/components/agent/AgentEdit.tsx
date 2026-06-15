@@ -33,7 +33,15 @@ function toEditable(agent: Agent): Record<string, unknown> {
 }
 
 export function AgentEdit({ agent, onSaved }: { agent: Agent; onSaved: () => void }) {
-  const initial = useMemo(() => yaml.dump(toEditable(agent), { lineWidth: 100 }), [agent]);
+  // Agents deployed from a YAML manifest keep their exact source — show it back
+  // verbatim so the editor matches what the user uploaded. Agents created via
+  // the flat API have no source manifest, so reconstruct an editable view.
+  const sourceYaml =
+    typeof agent.metadata?._source_yaml === 'string' ? (agent.metadata._source_yaml as string) : null;
+  const initial = useMemo(
+    () => sourceYaml ?? yaml.dump(toEditable(agent), { lineWidth: 100 }),
+    [agent, sourceYaml]
+  );
   const [text, setText] = useState(initial);
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -42,16 +50,25 @@ export function AgentEdit({ agent, onSaved }: { agent: Agent; onSaved: () => voi
 
   const save = async () => {
     setError(null);
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = (yaml.load(text) as Record<string, unknown>) ?? {};
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Invalid YAML');
-      return;
+    // When editing the original manifest, round-trip the raw YAML so the stored
+    // source stays in sync and v2 sections (memory, governance, capabilities…)
+    // survive the edit. Otherwise parse the reconstructed view and PUT as JSON.
+    let parsed: Record<string, unknown> | null = null;
+    if (sourceYaml === null) {
+      try {
+        parsed = (yaml.load(text) as Record<string, unknown>) ?? {};
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Invalid YAML');
+        return;
+      }
     }
     setStatus('saving');
     try {
-      await api.updateAgent(agent.agent_id, parsed);
+      if (parsed === null) {
+        await api.updateAgentYaml(agent.agent_id, text);
+      } else {
+        await api.updateAgent(agent.agent_id, parsed);
+      }
       setStatus('saved');
       onSaved();
       setTimeout(() => setStatus('idle'), 2000);

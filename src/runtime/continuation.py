@@ -86,6 +86,11 @@ class Continuation:
     messages: list[dict[str, Any]] = field(default_factory=list)
     provider: str = "anthropic"
     chat_model: str = ""
+    # Per-agent OpenAI-compatible gateway override (atlas/vllm) — carried so a
+    # resumed run still reaches the same endpoint/key the agent was configured
+    # with, instead of falling back to a simulated response.
+    endpoint: str | None = None
+    api_key_ref: str | None = None
     tool_definitions: list[dict[str, Any]] | None = None
     step_index: int = 0
     max_turns: int = 300

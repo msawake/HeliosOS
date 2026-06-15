@@ -1,7 +1,0 @@
-# Staging: modest autoscaling (2-4 replicas)
-- op: replace
-  path: /spec/minReplicas
-  value: 2
-- op: replace
-  path: /spec/maxReplicas
-  value: 4

@@ -44,7 +44,10 @@ class ForgeOSAdapter(AgentStackAdapter):
     @staticmethod
     def _runtime_v2_enabled() -> bool:
         import os
-        return os.environ.get("FORGEOS_RUNTIME_V2", "").lower() in ("1", "true", "yes", "on")
+        # On by default — suspendable runs route through the durable StepEngine
+        # so per-tool human approvals (governance.approvals) actually park-and-
+        # resume. Set FORGEOS_RUNTIME_V2=0 (false/no/off) for the legacy loop.
+        return os.environ.get("FORGEOS_RUNTIME_V2", "1").strip().lower() not in ("0", "false", "no", "off")
 
     def _resolve_kernel(self):
         """The kernel exposing .syscall — explicit param first, else the
@@ -252,6 +255,8 @@ class ForgeOSAdapter(AgentStackAdapter):
             user_prompt=prompt,
             provider=agent_def.llm_config.provider,
             chat_model=agent_def.llm_config.chat_model,
+            endpoint=agent_def.llm_config.endpoint,
+            api_key_ref=agent_def.llm_config.api_key_ref,
             tools=tools or None,
             tool_executor=self._tool_executor,
             agent_context=build_agent_context(
