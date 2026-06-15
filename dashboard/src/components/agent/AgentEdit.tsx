@@ -20,6 +20,10 @@ function toEditable(agent: Agent): Record<string, unknown> {
     schedule: agent.schedule ?? '',
     chat_model: agent.llm_config?.chat_model ?? '',
     provider: agent.llm_config?.provider ?? '',
+    // Gateway wiring for OpenAI-compatible providers (atlas/vllm). Surfaced so
+    // an agent can be pointed at a real LLM gateway from the dashboard.
+    endpoint: agent.llm_config?.endpoint ?? '',
+    api_key_ref: agent.llm_config?.api_key_ref ?? '',
     goal: agent.goal ?? '',
     tools: agent.tools ?? [],
     event_triggers: agent.event_triggers ?? [],

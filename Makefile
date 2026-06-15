@@ -8,17 +8,20 @@
 #
 # Requires: Docker Desktop running, python3.11, node, npm.
 
-BACKEND_PORT      ?= 5055
+BACKEND_PORT      ?= 5000
 DASH_PORT         ?= 3000
 MC_PLATFORM_PORT  ?= 5099
 MC_VENV           ?= .venv-platform
 MC_PY             ?= python3.11
 MC_COMPANY        ?= leadforge
-PG_PORT           ?= 5432
-PG_CONTAINER      ?= forgeos-pg-local
-PG_USER           ?= forgeos
-PG_PASSWORD       ?= forgeos
-PG_DB             ?= forgeos
+# Reuse the Postgres started by docker-compose (forgeos-postgres-1 on :5433)
+# rather than spinning up a second, separate container. Credentials match
+# docker-compose.yaml's postgres service.
+PG_PORT           ?= 5433
+PG_CONTAINER      ?= forgeos-postgres-1
+PG_USER           ?= leadforge_admin
+PG_PASSWORD       ?= forgeoslocal
+PG_DB             ?= leadforge
 PG_IMAGE          ?= pgvector/pgvector:pg16
 COMPANY           ?= leadforge
 BACKEND_LOG       ?= /tmp/forgeos-backend.log
@@ -75,25 +78,21 @@ stop-dash:
 	@-lsof -tiTCP:$(DASH_PORT) -sTCP:LISTEN 2>/dev/null | xargs -r kill -9 2>/dev/null || true
 
 stop-pg:
-	@echo "→ stopping postgres ($(PG_CONTAINER))"
-	@-docker rm -f $(PG_CONTAINER) >/dev/null 2>&1 || true
+	@echo "→ leaving postgres ($(PG_CONTAINER)) running — it's managed by docker-compose"
 
 # ---------------------------------------------------------------------------
 # Start targets
 # ---------------------------------------------------------------------------
 .PHONY: pg backend dash start
 
-pg: stop-pg
+pg:
 	@command -v docker >/dev/null || { echo "✗ docker not found"; exit 1; }
 	@docker info >/dev/null 2>&1 || { echo "✗ Docker daemon not running. Open Docker Desktop and retry."; exit 1; }
-	@echo "→ starting postgres on $(PG_PORT)"
-	@docker run -d --name $(PG_CONTAINER) \
-		-e POSTGRES_USER=$(PG_USER) \
-		-e POSTGRES_PASSWORD=$(PG_PASSWORD) \
-		-e POSTGRES_DB=$(PG_DB) \
-		-p $(PG_PORT):5432 \
-		-v forgeos_pg_data:/var/lib/postgresql/data \
-		$(PG_IMAGE) >/dev/null
+	@echo "→ using docker-compose postgres ($(PG_CONTAINER)) on $(PG_PORT)"
+	@if ! docker ps --filter "name=$(PG_CONTAINER)" --filter "status=running" --format '{{.Names}}' | grep -q .; then \
+		echo "→ $(PG_CONTAINER) not running — starting via docker compose"; \
+		docker compose up -d postgres redis >/dev/null 2>&1 || { echo "✗ failed to start compose postgres"; exit 1; }; \
+	fi
 	@echo "→ waiting for postgres to accept connections"
 	@for i in $$(seq 1 30); do \
 		docker exec $(PG_CONTAINER) pg_isready -U $(PG_USER) -d $(PG_DB) >/dev/null 2>&1 && { echo "✓ postgres ready"; exit 0; }; \

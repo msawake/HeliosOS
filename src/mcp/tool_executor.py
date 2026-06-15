@@ -369,6 +369,14 @@ class ToolExecutor:
             len(tool_schemas), server_name,
         )
 
+    def unregister_mcp_tools(self, server_name: str) -> None:
+        """Drop tool definitions previously registered for a server.
+
+        Used when a server is removed at runtime so its tools stop appearing
+        in the agent tool catalogue. No-op if the server isn't registered.
+        """
+        self._mcp_tool_definitions.pop(server_name, None)
+
     def get_mcp_tool_definitions(self) -> list[dict]:
         """Return all registered MCP tool definitions."""
         all_defs: list[dict] = []

@@ -78,7 +78,9 @@ export default function AgentsPage() {
         title="Agents"
         description={
           live.connected
-            ? `Live — ${live.running}/${live.total} running`
+            ? live.running > 0
+              ? `Live — ${live.running}/${live.total} running`
+              : `Live — ${live.total} registered, 0 running`
             : 'Deployed agents on the platform.'
         }
         actions={

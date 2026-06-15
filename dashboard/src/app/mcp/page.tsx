@@ -63,6 +63,15 @@ function RegisterDialog({ onRegistered }: { onRegistered: () => void }) {
   const [args, setArgs] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
+
+  const reset = () => {
+    setName('');
+    setPkg('');
+    setEnv('');
+    setSecrets('');
+    setArgs('');
+  };
 
   const submit = async () => {
     if (!name.trim() || !pkg.trim()) {
@@ -71,14 +80,31 @@ function RegisterDialog({ onRegistered }: { onRegistered: () => void }) {
     }
     setBusy(true);
     setError(null);
+    setWarning(null);
     try {
       if (scope === 'platform') {
-        await api.registerMcp({
+        const res = await api.registerMcp({
           server_name: name,
           package: pkg,
           env_vars: parseKv(env),
           args: parseLines(args),
         });
+        onRegistered();
+        // The config is stored regardless, but connecting may fail or yield no
+        // tools (e.g. missing credentials). Surface that instead of a silent
+        // "success" that gives agents nothing to call.
+        if (res?.connected === false) {
+          setWarning(
+            `Saved, but the server didn't connect: ${res.detail ?? 'unknown error'}`,
+          );
+          setBusy(false);
+          return;
+        }
+        if (res && res.tools_discovered === 0) {
+          setWarning('Saved and connected, but 0 tools were discovered — check credentials/env vars.');
+          setBusy(false);
+          return;
+        }
       } else {
         await api.registerUserMcp(userId, name, {
           package: pkg,
@@ -86,14 +112,10 @@ function RegisterDialog({ onRegistered }: { onRegistered: () => void }) {
           secrets: parseKv(secrets),
           args: parseLines(args),
         });
+        onRegistered();
       }
       setOpen(false);
-      setName('');
-      setPkg('');
-      setEnv('');
-      setSecrets('');
-      setArgs('');
-      onRegistered();
+      reset();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Registration failed');
     } finally {
@@ -178,6 +200,7 @@ function RegisterDialog({ onRegistered }: { onRegistered: () => void }) {
             />
           </Field>
           {error ? <p className="text-[13px] text-danger">{error}</p> : null}
+          {warning ? <p className="text-[13px] text-warning">{warning}</p> : null}
         </div>
         <DialogFooter>
           <DialogClose asChild>

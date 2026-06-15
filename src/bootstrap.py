@@ -689,6 +689,12 @@ class PlatformBootstrap:
         for server_name, schemas in self._mcp_manager.get_all_tool_schemas().items():
             tool_executor.register_mcp_tools(server_name, schemas)
 
+        # Reconnect platform-scoped MCP servers persisted in Postgres. These are
+        # the servers added at runtime via the dashboard (stored under the
+        # synthetic "_platform" client); connecting them here makes those
+        # registrations durable across reboots, just like config.yaml servers.
+        await self._connect_persisted_platform_mcp(tool_executor)
+
         # Register platform-level tool stubs (CRM, HTTP, ads, MLS, etc.)
         try:
             from src.mcp.platform_tools import register_platform_tools
@@ -793,6 +799,53 @@ class PlatformBootstrap:
                 logger.error("Main loop error at tick %d: %s", tick_count, e)
 
             await asyncio.sleep(tick_interval)
+
+    async def _connect_persisted_platform_mcp(self, tool_executor) -> None:
+        """Connect platform MCP servers persisted in Postgres at boot.
+
+        Reads the ``_platform`` client's ``client_mcp_configs`` rows (the
+        servers registered at runtime via the dashboard) and brings each up
+        through the same MCPServerManager used for ``config.yaml`` servers.
+        Servers already declared in ``config.yaml`` win and are skipped — that
+        file remains the canonical declarative source; the DB holds additions.
+
+        Best-effort: a failed server is logged and skipped so one bad row never
+        blocks boot. No-op when there's no DB.
+        """
+        if not self._db:
+            return
+        try:
+            from src.platform.client_store import PostgresClientMCPStore
+            store = PostgresClientMCPStore(db_client=self._db, tenant_id=self.tenant_id)
+            persisted = store.list_for_client("_platform")
+        except Exception as e:
+            logger.warning("  Persisted platform MCP: could not read store: %s", e)
+            return
+
+        declared = {c.name for c in self._mcp_manager.get_server_configs()}
+        connected = 0
+        for cfg in persisted:
+            name = cfg.get("server_name")
+            if not name or not cfg.get("enabled", True):
+                continue
+            if name in declared:
+                logger.debug("  Persisted platform MCP: '%s' already in config.yaml — skipping", name)
+                continue
+            try:
+                schemas = await self._mcp_manager.connect_one(
+                    name, cfg.get("package", ""), cfg.get("env_vars", {}), cfg.get("args", []),
+                )
+                tool_executor.register_mcp_tools(name, schemas)
+                connected += 1
+                if not schemas:
+                    logger.warning(
+                        "  Persisted platform MCP: '%s' connected but discovered 0 tools "
+                        "(check credentials/env vars)", name,
+                    )
+            except Exception as e:
+                logger.warning("  Persisted platform MCP: '%s' failed to connect: %s", name, e)
+        if connected:
+            logger.info("  Persisted platform MCP: reconnected %d server(s) from Postgres", connected)
 
     async def shutdown(self):
         """Graceful async shutdown — cancel tasks, disconnect services, close DB."""
@@ -901,6 +954,8 @@ class PlatformBootstrap:
             kernel=getattr(self, '_kernel', None),
             credential_store=getattr(self, 'credentials', None),
             environment_manager=getattr(self, '_environment_manager', None),
+            mcp_manager=getattr(self, '_mcp_manager', None),
+            tool_executor=getattr(self, '_tool_executor', None),
         )
 
     def start_api_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):

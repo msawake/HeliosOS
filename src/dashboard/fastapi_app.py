@@ -251,6 +251,8 @@ def create_fastapi_app(
     credential_store=None,
     runtime_service=None,  # runtime-v2 worker tier (FORGEOS_RUNTIME_WORKERS)
     environment_manager=None,  # per-agent execution environments (k8s pods)
+    mcp_manager=None,  # boot-time MCPServerManager — for live connect on register
+    tool_executor=None,  # ToolExecutor — to register tools discovered at runtime
 ) -> FastAPI:
 
     app = FastAPI(
@@ -1280,10 +1282,26 @@ def create_fastapi_app(
             agent_def.goal = req.goal
         if req.metadata:
             agent_def.metadata.update(req.metadata)
-        if req.chat_model and req.chat_model != "gpt-4o":
+        # LLM config: merge provided fields onto the existing config so the
+        # gateway wiring (endpoint / api_key_ref) and reasoning_model aren't
+        # silently dropped on update. Only rebuild when an LLM field is
+        # actually provided (defaults gpt-4o/openai are treated as "unset").
+        existing_llm = agent_def.llm_config
+        model_set = bool(req.chat_model) and req.chat_model != "gpt-4o"
+        provider_set = bool(req.provider) and req.provider != "openai"
+        # Empty strings (from a pre-filled form field left blank) mean "unset",
+        # not "clear" — coalesce to None so blank gateway fields don't wipe an
+        # endpoint or force an empty one.
+        req_endpoint = req.endpoint or None
+        req_api_key_ref = req.api_key_ref or None
+        if model_set or provider_set or req_endpoint is not None or req_api_key_ref is not None or req.llm_metadata:
             agent_def.llm_config = LLMConfig(
-                chat_model=req.chat_model,
-                provider=req.provider or agent_def.llm_config.provider,
+                chat_model=req.chat_model if model_set else existing_llm.chat_model,
+                reasoning_model=existing_llm.reasoning_model,
+                provider=req.provider if provider_set else existing_llm.provider,
+                endpoint=req_endpoint if req_endpoint is not None else existing_llm.endpoint,
+                api_key_ref=req_api_key_ref if req_api_key_ref is not None else existing_llm.api_key_ref,
+                metadata={**(existing_llm.metadata or {}), **(req.llm_metadata or {})},
             )
 
         # Check if execution type changed
@@ -2265,8 +2283,22 @@ def create_fastapi_app(
         try:
             while True:
                 status = {"timestamp": datetime.now(timezone.utc).isoformat(), "agents": []}
-                if admin_tools:
+                # Prefer the platform executor/registry — the same source the
+                # REST list and dashboard page read — so registered-but-idle
+                # agents (e.g. reflex agents) are counted. Fall back to
+                # admin_tools only when the platform layer isn't wired.
+                agents = None
+                if platform_executor:
+                    agents = platform_executor.list_agents()
+                elif platform_registry:
+                    agents = [
+                        {**a.to_dict(),
+                         "status": platform_registry.get_status(a.agent_id).value}
+                        for a in platform_registry.list_all()
+                    ]
+                elif admin_tools:
                     agents = admin_tools.list_agents()
+                if agents is not None:
                     status["agents"] = agents
                     status["total"] = len(agents)
                     status["running"] = sum(1 for a in agents if a.get("status") == "running")
@@ -2465,9 +2497,30 @@ def create_fastapi_app(
         """List platform-scoped MCP server configs (secrets redacted)."""
         return client_mcp_store.list_for_client(PLATFORM_CLIENT_ID, redact_secrets=True)
 
+    async def _connect_platform_mcp(req: "ClientMCPConfigRequest") -> dict:
+        """Bring a platform MCP server up live and register its tools.
+
+        Reuses the boot-time MCPServerManager so a server added from the
+        dashboard behaves identically to one declared in config.yaml. Returns
+        a status dict; never raises — connection problems are reported back to
+        the caller so the stored config isn't lost on a transient failure.
+        """
+        if mcp_manager is None or tool_executor is None:
+            return {"connected": False, "tools_discovered": 0,
+                    "detail": "Live MCP connection not available on this server."}
+        try:
+            schemas = await mcp_manager.connect_one(
+                req.server_name, req.package, req.env_vars, req.args,
+            )
+            tool_executor.register_mcp_tools(req.server_name, schemas)
+            return {"connected": True, "tools_discovered": len(schemas)}
+        except Exception as e:
+            logger.warning("Live connect failed for MCP '%s': %s", req.server_name, e)
+            return {"connected": False, "tools_discovered": 0, "detail": str(e)}
+
     @app.post("/api/platform/mcp/servers", tags=["mcp"], status_code=201)
     async def add_platform_mcp(req: ClientMCPConfigRequest, _auth=Depends(check_auth)):
-        """Add a platform-scoped MCP server."""
+        """Add a platform-scoped MCP server and connect it live."""
         try:
             config = client_mcp_store.add(
                 PLATFORM_CLIENT_ID, req.server_name, req.package, req.env_vars, req.args,
@@ -2475,9 +2528,11 @@ def create_fastapi_app(
         except ValueError as e:
             logger.warning("Platform MCP conflict: %s", e)
             raise HTTPException(409, "MCP server configuration conflict")
+        status = await _connect_platform_mcp(req)
         _audit("platform_mcp.add", resource_type="platform_mcp",
-               resource_id=req.server_name, details={"package": req.package})
-        return config
+               resource_id=req.server_name,
+               details={"package": req.package, **status})
+        return {**config, **status}
 
     @app.put("/api/platform/mcp/servers/{server_name}", tags=["mcp"])
     async def update_platform_mcp(server_name: str, req: ClientMCPConfigRequest, _auth=Depends(check_auth)):
@@ -2487,15 +2542,24 @@ def create_fastapi_app(
         )
         if not updated:
             raise HTTPException(404, f"Platform MCP server '{server_name}' not found")
+        status = await _connect_platform_mcp(req)
         _audit("platform_mcp.update", resource_type="platform_mcp",
-               resource_id=server_name, details={"package": req.package})
-        return updated
+               resource_id=server_name, details={"package": req.package, **status})
+        return {**updated, **status}
 
     @app.delete("/api/platform/mcp/servers/{server_name}", tags=["mcp"])
     async def delete_platform_mcp(server_name: str, _auth=Depends(check_auth)):
-        """Remove a platform-scoped MCP server."""
+        """Remove a platform-scoped MCP server and disconnect it live."""
         if not client_mcp_store.delete(PLATFORM_CLIENT_ID, server_name):
             raise HTTPException(404, f"Platform MCP server '{server_name}' not found")
+        # Tear down the live connection and drop its tools so they stop
+        # resolving immediately — symmetric with the live connect on add.
+        if mcp_manager is not None and tool_executor is not None:
+            try:
+                await mcp_manager.disconnect_one(server_name)
+                tool_executor.unregister_mcp_tools(server_name)
+            except Exception as e:
+                logger.warning("Live disconnect failed for MCP '%s': %s", server_name, e)
         _audit("platform_mcp.delete", resource_type="platform_mcp", resource_id=server_name)
         return {"ok": True}
 

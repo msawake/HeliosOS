@@ -131,6 +131,46 @@ class MCPServerManager:
 
         return dict(self._clients)
 
+    async def connect_one(
+        self,
+        name: str,
+        package: str,
+        env_vars: dict[str, str] | None = None,
+        args: list[str] | None = None,
+    ) -> list[dict]:
+        """Connect a single MCP server on demand and discover its tools.
+
+        Used to bring up a server registered at runtime (e.g. from the
+        dashboard) without a full reboot. Returns the discovered tool
+        schemas (same shape as ``get_all_tool_schemas()`` values) so the
+        caller can register them with the ToolExecutor. Re-registering an
+        existing server reconnects it. Raises on connection failure.
+        """
+        if not HAS_MCP:
+            raise RuntimeError("MCP SDK not installed — cannot connect server")
+        cfg = MCPServerConfig(
+            name=name,
+            package=package,
+            env_vars=env_vars or {},
+            args=args or [],
+        )
+        client = await self._connect_server(cfg)
+        if not client:
+            raise RuntimeError(f"MCP server '{name}' did not return a client")
+        self._clients[name] = client
+        tools = await client.list_tools()
+        schemas = [
+            {
+                "name": tool.name,
+                "description": getattr(tool, "description", ""),
+                "inputSchema": getattr(tool, "inputSchema", {}),
+            }
+            for tool in tools.tools
+        ]
+        self._tool_schemas[name] = schemas
+        logger.info("MCP connected on demand: %s (%d tools discovered)", name, len(schemas))
+        return schemas
+
     async def _connect_server(self, config: MCPServerConfig) -> Any | None:
         """Connect to a single MCP server via stdio transport."""
         if not HAS_MCP:
@@ -205,6 +245,35 @@ class MCPServerManager:
     def get_server_configs(self) -> list[MCPServerConfig]:
         """Return parsed server configurations."""
         return list(self._server_configs)
+
+    async def disconnect_one(self, name: str) -> bool:
+        """Disconnect a single MCP server and drop its discovered tools.
+
+        Returns True if the server was connected. The dict entries are removed
+        unconditionally (so tools stop resolving immediately); the underlying
+        stdio transport is closed best-effort — a cross-task cancel scope is
+        benign and logged at debug, matching ``disconnect_all``.
+        """
+        session = self._clients.pop(name, None)
+        self._tool_schemas.pop(name, None)
+        if session is None:
+            return False
+        remaining = []
+        for transport, sess in self._sessions:
+            if sess is session:
+                try:
+                    await sess.__aexit__(None, None, None)
+                    await transport.__aexit__(None, None, None)
+                except Exception as e:
+                    if "cancel scope in a different task" in str(e):
+                        logger.debug("MCP '%s' cross-task teardown (benign): %s", name, e)
+                    else:
+                        logger.warning("Error disconnecting MCP '%s': %s", name, e)
+            else:
+                remaining.append((transport, sess))
+        self._sessions = remaining
+        logger.info("MCP disconnected on demand: %s", name)
+        return True
 
     async def disconnect_all(self):
         """Gracefully disconnect all MCP servers."""

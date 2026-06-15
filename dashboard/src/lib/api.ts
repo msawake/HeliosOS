@@ -109,7 +109,7 @@ export interface Agent {
   department?: string;
   ownership?: string;
   goal?: string;
-  llm_config?: { chat_model?: string; reasoning_model?: string; provider?: string };
+  llm_config?: { chat_model?: string; reasoning_model?: string; provider?: string; endpoint?: string; api_key_ref?: string };
   tools?: string[];
   event_triggers?: string[];
   metadata?: Record<string, unknown>;
@@ -289,7 +289,11 @@ export const api = {
     package: string;
     env_vars?: Record<string, string>;
     args?: string[];
-  }) => request<unknown>('/api/platform/mcp/servers', { method: 'POST', body: payload }),
+  }) =>
+    request<{ connected?: boolean; tools_discovered?: number; detail?: string }>(
+      '/api/platform/mcp/servers',
+      { method: 'POST', body: payload },
+    ),
   registerUserMcp: (
     user: string,
     serverName: string,
