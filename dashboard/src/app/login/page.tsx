@@ -2,6 +2,10 @@
 
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
+import { LogoMark } from '@/components/brand/logo';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Field, FieldLabel } from '@/components/ui/field';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -26,48 +30,52 @@ export default function LoginPage() {
       }
       const data = await res.json();
       await login(data.token);
-    } catch (err: any) {
-      setError(err.message || 'Login failed');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed');
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#f7f7f8]">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm p-8 bg-white border border-[#e5e5e5] rounded-xl">
-        <h1 className="text-2xl font-semibold text-[#0d0d0d] mb-2 text-center">ForgeOS</h1>
-        <p className="text-gray-400 text-sm mb-6 text-center">
-          Sign in to the multi-stack agent platform.
-        </p>
+    <div className="flex min-h-screen items-center justify-center bg-page px-4">
+      <div className="w-full max-w-sm">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <span className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-ink">
+            <LogoMark className="h-9 w-9 text-paper" />
+          </span>
+          <h1 className="font-display text-3xl font-semibold tracking-[0.04em] text-primary">ForgeOS</h1>
+          <p className="mt-1 text-sm text-tertiary">The agentic harness.</p>
+        </div>
 
-        <label className="block text-sm text-gray-400 mb-1">Password</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoFocus
-          className="w-full px-3 py-2 bg-[#f7f7f8] border border-[#d1d1d1] rounded-lg text-[#0d0d0d] text-sm placeholder-[#8e8ea0] mb-3"
-          placeholder="Enter password"
-        />
-
-        {error && (
-          <p className="text-red-400 text-xs mb-3">{error}</p>
-        )}
-
-        <button
-          type="submit"
-          disabled={loading || !password}
-          className="w-full py-2 bg-[#10A37F] hover:bg-[#0d8c6d] disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
+        <form
+          onSubmit={handleSubmit}
+          className="rounded-xl border border-edge bg-surface p-6 shadow-sm"
         >
-          {loading ? 'Signing in…' : 'Sign in'}
-        </button>
+          <Field>
+            <FieldLabel htmlFor="password">Password</FieldLabel>
+            <Input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoFocus
+              placeholder="Enter password"
+            />
+          </Field>
 
-        <p className="text-xs text-gray-600 mt-4 text-center">
-          Default dev password: <code className="text-gray-500 bg-[#f7f7f8] px-1 py-0.5 rounded">forgeos</code>
-          <br />
-          Override via <code className="text-gray-500">FORGEOS_DEV_PASSWORD</code>
-        </p>
-      </form>
+          {error ? <p className="mt-3 text-xs text-danger">{error}</p> : null}
+
+          <Button type="submit" disabled={loading || !password} className="mt-4 w-full">
+            {loading ? 'Signing in…' : 'Sign in'}
+          </Button>
+
+          <p className="mt-4 text-center text-xs text-tertiary">
+            Default dev password{' '}
+            <code className="rounded bg-inset px-1 py-0.5 font-mono text-tertiary">forgeos</code>, override
+            via <code className="font-mono">FORGEOS_DEV_PASSWORD</code>.
+          </p>
+        </form>
+      </div>
     </div>
   );
 }

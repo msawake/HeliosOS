@@ -13,7 +13,8 @@
 # OPENAI_API_KEY / GOOGLE_API_KEY), then `docker compose up` again — compose
 # reads ./.env automatically.
 #
-# API: http://localhost:5000  (docs at /docs, health at /api/health)
+# Dashboard UI: http://localhost:3000
+# API:          http://localhost:5000  (docs at /docs, health at /api/health)
 # ----------------------------------------------------------------------------
 
 name: forgeos
@@ -65,12 +66,33 @@ services:
       # Local default: no API auth, so the CLI works with just a URL.
       # Set FORGEOS_AUTH_DISABLED= (empty) to require bearer tokens.
       - FORGEOS_AUTH_DISABLED=${FORGEOS_AUTH_DISABLED:-1}
+      # Don't seed the two demo HITL approvals — set =1 to bring them back.
+      - FORGEOS_SEED_HITL=${FORGEOS_SEED_HITL:-0}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     command: ["python", "-m", "src.bootstrap", "--dashboard", "--loop"]
+
+  # Next.js dashboard UI. Next's rewrites proxy /api/* to the `app` service, so
+  # the browser only ever talks to http://localhost:3000 (same origin). The
+  # live-status WebSocket connects straight to the API on :5000 (exposed below).
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+      args:
+        FORGEOS_API_URL: http://app:5000
+        NEXT_PUBLIC_REQUIRE_AUTH: "0"
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      # Read at server start by next.config.js rewrites() — must point at the
+      # API service over the compose network (not localhost, which is this box).
+      - FORGEOS_API_URL=http://app:5000
+    depends_on:
+      - app
 
 volumes:
   postgres_data:

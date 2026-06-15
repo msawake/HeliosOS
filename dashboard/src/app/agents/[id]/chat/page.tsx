@@ -1,419 +1,252 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
-import Link from 'next/link';
-import { api } from '@/lib/api';
+import { PaperPlaneRight, CircleNotch } from '@phosphor-icons/react';
+import { api, isRunSettled, type Agent, type RunHandle } from '@/lib/api';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorState } from '@/components/ui/error-state';
+import { cn } from '@/lib/utils';
 
-interface ChatEvent {
-  type: 'session' | 'text_delta' | 'tool_call' | 'tool_result' | 'hitl_request' | 'done' | 'error';
-  content?: string;
-  session_id?: string;
-  name?: string;
-  input?: Record<string, unknown>;
-  result?: Record<string, unknown>;
-  request_id?: string;
-  title?: string;
-  description?: string;
-  risk?: string;
-  tokens_used?: number;
-  text?: string;
-  error?: string;
-}
-
-interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'tool' | 'hitl';
+interface Msg {
+  role: 'human' | 'agent' | 'system';
   content: string;
-  toolName?: string;
-  toolInput?: Record<string, unknown>;
-  toolResult?: Record<string, unknown>;
-  hitlRequestId?: string;
-  hitlTitle?: string;
-  hitlDescription?: string;
-  hitlRisk?: string;
-  hitlStatus?: 'pending' | 'approved' | 'rejected';
 }
 
-interface Session {
-  session_id: string;
-  created_at: string;
-  message_count: number;
-  preview: string;
-}
+const HUMAN = 'operator';
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export default function AgentChatPage() {
-  const params = useParams();
-  const agentId = params.id as string;
+  const params = useParams<{ id: string }>();
+  const id = decodeURIComponent(params.id);
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [agent, setAgent] = useState<Agent | null>(null);
+  const [chatId, setChatId] = useState<string | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [agentName, setAgentName] = useState('');
-  const bottomRef = useRef<HTMLDivElement>(null);
-  let msgCounter = useRef(0);
+  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<RunHandle | null>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // Load agent name
-  useEffect(() => {
-    api.getAgent(agentId)
-      .then((a: any) => setAgentName(a.name || agentId))
-      .catch(() => {});
-  }, [agentId]);
-
-  // Load sessions list
-  useEffect(() => {
-    fetch(`/api/platform/agents/${agentId}/chat/sessions`)
-      .then(r => r.ok ? r.json() : [])
-      .then(setSessions)
-      .catch(() => {});
-  }, [agentId, sessionId]);
-
-  function newId(): string {
-    msgCounter.current += 1;
-    return `msg-${Date.now()}-${msgCounter.current}`;
-  }
-
-  async function loadSession(sid: string) {
+  const open = useCallback(async () => {
+    setOpenError(null);
     try {
-      const res = await fetch(`/api/platform/agents/${agentId}/chat/history?session_id=${sid}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setSessionId(sid);
-      setMessages(
-        (data.messages || []).map((m: any, i: number) => ({
-          id: `loaded-${i}`,
-          role: m.role as 'user' | 'assistant',
-          content: m.content || '',
-        }))
-      );
-    } catch {}
-  }
+      const a = await api.getAgent(id);
+      setAgent(a);
+      const chat = await api.openChat({
+        agent_pid: id,
+        agent_namespace: a.namespace ?? 'default',
+        agent_name: a.name,
+        human_name: HUMAN,
+        human_namespace: 'humans',
+        topic: `Chat with ${a.name}`,
+      });
+      setChatId(chat.id);
+    } catch (e) {
+      setOpenError(e instanceof Error ? e.message : 'Could not open chat');
+    }
+  }, [id]);
 
-  function newConversation() {
-    setSessionId(null);
-    setMessages([]);
-  }
+  useEffect(() => {
+    open();
+    return () => {
+      // Best-effort close on unmount.
+      setChatId((cid) => {
+        if (cid) api.closeChat(cid).catch(() => {});
+        return cid;
+      });
+    };
+  }, [open]);
 
-  const [abortController, setAbortController] = useState<AbortController | null>(null);
+  useEffect(() => {
+    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
+  }, [messages, pending]);
 
-  async function send() {
-    const text = input.trim();
-    if (!text) return;
+  const send = async () => {
+    const content = input.trim();
+    if (!content || !chatId || busy) return;
     setInput('');
-    
-    // Don't set loading=true here, allow user to type during stream
-    // setLoading(true);
-
-    const userMsg: ChatMessage = { id: newId(), role: 'user', content: text };
-    setMessages(prev => [...prev, userMsg]);
-
-    // Seed an empty assistant message we'll fill with streamed tokens
-    const assistantId = newId();
-    setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '' }]);
-
-    const controller = new AbortController();
-    setAbortController(controller);
-
+    setMessages((m) => [...m, { role: 'human', content }]);
+    setBusy(true);
+    setPending(null);
     try {
-      const res = await fetch(`/api/platform/agents/${agentId}/chat/stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, session_id: sessionId }),
-        signal: controller.signal,
+      await api.postChatMessage(chatId, { role: 'human', sender: HUMAN, content, client_drives: true });
+      const handle = await api.invoke(id, {
+        prompt: content,
+        sessionId: chatId,
+        context: { chat_id: chatId, session_id: chatId },
       });
 
-      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        let sep = buffer.indexOf('\n\n');
-        while (sep !== -1) {
-          const frame = buffer.slice(0, sep);
-          buffer = buffer.slice(sep + 2);
-
-          if (frame.startsWith('data: ')) {
-            try {
-              const ev: ChatEvent = JSON.parse(frame.slice(6));
-              handleEvent(ev, assistantId);
-            } catch {}
-          }
-          sep = buffer.indexOf('\n\n');
-        }
+      const reply = await driveRun(handle);
+      if (reply) {
+        setMessages((m) => [...m, { role: 'agent', content: reply }]);
+        await api
+          .postChatMessage(chatId, { role: 'agent', sender: agent?.name ?? 'agent', content: reply })
+          .catch(() => {});
       }
-    } catch (e: any) {
-      if (e.name === 'AbortError') {
-        setMessages(prev => {
-          const copy = [...prev];
-          const last = copy.find(m => m.id === assistantId);
-          if (last) last.content += `\n\n[Generation stopped]`;
-          return [...copy];
-        });
-      } else {
-        setMessages(prev => {
-          const copy = [...prev];
-          const last = copy.find(m => m.id === assistantId);
-          if (last) last.content = `Error: ${e.message}`;
-          return [...copy];
-        });
-      }
+    } catch (e) {
+      setMessages((m) => [
+        ...m,
+        { role: 'system', content: e instanceof Error ? e.message : 'Send failed' },
+      ]);
     } finally {
-      setAbortController(null);
-      // setLoading(false);
+      setBusy(false);
+      setPending(null);
     }
-  }
+  };
 
-  function stopGeneration() {
-    if (abortController) {
-      abortController.abort();
-      setAbortController(null);
+  /** Poll the run to completion, surfacing approval gates inline. Returns the result text. */
+  const driveRun = async (initial: RunHandle): Promise<string | null> => {
+    let run = initial;
+    let runId = run.run_id;
+    // Loop until terminal.
+    // (Approvals are resolved via the inline buttons, which flip `pending`.)
+    for (;;) {
+      if (isRunSettled(run.status) && (run.status || '').toLowerCase() !== 'paused') {
+        const s = (run.status || '').toLowerCase();
+        if (s === 'failed') return run.error || 'Run failed.';
+        return run.result ?? '(no result)';
+      }
+      if (run.pending?.length) {
+        setPending(run);
+      }
+      await sleep(2000);
+      if (!runId) return run.result ?? null;
+      run = await api.getRun(runId);
+      runId = run.run_id ?? runId;
+      if (!run.pending?.length) setPending(null);
     }
-  }
+  };
 
-  function handleEvent(ev: ChatEvent, assistantId: string) {
-    switch (ev.type) {
-      case 'session':
-        if (ev.session_id) setSessionId(ev.session_id);
-        break;
-
-      case 'text_delta':
-        setMessages(prev => {
-          const copy = [...prev];
-          const msg = copy.find(m => m.id === assistantId);
-          if (msg) msg.content += ev.content || '';
-          return [...copy];
-        });
-        break;
-
-      case 'tool_call':
-        setMessages(prev => [...prev, {
-          id: newId(),
-          role: 'tool',
-          content: `Calling ${ev.name}...`,
-          toolName: ev.name,
-          toolInput: ev.input as Record<string, unknown>,
-        }]);
-        break;
-
-      case 'tool_result':
-        setMessages(prev => {
-          const copy = [...prev];
-          // Find the last tool message with this name and update it
-          for (let i = copy.length - 1; i >= 0; i--) {
-            if (copy[i].role === 'tool' && copy[i].toolName === ev.name && !copy[i].toolResult) {
-              copy[i].content = `${ev.name} completed`;
-              copy[i].toolResult = ev.result as Record<string, unknown>;
-              break;
-            }
-          }
-          return [...copy];
-        });
-        break;
-
-      case 'hitl_request':
-        setMessages(prev => [...prev, {
-          id: newId(),
-          role: 'hitl',
-          content: ev.title || 'Approval required',
-          hitlRequestId: ev.request_id,
-          hitlTitle: ev.title,
-          hitlDescription: ev.description,
-          hitlRisk: ev.risk,
-          hitlStatus: 'pending',
-        }]);
-        break;
-
-      case 'error':
-        setMessages(prev => {
-          const copy = [...prev];
-          const msg = copy.find(m => m.id === assistantId);
-          if (msg) msg.content += `\n\n[Error: ${ev.error}]`;
-          return [...copy];
-        });
-        break;
-    }
-  }
-
-  async function handleApproval(msgId: string, requestId: string, approve: boolean) {
-    try {
-      const endpoint = approve ? 'approve' : 'reject';
-      await fetch(`/api/approvals/${requestId}/${endpoint}`, { method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approved_by: 'chat-user', reason: '' }),
-      });
-      setMessages(prev => {
-        const copy = [...prev];
-        const msg = copy.find(m => m.id === msgId);
-        if (msg) msg.hitlStatus = approve ? 'approved' : 'rejected';
-        return [...copy];
-      });
-      // Auto-send follow-up so the agent knows the decision
-      const action = approve ? 'approved' : 'rejected';
-      setInput(`I ${action} the request: "${messages.find(m => m.id === msgId)?.hitlTitle}". Please proceed accordingly.`);
-    } catch {}
+  if (openError) {
+    return (
+      <div>
+        <PageHeader title="Chat" back={{ href: `/agents/${encodeURIComponent(id)}`, label: 'Agent' }} />
+        <ErrorState title="Couldn't open chat" detail={openError} onRetry={open} />
+      </div>
+    );
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
-      {/* Session sidebar */}
-      <div className="w-56 border-r border-[#e5e5e5] flex flex-col bg-white shrink-0">
-        <div className="p-3 border-b border-[#e5e5e5]">
-          <button onClick={newConversation}
-            className="w-full px-3 py-2 text-sm font-medium bg-[#10A37F] text-white rounded-lg hover:bg-[#0d8c6d]">
-            + New conversation
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto scrollbar-hide p-2 space-y-1">
-          {sessions.map(s => (
-            <button key={s.session_id} onClick={() => loadSession(s.session_id)}
-              className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors ${
-                sessionId === s.session_id
-                  ? 'bg-gray-100 text-[#0d0d0d] font-medium'
-                  : 'text-[#6e6e80] hover:bg-gray-50'
-              }`}>
-              <p className="truncate">{s.preview || 'New conversation'}</p>
-              <p className="text-[10px] text-[#8e8ea0] mt-0.5">{s.message_count} msgs</p>
-            </button>
-          ))}
-        </div>
-      </div>
+    <div className="flex h-[calc(100vh-var(--topbar-height)-3.5rem)] flex-col">
+      <PageHeader
+        title={agent ? `Chat — ${agent.name}` : 'Chat'}
+        back={{ href: `/agents/${encodeURIComponent(id)}`, label: 'Agent' }}
+      />
 
-      {/* Chat area */}
-      <div className="flex-1 flex flex-col">
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-[#e5e5e5] flex items-center gap-3 bg-white">
-          <Link href={`/agents/${agentId}`} className="text-[#8e8ea0] hover:text-[#0d0d0d] text-sm">
-            ← Back
-          </Link>
-          <span className="text-[#0d0d0d] font-medium text-sm">{agentName}</span>
-          {sessionId && (
-            <span className="text-[10px] text-[#8e8ea0] font-mono">{sessionId.slice(0, 8)}</span>
-          )}
-        </div>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {messages.length === 0 && (
-            <div className="text-center py-16">
-              <p className="text-[#8e8ea0] text-sm">Start a conversation with {agentName || 'this agent'}.</p>
-              <p className="text-[#8e8ea0] text-xs mt-1">Messages stream in real-time. Tool calls and approvals appear inline.</p>
+      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div ref={threadRef} className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
+          {!chatId ? (
+            <div className="space-y-3">
+              <Skeleton className="h-10 w-2/3" />
+              <Skeleton className="ml-auto h-10 w-1/2" />
             </div>
+          ) : messages.length === 0 ? (
+            <p className="text-[13px] text-tertiary">
+              Session open. Say something to {agent?.name ?? 'the agent'}.
+            </p>
+          ) : (
+            messages.map((m, i) => <Bubble key={i} msg={m} agentName={agent?.name} />)
           )}
 
-          {messages.map(msg => (
-            <div key={msg.id}>
-              {msg.role === 'user' && (
-                <div className="flex justify-end">
-                  <div className="max-w-[70%] bg-[#10A37F] text-white rounded-xl px-4 py-3 text-sm whitespace-pre-wrap">
-                    {msg.content}
-                  </div>
-                </div>
-              )}
-
-              {msg.role === 'assistant' && (
-                <div className="flex justify-start">
-                  <div className="max-w-[70%] bg-white border border-[#e5e5e5] rounded-xl px-4 py-3 text-sm text-[#0d0d0d] whitespace-pre-wrap">
-                    {msg.content || (loading ? <span className="text-[#8e8ea0]">Thinking...</span> : '')}
-                  </div>
-                </div>
-              )}
-
-              {msg.role === 'tool' && (
-                <div className="flex justify-start">
-                  <div className="max-w-[80%] bg-[#f7f7f8] border border-[#e5e5e5] rounded-lg px-3 py-2 text-xs font-mono text-[#6e6e80]">
-                    <span className="font-medium text-[#0d0d0d]">{msg.toolName}</span>
-                    {msg.toolResult ? (
-                      <span className="text-emerald-600 ml-2">completed</span>
-                    ) : (
-                      <span className="text-[#8e8ea0] ml-2">running...</span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {msg.role === 'hitl' && (
-                <div className="flex justify-start">
-                  <div className="max-w-[80%] bg-amber-50 border border-amber-200 rounded-xl p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-amber-700 font-medium text-sm">Approval Required</span>
-                      <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-600 border border-amber-200">
-                        {msg.hitlRisk || 'medium'}
-                      </span>
-                    </div>
-                    <p className="text-sm text-[#0d0d0d] font-medium">{msg.hitlTitle}</p>
-                    {msg.hitlDescription && (
-                      <p className="text-xs text-[#6e6e80] mt-1">{msg.hitlDescription}</p>
-                    )}
-                    {msg.hitlStatus === 'pending' && msg.hitlRequestId && (
-                      <div className="flex gap-2 mt-3">
-                        <button
-                          onClick={() => handleApproval(msg.id, msg.hitlRequestId!, true)}
-                          className="px-3 py-1.5 bg-[#10A37F] text-white text-xs rounded-lg hover:bg-[#0d8c6d] font-medium">
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => handleApproval(msg.id, msg.hitlRequestId!, false)}
-                          className="px-3 py-1.5 bg-white text-red-600 border border-red-200 text-xs rounded-lg hover:bg-red-50 font-medium">
-                          Reject
-                        </button>
-                      </div>
-                    )}
-                    {msg.hitlStatus === 'approved' && (
-                      <p className="text-xs text-emerald-700 mt-2 font-medium">Approved</p>
-                    )}
-                    {msg.hitlStatus === 'rejected' && (
-                      <p className="text-xs text-red-600 mt-2 font-medium">Rejected</p>
-                    )}
-                  </div>
-                </div>
-              )}
+          {pending?.pending?.length ? (
+            <InlineApprovals run={pending} onResolved={() => setPending(null)} />
+          ) : busy ? (
+            <div className="flex items-center gap-2 text-[13px] text-tertiary">
+              <CircleNotch className="h-4 w-4 animate-spin" aria-hidden />
+              {agent?.name ?? 'Agent'} is working…
             </div>
-          ))}
-
-          <div ref={bottomRef} />
+          ) : null}
         </div>
 
-        {/* Input */}
-        <div className="px-4 py-3 border-t border-[#e5e5e5] bg-white">
-          <div className="flex gap-3">
-            <input
+        <div className="border-t border-edge px-4 py-3">
+          <div className="flex items-end gap-2">
+            <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && send()}
-              placeholder={`Message ${agentName || 'agent'}...`}
-              className="flex-1 px-4 py-3 border border-[#d1d1d1] rounded-xl text-sm text-[#0d0d0d] placeholder-[#8e8ea0] focus:border-[#10A37F] focus:ring-1 focus:ring-[#10A37F]/30"
+              placeholder="Message…"
+              className="min-h-11 flex-1"
+              disabled={!chatId}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
             />
-            {abortController ? (
-              <button
-                onClick={stopGeneration}
-                className="px-5 py-3 bg-red-500 hover:bg-red-600 text-white text-sm rounded-xl font-medium transition-colors"
-              >
-                Stop
-              </button>
-            ) : (
-              <button
-                onClick={send}
-                disabled={!input.trim()}
-                className="px-5 py-3 bg-[#10A37F] hover:bg-[#0d8c6d] disabled:opacity-50 text-white text-sm rounded-xl font-medium transition-colors"
-              >
-                Send
-              </button>
-            )}
+            <Button onClick={send} disabled={!chatId || busy || !input.trim()} size="icon">
+              <PaperPlaneRight className="h-4 w-4" aria-hidden />
+            </Button>
           </div>
         </div>
+      </Card>
+    </div>
+  );
+}
+
+function Bubble({ msg, agentName }: { msg: Msg; agentName?: string }) {
+  if (msg.role === 'system') {
+    return (
+      <p className="text-center text-xs text-warning">{msg.content}</p>
+    );
+  }
+  const human = msg.role === 'human';
+  return (
+    <div className={cn('flex', human ? 'justify-end' : 'justify-start')}>
+      <div className={cn('max-w-[80%] space-y-1', human && 'text-right')}>
+        <p className="text-[11px] text-muted">{human ? 'You' : agentName ?? 'Agent'}</p>
+        <div
+          className={cn(
+            'inline-block whitespace-pre-wrap rounded-lg px-3.5 py-2 text-[13px]',
+            human ? 'bg-ink text-paper' : 'border border-edge bg-surface text-primary'
+          )}
+        >
+          {msg.content}
+        </div>
       </div>
+    </div>
+  );
+}
+
+function InlineApprovals({ run, onResolved }: { run: RunHandle; onResolved: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const act = async (requestId: string, kind: 'approve' | 'reject') => {
+    setBusy(requestId);
+    try {
+      if (kind === 'approve') await api.approve(requestId);
+      else await api.reject(requestId, 'Rejected from chat');
+      onResolved();
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="space-y-2">
+      {run.pending?.map((p, i) => (
+        <div key={p.request_id ?? i} className="rounded-md border border-warning/25 bg-warning-wash p-3">
+          <p className="text-[13px] text-primary">
+            Approval needed{p.tool ? <> for <span className="font-mono text-warning">{p.tool}</span></> : null}
+          </p>
+          <div className="mt-2 flex gap-2">
+            <Button size="sm" onClick={() => act(p.request_id ?? '', 'approve')} disabled={busy !== null}>
+              Approve
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => act(p.request_id ?? '', 'reject')}
+              disabled={busy !== null}
+            >
+              Reject
+            </Button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

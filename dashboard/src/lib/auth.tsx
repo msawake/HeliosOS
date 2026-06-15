@@ -126,7 +126,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
   // Still loading — show nothing briefly instead of flashing redirect
   if (!loaded) {
-    return <div className="min-h-screen bg-gray-950" />;
+    return <div className="min-h-screen bg-page" />;
   }
 
   if (!isAuthenticated && pathname !== '/login') {

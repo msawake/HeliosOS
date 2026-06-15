@@ -1,77 +1,156 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Badge } from '@/components/Badge';
+import { useCallback, useEffect, useState } from 'react';
+import { CheckCircle } from '@phosphor-icons/react';
+import { api, type Approval } from '@/lib/api';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
+import { CodeBlock } from '@/components/ui/code-block';
+import { AnswerForm } from '@/components/RunPanel';
 
-interface Approval {
-  id: string;
-  title: string;
-  agent: string;
-  category: string;
-  status: string;
-  /** HITL API returns `timestamp` */
-  timestamp?: string;
-  created_at?: string;
-  sla_hours: number;
+function ApprovalCard({ approval, onResolved }: { approval: Approval; onResolved: () => void }) {
+  const reqId = approval.request_id ?? approval.id ?? '';
+  const runId = approval.run_id ?? approval.continuation_id;
+  const question = approval.content?.question;
+  const context = approval.content?.context;
+  const kind = (approval.content?.kind ?? '').toLowerCase();
+  const isQuestion = ['text', 'choice', 'number', 'question'].includes(kind);
+
+  const [busy, setBusy] = useState<null | 'approve' | 'reject'>(null);
+  const [reason, setReason] = useState('');
+  const [showReject, setShowReject] = useState(false);
+  const [resolved, setResolved] = useState<string | null>(null);
+
+  const act = async (kindArg: 'approve' | 'reject') => {
+    setBusy(kindArg);
+    try {
+      if (kindArg === 'approve') await api.approve(reqId);
+      else await api.reject(reqId, reason || undefined);
+      setResolved(kindArg === 'approve' ? 'Approved' : 'Rejected');
+      onResolved();
+    } catch {
+      setResolved('Action failed');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 py-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="warning">pending</Badge>
+          {approval.from_agent ? (
+            <span className="text-[13px] text-secondary">
+              from <span className="font-medium text-primary">{approval.from_agent}</span>
+            </span>
+          ) : null}
+          <span className="ml-auto font-mono text-[11px] text-tertiary">{reqId}</span>
+        </div>
+
+        {question ? <p className="text-[13px] text-primary">{question}</p> : null}
+        {runId ? (
+          <p className="text-xs text-tertiary">
+            run <span className="font-mono">{runId}</span>
+          </p>
+        ) : null}
+        {context && Object.keys(context).length > 0 ? (
+          <CodeBlock code={JSON.stringify(context, null, 2)} wrap maxHeight={180} />
+        ) : null}
+
+        {resolved ? (
+          <p className="text-[13px] text-tertiary">{resolved}.</p>
+        ) : isQuestion ? (
+          <AnswerForm requestId={reqId} onDone={onResolved} />
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={() => act('approve')} disabled={busy !== null}>
+                {busy === 'approve' ? 'Approving…' : 'Approve'}
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => (showReject ? act('reject') : setShowReject(true))}
+                disabled={busy !== null}
+              >
+                {busy === 'reject' ? 'Rejecting…' : 'Reject'}
+              </Button>
+            </div>
+            {showReject ? (
+              <Input
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Reason (optional)"
+                className="max-w-md"
+              />
+            ) : null}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function ApprovalsPage() {
-  const [items, setItems] = useState<Approval[]>([]);
+  const [approvals, setApprovals] = useState<Approval[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [fromAgent, setFromAgent] = useState('');
+
+  const load = useCallback(async () => {
+    setApprovals(null);
+    setError(null);
+    try {
+      const data = await api.listApprovals(fromAgent || undefined);
+      setApprovals(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load approvals');
+    }
+  }, [fromAgent]);
 
   useEffect(() => {
-    fetch('/api/approvals')
-      .then((r) => (r.ok ? r.json() : []))
-      .then(setItems)
-      .catch(() => setItems([]));
-  }, []);
-
-  async function handleAction(id: string, action: 'approve' | 'deny') {
-    await fetch(`/api/approvals/${id}/${action}`, { method: 'POST' });
-    setItems((prev) => prev.filter((i) => i.id !== id));
-  }
+    load();
+  }, [load]);
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Approvals</h1>
+      <PageHeader
+        title="Approvals"
+        description="Human-in-the-loop requests waiting on a decision."
+        actions={
+          <Input
+            value={fromAgent}
+            onChange={(e) => setFromAgent(e.target.value)}
+            placeholder="Filter by agent id…"
+            className="w-56"
+          />
+        }
+      />
 
-      {items.length === 0 ? (
-        <div className="card text-center py-12">
-          <p className="text-gray-400 text-lg">No pending approvals</p>
-          <p className="text-gray-400 text-sm mt-1">Human-in-the-loop items appear here</p>
+      {error ? (
+        <ErrorState title="Couldn't load approvals" detail={error} onRetry={load} />
+      ) : approvals === null ? (
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 w-full" />
+          ))}
         </div>
+      ) : approvals.length === 0 ? (
+        <EmptyState
+          icon={CheckCircle}
+          title="Nothing pending"
+          description="Approval gates and A2H questions land here when an agent needs a human decision."
+        />
       ) : (
         <div className="space-y-3">
-          {items.map((item) => (
-            <div key={item.id} className="card flex items-center gap-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold">{item.title}</span>
-                  <Badge label={item.category} variant="event_driven" />
-                </div>
-                <p className="text-sm text-gray-500 mt-0.5">
-                  Agent: {item.agent} &middot; SLA: {item.sla_hours}h
-                  {(item.timestamp || item.created_at) && (
-                    <span className="block text-xs text-gray-400 mt-0.5">
-                      {item.timestamp || item.created_at}
-                    </span>
-                  )}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleAction(item.id, 'approve')}
-                  className="px-3 py-1.5 text-sm bg-green-100 text-green-800 rounded-lg hover:bg-green-200"
-                >
-                  Approve
-                </button>
-                <button
-                  onClick={() => handleAction(item.id, 'deny')}
-                  className="px-3 py-1.5 text-sm bg-red-100 text-red-800 rounded-lg hover:bg-red-200"
-                >
-                  Deny
-                </button>
-              </div>
-            </div>
+          {approvals.map((a, i) => (
+            <ApprovalCard key={a.request_id ?? a.id ?? i} approval={a} onResolved={load} />
           ))}
         </div>
       )}

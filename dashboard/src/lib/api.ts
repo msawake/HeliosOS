@@ -1,23 +1,27 @@
 /**
- * Browser: empty base → same-origin `/api/*` (Next.js rewrites to Flask :5000).
- * Server (SSR): set NEXT_PUBLIC_API_URL or falls back to direct Flask.
+ * ForgeOS dashboard API client — one method per `forgeos` CLI capability,
+ * typed to the same backend contract the Rust CLI speaks (see forgeos-cli
+ * src/api.rs). The dashboard is a pure HTTP client of the platform API.
+ *
+ * Base URL:
+ *   Browser → same-origin `/api/*` (next.config rewrites to the platform :5000).
+ *   SSR     → NEXT_PUBLIC_API_URL or INTERNAL_API_URL, else local :5000.
+ *
+ * Auth: Bearer token or X-API-Key from sessionStorage (matches the CLI's two
+ * schemes), plus `x-forgeos-caller: forgeos-dashboard` for audit attribution.
  */
+
 function apiBase(): string {
   if (process.env.NEXT_PUBLIC_API_URL) {
     return process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, '');
   }
-  if (typeof window !== 'undefined') {
-    return '';
-  }
-  // Server-side (SSR) in Docker/K8s: set INTERNAL_API_URL=http://forgeos-api:5000
+  if (typeof window !== 'undefined') return '';
   const internal = process.env.INTERNAL_API_URL || '';
-  if (internal) {
-    return internal.replace(/\/$/, '');
-  }
+  if (internal) return internal.replace(/\/$/, '');
   return 'http://127.0.0.1:5000';
 }
 
-function getAuthHeaders(): Record<string, string> {
+function authHeaders(): Record<string, string> {
   if (typeof window === 'undefined') return {};
   const token = sessionStorage.getItem('forgeos_token');
   if (token) return { Authorization: `Bearer ${token}` };
@@ -26,276 +30,289 @@ function getAuthHeaders(): Record<string, string> {
   return {};
 }
 
-const requestCache = new Map<string, { promise: Promise<any>; timestamp: number }>();
-const CACHE_TTL_MS = 5000; // 5 seconds default TTL
-
-async function fetchJSON<T>(path: string, options?: RequestInit & { skipCache?: boolean }): Promise<T> {
-  const isGet = !options?.method || options.method.toUpperCase() === 'GET';
-  const skipCache = options?.skipCache === true;
-  
-  // Only cache GET requests
-  if (isGet && !skipCache) {
-    const cacheKey = `${path}`;
-    const cached = requestCache.get(cacheKey);
-    
-    // Return cached promise if it exists and hasn't expired
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-      return cached.promise;
-    }
-    
-    // Create new request and cache the promise
-    const promise = (async () => {
-      try {
-        const res = await fetch(`${apiBase()}${path}`, {
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders(), ...options?.headers },
-          ...options,
-        });
-        if (res.status === 401) {
-          throw new Error('API returned 401 — check that backend is running with --no-auth');
-        }
-        if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
-        return await res.json();
-      } catch (error) {
-        // Remove from cache on error so next request tries again
-        requestCache.delete(cacheKey);
-        throw error;
-      }
-    })();
-    
-    requestCache.set(cacheKey, { promise, timestamp: Date.now() });
-    return promise;
+export class ApiError extends Error {
+  status: number;
+  detail?: string;
+  constructor(status: number, message: string, detail?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.detail = detail;
   }
-
-  // Non-GET requests or skipCache=true
-  const res = await fetch(`${apiBase()}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...getAuthHeaders(), ...options?.headers },
-    ...options,
-  });
-  if (res.status === 401) {
-    throw new Error('API returned 401 — check that backend is running with --no-auth');
-  }
-  if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
-  return res.json();
 }
 
-export interface AgentSummary {
+interface RequestOptions {
+  method?: string;
+  /** JSON body (mutually exclusive with `yaml`). */
+  body?: unknown;
+  /** Raw YAML body sent as text/yaml (deploy). */
+  yaml?: string;
+  query?: Record<string, string | undefined>;
+  signal?: AbortSignal;
+}
+
+async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
+  const qs = opts.query
+    ? '?' +
+      new URLSearchParams(
+        Object.entries(opts.query).filter(([, v]) => v != null && v !== '') as [string, string][]
+      ).toString()
+    : '';
+  const headers: Record<string, string> = {
+    'x-forgeos-caller': 'forgeos-dashboard',
+    ...authHeaders(),
+  };
+  let body: BodyInit | undefined;
+  if (opts.yaml != null) {
+    headers['Content-Type'] = 'text/yaml';
+    body = opts.yaml;
+  } else if (opts.body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify(opts.body);
+  }
+
+  const res = await fetch(`${apiBase()}${path}${qs}`, {
+    method: opts.method ?? 'GET',
+    headers,
+    body,
+    signal: opts.signal,
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let detail: string | undefined;
+    try {
+      detail = JSON.parse(text)?.detail;
+    } catch {
+      detail = text || undefined;
+    }
+    throw new ApiError(res.status, detail || `${res.status} ${res.statusText}`, detail);
+  }
+
+  if (res.status === 204) return undefined as T;
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
+// ─── Domain types (fields per the CLI serde structs; most optional) ──────────
+
+export interface Agent {
   agent_id: string;
   name: string;
-  stack: string;
-  execution_type: string;
-  ownership: string;
-  owner_id: string | null;
-  status: string;
-  description: string;
-  department: string;
-}
-
-export interface PlatformOverview {
-  total: number;
-  by_stack: Record<string, number>;
-  by_execution_type: Record<string, number>;
-  by_ownership: Record<string, number>;
-  running: number;
-}
-
-export interface CreateAgentPayload {
-  name: string;
-  stack: string;
-  execution_type: string;
-  ownership: string;
-  owner_id?: string;
   description?: string;
-  department?: string;
-  goal?: string;
+  namespace?: string;
+  stack?: string;
+  execution_type?: string;
+  status?: string;
   schedule?: string;
-  event_triggers?: string[];
+  department?: string;
+  ownership?: string;
+  goal?: string;
+  llm_config?: { chat_model?: string; reasoning_model?: string; provider?: string };
   tools?: string[];
+  event_triggers?: string[];
   metadata?: Record<string, unknown>;
-  llm_config?: {
-    chat_model: string;
-    reasoning_model?: string;
-    provider: string;
-  };
-  client_id?: string;
   system_prompt?: string;
+  [key: string]: unknown;
 }
 
-export interface ClientSummary {
-  id: string;
-  name: string;
-  status: string;
-  config: Record<string, unknown>;
-  created_at: string;
-  agent_count: number;
-  mcp_server_count: number;
+export interface PendingApproval {
+  request_id?: string;
+  tool?: string;
+  tool_use_id?: string;
+  args?: Record<string, unknown>;
 }
 
-export interface ClientMCPConfig {
+export interface RunHandle {
+  run_id?: string;
+  status?: string;
+  result?: string;
+  error?: string;
+  suspend_reason?: string;
+  pending?: PendingApproval[];
+  warnings?: string[];
+  simulated?: boolean;
+}
+
+export interface LogEvent {
+  ts?: string;
+  agent_id?: string;
+  run_id?: string;
+  type?: string;
+  description?: string;
+  details?: Record<string, unknown>;
+}
+
+export interface Approval {
+  id?: string;
+  request_id?: string;
+  run_id?: string;
+  continuation_id?: string;
+  from_agent?: string;
+  content?: {
+    question?: string;
+    kind?: string;
+    context?: Record<string, unknown>;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+export interface McpServer {
   server_name: string;
   package: string;
-  env_vars: Record<string, string>;
-  args: string[];
-  enabled: boolean;
+  env_vars?: Record<string, string>;
+  args?: string[];
 }
 
-export interface WizardChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
+const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'error']);
+const NON_TERMINAL = new Set(['running', 'queued', 'resuming']);
+
+/** A run is settled when it isn't actively progressing (terminal or paused). */
+export function isRunSettled(status?: string): boolean {
+  const s = (status || '').toLowerCase();
+  if (!s) return false;
+  return TERMINAL.has(s) || (!NON_TERMINAL.has(s));
+}
+export function isRunTerminal(status?: string): boolean {
+  return TERMINAL.has((status || '').toLowerCase());
 }
 
-export interface WizardChatResponse {
-  assistant_message: string;
-  proposal: CreateAgentPayload | null;
-  clarifying_questions: string[];
-  ready_to_deploy: boolean;
-  warnings: string[];
-  mode: string;
-}
-
-export interface EventEntry {
-  id: string;
-  name: string;
-  source: string;
-  target_department?: string;
-  status: string;
-  priority?: string;
-  payload?: Record<string, unknown>;
-  timestamp?: string;
-}
-
-export interface SystemHealth {
-  status: string;
-  components: Record<string, unknown>;
-}
-
-export interface KnowledgeEntry {
-  id: string;
-  title: string;
-  category: string;
-  content: string;
-  tags?: string[];
-}
-
-export interface ScheduledJob {
-  agent_id: string;
-  name: string;
-  schedule: string;
-  next_run?: string;
-  last_run?: string;
-  status: string;
-}
+// ─── API surface (one method ≈ one CLI command) ─────────────────────────────
 
 export const api = {
-  getOverview: () => fetchJSON<PlatformOverview>('/api/platform/overview'),
-  getAgents: (params?: Record<string, string>) => {
-    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
-    return fetchJSON<AgentSummary[]>(`/api/platform/agents${qs}`);
-  },
-  getAgent: (id: string) => fetchJSON<AgentSummary>(`/api/platform/agents/${id}`),
-  createAgent: (payload: CreateAgentPayload) =>
-    fetchJSON<{ agent_id: string; name?: string; stack?: string }>('/api/platform/agents', {
+  // health
+  health: () => request<Record<string, unknown>>('/api/health'),
+
+  // list / describe
+  listAgents: (filters?: { stack?: string; execution_type?: string; ownership?: string }) =>
+    request<Agent[]>('/api/platform/agents', { query: filters }),
+  getAgent: (id: string) => request<Agent>(`/api/platform/agents/${encodeURIComponent(id)}`),
+
+  // deploy (raw YAML, like `forgeos deploy`)
+  deployYaml: (yaml: string) =>
+    request<{ agent_id: string }>('/api/platform/agents/from-yaml', { method: 'POST', yaml }),
+
+  // edit
+  updateAgent: (id: string, body: Record<string, unknown>) =>
+    request<Agent>(`/api/platform/agents/${encodeURIComponent(id)}`, { method: 'PUT', body }),
+
+  // invoke + run watch
+  invoke: (
+    id: string,
+    opts: { prompt: string; async?: boolean; sessionId?: string; context?: Record<string, unknown> }
+  ) =>
+    request<RunHandle>(`/api/platform/agents/${encodeURIComponent(id)}/invoke`, {
       method: 'POST',
-      body: JSON.stringify(payload),
+      query: opts.async ? { async_mode: 'true' } : undefined,
+      body: {
+        prompt: opts.prompt,
+        context: opts.context ?? {},
+        ...(opts.sessionId ? { session_id: opts.sessionId } : {}),
+      },
     }),
-  updateAgent: (id: string, payload: CreateAgentPayload) =>
-    fetchJSON<Record<string, unknown>>(`/api/platform/agents/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      body: JSON.stringify(payload),
+  getRun: (runId: string, signal?: AbortSignal) =>
+    request<RunHandle>(`/api/platform/runs/${encodeURIComponent(runId)}`, { signal }),
+
+  // logs
+  getAgentLogs: (id: string, limit = 200, signal?: AbortSignal) =>
+    request<{ events: LogEvent[] }>('/api/platform/agent-logs', {
+      query: { agent_id: id, limit: String(limit) },
+      signal,
     }),
 
-  wizardChat: (messages: WizardChatMessage[], context?: Record<string, unknown>) =>
-    fetchJSON<WizardChatResponse>('/api/platform/wizard/chat', {
-      method: 'POST',
-      body: JSON.stringify({ messages, context }),
-    }),
+  // lifecycle
   stopAgent: (id: string) =>
-    fetchJSON<{ ok: boolean }>(`/api/platform/agents/${id}/stop`, { method: 'POST' }),
-  deleteAgent: (id: string) =>
-    fetchJSON<{ ok: boolean }>(`/api/platform/agents/${id}`, { method: 'DELETE' }),
-
-  getApprovals: () => fetchJSON<any[]>('/api/approvals'),
-  approveItem: (id: string) =>
-    fetchJSON<any>(`/api/approvals/${id}/approve`, { method: 'POST' }),
-  denyItem: (id: string) =>
-    fetchJSON<any>(`/api/approvals/${id}/reject`, { method: 'POST' }),
-
-  getWorkflows: () => fetchJSON<any[]>('/api/workflows'),
-
-  getProviderStatus: () =>
-    fetchJSON<{
-      providers: Record<string, { configured: boolean; client_initialized: boolean; env_var: string; sdk_installed?: boolean }>;
-      feature_flags: Record<string, boolean>;
-      available_providers: string[];
-    }>('/api/admin/providers'),
-
-  adminChat: (message: string, session_id: string = 'admin') =>
-    fetchJSON<{ response: string; session_id: string; turns: number }>('/api/admin/chat', {
+    request<{ ok?: boolean }>(`/api/platform/agents/${encodeURIComponent(id)}/stop`, {
       method: 'POST',
-      body: JSON.stringify({ message, session_id }),
+      body: {},
     }),
-
-  intelligenceAsk: (question: string, session_id: string = 'intelligence') =>
-    fetchJSON<{ response: string; session_id: string; turns: number }>('/api/intelligence/ask', {
-      method: 'POST',
-      body: JSON.stringify({ question, session_id }),
-    }),
-
-  // Admin
-  getSystemHealth: () => fetchJSON<SystemHealth>('/api/admin/health'),
-  getMetrics: () => fetchJSON<Record<string, unknown>>('/api/admin/metrics'),
-  getEvents: (params?: Record<string, string>) => {
-    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
-    return fetchJSON<EventEntry[]>(`/api/admin/events${qs}`);
-  },
-  searchKnowledge: (query?: string, category?: string) => {
-    const p = new URLSearchParams();
-    if (query) p.set('query', query);
-    if (category) p.set('category', category);
-    const qs = p.toString() ? `?${p}` : '';
-    return fetchJSON<KnowledgeEntry[]>(`/api/admin/knowledge${qs}`);
-  },
-  getScheduledJobs: () => fetchJSON<ScheduledJob[]>('/api/platform/scheduler'),
-  getAudit: (limit?: number) => fetchJSON<any[]>(`/api/audit${limit ? `?limit=${limit}` : ''}`),
-
-  // Skills
-  getSkillDomains: () => fetchJSON<{ total: number; domains: { domain: string; count: number }[] }>('/api/skills/domains'),
-  searchSkills: (query: string, domain?: string) => {
-    const p = new URLSearchParams({ query });
-    if (domain) p.set('domain', domain);
-    return fetchJSON<{ count: number; skills: any[] }>(`/api/skills/search?${p}`);
-  },
-  getSkill: (name: string) => fetchJSON<any>(`/api/skills/${encodeURIComponent(name)}`),
-
-  // MCPs
-  getMCPCategories: () => fetchJSON<{ total: number; categories: { category: string; count: number }[] }>('/api/mcps/categories'),
-  searchMCPs: (query: string, category?: string) => {
-    const p = new URLSearchParams({ query });
-    if (category) p.set('category', category);
-    return fetchJSON<{ count: number; packages: any[] }>(`/api/mcps/search?${p}`);
-  },
-  getMCPPackage: (name: string) => fetchJSON<any>(`/api/mcps/${encodeURIComponent(name)}`),
-
-  // Clients
-  getClients: () => fetchJSON<ClientSummary[]>('/api/clients'),
-  getClient: (id: string) => fetchJSON<ClientSummary & { mcp_servers: ClientMCPConfig[] }>(`/api/clients/${encodeURIComponent(id)}`),
-  createClient: (id: string, name: string, config?: Record<string, unknown>) =>
-    fetchJSON<ClientSummary>('/api/clients', {
-      method: 'POST',
-      body: JSON.stringify({ id, name, config: config || {} }),
-    }),
-  archiveClient: (id: string) =>
-    fetchJSON<{ ok: boolean }>(`/api/clients/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  getClientMCPServers: (clientId: string) =>
-    fetchJSON<ClientMCPConfig[]>(`/api/clients/${encodeURIComponent(clientId)}/mcp-servers`),
-  addClientMCPServer: (clientId: string, config: { server_name: string; package: string; env_vars?: Record<string, string>; args?: string[] }) =>
-    fetchJSON<ClientMCPConfig>(`/api/clients/${encodeURIComponent(clientId)}/mcp-servers`, {
-      method: 'POST',
-      body: JSON.stringify(config),
-    }),
-  deleteClientMCPServer: (clientId: string, serverName: string) =>
-    fetchJSON<{ ok: boolean }>(`/api/clients/${encodeURIComponent(clientId)}/mcp-servers/${encodeURIComponent(serverName)}`, {
+  undeployAgent: (id: string) =>
+    request<{ removed?: boolean }>(`/api/platform/agents/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     }),
-  getClientAgents: (clientId: string) =>
-    fetchJSON<AgentSummary[]>(`/api/clients/${encodeURIComponent(clientId)}/agents`),
+
+  // approvals + answer
+  listApprovals: (fromAgent?: string) =>
+    request<Approval[]>('/api/approvals', { query: fromAgent ? { from_agent: fromAgent } : undefined }),
+  approve: (requestId: string, notes?: string) =>
+    request<unknown>(`/api/approvals/${encodeURIComponent(requestId)}/approve`, {
+      method: 'POST',
+      body: notes ? { notes } : {},
+    }),
+  reject: (requestId: string, reason?: string) =>
+    request<unknown>(`/api/approvals/${encodeURIComponent(requestId)}/reject`, {
+      method: 'POST',
+      body: reason ? { reason } : {},
+    }),
+  answer: (
+    requestId: string,
+    opts: { text?: string; value?: string; respondedBy?: string }
+  ) =>
+    request<unknown>(`/api/a2h/requests/${encodeURIComponent(requestId)}/respond`, {
+      method: 'POST',
+      body: {
+        response: { text: opts.text, value: opts.value },
+        responded_by: opts.respondedBy ?? 'dashboard',
+        channel: 'dashboard',
+      },
+    }),
+
+  // chat (A2H protocol)
+  openChat: (payload: {
+    agent_pid?: string;
+    agent_namespace?: string;
+    agent_name?: string;
+    human_name?: string;
+    human_namespace?: string;
+    topic?: string;
+  }) => request<{ id: string }>('/api/a2h/v1/chats', { method: 'POST', body: payload }),
+  postChatMessage: (
+    chatId: string,
+    payload: { role: 'human' | 'agent'; sender: string; content: string; client_drives?: boolean }
+  ) =>
+    request<unknown>(`/api/a2h/v1/chats/${encodeURIComponent(chatId)}/messages`, {
+      method: 'POST',
+      body: payload,
+    }),
+  closeChat: (chatId: string, reason = 'user exit') =>
+    request<unknown>(`/api/a2h/v1/chats/${encodeURIComponent(chatId)}/close`, {
+      method: 'POST',
+      body: { reason },
+    }),
+
+  // mcp servers
+  listMcp: () => request<McpServer[]>('/api/platform/mcp/servers'),
+  registerMcp: (payload: {
+    server_name: string;
+    package: string;
+    env_vars?: Record<string, string>;
+    args?: string[];
+  }) => request<unknown>('/api/platform/mcp/servers', { method: 'POST', body: payload }),
+  registerUserMcp: (
+    user: string,
+    serverName: string,
+    payload: { package: string; env_vars?: Record<string, string>; secrets?: Record<string, string>; args?: string[] }
+  ) =>
+    request<unknown>(`/api/users/${encodeURIComponent(user)}/mcp/${encodeURIComponent(serverName)}`, {
+      method: 'POST',
+      body: payload,
+    }),
+  removeMcp: (serverName: string) =>
+    request<unknown>(`/api/platform/mcp/servers/${encodeURIComponent(serverName)}`, {
+      method: 'DELETE',
+    }),
+
+  // credentials (write-only)
+  putGithubCred: (payload: { pat: string; user_id?: string }) =>
+    request<unknown>('/api/credentials/github', {
+      method: 'POST',
+      body: { pat: payload.pat, user_id: payload.user_id ?? 'default' },
+    }),
+  putJiraCred: (payload: { url: string; email: string; token: string; user_id?: string }) =>
+    request<unknown>('/api/credentials/jira', {
+      method: 'POST',
+      body: { ...payload, user_id: payload.user_id ?? 'default' },
+    }),
 };
