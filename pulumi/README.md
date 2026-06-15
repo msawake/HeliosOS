@@ -1,9 +1,17 @@
 # ForgeOS Pulumi (GCP)
 
-Pulumi project that provisions ForgeOS on GCP — Cloud Run for the control plane,
-GKE Autopilot for agent workloads, Cloud SQL + Memorystore + Pub/Sub for data.
+Pulumi project that provisions ForgeOS on GCP — Cloud Run for the control plane
+(API + MCP), an always-on GKE Autopilot worker tier for the durable runtime plus
+a `kubectl exec` sandbox, and Cloud SQL + Memorystore + Pub/Sub for data.
 
 **Project:** `admachina-atomic-test-84` · **Region:** `europe-west1` · **State:** GCS bucket in-project.
+
+> **Lean stack.** Agents run in-process in the platform-api / worker per-turn
+> runtime, so this stack does **not** provision per-agent pods (KEDA + per-agent
+> namespaces + PodMonitoring) or the standalone Mission Control service. The
+> dashboard is served separately (docker-compose), not from here. The
+> per-agent-pod model still lives in the **local** target (`Pulumi.local.yaml` →
+> `local_stack.py`).
 
 ## Components
 
@@ -12,18 +20,14 @@ GKE Autopilot for agent workloads, Cloud SQL + Memorystore + Pub/Sub for data.
 | 1 | `network.py` | VPC, subnet (with pods/services secondary ranges), Cloud NAT, Private Services Access |
 | 2 | `registry.py` | Artifact Registry Docker repo (`forgeos`) |
 | 3 | `data.py` | Cloud SQL Postgres 15 (private IP), Memorystore Redis, Pub/Sub topic for agent triggers |
-| 4 | `identity.py` | 5 GSAs (`platform-api`, `mc`, `agent-runtime`, `migrations`, `mcp`) + project IAM roles |
-| 5 | `secrets.py` | Secret Manager entries: `database-url`, `redis-url`, `anthropic-api-key`, `openai-api-key`, `gemini-api-key`, `mc-admin-password`, `slack-webhook-url`, `jira-*`, `api-token`, `api-key` |
+| 4 | `identity.py` | 4 GSAs (`platform-api`, `agent-runtime`, `migrations`, `mcp`) + project IAM roles |
+| 5 | `secrets.py` | Secret Manager entries: `database-url`, `redis-url`, `anthropic-api-key`, `openai-api-key`, `gemini-api-key`, `slack-webhook-url`, `jira-*`, `vllm-api-key`, `api-key` (MCP) |
 | 6 | `gke.py` | GKE Autopilot regional cluster, private nodes, synthesized kubeconfig + k8s Provider |
-| 7 | `keda.py` | KEDA Helm release in `keda` namespace |
-| 8 | `namespaces.py` | One k8s namespace per ForgeOS namespace + `forgeos-agent` KSA (WI-bound) + ResourceQuota + default-deny NetworkPolicy |
-| 8b | `exec_environments.py` | `forgeos-envs` sandbox namespace + ResourceQuota + default-deny NetworkPolicy + namespaced pod/exec Role/RoleBinding to the platform-api GSA + `container.clusterViewer` IAM |
-| 9 | `migrations.py` | Cloud Run Job that runs `infrastructure/database/*.sql` against Cloud SQL via Direct VPC Egress |
-| 10 | `platform_api.py` | Cloud Run service for FastAPI (:5000), Direct VPC Egress, secret env, public invoker |
-| 11 | `mission_control.py` | Cloud Run service for FastAPI + bundled SPA, env points at platform API |
-| 11b | `mcp_server.py` | Cloud Run service running the MCP server (FastMCP streamable-http) on the platform-api image, pointed at the platform API |
-| 12 | `agent_base.py` | Per-agent Deployment + per-agent Pub/Sub subscription + KEDA ScaledObject (0→N on backlog) |
-| 13 | `observability.py` | PodMonitoring CR per namespace for Google Managed Service for Prometheus |
+| 7 | `exec_environments.py` | `forgeos-envs` sandbox namespace + ResourceQuota + default-deny NetworkPolicy + namespaced pod/exec Role/RoleBinding to the platform-api GSA + `container.clusterViewer` IAM |
+| 8 | `migrations.py` | Cloud Run Job that runs `infrastructure/database/*.sql` against Cloud SQL via Direct VPC Egress |
+| 9 | `platform_api.py` | Cloud Run service for FastAPI (:5000), Direct VPC Egress, secret env, public invoker |
+| 10 | `worker.py` | Always-on GKE Deployment — the durable per-turn worker tier that drains the Redis queue and resumes parked (HITL) runs |
+| 11 | `mcp_server.py` | Cloud Run service running the MCP server (FastMCP streamable-http) on the platform-api image, pointed at the platform API |
 
 ## One-time setup
 
@@ -73,30 +77,22 @@ pulumi stack select dev    # creates on first run
 
 pulumi config set --secret forgeos-gcp:anthropic_api_key sk-ant-…
 pulumi config set --secret forgeos-gcp:openai_api_key    sk-…
-pulumi config set --secret forgeos-gcp:mc_admin_password $(openssl rand -base64 24)
 pulumi config set --secret forgeos-gcp:slack_webhook_url https://hooks.slack.com/…
+pulumi config set --secret forgeos-gcp:mcp_api_key       …   # X-API-Key the MCP server presents
 ```
 
-## Declaring agents (optional)
+## Agents
 
-Edit `Pulumi.dev.yaml`:
+On GCP, agents run **in-process** in the platform-api / worker per-turn runtime
+(enqueued to Redis, drained by the always-on worker) — there are no per-agent
+pods to declare here. To run agents as individual pods (per-agent Deployment +
+Service + KEDA scale-to-zero), use the **local** target:
 
-```yaml
-config:
-  forgeos-gcp:agents:
-    - name: lead-qualifier
-      namespace: sales-team
-      manifest_ref: gs://forgeos-manifests/lead-qualifier.yaml
-      always_on: true
-      max_replicas: 5
-    - name: invoice-watcher
-      namespace: operations
-      manifest_ref: gs://forgeos-manifests/invoice-watcher.yaml
-      always_on: false     # scaled to 0, woken by Pub/Sub
-      max_replicas: 20
+```bash
+pulumi stack select local   # forgeos:target=local → local_stack.py
 ```
 
-Agents inherit `cpu=250m` / `memory=512Mi` unless overridden per entry.
+See `Pulumi.local.yaml` for the per-agent declaration format.
 
 ## Day-to-day
 
@@ -117,9 +113,12 @@ pulumi up
 ```
 pulumi/
 ├── Pulumi.yaml
-├── Pulumi.dev.yaml
+├── Pulumi.dev.yaml          # forgeos:target=gcp  (default)
+├── Pulumi.local.yaml        # forgeos:target=local
 ├── requirements.txt
-├── __main__.py
+├── __main__.py              # dual-target dispatcher
+├── gcp_stack.py             # the lean GCP stack (this README)
+├── local_stack.py           # per-agent pods on a local k8s cluster
 └── components/
     ├── network.py
     ├── registry.py
@@ -127,20 +126,22 @@ pulumi/
     ├── identity.py
     ├── secrets.py
     ├── gke.py
-    ├── keda.py
-    ├── namespaces.py
+    ├── exec_environments.py
     ├── migrations.py
     ├── platform_api.py
-    ├── mission_control.py
-    ├── agent_base.py
-    └── observability.py
+    ├── worker.py
+    ├── mcp_server.py
+    └── agent_local.py        # local target only
 ```
 
 ## Things deliberately NOT done in v1
 
+- **Per-agent pod autoscaling on GCP** — agents run in-process in the worker
+  tier; the KEDA / per-agent-namespace model lives in the local target only.
+- **Mission Control service** — superseded by the dashboard (served via
+  docker-compose, not this stack).
 - **Sandbox stack** — Autopilot disallows Docker-in-Docker. Revisit with Cloud Run Jobs.
 - **Custom domain + Cloud Armor** — using `*.run.app` URLs.
 - **Static egress IP** — Cloud NAT uses auto-allocated IPs.
 - **Cost guardrails / Budget alerts** — test project, low blast radius.
 - **dev/staging/prod split** — single stack against a single project.
-- **KEDA Pub/Sub auth via TriggerAuthentication** — relies on KEDA operator's default SA having `pubsub.subscriber`. Add a `TriggerAuthentication` + Workload Identity binding when promoting to prod.
