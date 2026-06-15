@@ -65,6 +65,21 @@ class LLMConfig(BaseModel):
     chat_model: str = Field(..., description="e.g. 'gpt-4o', 'claude-sonnet-4-5-20250514'")
     reasoning_model: str | None = Field(None, description="Optional separate model for reasoning")
     provider: PROVIDERS = Field("anthropic", description="Override auto-detection")
+    endpoint: str | None = Field(
+        None,
+        description=(
+            "OpenAI-compatible base URL for a gateway/proxy (e.g. a LiteLLM "
+            "router). Used by the atlas/vllm/openai providers; ignored otherwise."
+        ),
+    )
+    api_key_ref: str | None = Field(
+        None,
+        description=(
+            "Reference to the API key — never the raw key. "
+            "'secret:<name>' resolves via the encrypted store / GCP Secret "
+            "Manager / env; 'env:<VAR>' reads an environment variable."
+        ),
+    )
     metadata: dict[str, Any] = Field(default_factory=dict, description="e.g. fallback_provider")
 
 
@@ -812,6 +827,8 @@ class AgentManifest(BaseModel):
             "department": self.metadata.department,
             "chat_model": self.spec.llm.chat_model,
             "provider": self.spec.llm.provider,
+            "endpoint": self.spec.llm.endpoint,
+            "api_key_ref": self.spec.llm.api_key_ref,
             "llm_metadata": dict(self.spec.llm.metadata or {}),
             "tools": effective_tools,
             "schedule": effective_schedule,

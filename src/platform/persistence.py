@@ -315,6 +315,11 @@ def _row_to_definition(row: dict) -> AgentDefinition:
             chat_model=llm_raw.get("chat_model", "claude-4-sonnet"),
             reasoning_model=llm_raw.get("reasoning_model"),
             provider=llm_raw.get("provider", "anthropic"),
+            # Per-agent OpenAI-compatible endpoint + key reference. Dropping
+            # these on rehydration would silently revert a gateway-routed agent
+            # to the boot-time default client on every restart.
+            endpoint=llm_raw.get("endpoint"),
+            api_key_ref=llm_raw.get("api_key_ref"),
             # CRITICAL: persistence wrote `metadata` (line 61) but the original
             # reader dropped it on the way back, which silently neutered
             # per-agent base_url overrides every time the platform restarted.

@@ -17,6 +17,7 @@ Production hardening:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -178,16 +179,29 @@ class LLMRouter:
     each provider branch calls the actual API client.
     """
 
-    def __init__(self, api_keys: dict[str, str] | None = None, audit_log=None, callback_registry=None):
+    # Providers that speak the OpenAI chat-completions API and therefore
+    # support a per-agent endpoint + key override (resolved from api_key_ref).
+    _OPENAI_COMPATIBLE = ("vllm", "atlas", "openai")
+
+    def __init__(self, api_keys: dict[str, str] | None = None, audit_log=None, callback_registry=None, secrets_manager=None):
         self._api_keys = api_keys or {}
         self._clients: dict[str, Any] = {}
         self._audit = audit_log  # optional AuditLog for failover events
         self._callbacks = callback_registry  # optional CallbackRegistry for model-level interception
+        self._secrets = secrets_manager  # optional SecretsManager for api_key_ref resolution
         self._init_clients()
 
     def bind_audit(self, audit_log) -> None:
         """Attach an AuditLog instance after construction (bootstrap convenience)."""
         self._audit = audit_log
+
+    def bind_secrets(self, secrets_manager) -> None:
+        """Attach a SecretsManager so per-agent ``api_key_ref`` values resolve.
+
+        Bound after construction because the router is built before the
+        SecretsManager exists in the boot sequence.
+        """
+        self._secrets = secrets_manager
 
     def bind_callbacks(self, callback_registry) -> None:
         """Attach a CallbackRegistry after construction (bootstrap convenience)."""
@@ -302,6 +316,76 @@ class LLMRouter:
             logger.warning("openai package not installed (needed for vLLM)")
             return None
 
+    def _resolve_api_key(self, api_key_ref: str | None) -> str | None:
+        """Resolve a per-agent key reference to a concrete API key.
+
+        Supported reference forms:
+          * ``secret:<name>`` — resolve via the bound SecretsManager (cache ->
+            encrypted Postgres -> GCP Secret Manager -> env). Falls back to the
+            canonical env name (``NAME`` upper-cased, ``-``->``_``) when no
+            SecretsManager is bound.
+          * ``env:<VAR>``     — read ``os.environ[VAR]`` directly.
+          * anything else      — treated as a literal key (inline; discouraged
+            because it lands the secret in the manifest/DB in cleartext).
+
+        Returns ``None`` when the reference is empty or cannot be resolved, so
+        the caller falls back to the boot-time provider key.
+        """
+        if not api_key_ref:
+            return None
+        ref = api_key_ref.strip()
+        if ref.startswith("secret:"):
+            name = ref[len("secret:"):]
+            if self._secrets is not None:
+                try:
+                    val = self._secrets.get(
+                        name, caller="llm_router", reason="llm.api_key_ref",
+                    )
+                except Exception:
+                    logger.warning("SecretsManager.get failed for '%s'", name, exc_info=True)
+                    val = ""
+                return val or None
+            # No SecretsManager bound — best-effort env fallback.
+            return os.environ.get(name.upper().replace("-", "_")) or None
+        if ref.startswith("env:"):
+            return os.environ.get(ref[len("env:"):]) or None
+        return ref  # literal key
+
+    def _get_openai_compatible_client(
+        self, provider: str, base_url: str | None, api_key: str | None,
+    ) -> Any:
+        """Return an OpenAI-compatible client for a per-agent (endpoint, key).
+
+        With neither override supplied, returns the boot-time client for the
+        provider (built in ``_init_clients``). When an endpoint and/or key is
+        given, builds and caches a dedicated client keyed by
+        ``(provider, base_url, key-fingerprint)`` so per-agent overrides never
+        leak across agents. The raw key is never used in the cache key — only
+        a short SHA-256 fingerprint.
+        """
+        if not base_url and not api_key:
+            return self._clients.get(provider)
+        boot = self._clients.get(provider)
+        eff_url = base_url or (str(getattr(boot, "base_url", "")) or None if boot is not None else None)
+        eff_key = api_key or self._api_keys.get(provider) or "EMPTY"
+        key_fp = hashlib.sha256(eff_key.encode("utf-8")).hexdigest()[:12]
+        cache_key = f"{provider}::{eff_url or 'default'}::{key_fp}"
+        client = self._clients.get(cache_key)
+        if client is not None:
+            return client
+        try:
+            from openai import OpenAI
+            kwargs: dict[str, Any] = {"api_key": eff_key, "timeout": _VLLM_TIMEOUT_S, "max_retries": 0}
+            if eff_url:
+                kwargs["base_url"] = eff_url
+            client = OpenAI(**kwargs)
+            self._clients[cache_key] = client
+            logger.info("Initialized per-agent %s client (%s)", provider, eff_url or "default")
+            return client
+        except ImportError:
+            logger.warning("openai package not installed (needed for %s)", provider)
+            return None
+
     async def chat(self, llm_config: LLMConfig, messages: list[dict], tools: list[dict] | None = None) -> LLMResponse:
         """Send a chat completion using the agent's chat model.
 
@@ -342,13 +426,18 @@ class LLMRouter:
 
         # --- Provider call -----------------------------------------------------
         fallback = metadata.get("fallback_provider")
+        # Prefer the first-class LLMConfig fields; fall back to metadata for
+        # back-compat with agents that stashed base_url/api_key_ref there.
+        endpoint = getattr(llm_config, "endpoint", None) or metadata.get("base_url")
+        api_key_ref = getattr(llm_config, "api_key_ref", None) or metadata.get("api_key_ref")
         response = await self._call_with_failover(
             provider=llm_config.provider,
             model=llm_config.chat_model,
             messages=messages,
             tools=tools,
             fallback_provider=fallback,
-            base_url=metadata.get("base_url"),
+            base_url=endpoint,
+            api_key_ref=api_key_ref,
         )
 
         # --- After callback ----------------------------------------------------
@@ -409,28 +498,24 @@ class LLMRouter:
         provider = llm_config.provider
         model = llm_config.chat_model
         client = self._clients.get(provider)
+        metadata = getattr(llm_config, "metadata", None) or {}
 
         if provider == "anthropic" and client:
             async for ev in self._stream_anthropic(client, model, messages, tools):
                 yield ev
             return
-        if provider == "openai" and client:
-            async for ev in self._stream_openai(client, model, messages, tools):
-                yield ev
-            return
-        # vLLM and atlas expose OpenAI-compatible APIs — reuse the OpenAI
-        # streamer. Mirrors the provider branches in _call().
-        if provider == "vllm":
-            metadata = getattr(llm_config, "metadata", None) or {}
-            vllm_client = self._get_vllm_client(metadata.get("base_url"))
-            if vllm_client:
-                async for ev in self._stream_openai(vllm_client, model, messages, tools):
+        # vLLM, atlas, and openai expose OpenAI-compatible APIs — reuse the
+        # OpenAI streamer and honor per-agent endpoint + key, mirroring _call().
+        if provider in self._OPENAI_COMPATIBLE:
+            endpoint = getattr(llm_config, "endpoint", None) or metadata.get("base_url")
+            api_key_ref = getattr(llm_config, "api_key_ref", None) or metadata.get("api_key_ref")
+            oai_client = self._get_openai_compatible_client(
+                provider, endpoint, self._resolve_api_key(api_key_ref),
+            )
+            if oai_client:
+                async for ev in self._stream_openai(oai_client, model, messages, tools):
                     yield ev
                 return
-        if provider == "atlas" and client:
-            async for ev in self._stream_openai(client, model, messages, tools):
-                yield ev
-            return
 
         # Simulated fallback
         yield {
@@ -637,12 +722,13 @@ class LLMRouter:
         tools: list[dict] | None = None,
         fallback_provider: str | None = None,
         base_url: str | None = None,
+        api_key_ref: str | None = None,
     ) -> LLMResponse:
         """Call the primary provider with retries; optionally failover once."""
         try:
             return await self._call(
                 provider=provider, model=model, messages=messages, tools=tools,
-                base_url=base_url,
+                base_url=base_url, api_key_ref=api_key_ref,
             )
         except Exception as primary_error:
             logger.error("Primary LLM call failed after retries: %s/%s: %s",
@@ -700,30 +786,28 @@ class LLMRouter:
         messages: list[dict],
         tools: list[dict] | None = None,
         base_url: str | None = None,
+        api_key_ref: str | None = None,
     ) -> LLMResponse:
         """Direct provider call with retries. Raises on exhausted retries."""
-        if provider == "vllm":
-            client = self._get_vllm_client(base_url)
+        # OpenAI-compatible providers (vllm/atlas/openai) support a per-agent
+        # endpoint + key override. The key reference is resolved here (secret:/
+        # env:/literal) and a dedicated client is built/cached for the pair.
+        if provider in self._OPENAI_COMPATIBLE:
+            resolved_key = self._resolve_api_key(api_key_ref)
+            client = self._get_openai_compatible_client(provider, base_url, resolved_key)
             if client:
                 return await _with_retry(
                     lambda: self._call_openai(client, model, messages, tools),
                     provider=provider, model=model,
                 )
+            # No client (no override + no boot key) -> fall through to simulated.
+            return self._simulated(provider, model, messages)
+
         client = self._clients.get(provider)
 
         if provider == "anthropic" and client:
             return await _with_retry(
                 lambda: self._call_anthropic(client, model, messages, tools),
-                provider=provider, model=model,
-            )
-        if provider == "openai" and client:
-            return await _with_retry(
-                lambda: self._call_openai(client, model, messages, tools),
-                provider=provider, model=model,
-            )
-        if provider == "atlas" and client:
-            return await _with_retry(
-                lambda: self._call_openai(client, model, messages, tools),
                 provider=provider, model=model,
             )
         if provider == "vertex" and client:
@@ -737,6 +821,10 @@ class LLMRouter:
                 provider=provider, model=model,
             )
 
+        return self._simulated(provider, model, messages)
+
+    def _simulated(self, provider: str, model: str, messages: list[dict]) -> LLMResponse:
+        """Graceful-degradation response when no real client is available."""
         logger.debug(
             "Simulated LLM call: provider=%s model=%s messages=%d",
             provider, model, len(messages),

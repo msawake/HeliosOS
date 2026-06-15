@@ -238,6 +238,11 @@ class PlatformBootstrap:
             )
             from src.platform.credentials import CredentialStore
             self.credentials = CredentialStore(self.secrets, tenant_id=self.tenant_id)
+            # The LLM router is built earlier (in _init_platform) than the
+            # SecretsManager, so bind it now — this lets per-agent `api_key_ref`
+            # values (e.g. `secret:litellm-allycode-key`) resolve at invoke time.
+            if getattr(self, "llm_router", None) is not None:
+                self.llm_router.bind_secrets(self.secrets)
             # The MCP managers were constructed in Phase 2 (_init_legacy_subsystems)
             # before self.secrets existed, so they captured secrets_manager=None and
             # could not resolve `secret:<name>` env refs (per-user MCP creds). Back-fill

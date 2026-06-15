@@ -47,6 +47,15 @@ class LLMConfig:
     chat_model: str = "claude-4-sonnet"
     reasoning_model: str | None = None
     provider: str = "anthropic"
+    # Per-agent OpenAI-compatible endpoint override (gateways/proxies such as
+    # LiteLLM). Honored by the atlas/vllm/openai providers in the LLM router.
+    endpoint: str | None = None
+    # Reference to the API key — never the raw key. Resolved at invoke time:
+    #   "secret:<name>" -> SecretsManager (cache -> encrypted Postgres -> GCP
+    #                      Secret Manager -> env)
+    #   "env:<VAR>"     -> os.environ[VAR]
+    #   anything else   -> treated as a literal key (inline; discouraged)
+    api_key_ref: str | None = None
     metadata: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -54,6 +63,8 @@ class LLMConfig:
             "chat_model": self.chat_model,
             "reasoning_model": self.reasoning_model,
             "provider": self.provider,
+            "endpoint": self.endpoint,
+            "api_key_ref": self.api_key_ref,
             "metadata": self.metadata,
         }
 

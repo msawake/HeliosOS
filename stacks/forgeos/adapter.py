@@ -155,7 +155,7 @@ class ForgeOSAdapter(AgentStackAdapter):
             # endpoint stores them), but llm_router.chat() reads them from
             # llm_config.metadata. Mirror the relevant ones across so per-agent
             # base_url / fallback_provider actually take effect.
-            for k in ("base_url", "fallback_provider"):
+            for k in ("base_url", "fallback_provider", "api_key_ref"):
                 v = (agent_def.metadata or {}).get(k)
                 if v and not agent_def.llm_config.metadata.get(k):
                     agent_def.llm_config.metadata[k] = v

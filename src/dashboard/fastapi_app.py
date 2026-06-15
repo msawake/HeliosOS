@@ -134,6 +134,8 @@ class AgentCreateRequest(BaseModel):
     metadata: dict = {}
     chat_model: str = "gpt-4o"
     provider: str = "openai"
+    endpoint: str | None = None
+    api_key_ref: str | None = None
     llm_metadata: dict = {}
     client_id: str | None = None
     system_prompt: str = ""
@@ -185,6 +187,12 @@ class CredentialPutJiraRequest(BaseModel):
     url: str = Field(..., description="Atlassian Cloud base URL, e.g. https://org.atlassian.net")
     email: str = Field(..., description="Atlassian account email")
     token: str = Field(..., min_length=8, description="Atlassian Cloud API token")
+    user_id: str = Field("default", description="Identifier under which to scope the secret")
+
+class CredentialPutSecretRequest(BaseModel):
+    name: str = Field(..., min_length=1, description="Secret name; referenced from a manifest as 'secret:<name>'")
+    value: str = Field(..., min_length=1, description="The secret value (e.g. an LLM gateway API key). Write-only.")
+    kind: str = Field("generic", description="Classification label recorded with the secret (e.g. 'llm_gateway')")
     user_id: str = Field("default", description="Identifier under which to scope the secret")
 
 class EventFireRequest(BaseModel):
@@ -920,6 +928,8 @@ def create_fastapi_app(
                 llm_config=LLMConfig(
                     chat_model=req.chat_model,
                     provider=req.provider,
+                    endpoint=req.endpoint,
+                    api_key_ref=req.api_key_ref,
                     metadata=dict(req.llm_metadata or {}),
                 ),
                 system_prompt=req.system_prompt,
@@ -3915,6 +3925,36 @@ def create_fastapi_app(
             details={"kind": "github"},
         )
         return {"stored": True, "user_id": req.user_id, "kind": "github"}
+
+    @app.post("/api/credentials/secret", tags=["credentials"])
+    async def put_named_secret(req: CredentialPutSecretRequest, request: Request):
+        """Store an arbitrary named secret (e.g. an LLM gateway API key).
+
+        Encrypted at rest (encrypted Postgres backend locally, GCP Secret
+        Manager in production). Write-only — never returned by any read
+        endpoint. Reference it from an agent manifest via
+        `spec.llm.api_key_ref: secret:<name>` and the LLM router resolves it
+        at invoke time.
+        """
+        if credential_store is None:
+            raise HTTPException(503, "Credential store not configured")
+        caller = request.headers.get("x-forgeos-caller") or (request.client.host if request.client else "api")
+        try:
+            ok = credential_store.put_secret(
+                req.name, req.value, user_id=req.user_id, kind=req.kind, caller=caller,
+            )
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        if not ok:
+            raise HTTPException(503, "No writable secret backend; secret was not stored")
+        _audit(
+            "credential.write",
+            actor=caller,
+            resource_type="credential",
+            resource_id=f"{req.kind}:{req.name}",
+            details={"kind": req.kind, "name": req.name},
+        )
+        return {"stored": True, "name": req.name, "kind": req.kind}
 
     @app.post("/api/credentials/jira", tags=["credentials"])
     async def put_jira_credential(req: CredentialPutJiraRequest, request: Request,
