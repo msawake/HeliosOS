@@ -8,6 +8,8 @@ config:
   # platform-api image carrying the per-turn runtime + shared capability-token
   # store (commit 9d93e015). Used by platform-api AND the worker tier.
   forgeos-gcp:platform_api_tag: a771884e
+  # Next.js dashboard image (forgeos-dashboard repo in the same Artifact Registry).
+  forgeos-gcp:dashboard_tag: 509e09f25948
   # Redis (Memorystore) backs the durable per-turn worker tier (Redis Streams).
   forgeos-gcp:enable_redis: "true"
   forgeos-gcp:redis_memory_gb: "1"

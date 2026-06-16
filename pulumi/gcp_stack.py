@@ -1,11 +1,10 @@
 """ForgeOS GCP — lean stack.
 
 Provisions only what the platform actually runs today: the backend API, the
-remote MCP endpoint, the durable worker tier, and the data/identity/networking
-they depend on. Per-agent pod autoscaling (KEDA + per-namespace agent isolation)
-and the standalone Mission Control service were removed — agents run in-process
-in the platform-api / worker per-turn runtime, and the dashboard is served
-separately (docker-compose), not from this stack.
+web dashboard, the remote MCP endpoint, the durable worker tier, and the
+data/identity/networking they depend on. Per-agent pod autoscaling (KEDA +
+per-namespace agent isolation) and the standalone Mission Control service were
+removed — agents run in-process in the platform-api / worker per-turn runtime.
 
 Order of provisioning:
     1. Network          VPC + subnet + NAT + private services access
@@ -19,12 +18,14 @@ Order of provisioning:
     9. Platform API     Cloud Run service (FastAPI)
    10. Worker tier      Always-on GKE Deployment (drains Redis queue, resumes HITL)
    11. MCP Server       Cloud Run service (FastMCP streamable-http)
+   12. Dashboard        Cloud Run service (Next.js UI → platform API)
 """
 
 from __future__ import annotations
 
 import pulumi
 
+from components.dashboard import Dashboard
 from components.data import Data
 from components.exec_environments import ExecEnvironments
 from components.gke import Gke
@@ -61,6 +62,7 @@ worker_replicas: int = config.get_int("worker_replicas") or 1
 # Image tags — set per deploy. Defaults assume `:latest` for first-boot bootstrap.
 platform_api_tag: str = config.get("platform_api_tag") or "latest"
 migrations_tag: str = config.get("migrations_tag") or "latest"
+dashboard_tag: str = config.get("dashboard_tag") or "latest"
 
 # Qwen (vLLM) gateway — when set, agents on provider=vllm route here. The key
 # rides Secret Manager (vllm-api-key); the URL is plain config.
@@ -266,6 +268,16 @@ mcp_server = McpServer(
     opts=pulumi.ResourceOptions(depends_on=_mcp_deps),
 )
 
+# 12. Dashboard — Next.js web UI. Pure HTTP client of the platform API; its
+# browser/SSR calls are rewritten to FORGEOS_API_URL (the platform-api URL).
+dashboard = Dashboard(
+    "forgeos",
+    region=region,
+    image=_img("forgeos-dashboard", dashboard_tag),
+    gsa_email=identity.dashboard.email,
+    platform_api_url=platform_api.url,
+)
+
 
 # Exports
 pulumi.export("vpc_id", network.network.id)
@@ -278,4 +290,5 @@ pulumi.export("gke_cluster_name", gke.cluster.name)
 pulumi.export("gke_endpoint", pulumi.Output.secret(gke.cluster.endpoint))
 pulumi.export("platform_api_url", platform_api.url)
 pulumi.export("mcp_server_url", mcp_server.url)
+pulumi.export("dashboard_url", dashboard.url)
 pulumi.export("migrations_job", migrations.job.name)

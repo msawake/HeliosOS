@@ -1,15 +1,15 @@
 # ForgeOS Pulumi (GCP)
 
 Pulumi project that provisions ForgeOS on GCP — Cloud Run for the control plane
-(API + MCP), an always-on GKE Autopilot worker tier for the durable runtime plus
-a `kubectl exec` sandbox, and Cloud SQL + Memorystore + Pub/Sub for data.
+(API + dashboard + MCP), an always-on GKE Autopilot worker tier for the durable
+runtime plus a `kubectl exec` sandbox, and Cloud SQL + Memorystore + Pub/Sub for
+data.
 
 **Project:** `admachina-atomic-test-84` · **Region:** `europe-west1` · **State:** GCS bucket in-project.
 
 > **Lean stack.** Agents run in-process in the platform-api / worker per-turn
 > runtime, so this stack does **not** provision per-agent pods (KEDA + per-agent
 > namespaces + PodMonitoring) or the standalone Mission Control service. The
-> dashboard is served separately (docker-compose), not from here. The
 > per-agent-pod model still lives in the **local** target (`Pulumi.local.yaml` →
 > `local_stack.py`).
 
@@ -28,6 +28,7 @@ a `kubectl exec` sandbox, and Cloud SQL + Memorystore + Pub/Sub for data.
 | 9 | `platform_api.py` | Cloud Run service for FastAPI (:5000), Direct VPC Egress, secret env, public invoker |
 | 10 | `worker.py` | Always-on GKE Deployment — the durable per-turn worker tier that drains the Redis queue and resumes parked (HITL) runs |
 | 11 | `mcp_server.py` | Cloud Run service running the MCP server (FastMCP streamable-http) on the platform-api image, pointed at the platform API |
+| 12 | `dashboard.py` | Cloud Run service for the Next.js web UI (`forgeos-dashboard` image, :3000), `FORGEOS_API_URL` → the platform API |
 
 ## One-time setup
 
@@ -131,6 +132,7 @@ pulumi/
     ├── platform_api.py
     ├── worker.py
     ├── mcp_server.py
+    ├── dashboard.py
     └── agent_local.py        # local target only
 ```
 
@@ -138,8 +140,8 @@ pulumi/
 
 - **Per-agent pod autoscaling on GCP** — agents run in-process in the worker
   tier; the KEDA / per-agent-namespace model lives in the local target only.
-- **Mission Control service** — superseded by the dashboard (served via
-  docker-compose, not this stack).
+- **Mission Control service** — removed; superseded by the dashboard, which is
+  now managed by this stack (`dashboard.py`).
 - **Sandbox stack** — Autopilot disallows Docker-in-Docker. Revisit with Cloud Run Jobs.
 - **Custom domain + Cloud Armor** — using `*.run.app` URLs.
 - **Static egress IP** — Cloud NAT uses auto-allocated IPs.
