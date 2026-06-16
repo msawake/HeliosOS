@@ -2,7 +2,7 @@
 
 One GSA per service. Cloud Run services bind directly. GKE workloads bind to
 a Kubernetes ServiceAccount in their target namespace via the WI annotation
-(written by `namespaces.py` or `agent_base.py`).
+(written by `worker.py` for the durable worker tier).
 """
 
 from __future__ import annotations
@@ -30,12 +30,6 @@ class Identity(pulumi.ComponentResource):
             display_name="ForgeOS Platform API (Cloud Run)",
             opts=child,
         )
-        self.mc = gcp.serviceaccount.Account(
-            f"{name}-mc",
-            account_id="forgeos-mc",
-            display_name="ForgeOS Mission Control (Cloud Run)",
-            opts=child,
-        )
         self.agent_runtime = gcp.serviceaccount.Account(
             f"{name}-agent",
             account_id="forgeos-agent-runtime",
@@ -52,6 +46,12 @@ class Identity(pulumi.ComponentResource):
             f"{name}-mcp",
             account_id="forgeos-mcp",
             display_name="ForgeOS MCP Server (Cloud Run)",
+            opts=child,
+        )
+        self.dashboard = gcp.serviceaccount.Account(
+            f"{name}-dashboard",
+            account_id="forgeos-dashboard",
+            display_name="ForgeOS Dashboard (Cloud Run)",
             opts=child,
         )
 
@@ -89,10 +89,10 @@ class Identity(pulumi.ComponentResource):
         # Artifact Registry — Cloud Run + GKE pull images
         for sa, suffix in [
             (self.platform_api, "platform-api"),
-            (self.mc, "mc"),
             (self.agent_runtime, "agent"),
             (self.migrations, "migrations"),
             (self.mcp, "mcp"),
+            (self.dashboard, "dashboard"),
         ]:
             gcp.projects.IAMMember(
                 f"{name}-{suffix}-ar-reader",
@@ -105,10 +105,10 @@ class Identity(pulumi.ComponentResource):
         # Logging + monitoring + trace for all services
         for sa, suffix in [
             (self.platform_api, "platform-api"),
-            (self.mc, "mc"),
             (self.agent_runtime, "agent"),
             (self.migrations, "migrations"),
             (self.mcp, "mcp"),
+            (self.dashboard, "dashboard"),
         ]:
             for role, slug in (
                 ("roles/logging.logWriter", "log-writer"),

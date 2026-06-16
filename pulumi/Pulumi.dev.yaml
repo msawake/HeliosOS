@@ -8,6 +8,8 @@ config:
   # platform-api image carrying the per-turn runtime + shared capability-token
   # store (commit 9d93e015). Used by platform-api AND the worker tier.
   forgeos-gcp:platform_api_tag: a771884e
+  # Next.js dashboard image (forgeos-dashboard repo in the same Artifact Registry).
+  forgeos-gcp:dashboard_tag: 509e09f25948
   # Redis (Memorystore) backs the durable per-turn worker tier (Redis Streams).
   forgeos-gcp:enable_redis: "true"
   forgeos-gcp:redis_memory_gb: "1"
@@ -18,14 +20,8 @@ config:
   # "Unknown tenant"). Empty = permissive (local-dev) licensing — kernel still
   # enforces ACL/approvals/budgets, just skips the commercial license gate.
   forgeos-gcp:kernel_mode: ""
-  forgeos-gcp:namespaces:
-    - sales-team
-    - legal
-    - operations
   forgeos-gcp:gemini_api_key:
     secure: v1:td1CQ3NmsjbGKLKT:J2ReVGV6G7WVgHkXAyVrcdWwBkpyuxvBotMl3VTjxFQpN29OcZoMsDhqzQBNxDdgI8ex5XtOXA==
-  forgeos-gcp:mc_admin_password:
-    secure: v1:tS49kdC58AP6by63:hvGR6BRinh8itXX0kxavEz7kEuAKEQIrRWXdMZXTm/8Ja+o2CHmM38q2lq+oqxmA
   forgeos-gcp:jira_url:
     secure: v1:ashQC6K3U856yhJW:wlC0uNWNJ+cE5uvzsSZKmKX7AXmpuPTdUeFeQVgaLIesCawKiKpQ/9cK2Idf9fPNHwsg
   forgeos-gcp:jira_username:

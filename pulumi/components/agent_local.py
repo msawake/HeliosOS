@@ -1,6 +1,6 @@
 """Local per-agent workload (M1) — Deployment + Service, no autoscaler yet.
 
-The local-target sibling of `agent_base.AgentWorkload`. Runs the agent-base image
+The local-target per-agent workload. Runs the agent-base image
 as a long-running pod that the platform dispatches to over HTTP (`/invoke`), and
 exposes it via a ClusterIP Service `http://<name>.<namespace>`. No Pub/Sub
 Subscription, no KEDA ScaledObject (those arrive in P2). Agent identity/config is

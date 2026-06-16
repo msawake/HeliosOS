@@ -1,7 +1,7 @@
 """Secret Manager entries + IAM bindings.
 
 DATABASE_URL and REDIS_URL come from `data.py` (auto-versioned).
-The rest (LLM keys, MC password, Slack webhook) come from Pulumi config —
+The rest (LLM keys, Slack webhook, Jira creds) come from Pulumi config —
 set with `pulumi config set --secret forgeos-gcp:anthropic_api_key …`.
 
 If a config value is unset, the Secret resource is still created so ops can
@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import pulumi
 import pulumi_gcp as gcp
-import pulumi_random as random
 
 
 class Secrets(pulumi.ComponentResource):
@@ -46,29 +45,9 @@ class Secrets(pulumi.ComponentResource):
         self.gemini_api_key = self._secret(
             "gemini-api-key", config.get_secret("gemini_api_key")
         )
-        self.mc_admin_password = self._secret(
-            "mc-admin-password", config.get_secret("mc_admin_password")
-        )
         self.slack_webhook_url = self._secret(
             "slack-webhook-url", config.get_secret("slack_webhook_url")
         )
-        # MC proxy token. Operator-supplied, else an auto-generated dev-… value.
-        # The generated value comes from a stateful RandomString (stored in
-        # Pulumi state) so it's stable across runs — the old inline token_urlsafe
-        # ran at program eval and regenerated every preview/up, churning the
-        # api-token secret version.
-        api_token_value = config.get_secret("api_token")
-        if api_token_value is None:
-            api_token_rng = random.RandomString(
-                "forgeos-api-token-gen",
-                length=32,
-                special=False,
-                opts=child,
-            )
-            api_token_value = pulumi.Output.secret(
-                pulumi.Output.concat("dev-", api_token_rng.result)
-            )
-        self.api_token = self._secret("api-token", api_token_value)
         # Tenant API key the MCP server presents to the platform API as
         # X-API-Key (validated against tenants.api_key_hash). Operator-supplied;
         # set with `pulumi config set --secret forgeos-gcp:mcp_api_key …` and

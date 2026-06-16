@@ -1,4 +1,10 @@
-"""ForgeOS GCP — full stack.
+"""ForgeOS GCP — lean stack.
+
+Provisions only what the platform actually runs today: the backend API, the
+web dashboard, the remote MCP endpoint, the durable worker tier, and the
+data/identity/networking they depend on. Per-agent pod autoscaling (KEDA +
+per-namespace agent isolation) and the standalone Mission Control service were
+removed — agents run in-process in the platform-api / worker per-turn runtime.
 
 Order of provisioning:
     1. Network          VPC + subnet + NAT + private services access
@@ -7,31 +13,26 @@ Order of provisioning:
     4. Identity         GSAs + project IAM roles
     5. Secrets          Secret Manager entries (DB URL, Redis URL, LLM keys, …)
     6. GKE              Autopilot cluster + k8s Provider
-    7. KEDA             Helm install in cluster
-    8. Namespaces       one k8s ns per ForgeOS ns + KSA + WI + quotas + netpol
-    9. Migrations       Cloud Run Job (idempotent SQL apply)
-   10. Platform API     Cloud Run service (FastAPI :5099)
-   11. Mission Control  Cloud Run service (FastAPI :8888 + bundled SPA)
-   12. Agents           Deployment + ScaledObject per agent (optional, list driven)
-   13. Observability    Managed Prometheus PodMonitoring per namespace
+    7. Exec envs        forgeos-envs namespace + RBAC for kernel-gated env.exec
+    8. Migrations       Cloud Run Job (idempotent SQL apply)
+    9. Platform API     Cloud Run service (FastAPI)
+   10. Worker tier      Always-on GKE Deployment (drains Redis queue, resumes HITL)
+   11. MCP Server       Cloud Run service (FastMCP streamable-http)
+   12. Dashboard        Cloud Run service (Next.js UI → platform API)
 """
 
 from __future__ import annotations
 
 import pulumi
 
-from components.agent_base import AgentWorkload
+from components.dashboard import Dashboard
 from components.data import Data
 from components.exec_environments import ExecEnvironments
 from components.gke import Gke
 from components.identity import Identity
-from components.keda import Keda
 from components.mcp_server import McpServer
 from components.migrations import Migrations
-from components.mission_control import MissionControl
-from components.namespaces import Namespaces
 from components.network import Network
-from components.observability import Observability
 from components.platform_api import PlatformApi
 from components.registry import Registry
 from components.secrets import Secrets
@@ -50,7 +51,6 @@ services_cidr: str = config.require("services_cidr")
 cloud_sql_tier: str = config.require("cloud_sql_tier")
 enable_redis: bool = config.get_bool("enable_redis") or False
 redis_memory_gb: int = config.get_int("redis_memory_gb") or 1
-forgeos_namespaces: list[str] = config.require_object("namespaces")
 
 # Durable runtime (per-turn worker tier) + kernel enforcement mode.
 #   kernel_mode="production" turns on real kernel enforcement INCLUDING license
@@ -61,9 +61,8 @@ worker_replicas: int = config.get_int("worker_replicas") or 1
 
 # Image tags — set per deploy. Defaults assume `:latest` for first-boot bootstrap.
 platform_api_tag: str = config.get("platform_api_tag") or "latest"
-mc_tag: str = config.get("mc_tag") or "latest"
-agent_tag: str = config.get("agent_tag") or "latest"
 migrations_tag: str = config.get("migrations_tag") or "latest"
+dashboard_tag: str = config.get("dashboard_tag") or "latest"
 
 # Qwen (vLLM) gateway — when set, agents on provider=vllm route here. The key
 # rides Secret Manager (vllm-api-key); the URL is plain config.
@@ -133,8 +132,6 @@ for sa, label in [
     for secret_name, secret in _shared_secrets:
         secrets.grant_access(f"{label}-{secret_name}-access", secret, sa.email)
 
-secrets.grant_access("mc-pw-access", secrets.mc_admin_password, identity.mc.email)
-secrets.grant_access("mc-api-token-access", secrets.api_token, identity.mc.email)
 secrets.grant_access("migrations-db-access", secrets.database_url, identity.migrations.email)
 secrets.grant_access("mcp-api-key-access", secrets.api_key, identity.mcp.email)
 
@@ -146,20 +143,8 @@ gke = Gke(
     subnet_id=network.subnet.id,
 )
 
-# 7. KEDA
-keda = Keda("forgeos", k8s_provider=gke.provider)
-
-# 8. Namespaces (depend on KEDA only if scalers in same `up`; safe to parallel)
-namespaces = Namespaces(
-    "forgeos",
-    forgeos_namespaces=forgeos_namespaces,
-    agent_runtime_gsa=identity.agent_runtime,
-    identity=identity,
-    k8s_provider=gke.provider,
-)
-
-# 8b. Exec-environment sandbox — the forgeos-envs namespace + RBAC that lets
-# the platform-api drive per-agent `kubectl exec` sandbox pods (kernel-gated
+# 7. Exec-environment sandbox — the forgeos-envs namespace + RBAC that lets the
+# platform-api drive per-agent `kubectl exec` sandbox pods (kernel-gated
 # env.exec). Scoped: clusterViewer to authenticate + namespaced pod/exec RBAC.
 exec_environments = ExecEnvironments(
     "forgeos",
@@ -168,7 +153,7 @@ exec_environments = ExecEnvironments(
     k8s_provider=gke.provider,
 )
 
-# 9. Migrations — depends on the database-url SecretVersion (Cloud Run validates
+# 8. Migrations — depends on the database-url SecretVersion (Cloud Run validates
 # secret_key_ref :latest at create-time, so the version must exist first).
 migrations = Migrations(
     "forgeos",
@@ -181,7 +166,7 @@ migrations = Migrations(
     opts=pulumi.ResourceOptions(depends_on=[secrets.versions["database-url"]]),
 )
 
-# 10. Platform API — only wire secrets that have an actual version. Cloud Run
+# 9. Platform API — only wire secrets that have an actual version. Cloud Run
 # validates secret_key_ref :latest at revision deploy, so a versionless secret
 # would fail Service creation. Users add versions later with
 # `gcloud secrets versions add` and re-run `pulumi up`.
@@ -235,7 +220,7 @@ platform_api = PlatformApi(
     opts=pulumi.ResourceOptions(depends_on=_pa_deps),
 )
 
-# 10b. Durable worker tier — always-on GKE Deployment that drains the Redis
+# 10. Durable worker tier — always-on GKE Deployment that drains the Redis
 # queue and resumes parked (HITL) runs. Gets the same env the app reads
 # directly (DB/Redis + the configured LLM provider key), synced into a k8s
 # Secret from the same Pulumi sources platform-api uses.
@@ -265,29 +250,9 @@ worker = WorkerTier(
     env_secrets=_worker_env_secrets,
     kernel_mode=kernel_mode,
     replicas=worker_replicas,
-    opts=pulumi.ResourceOptions(depends_on=[keda.release]),
 )
 
-# 11. Mission Control
-_mc_pw_secret = secrets.mc_admin_password.id if "mc-admin-password" in secrets.versions else None
-_mc_api_token_secret = secrets.api_token.id if "api-token" in secrets.versions else None
-_mc_deps = []
-if "mc-admin-password" in secrets.versions:
-    _mc_deps.append(secrets.versions["mc-admin-password"])
-if "api-token" in secrets.versions:
-    _mc_deps.append(secrets.versions["api-token"])
-mc = MissionControl(
-    "forgeos",
-    region=region,
-    image=_img("mc", mc_tag),
-    gsa_email=identity.mc.email,
-    platform_api_url=platform_api.url,
-    mc_admin_password_secret=_mc_pw_secret,
-    api_token_secret=_mc_api_token_secret,
-    opts=pulumi.ResourceOptions(depends_on=_mc_deps),
-)
-
-# 11b. MCP Server — remote MCP endpoint (FastMCP streamable-http) on the
+# 11. MCP Server — remote MCP endpoint (FastMCP streamable-http) on the
 # platform-api image, pointed at the platform API. Wires FORGEOS_API_KEY only
 # when the api-key secret has a version (else the Service deploy would fail
 # validating secret_key_ref :latest).
@@ -303,32 +268,14 @@ mcp_server = McpServer(
     opts=pulumi.ResourceOptions(depends_on=_mcp_deps),
 )
 
-# 12. Agents — list driven from config (empty by default; populate as agents ship)
-declared_agents: list[dict] = config.get_object("agents") or []
-agent_workloads: dict[str, AgentWorkload] = {}
-for spec in declared_agents:
-    agent_workloads[spec["name"]] = AgentWorkload(
-        name=spec["name"],
-        namespace=spec["namespace"],
-        image=_img("agent-base", spec.get("tag", agent_tag)),
-        manifest_ref=spec["manifest_ref"],
-        pubsub_topic=data.agent_triggers.name,
-        project=project,
-        k8s_provider=gke.provider,
-        platform_api_url=platform_api.url,
-        cpu=spec.get("cpu", "250m"),
-        memory=spec.get("memory", "512Mi"),
-        always_on=spec.get("always_on", True),
-        max_replicas=int(spec.get("max_replicas", 10)),
-        opts=pulumi.ResourceOptions(depends_on=[keda.release, namespaces]),
-    )
-
-# 13. Observability
-observability = Observability(
+# 12. Dashboard — Next.js web UI. Pure HTTP client of the platform API; its
+# browser/SSR calls are rewritten to FORGEOS_API_URL (the platform-api URL).
+dashboard = Dashboard(
     "forgeos",
-    forgeos_namespaces=forgeos_namespaces,
-    k8s_provider=gke.provider,
-    opts=pulumi.ResourceOptions(depends_on=[namespaces]),
+    region=region,
+    image=_img("forgeos-dashboard", dashboard_tag),
+    gsa_email=identity.dashboard.email,
+    platform_api_url=platform_api.url,
 )
 
 
@@ -342,6 +289,6 @@ pulumi.export("pubsub_agent_triggers", data.agent_triggers.name)
 pulumi.export("gke_cluster_name", gke.cluster.name)
 pulumi.export("gke_endpoint", pulumi.Output.secret(gke.cluster.endpoint))
 pulumi.export("platform_api_url", platform_api.url)
-pulumi.export("mission_control_url", mc.url)
 pulumi.export("mcp_server_url", mcp_server.url)
+pulumi.export("dashboard_url", dashboard.url)
 pulumi.export("migrations_job", migrations.job.name)
