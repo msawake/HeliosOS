@@ -211,8 +211,20 @@ class TestKernelGateCodePresence:
 
     def test_adk_adapter_has_kernel_gate(self):
         import inspect
-        from stacks.adk.adapter import _build_adk_tools
-        source = inspect.getsource(_build_adk_tools)
+        from stacks.adk.adapter import _kernel_gate
+        source = inspect.getsource(_kernel_gate)
         assert "check_tool" in source
         assert "runtime" in source
         assert "denied" in source
+
+    def test_adk_tool_bridge_calls_kernel_gate(self):
+        """Every bridged ADK tool must consult the kernel before executing."""
+        import inspect
+
+        import pytest
+
+        import stacks.adk.adapter as adapter_mod
+        if not adapter_mod.ADK_AVAILABLE:
+            pytest.skip("google-adk not installed — ForgeOSAdkTool undefined")
+        source = inspect.getsource(adapter_mod.ForgeOSAdkTool.run_async)
+        assert "_kernel_gate" in source
