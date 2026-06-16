@@ -25,6 +25,11 @@ spec:
     - agent__list_available
     - company__search_knowledge
     - human__ask
+  # SA identity only — the orchestrator is a pure A2A router with no Drive tools.
+  # Surfaced in the dashboard so every agent shows its own service account.
+  drive:
+    service_account: drive-agent-kyriba@admachina-atomic-test-84.iam.gserviceaccount.com
+    access: read
   metadata:
     approver: antoni.bergas@makingscience.com
     note: >-

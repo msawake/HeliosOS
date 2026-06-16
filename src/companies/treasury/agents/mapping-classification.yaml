@@ -20,17 +20,23 @@ spec:
     endpoint: https://atlas-router.ally-code-dev.makingscience.com/v1
     api_key_ref: secret:litellm-allycode-key
   tools:
-    - shell__exec
+    - drive__list_files         # discover the mapping/transaction CSVs shared with it
+    - drive__find_by_name
+    - drive__read_file
     - company__search_knowledge
     - company__record_metric
     - memory__read
     - memory__write
-    - human__ask
+    - human__ask                # clarify ambiguity + propose mappings to the approver
+  # Read-only Drive identity: classification service proposes via human__ask +
+  # memory; it never writes files, so no drive write tools (least privilege).
+  drive:
+    service_account: drive-agent-mapping@admachina-atomic-test-84.iam.gserviceaccount.com
+    folder_id: REPLACE_WITH_FOLDER_ID   # ← set after sharing the folder with the SA
+    access: read
   metadata:
-    data_dir: src/companies/treasury/data
     as_of: "2026-06-09"
     approver: antoni.bergas@makingscience.com
-    data_source: mock
   capabilities:
     a2a:
       canBeCalledBy:
@@ -53,12 +59,10 @@ spec:
        single best-guess SAP id (by fuzzy name similarity) clearly marked as a
        SUGGESTION requiring approval — never assert it as fact.
 
-    B) ON A SCHEDULED RUN (no specific name given): audit coverage. With
-       shell__exec (cwd = repo root) read:
-         cat src/companies/treasury/data/bank_inflows.csv
-         cat src/companies/treasury/data/vendor_invoices.csv
-         cat src/companies/treasury/data/customer_mapping.csv
-         cat src/companies/treasury/data/vendor_mapping.csv
+    B) ON A SCHEDULED RUN (no specific name given): audit coverage. Read your
+       Drive folder — drive__list_files then drive__read_file for the mapping +
+       transaction CSVs shared with you (expect customer_mapping.csv,
+       vendor_mapping.csv, gl_account_mapping.csv, and the transaction files).
        List every counterparty_name / vendor that appears in the transaction
        data but is absent from the mapping tables. For each gap, propose a
        mapping (best-guess SAP id + confidence) and escalate the batch to the

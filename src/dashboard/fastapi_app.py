@@ -195,6 +195,13 @@ class CredentialPutSecretRequest(BaseModel):
     kind: str = Field("generic", description="Classification label recorded with the secret (e.g. 'llm_gateway')")
     user_id: str = Field("default", description="Identifier under which to scope the secret")
 
+class ScopedSecretPutRequest(BaseModel):
+    scope: str = Field("user", description="Secret tier: 'platform' | 'namespace' | 'user'")
+    namespace: str | None = Field(None, description="Required when scope='namespace'")
+    name: str = Field(..., min_length=1, description="Logical name; referenced from a manifest as 'secret:<name>'")
+    value: str = Field(..., min_length=1, description="The secret value. Write-only — never read back.")
+    kind: str = Field("generic", description="Classification label recorded with the secret")
+
 class EventFireRequest(BaseModel):
     name: str
     payload: dict = {}
@@ -228,6 +235,13 @@ def _over_limit(store: dict, key: str, limit: int) -> bool:
     return False
 
 
+# Chat SSE translation lives in a FastAPI-free module so it's unit-testable.
+from src.dashboard.chat_events import (  # noqa: E402
+    agent_result_to_chat_events as _agent_result_to_chat_events,
+    run_outcome_to_chat_events as _run_outcome_to_chat_events,
+)
+
+
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
@@ -251,6 +265,8 @@ def create_fastapi_app(
     credential_store=None,
     runtime_service=None,  # runtime-v2 worker tier (FORGEOS_RUNTIME_WORKERS)
     environment_manager=None,  # per-agent execution environments (k8s pods)
+    env_def_store=None,  # PostgresEnvDefStore — reusable env templates
+    env_service=None,  # EnvironmentService — attach/detach envs to agents
     mcp_manager=None,  # boot-time MCPServerManager — for live connect on register
     tool_executor=None,  # ToolExecutor — to register tools discovered at runtime
 ) -> FastAPI:
@@ -755,6 +771,46 @@ def create_fastapi_app(
             )
             return True
         return False
+
+    async def _resume_v2_continuation_await(request_id: str, accept: bool, responded_by: str | None):
+        """Like ``_resume_v2_continuation`` but AWAITS the resume and returns the
+        resulting ``RunOutcome`` (None if no matching continuation). Used by the
+        chat resume stream so it can show the continued result inline."""
+        if not platform_executor:
+            return None
+        from src.runtime import Resolution, ResolutionOutcome
+        for adapter in getattr(platform_executor, "_adapters", {}).values():
+            engine = getattr(adapter, "step_engine", None)
+            store = getattr(engine, "_store", None)
+            if store is None:
+                continue
+            try:
+                cont = store.find_by_external_ref(request_id)
+            except Exception:
+                cont = None
+            if cont is None:
+                continue
+            rec = next((r for r in cont.pending_calls if r.external_ref == request_id), None)
+            if rec is None:
+                continue
+            token_id = None
+            kernel = getattr(engine, "_kernel", None)
+            if accept and kernel is not None and hasattr(kernel, "issue_capability"):
+                tok = kernel.issue_capability(
+                    subject=cont.pid, target=f"tool:{rec.name}", verb="tool.call",
+                    ttl_seconds=3600,
+                    metadata={"external_ref": request_id, "continuation_id": cont.continuation_id},
+                )
+                token_id = tok.id
+            resolution = Resolution(
+                continuation_id=cont.continuation_id, tool_use_id=rec.tool_use_id,
+                outcome=ResolutionOutcome.ACCEPT if accept else ResolutionOutcome.REJECT,
+                capability_token=token_id, responded_by=responded_by,
+            )
+            return await engine.resume(
+                resolution, tool_executor=getattr(adapter, "_tool_executor", None),
+            )
+        return None
 
     @app.post("/api/approvals/{request_id}/approve", tags=["approvals"])
     async def approve_request(request_id: str, body: ApprovalAction = ApprovalAction(),
@@ -1385,9 +1441,12 @@ def create_fastapi_app(
 
     # In-memory session store (shared with executor)
     _chat_sessions: dict[str, dict] = {}  # session_id → {agent_id, messages, created_at, ...}
+    # _agent_result_to_chat_events / _run_outcome_to_chat_events are module-level
+    # helpers (defined above the factory) so they're unit-testable.
 
     @app.post("/api/platform/agents/{agent_id}/chat/stream", tags=["chat"])
-    async def agent_chat_stream(agent_id: str, req: AgentChatRequest):
+    async def agent_chat_stream(agent_id: str, req: AgentChatRequest,
+                                user: str = Depends(current_user)):
         """Multi-turn streaming chat with an agent.
 
         Creates or resumes a conversation session. Streams SSE events:
@@ -1411,66 +1470,77 @@ def create_fastapi_app(
         })
         session["messages"].append({"role": "user", "content": req.message})
 
-        # Build conversation history (copy to avoid mutation during streaming)
-        history = list(session["messages"][:-1])
-
         async def generate():
             # First event: session ID
             yield f"data: {json.dumps({'type': 'session', 'session_id': sid})}\n\n"
-
             try:
-                from src.platform.agentic_loop import (
-                    build_tool_definitions,
-                    run_agentic_loop_with_events,
+                # Route through the executor → forgeos StepEngine (runtime-v2),
+                # which honors governance: a kernel ask_human PARKS the run (saves
+                # the continuation, registers the approval) instead of erroring.
+                # `_inline` forces synchronous execution; `session_id` threads
+                # multi-turn history via the executor's session store.
+                ctx = {"session_id": sid, "chat_id": sid, "_inline": True, "user_id": user}
+                result = await platform_executor.invoke(
+                    agent_id, req.message, ctx, session_id=sid,
                 )
-                from stacks.base import build_agent_context
-
-                tools = build_tool_definitions(
-                    getattr(platform_executor, '_tool_executor', None)
-                    or (platform_executor.get_adapter("forgeos") and getattr(platform_executor.get_adapter("forgeos"), "_tool_executor", None)),
-                    agent_def.tools or None,
-                )
-                system = agent_def.system_prompt or f"You are {agent_def.name}. {agent_def.description}"
-                ctx = build_agent_context(agent_def, agent_id)
-
-                # Get the tool_executor from the forgeos adapter
-                te = None
-                for stack_name in ("forgeos", "crewai", "adk", "openclaw"):
-                    adapter = platform_executor.get_adapter(stack_name)
-                    if adapter and hasattr(adapter, "_tool_executor") and adapter._tool_executor:
-                        te = adapter._tool_executor
-                        break
-
-                if te is None:
-                    yield f"data: {json.dumps({'type': 'error', 'error': 'No tool executor available — MCP servers may not be connected'})}\n\n"
-                    yield f"data: {json.dumps({'type': 'done', 'tokens_used': 0, 'text': ''})}\n\n"
-                    return
-
-                full_text = ""
-                async for ev in run_agentic_loop_with_events(
-                    llm_router=llm_router,
-                    llm_config=agent_def.llm_config,
-                    system_prompt=system,
-                    user_prompt=req.message,
-                    tool_definitions=tools or None,
-                    tool_executor=te,
-                    agent_context=ctx,
-                    history=history if history else None,
-                ):
+                for ev in _agent_result_to_chat_events(result):
                     yield f"data: {json.dumps(ev, default=str)}\n\n"
-                    if ev.get("type") == "text_delta":
-                        full_text += ev.get("content", "")
-                    elif ev.get("type") == "done":
-                        # Only use done.text as fallback if nothing was streamed
-                        if not full_text and ev.get("text"):
-                            full_text = ev["text"]
-
-                # Save assistant response to session
-                if full_text:
-                    session["messages"].append({"role": "assistant", "content": full_text})
-
-            except Exception as e:
+                # Persist the assistant turn for the session list/history view.
+                if getattr(result, "output", None):
+                    session["messages"].append({"role": "assistant", "content": result.output})
+            except Exception:
                 logger.exception("Agent chat stream error for %s", agent_id)
+                yield f"data: {json.dumps({'type': 'error', 'error': 'Internal server error'})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'tokens_used': 0, 'text': ''})}\n\n"
+
+        return StreamingResponse(generate(), media_type="text/event-stream")
+
+    @app.post("/api/platform/agents/{agent_id}/chat/resume", tags=["chat"])
+    async def agent_chat_resume(agent_id: str, request: Request,
+                                user: str = Depends(current_user)):
+        """Approve a parked (ask_human) chat run and stream the continued result.
+
+        Resumes the runtime-v2 continuation gated on ``request_id`` (executing the
+        approved tool with a capability token) and emits the continued/final turn
+        as SSE — the same events the chat already consumes. Body: {request_id,
+        session_id}. Rejection stays on POST /api/approvals/{id}/reject."""
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        request_id = (body or {}).get("request_id")
+        sid = (body or {}).get("session_id")
+        if not request_id:
+            raise HTTPException(400, "request_id required")
+
+        async def generate():
+            yield f"data: {json.dumps({'type': 'session', 'session_id': sid})}\n\n"
+            try:
+                outcome = await _resume_v2_continuation_await(
+                    request_id, accept=True, responded_by=user,
+                )
+                for ev in _run_outcome_to_chat_events(outcome):
+                    yield f"data: {json.dumps(ev, default=str)}\n\n"
+                resumed_output = getattr(outcome, "output", None) if outcome is not None else None
+                if resumed_output and sid:
+                    if sid in _chat_sessions:
+                        _chat_sessions[sid]["messages"].append(
+                            {"role": "assistant", "content": resumed_output})
+                    # Backfill the assistant turn the PAUSED invoke withheld so
+                    # the NEXT chat turn sees what the agent actually did — without
+                    # this the executor's session history keeps an empty assistant
+                    # turn and the agent loses the just-completed work (e.g. a
+                    # follow-up "delete it" can't resolve what "it" is).
+                    if platform_executor is not None:
+                        try:
+                            platform_executor.record_resumed_turn(
+                                sid, resumed_output,
+                                tokens_used=getattr(outcome, "tokens_used", 0) or 0,
+                            )
+                        except Exception:
+                            logger.debug("record_resumed_turn failed", exc_info=True)
+            except Exception:
+                logger.exception("Agent chat resume error for %s", agent_id)
                 yield f"data: {json.dumps({'type': 'error', 'error': 'Internal server error'})}\n\n"
                 yield f"data: {json.dumps({'type': 'done', 'tokens_used': 0, 'text': ''})}\n\n"
 
@@ -2414,9 +2484,11 @@ def create_fastapi_app(
     # ===================================================================
 
     from src.platform.client_store import PostgresClientStore, PostgresClientMCPStore
+    from src.platform.namespace_admins import NamespaceAdminStore
 
     client_store = PostgresClientStore(db_client=db_client, tenant_id=tenant_id)
     client_mcp_store = PostgresClientMCPStore(db_client=db_client, tenant_id=tenant_id)
+    namespace_admin_store = NamespaceAdminStore(db_client=db_client, tenant_id=tenant_id)
 
     # Optional: reference to the ClientMCPManager so we can refresh its cache
     # after config writes (the adapter-wired manager lives on the executor).
@@ -4097,6 +4169,156 @@ def create_fastapi_app(
         )
         return {"stored": True, "name": req.name, "kind": req.kind}
 
+    # ------------------------------------------------------------------
+    # Three-tier scoped secrets (platform / namespace / user) + RBAC
+    # ------------------------------------------------------------------
+
+    from src.platform.credentials import SCOPES as _SECRET_SCOPES
+    from src.platform.namespace_admins import can_write_secret as _can_write_secret_rule
+
+    def _acting_principal(request: Request) -> tuple[str, str]:
+        """Return (user_id, role) for the request. When auth is disabled, the
+        caller is treated as admin so local tooling works unchanged."""
+        user = getattr(request.state, "auth_user", None)
+        uid = (
+            request.headers.get("X-Forgeos-User")
+            or (getattr(user, "user_id", None) if user else None)
+            or "default"
+        )
+        if user is not None:
+            return uid, getattr(user, "role", UserRole.VIEWER)
+        return uid, (UserRole.VIEWER if auth_enabled else UserRole.ADMIN)
+
+    def _can_write_secret(request: Request, scope: str, namespace: str | None) -> bool:
+        if not auth_enabled:
+            return True
+        uid, role = _acting_principal(request)
+        return _can_write_secret_rule(
+            role=role,
+            scope=scope,
+            namespace=namespace,
+            is_namespace_admin=(
+                bool(namespace) and namespace_admin_store.is_admin(uid, namespace)
+            ),
+            admin_role=UserRole.ADMIN,
+        )
+
+    @app.get("/api/secrets", tags=["credentials"])
+    async def list_scoped_secrets(
+        request: Request,
+        scope: str = "user",
+        namespace: str | None = None,
+        _auth=Depends(check_auth),
+    ):
+        """List secret NAMES at a tier — never values. Any authenticated caller
+        may read names at platform/namespace scope (so they can reference them
+        when authoring an agent); user scope lists the caller's own secrets."""
+        if credential_store is None:
+            raise HTTPException(503, "Credential store not configured")
+        if scope not in _SECRET_SCOPES:
+            raise HTTPException(400, f"unknown scope '{scope}'")
+        uid, role = _acting_principal(request)
+        if scope == "namespace" and not namespace:
+            raise HTTPException(400, "namespace is required when scope='namespace'")
+        # User scope is private: non-admins only see their own.
+        target_user = uid
+        if scope == "user" and role == UserRole.ADMIN and request.query_params.get("user_id"):
+            target_user = request.query_params["user_id"]
+        try:
+            rows = credential_store.list_secrets(
+                scope=scope,
+                namespace=namespace if scope == "namespace" else None,
+                user_id=target_user if scope == "user" else None,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("list_scoped_secrets failed: %s", e)
+            rows = []
+        return {"scope": scope, "namespace": namespace, "secrets": rows}
+
+    @app.post("/api/secrets", tags=["credentials"], status_code=201)
+    async def put_scoped_secret(req: ScopedSecretPutRequest, request: Request, _auth=Depends(check_auth)):
+        """Create/update a scoped secret. Authorization by tier: platform →
+        tenant admin; namespace → tenant admin or that namespace's admin; user →
+        the caller (their own scope). Write-only — value is never read back."""
+        if credential_store is None:
+            raise HTTPException(503, "Credential store not configured")
+        if req.scope not in _SECRET_SCOPES:
+            raise HTTPException(400, f"unknown scope '{req.scope}'")
+        if not _can_write_secret(request, req.scope, req.namespace):
+            raise HTTPException(403, f"not authorized to write {req.scope}-scoped secrets")
+        uid, _ = _acting_principal(request)
+        caller = request.headers.get("x-forgeos-caller") or (request.client.host if request.client else "api")
+        try:
+            ok = credential_store.put_scoped_secret(
+                req.name, req.value, scope=req.scope, namespace=req.namespace,
+                user_id=uid, kind=req.kind, caller=caller,
+            )
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        if not ok:
+            raise HTTPException(503, "No writable secret backend; secret was not stored")
+        _audit(
+            "credential.write", actor=caller, resource_type="credential",
+            resource_id=f"{req.scope}:{req.namespace or uid}:{req.name}",
+            details={"scope": req.scope, "namespace": req.namespace, "name": req.name, "kind": req.kind},
+        )
+        return {"stored": True, "scope": req.scope, "namespace": req.namespace, "name": req.name}
+
+    @app.delete("/api/secrets", tags=["credentials"])
+    async def delete_scoped_secret(
+        request: Request,
+        name: str,
+        scope: str = "user",
+        namespace: str | None = None,
+        _auth=Depends(check_auth),
+    ):
+        """Delete a scoped secret (same authorization as POST). Idempotent."""
+        if credential_store is None:
+            raise HTTPException(503, "Credential store not configured")
+        if scope not in _SECRET_SCOPES:
+            raise HTTPException(400, f"unknown scope '{scope}'")
+        if not _can_write_secret(request, scope, namespace):
+            raise HTTPException(403, f"not authorized to delete {scope}-scoped secrets")
+        uid, _ = _acting_principal(request)
+        caller = request.headers.get("x-forgeos-caller") or (request.client.host if request.client else "api")
+        try:
+            ok = credential_store.delete_scoped_secret(
+                name, scope=scope, namespace=namespace, user_id=uid, caller=caller,
+            )
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        _audit(
+            "credential.delete", actor=caller, resource_type="credential",
+            resource_id=f"{scope}:{namespace or uid}:{name}",
+            details={"scope": scope, "namespace": namespace, "name": name},
+        )
+        return {"deleted": bool(ok), "scope": scope, "namespace": namespace, "name": name}
+
+    @app.get("/api/platform/namespaces/{ns}/admins", tags=["platform"])
+    async def list_namespace_admins(ns: str, _auth=Depends(require_role("admin"))):
+        """List the user ids that administer namespace ``ns`` (tenant admin only)."""
+        return {"namespace": ns, "admins": namespace_admin_store.list_for_namespace(ns)}
+
+    @app.put("/api/platform/namespaces/{ns}/admins/{admin_user_id}", tags=["platform"], status_code=201)
+    async def grant_namespace_admin(ns: str, admin_user_id: str, request: Request,
+                                    _auth=Depends(require_role("admin"))):
+        """Grant ``admin_user_id`` admin authority over namespace ``ns``."""
+        ok = namespace_admin_store.grant(ns, admin_user_id)
+        caller = request.headers.get("x-forgeos-caller") or "api"
+        _audit("namespace_admin.grant", actor=caller, resource_type="namespace",
+               resource_id=ns, details={"user_id": admin_user_id})
+        return {"granted": bool(ok), "namespace": ns, "user_id": admin_user_id}
+
+    @app.delete("/api/platform/namespaces/{ns}/admins/{admin_user_id}", tags=["platform"])
+    async def revoke_namespace_admin(ns: str, admin_user_id: str, request: Request,
+                                     _auth=Depends(require_role("admin"))):
+        """Revoke ``admin_user_id``'s admin authority over namespace ``ns``."""
+        ok = namespace_admin_store.revoke(ns, admin_user_id)
+        caller = request.headers.get("x-forgeos-caller") or "api"
+        _audit("namespace_admin.revoke", actor=caller, resource_type="namespace",
+               resource_id=ns, details={"user_id": admin_user_id})
+        return {"revoked": bool(ok), "namespace": ns, "user_id": admin_user_id}
+
     @app.post("/api/credentials/jira", tags=["credentials"])
     async def put_jira_credential(req: CredentialPutJiraRequest, request: Request,
                                   user: str = Depends(current_user)):
@@ -4218,13 +4440,148 @@ def create_fastapi_app(
             "secret_keys": list(secrets.keys()),
         }
 
+    @app.post("/api/namespaces/{ns}/mcp/{server_name}", tags=["mcp"], status_code=201)
+    async def enroll_namespace_mcp(ns: str, server_name: str, request: Request, _auth=Depends(check_auth)):
+        """Register an MCP server for a whole NAMESPACE (shared team credentials).
+
+        Body: {package, env_vars?: {plain}, secrets?: {KEY: value}, args?: []}.
+        Secret values are stored at NAMESPACE scope and referenced from the MCP
+        env as `secret:mcp-<server>-<KEY>`; at connect time they resolve
+        namespace-first, then user, then platform. Seeds a `clients` row
+        (client_id = `ns:<namespace>`). Authorization: tenant admin or an admin
+        of ``ns``. Agents opt in with `metadata.namespace_mcp: true`.
+        """
+        if not _can_write_secret(request, "namespace", ns):
+            raise HTTPException(403, f"not authorized to manage namespace '{ns}' MCP credentials")
+        body = await request.json()
+        package = (body.get("package") or "").strip()
+        if not package:
+            raise HTTPException(400, "`package` is required")
+        env_vars = dict(body.get("env_vars") or {})
+        secrets = dict(body.get("secrets") or {})
+        args = body.get("args") or []
+        caller = request.headers.get("x-forgeos-caller") or (request.client.host if request.client else "api")
+        cid = f"ns:{ns}"
+
+        try:
+            if not client_store.exists(cid):
+                client_store.create(cid, cid, {"kind": "namespace-mcp", "namespace": ns})
+        except Exception as e:
+            logger.warning("enroll ns mcp: client seed failed for %s: %s", cid, e)
+
+        if secrets:
+            if credential_store is None:
+                raise HTTPException(503, "Credential store not configured")
+            for key, value in secrets.items():
+                logical = f"mcp-{server_name}-{key}"
+                try:
+                    ok = credential_store.put_scoped_secret(
+                        logical, str(value), scope="namespace", namespace=ns,
+                        kind=f"mcp:{server_name}", caller=caller,
+                    )
+                except ValueError as e:
+                    raise HTTPException(400, str(e))
+                if not ok:
+                    raise HTTPException(503, f"No writable secret backend; secret '{key}' not stored")
+                env_vars[key] = f"secret:{logical}"
+
+        try:
+            client_mcp_store.add(cid, server_name, package, env_vars, args)
+        except ValueError:
+            client_mcp_store.update(cid, server_name, package, env_vars, args)
+        _refresh_client_mcp_cache(cid)
+        _audit(
+            "namespace_mcp.enroll", actor=caller, resource_type="namespace_mcp", resource_id=cid,
+            details={"namespace": ns, "server": server_name, "package": package,
+                     "secret_keys": list(secrets.keys())},
+        )
+        return {
+            "enrolled": True, "client_id": cid, "namespace": ns, "server_name": server_name,
+            "package": package, "env_keys": list(env_vars.keys()),
+            "secret_keys": list(secrets.keys()),
+        }
+
+    # -- Environment definitions (reusable pod templates) --------------------
+
+    def _env_def_view(d) -> dict:
+        out = d.to_dict() if hasattr(d, "to_dict") else dict(d)
+        if env_service is not None:
+            out["attached_agents"] = env_service.agents_using(out["env_def_id"])
+        return out
+
+    @app.get("/api/platform/environments", tags=["environments"])
+    async def list_environment_defs(_auth=Depends(check_auth)):
+        """List reusable environment definitions (pod templates)."""
+        if env_def_store is None:
+            raise HTTPException(503, "Environments are not enabled on this server")
+        return [_env_def_view(d) for d in env_def_store.list()]
+
+    @app.get("/api/platform/environments/{env_def_id}", tags=["environments"])
+    async def get_environment_def(env_def_id: str, _auth=Depends(check_auth)):
+        if env_def_store is None:
+            raise HTTPException(503, "Environments are not enabled on this server")
+        d = env_def_store.get(env_def_id)
+        if not d:
+            raise HTTPException(404, f"Environment {env_def_id} not found")
+        return _env_def_view(d)
+
+    @app.post("/api/platform/environments", tags=["environments"], status_code=201)
+    async def create_environment_def(request: Request, _auth=Depends(check_auth)):
+        """Create a reusable environment definition.
+
+        Body: {name, image, env_vars?: {K:V}, resources?: {cpu, memory}}.
+        """
+        if env_def_store is None:
+            raise HTTPException(503, "Environments are not enabled on this server")
+        body = await request.json()
+        name = (body.get("name") or "").strip()
+        image = (body.get("image") or "").strip()
+        if not name or not image:
+            raise HTTPException(400, "name and image are required")
+        if env_def_store.get_by_name(name):
+            raise HTTPException(409, f"environment '{name}' already exists")
+        d = env_def_store.create(
+            name=name, image=image,
+            env_vars=body.get("env_vars") or {},
+            resources=body.get("resources") or {},
+        )
+        _audit("env_def.create", resource_type="environment", resource_id=d.env_def_id,
+               details={"name": name, "image": image})
+        return _env_def_view(d)
+
+    @app.patch("/api/platform/environments/{env_def_id}", tags=["environments"])
+    async def update_environment_def(env_def_id: str, request: Request, _auth=Depends(check_auth)):
+        if env_def_store is None:
+            raise HTTPException(503, "Environments are not enabled on this server")
+        body = await request.json()
+        d = env_def_store.update(
+            env_def_id,
+            name=body.get("name"), image=body.get("image"),
+            env_vars=body.get("env_vars"), resources=body.get("resources"),
+        )
+        if not d:
+            raise HTTPException(404, f"Environment {env_def_id} not found")
+        _audit("env_def.update", resource_type="environment", resource_id=env_def_id, details={})
+        return _env_def_view(d)
+
+    @app.delete("/api/platform/environments/{env_def_id}", tags=["environments"])
+    async def delete_environment_def(env_def_id: str, _auth=Depends(check_auth)):
+        if env_service is None:
+            raise HTTPException(503, "Environments are not enabled on this server")
+        res = env_service.delete_def(env_def_id)
+        if not res.get("ok"):
+            raise HTTPException(409, res.get("error") or "could not delete environment")
+        _audit("env_def.delete", resource_type="environment", resource_id=env_def_id, details={})
+        return {"deleted": True, "env_def_id": env_def_id}
+
+    # -- Attach / detach an env to an agent ----------------------------------
+
     @app.post("/api/platform/agents/{agent_id}/environment", tags=["environments"], status_code=201)
     async def attach_environment(agent_id: str, request: Request, _auth=Depends(check_auth)):
-        """Spawn (or reuse) the agent's execution environment pod and bind it.
+        """Attach an environment to an agent and spawn that agent's pod.
 
-        Body: {image?}. If omitted, uses the agent manifest's spec.environment.image.
-        The agent's `bash`/`env__exec` tool then runs commands in this pod
-        (kernel-gated via `env.exec`).
+        Body: {env_def_id} (preferred) — clone the named template into a pod for
+        this agent. Back-compat: {image} spawns an ad-hoc pod from a raw image.
         """
         if environment_manager is None:
             raise HTTPException(503, "Environments are not enabled on this server")
@@ -4233,13 +4590,24 @@ def create_fastapi_app(
             body = await request.json()
         except Exception:
             pass
+        env_def_id = (body.get("env_def_id") or "").strip()
+        if env_def_id:
+            if env_service is None:
+                raise HTTPException(503, "Environment service is not enabled on this server")
+            res = await env_service.attach(agent_id, env_def_id)
+            if not res.get("ok") and res.get("error"):
+                raise HTTPException(400, res["error"])
+            _audit("env.attach", resource_type="agent", resource_id=agent_id,
+                   details={"env_def_id": env_def_id, "env_id": res.get("env_id"), "status": res.get("status")})
+            return res
+        # Back-compat: raw image (or spec.environment.image from the manifest).
         image = (body.get("image") or "").strip()
         if not image and platform_registry:
             agent = platform_registry.get(agent_id)
             if agent:
                 image = ((agent.metadata or {}).get("_environment") or {}).get("image", "")
         if not image:
-            raise HTTPException(400, "no image — pass {\"image\": ...} or set spec.environment.image on the agent")
+            raise HTTPException(400, "pass {\"env_def_id\": ...} or {\"image\": ...}")
         try:
             b = await environment_manager.spawn(agent_id, image)
         except Exception as e:
@@ -4253,9 +4621,14 @@ def create_fastapi_app(
 
     @app.delete("/api/platform/agents/{agent_id}/environment", tags=["environments"])
     async def detach_environment(agent_id: str, _auth=Depends(check_auth)):
-        """Tear down the agent's execution environment pod."""
+        """Tear down the agent's execution environment pod and clear its attachment."""
         if environment_manager is None:
             raise HTTPException(503, "Environments are not enabled on this server")
+        if env_service is not None:
+            res = await env_service.detach(agent_id)
+            _audit("env.detach", resource_type="agent", resource_id=agent_id,
+                   details={"removed": res.get("detached")})
+            return {"detached": res.get("detached"), "agent_id": agent_id}
         ok = await environment_manager.teardown(agent_id)
         _audit("env.detach", resource_type="agent", resource_id=agent_id, details={"removed": ok})
         return {"detached": ok, "agent_id": agent_id}

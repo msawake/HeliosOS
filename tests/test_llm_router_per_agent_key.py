@@ -19,13 +19,17 @@ from src.platform.llm_router import LLMResponse, LLMRouter
 
 
 class _FakeSecrets:
-    """Minimal SecretsManager stand-in: name -> value."""
+    """Minimal SecretsManager stand-in: name -> value (flat key space).
+
+    Accepts ``allow_env`` so the scoped-resolution walk (CredentialStore.resolve,
+    which probes candidate names with ``allow_env=False``) can drive it.
+    """
 
     def __init__(self, values: dict[str, str]):
         self._values = values
         self.calls: list[tuple[str, str, str]] = []
 
-    def get(self, name, default="", *, caller="", reason=""):
+    def get(self, name, default="", *, caller="", reason="", allow_env=True):
         self.calls.append((name, caller, reason))
         return self._values.get(name, default)
 
@@ -62,11 +66,48 @@ class TestResolveApiKey:
         assert router._resolve_api_key("secret:litellm-allycode-key") == "sk-resolved"
 
     def test_secret_ref_records_audit_metadata(self):
+        # A bare ref walks the scopes (user→ns→platform) then the literal name;
+        # every probe is attributed to the llm_router caller.
         secrets = _FakeSecrets({"k": "v"})
         router = LLMRouter(api_keys={})
         router.bind_secrets(secrets)
-        router._resolve_api_key("secret:k")
-        assert secrets.calls == [("k", "llm_router", "llm.api_key_ref")]
+        assert router._resolve_api_key("secret:k") == "v"  # resolves via literal fallback
+        assert all(c[1] == "llm_router" for c in secrets.calls)
+        assert secrets.calls[-1][0] == "k"  # literal lookup is last
+
+    def test_scoped_resolution_namespace_shadows_platform(self):
+        secrets = _FakeSecrets({
+            "forgeos-ns-sales-gw": "ns-val",
+            "forgeos-platform-gw": "p-val",
+        })
+        router = LLMRouter(api_keys={})
+        router.bind_secrets(secrets)
+        # Default order is user→namespace→platform; namespace hit wins over platform.
+        assert router._resolve_api_key(
+            "secret:gw", namespace="sales", user_id="alice"
+        ) == "ns-val"
+
+    def test_scoped_resolution_user_shadows_namespace(self):
+        secrets = _FakeSecrets({
+            "forgeos-user-alice-gw": "u-val",
+            "forgeos-ns-sales-gw": "ns-val",
+        })
+        router = LLMRouter(api_keys={})
+        router.bind_secrets(secrets)
+        assert router._resolve_api_key(
+            "secret:gw", namespace="sales", user_id="alice"
+        ) == "u-val"
+
+    def test_explicit_platform_pin_bypasses_walk(self):
+        secrets = _FakeSecrets({
+            "forgeos-user-alice-gw": "u-val",
+            "forgeos-platform-gw": "p-val",
+        })
+        router = LLMRouter(api_keys={})
+        router.bind_secrets(secrets)
+        assert router._resolve_api_key(
+            "secret:platform/gw", namespace="sales", user_id="alice"
+        ) == "p-val"
 
     def test_secret_ref_without_manager_falls_back_to_env(self, monkeypatch):
         monkeypatch.setenv("LITELLM_ALLYCODE_KEY", "sk-from-env")

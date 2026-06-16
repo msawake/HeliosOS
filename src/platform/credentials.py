@@ -18,6 +18,7 @@ to the caller. If you need to verify storage from a CLI, store + re-store.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,61 @@ logger = logging.getLogger(__name__)
 DEFAULT_USER_ID = "default"
 GH_PAT_KIND = "github"
 JIRA_KIND = "jira"
+
+# Three secret tiers. Stored names are scope-qualified so one flat key space
+# (works on both the encrypted-Postgres and GCP Secret Manager backends) holds
+# all three. See ``scoped_secret_name``.
+SCOPE_PLATFORM = "platform"
+SCOPE_NAMESPACE = "namespace"
+SCOPE_USER = "user"
+SCOPES = (SCOPE_PLATFORM, SCOPE_NAMESPACE, SCOPE_USER)
+
+# Logical secret names are kept GCP-safe (Secret Manager ids allow only
+# ``[A-Za-z0-9_-]``) so the same name works on either backend.
+_SECRET_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,200}$")
+
+
+def validate_secret_name(name: str) -> str:
+    """Validate + return a logical secret name, or raise ``ValueError``."""
+    name = (name or "").strip()
+    if not _SECRET_NAME_RE.match(name):
+        raise ValueError(
+            "secret name must be 1–201 chars of [A-Za-z0-9_-] and start alphanumeric"
+        )
+    return name
+
+
+def scoped_secret_name(
+    name: str, *, scope: str, namespace: str | None = None, user_id: str | None = None
+) -> str:
+    """Construct the scope-qualified storage key for a logical secret name.
+
+    platform  → ``forgeos-platform-<name>``
+    namespace → ``forgeos-ns-<namespace>-<name>``
+    user      → ``forgeos-user-<user_id>-<name>``
+    """
+    name = (name or "").strip()
+    if scope == SCOPE_PLATFORM:
+        return f"forgeos-platform-{name}"
+    if scope == SCOPE_NAMESPACE:
+        return f"forgeos-ns-{namespace or DEFAULT_USER_ID}-{name}"
+    if scope == SCOPE_USER:
+        return f"forgeos-user-{user_id or DEFAULT_USER_ID}-{name}"
+    raise ValueError(f"unknown secret scope: {scope!r}")
+
+
+def scope_prefix(scope: str, *, namespace: str | None = None, user_id: str | None = None) -> str:
+    """The stored-name prefix for a scope (used for listing + delogification)."""
+    return scoped_secret_name("", scope=scope, namespace=namespace, user_id=user_id)
+
+
+def logical_secret_name(
+    stored: str, *, scope: str, namespace: str | None = None, user_id: str | None = None
+) -> str:
+    """Strip the scope prefix from a stored name; pass through if unprefixed
+    (covers legacy ``forgeos-<kind>-<field>-<user>`` rows)."""
+    p = scope_prefix(scope, namespace=namespace, user_id=user_id)
+    return stored[len(p):] if stored.startswith(p) else stored
 
 
 def _secret_name(kind: str, user_id: str) -> str:
@@ -97,6 +153,7 @@ class CredentialStore:
             reason=f"credentials.put.{kind}",
             user_id=user_id,
             kind=kind,
+            scope=SCOPE_USER,
         )
 
     def put_jira(
@@ -164,3 +221,134 @@ class CredentialStore:
         )
         if pat:
             invoke_ctx.setdefault("_credentials", {})["gh_token"] = pat
+
+    # -- three-tier scoped secrets -------------------------------------------
+
+    def put_scoped_secret(
+        self,
+        name: str,
+        value: str,
+        *,
+        scope: str = SCOPE_USER,
+        namespace: str | None = None,
+        user_id: str = DEFAULT_USER_ID,
+        kind: str = "generic",
+        caller: str = "",
+    ) -> bool:
+        """Store a logical secret at a tier (platform/namespace/user).
+
+        The stored key is scope-qualified (see :func:`scoped_secret_name`); a
+        manifest/MCP config references it as the **logical** name and the
+        resolver expands it. Authorization is the API layer's job, not here.
+        """
+        if scope not in SCOPES:
+            raise ValueError(f"unknown secret scope: {scope!r}")
+        if scope == SCOPE_NAMESPACE and not namespace:
+            raise ValueError("namespace-scoped secret requires a namespace")
+        if value is None or not str(value).strip():
+            raise ValueError(f"secret '{name}' value is empty")
+        name = validate_secret_name(name)
+        stored = scoped_secret_name(name, scope=scope, namespace=namespace, user_id=user_id)
+        return self._secrets.put(
+            stored,
+            str(value).strip(),
+            caller=caller,
+            reason=f"credentials.put.{scope}.{kind}",
+            user_id=user_id,
+            kind=kind,
+            scope=scope,
+            namespace=namespace if scope == SCOPE_NAMESPACE else None,
+        )
+
+    def delete_scoped_secret(
+        self,
+        name: str,
+        *,
+        scope: str = SCOPE_USER,
+        namespace: str | None = None,
+        user_id: str = DEFAULT_USER_ID,
+        caller: str = "",
+    ) -> bool:
+        """Delete a scoped logical secret. Idempotent."""
+        if scope not in SCOPES:
+            raise ValueError(f"unknown secret scope: {scope!r}")
+        name = validate_secret_name(name)
+        stored = scoped_secret_name(name, scope=scope, namespace=namespace, user_id=user_id)
+        return self._secrets.delete(stored, caller=caller, reason=f"credentials.delete.{scope}")
+
+    def list_secrets(
+        self,
+        *,
+        scope: str = SCOPE_USER,
+        namespace: str | None = None,
+        user_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List logical secret names at a tier (names + metadata, never values)."""
+        if scope not in SCOPES:
+            raise ValueError(f"unknown secret scope: {scope!r}")
+        rows = self._secrets.list_names(
+            scope=scope,
+            namespace=namespace,
+            user_id=user_id,
+            gcp_prefix=scope_prefix(scope, namespace=namespace, user_id=user_id),
+        )
+        out: list[dict[str, Any]] = []
+        for r in rows or []:
+            stored = r.get("secret_name", "")
+            out.append({
+                "name": logical_secret_name(
+                    stored, scope=scope, namespace=r.get("namespace") or namespace, user_id=r.get("user_id") or user_id,
+                ),
+                "kind": r.get("kind", "generic"),
+                "scope": r.get("scope", scope),
+                "namespace": r.get("namespace"),
+            })
+        return out
+
+    def resolve(
+        self,
+        ref: str,
+        *,
+        namespace: str | None = None,
+        user_id: str = DEFAULT_USER_ID,
+        order: tuple[str, ...] = (SCOPE_USER, SCOPE_NAMESPACE, SCOPE_PLATFORM),
+        caller: str = "",
+    ) -> str | None:
+        """Resolve a logical secret reference to its value across the tiers.
+
+        ``ref`` forms:
+          * ``platform/<name>`` / ``ns/<name>`` / ``user/<name>`` — explicit pin.
+          * ``<name>`` — walk ``order`` (default user→namespace→platform),
+            first hit wins; then a final literal/legacy lookup (covers
+            ``forgeos-jira-token-<user>`` and env fallback).
+        Returns ``None`` when nothing resolves.
+        """
+        ref = (ref or "").strip()
+        if not ref:
+            return None
+        pins = {"platform/": SCOPE_PLATFORM, "ns/": SCOPE_NAMESPACE, "user/": SCOPE_USER}
+        for prefix, scope in pins.items():
+            if ref.startswith(prefix):
+                stored = scoped_secret_name(
+                    ref[len(prefix):], scope=scope, namespace=namespace, user_id=user_id
+                )
+                return self._secrets.get(
+                    stored, default="", caller=caller, reason=f"credentials.resolve.{scope}",
+                    allow_env=False,
+                ) or None
+        for scope in order:
+            if scope == SCOPE_NAMESPACE and not namespace:
+                continue
+            if scope == SCOPE_USER and not user_id:
+                continue
+            stored = scoped_secret_name(ref, scope=scope, namespace=namespace, user_id=user_id)
+            val = self._secrets.get(
+                stored, default="", caller=caller, reason=f"credentials.resolve.{scope}",
+                allow_env=False,
+            )
+            if val:
+                return val
+        # Final fallback: treat ref as a literal/legacy stored name (+ env).
+        return self._secrets.get(
+            ref, default="", caller=caller, reason="credentials.resolve.literal",
+        ) or None

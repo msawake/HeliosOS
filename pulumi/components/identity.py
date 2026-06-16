@@ -123,6 +123,30 @@ class Identity(pulumi.ComponentResource):
                     opts=child,
                 )
 
+        # Per-agent Drive service accounts (treasury demo). Each agent
+        # impersonates its OWN SA to access Google Drive — keyless,
+        # ``drive.file`` scope — so a user shares a Drive folder with that SA's
+        # email to authorize the agent. The platform-api runtime SA gets
+        # tokenCreator on each so it can mint impersonated tokens (matching the
+        # gcloud-provisioned setup in scripts/provision_agent_sa.sh).
+        self.drive_agents: dict[str, gcp.serviceaccount.Account] = {}
+        for slug in ("bank-sap", "debt", "po", "mapping", "kyriba"):
+            sa = gcp.serviceaccount.Account(
+                f"{name}-drive-{slug}",
+                account_id=f"drive-agent-{slug}",  # <=30 chars
+                display_name=f"ForgeOS Drive Agent — {slug}",
+                description=f"Per-agent Drive SA for treasury agent {slug}",
+                opts=child,
+            )
+            self.drive_agents[slug] = sa
+            gcp.serviceaccount.IAMMember(
+                f"{name}-drive-{slug}-tokencreator",
+                service_account_id=sa.name,
+                role="roles/iam.serviceAccountTokenCreator",
+                member=self.platform_api.email.apply(lambda e: f"serviceAccount:{e}"),
+                opts=child,
+            )
+
         self.register_outputs({})
 
     def bind_workload_identity(

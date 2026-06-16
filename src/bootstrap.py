@@ -675,6 +675,16 @@ class PlatformBootstrap:
             db_client=self._db, tenant_id=self.tenant_id,
         )
 
+        # Reusable environment definitions (pod templates) + attach/detach service.
+        from src.platform.env_service import EnvironmentService
+        from src.platform.persistence import PostgresEnvDefStore
+        self._env_def_store = PostgresEnvDefStore(self._db, self.tenant_id)
+        self._env_service = EnvironmentService(
+            env_def_store=self._env_def_store,
+            registry=self.platform_registry,
+            env_mgr=self._environment_manager,
+        )
+
         tool_executor = ToolExecutor(
             company_system=self.system,
             mcp_clients=mcp_clients,
@@ -998,6 +1008,8 @@ class PlatformBootstrap:
             kernel=getattr(self, '_kernel', None),
             credential_store=getattr(self, 'credentials', None),
             environment_manager=getattr(self, '_environment_manager', None),
+            env_def_store=getattr(self, '_env_def_store', None),
+            env_service=getattr(self, '_env_service', None),
             mcp_manager=getattr(self, '_mcp_manager', None),
             tool_executor=getattr(self, '_tool_executor', None),
         )

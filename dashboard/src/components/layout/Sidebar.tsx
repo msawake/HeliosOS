@@ -8,6 +8,7 @@ import {
   CheckCircle,
   PlugsConnected,
   Key,
+  HardDrives,
   type Icon,
 } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
@@ -26,6 +27,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/deploy', label: 'Deploy', icon: RocketLaunch },
   { href: '/approvals', label: 'Approvals', icon: CheckCircle },
   { href: '/mcp', label: 'MCP servers', icon: PlugsConnected },
+  { href: '/environments', label: 'Environments', icon: HardDrives },
   { href: '/credentials', label: 'Credentials', icon: Key },
 ];
 

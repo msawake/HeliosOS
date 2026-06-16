@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, type Agent } from '@/lib/api';
+import { useCopy } from '@/lib/use-copy';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,7 @@ import {
   DialogClose,
 } from '@/components/ui/dialog';
 import { STACK_LABELS, EXEC_LABELS } from '@/lib/utils';
+import { AgentEnvironment } from '@/components/agent/AgentEnvironment';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -28,12 +30,38 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+/** Human-in-the-loop approval rules, packed into metadata._governance by the
+ * manifest's `spec.governance`. */
+type ApprovalRule = {
+  tool: string;
+  mode?: string;
+  approvers?: string[];
+  sla_hours?: number;
+  on_timeout?: string;
+  priority?: string;
+  reason?: string;
+};
+type Governance = { approvals?: ApprovalRule[]; audit_level?: string };
+
+/** Per-agent Drive identity, packed into metadata._drive by the manifest. */
+type DriveCfg = { service_account?: string; folder_id?: string; access?: string };
+
+const MODE_BADGE: Record<string, { variant: 'warning' | 'success' | 'outline'; label: string }> = {
+  always: { variant: 'warning', label: 'approval required' },
+  never: { variant: 'success', label: 'auto-approved' },
+  conditional: { variant: 'outline', label: 'conditional' },
+};
+
 export function AgentOverview({ agent, onChanged }: { agent: Agent; onChanged: () => void }) {
   const router = useRouter();
   const [busy, setBusy] = useState<null | 'stop' | 'undeploy'>(null);
 
   const metadata = Object.entries(agent.metadata ?? {}).filter(([k]) => !k.startsWith('_'));
   const llm = agent.llm_config;
+  const governance = (agent.metadata?._governance ?? null) as Governance | null;
+  const approvals = governance?.approvals ?? [];
+  const drive = (agent.metadata?._drive ?? null) as DriveCfg | null;
+  const { copied, copy } = useCopy();
 
   const stop = async () => {
     setBusy('stop');
@@ -110,6 +138,84 @@ export function AgentOverview({ agent, onChanged }: { agent: Agent; onChanged: (
           </CardContent>
         </Card>
       ) : null}
+
+      {approvals.length ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Governance — tool approvals</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2.5">
+            <p className="text-xs text-tertiary">
+              Rules apply top-to-bottom; the first match decides. A gated call pauses the run for
+              human approval before it executes.
+            </p>
+            {approvals.map((r, i) => {
+              const m = MODE_BADGE[r.mode ?? 'always'] ?? MODE_BADGE.always;
+              return (
+                <div
+                  key={`${r.tool}-${i}`}
+                  className="flex flex-wrap items-center gap-2 border-b border-edge-subtle pb-2.5 last:border-0 last:pb-0"
+                >
+                  <Badge variant="outline" className="font-mono">
+                    {r.tool}
+                  </Badge>
+                  <Badge variant={m.variant}>{m.label}</Badge>
+                  {r.approvers?.length ? (
+                    <span className="text-xs text-tertiary">approvers: {r.approvers.join(', ')}</span>
+                  ) : null}
+                  {r.sla_hours ? <span className="text-xs text-tertiary">· SLA {r.sla_hours}h</span> : null}
+                  {r.on_timeout ? (
+                    <span className="text-xs text-tertiary">· on timeout: {r.on_timeout}</span>
+                  ) : null}
+                  {r.reason ? <p className="w-full text-xs text-secondary">{r.reason}</p> : null}
+                </div>
+              );
+            })}
+            {governance?.audit_level ? (
+              <p className="pt-1 text-xs text-tertiary">
+                Audit level: <span className="text-secondary">{governance.audit_level}</span>
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {drive?.service_account ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Service account · Google Drive</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-tertiary">
+              This agent has its own service account. Share a Google Drive folder with this email
+              {drive.access === 'readwrite' ? ' (as Content Manager, in a Shared Drive)' : ''} and the
+              agent can {drive.access === 'readwrite' ? 'read context + write reports' : 'read context files'}.
+            </p>
+            <div className="flex items-center gap-2 rounded-md border border-edge bg-inset px-3 py-2">
+              <code className="flex-1 break-all font-mono text-xs text-primary">{drive.service_account}</code>
+              <Button size="sm" variant="ghost" onClick={() => copy(drive.service_account!)}>
+                {copied ? 'Copied' : 'Copy'}
+              </Button>
+            </div>
+            <dl className="grid grid-cols-2 gap-x-8 text-[13px]">
+              <div className="flex justify-between border-b border-edge-subtle py-2">
+                <dt className="text-tertiary">Access</dt>
+                <dd><Badge variant="outline">{drive.access ?? 'read'}</Badge></dd>
+              </div>
+              <div className="flex justify-between border-b border-edge-subtle py-2">
+                <dt className="text-tertiary">Context folder</dt>
+                <dd className="font-mono text-xs text-primary">
+                  {drive.folder_id && drive.folder_id !== 'REPLACE_WITH_FOLDER_ID'
+                    ? drive.folder_id
+                    : <span className="text-muted">not set</span>}
+                </dd>
+              </div>
+            </dl>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <AgentEnvironment agent={agent} onChanged={onChanged} />
 
       {agent.event_triggers?.length ? (
         <Card>

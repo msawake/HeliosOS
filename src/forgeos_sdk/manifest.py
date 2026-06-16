@@ -366,6 +366,27 @@ class Governance(BaseModel):
         return self
 
 
+class DriveConfig(BaseModel):
+    """Per-agent Google Drive identity + context folder.
+
+    The agent impersonates its own service account (``service_account``) to
+    access Drive — keyless, ``drive.file`` scope, so the SA only sees what the
+    user explicitly shares with its email. ``folder_id`` is the default context
+    folder (shared with that SA); drive tools default reads/writes to it.
+    Surfaced in the dashboard so the user knows which SA email to share with.
+    """
+
+    service_account: str | None = Field(
+        None, description="This agent's SA email (share the Drive folder with it)"
+    )
+    folder_id: str | None = Field(
+        None, description="Default Drive context folder id (shared with the SA)"
+    )
+    access: Literal["read", "readwrite"] = Field(
+        "read", description="read = context only; readwrite = also write reports back"
+    )
+
+
 class AgentDependency(BaseModel):
     """A dependency on another agent (like systemd 'After=' or Helm 'dependsOn')."""
 
@@ -569,6 +590,7 @@ class Spec(BaseModel):
     boundaries: Boundaries | None = Field(None, description="Budgets + data boundaries")
     triggers: list[Trigger] = Field(default_factory=list, description="Unified trigger list")
     governance: Governance | None = None
+    drive: DriveConfig | None = Field(None, description="Per-agent Drive SA + context folder")
     dependencies: Dependencies | None = None
     scope: Scope | None = Field(None, description="Organizational taxonomy (department, team, role)")
     knowledge: Knowledge | None = Field(None, description="Knowledge scoping (RAG filters, allowed sources)")
@@ -807,6 +829,8 @@ class AgentManifest(BaseModel):
             extra_metadata["_triggers"] = [t.model_dump() for t in self.spec.triggers]
         if self.spec.governance:
             extra_metadata["_governance"] = self.spec.governance.model_dump()
+        if self.spec.drive:
+            extra_metadata["_drive"] = self.spec.drive.model_dump()
         if self.spec.dependencies:
             extra_metadata["_dependencies"] = self.spec.dependencies.model_dump()
         if self.spec.environment:
@@ -961,6 +985,7 @@ _V2_BAG_KEYS: dict[str, str] = {
     "boundaries": "_boundaries",
     "triggers": "_triggers",
     "governance": "_governance",
+    "drive": "_drive",
     "dependencies": "_dependencies",
     "namespace": "_namespace",
     "agent_version": "_agent_version",

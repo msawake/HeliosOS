@@ -316,20 +316,29 @@ class LLMRouter:
             logger.warning("openai package not installed (needed for vLLM)")
             return None
 
-    def _resolve_api_key(self, api_key_ref: str | None) -> str | None:
+    def _resolve_api_key(
+        self,
+        api_key_ref: str | None,
+        *,
+        namespace: str = "default",
+        user_id: str = "default",
+    ) -> str | None:
         """Resolve a per-agent key reference to a concrete API key.
 
         Supported reference forms:
-          * ``secret:<name>`` — resolve via the bound SecretsManager (cache ->
-            encrypted Postgres -> GCP Secret Manager -> env). Falls back to the
-            canonical env name (``NAME`` upper-cased, ``-``->``_``) when no
-            SecretsManager is bound.
+          * ``secret:<name>`` — resolve via the bound SecretsManager across the
+            three scopes (user → namespace → platform, see
+            ``CredentialStore.resolve``), then literal/legacy + env fallback.
+            Explicit pins are honored: ``secret:platform/<name>``,
+            ``secret:ns/<name>``, ``secret:user/<name>``. Falls back to the
+            canonical env name when no SecretsManager is bound.
           * ``env:<VAR>``     — read ``os.environ[VAR]`` directly.
           * anything else      — treated as a literal key (inline; discouraged
             because it lands the secret in the manifest/DB in cleartext).
 
-        Returns ``None`` when the reference is empty or cannot be resolved, so
-        the caller falls back to the boot-time provider key.
+        ``namespace``/``user_id`` come from the agent's LLM metadata and scope
+        the lookup. Returns ``None`` when the reference is empty or cannot be
+        resolved, so the caller falls back to the boot-time provider key.
         """
         if not api_key_ref:
             return None
@@ -338,12 +347,13 @@ class LLMRouter:
             name = ref[len("secret:"):]
             if self._secrets is not None:
                 try:
-                    val = self._secrets.get(
-                        name, caller="llm_router", reason="llm.api_key_ref",
+                    from src.platform.credentials import CredentialStore
+                    val = CredentialStore(self._secrets).resolve(
+                        name, namespace=namespace, user_id=user_id, caller="llm_router",
                     )
                 except Exception:
-                    logger.warning("SecretsManager.get failed for '%s'", name, exc_info=True)
-                    val = ""
+                    logger.warning("api_key_ref resolve failed for '%s'", name, exc_info=True)
+                    val = None
                 return val or None
             # No SecretsManager bound — best-effort env fallback.
             return os.environ.get(name.upper().replace("-", "_")) or None
@@ -438,6 +448,8 @@ class LLMRouter:
             fallback_provider=fallback,
             base_url=endpoint,
             api_key_ref=api_key_ref,
+            namespace=namespace,
+            user_id=metadata.get("user_id", "default"),
         )
 
         # --- After callback ----------------------------------------------------
@@ -510,7 +522,11 @@ class LLMRouter:
             endpoint = getattr(llm_config, "endpoint", None) or metadata.get("base_url")
             api_key_ref = getattr(llm_config, "api_key_ref", None) or metadata.get("api_key_ref")
             oai_client = self._get_openai_compatible_client(
-                provider, endpoint, self._resolve_api_key(api_key_ref),
+                provider, endpoint, self._resolve_api_key(
+                    api_key_ref,
+                    namespace=metadata.get("namespace", "default"),
+                    user_id=metadata.get("user_id", "default"),
+                ),
             )
             if oai_client:
                 async for ev in self._stream_openai(oai_client, model, messages, tools):
@@ -723,12 +739,15 @@ class LLMRouter:
         fallback_provider: str | None = None,
         base_url: str | None = None,
         api_key_ref: str | None = None,
+        namespace: str = "default",
+        user_id: str = "default",
     ) -> LLMResponse:
         """Call the primary provider with retries; optionally failover once."""
         try:
             return await self._call(
                 provider=provider, model=model, messages=messages, tools=tools,
                 base_url=base_url, api_key_ref=api_key_ref,
+                namespace=namespace, user_id=user_id,
             )
         except Exception as primary_error:
             logger.error("Primary LLM call failed after retries: %s/%s: %s",
@@ -787,13 +806,17 @@ class LLMRouter:
         tools: list[dict] | None = None,
         base_url: str | None = None,
         api_key_ref: str | None = None,
+        namespace: str = "default",
+        user_id: str = "default",
     ) -> LLMResponse:
         """Direct provider call with retries. Raises on exhausted retries."""
         # OpenAI-compatible providers (vllm/atlas/openai) support a per-agent
         # endpoint + key override. The key reference is resolved here (secret:/
         # env:/literal) and a dedicated client is built/cached for the pair.
         if provider in self._OPENAI_COMPATIBLE:
-            resolved_key = self._resolve_api_key(api_key_ref)
+            resolved_key = self._resolve_api_key(
+                api_key_ref, namespace=namespace, user_id=user_id,
+            )
             client = self._get_openai_compatible_client(provider, base_url, resolved_key)
             if client:
                 return await _with_retry(

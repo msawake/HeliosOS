@@ -157,6 +157,9 @@ export type ChatStreamEvent =
       description?: string;
       risk?: string;
       category?: string;
+      /** The gated tool + its args, so the approval card shows what will run. */
+      tool?: string;
+      args?: Record<string, unknown>;
     }
   | { type: 'done'; tokens_used?: number; text?: string }
   | { type: 'error'; error: string };
@@ -191,6 +194,36 @@ export interface McpServer {
   args?: string[];
 }
 
+/** A reusable environment definition (pod template). */
+export interface Env {
+  env_def_id: string;
+  name: string;
+  image: string;
+  env_vars?: Record<string, string>;
+  resources?: Record<string, string>;
+  attached_agents?: string[];
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+/** A tool the platform exposes (GET /api/platform/tools). */
+export interface ToolDef {
+  name: string;
+  description?: string;
+  input_schema?: Record<string, unknown>;
+}
+
+/** Secret scope tier. */
+export type SecretScope = 'platform' | 'namespace' | 'user';
+
+/** A scoped secret reference — names + metadata only, never the value. */
+export interface SecretRef {
+  name: string;
+  kind?: string;
+  scope?: SecretScope;
+  namespace?: string | null;
+}
+
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'error']);
 const NON_TERMINAL = new Set(['running', 'queued', 'resuming']);
 
@@ -202,6 +235,64 @@ export function isRunSettled(status?: string): boolean {
 }
 export function isRunTerminal(status?: string): boolean {
   return TERMINAL.has((status || '').toLowerCase());
+}
+
+/** POST a JSON body and pump the SSE response, invoking onEvent per frame.
+ * Shared by chat streaming (`streamChat`) and approval resume (`resumeChat`). */
+async function postSseStream(
+  path: string,
+  body: Record<string, unknown>,
+  onEvent: (ev: ChatStreamEvent) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const res = await fetch(`${apiBase()}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-forgeos-caller': 'forgeos-dashboard',
+      ...authHeaders(),
+    },
+    body: JSON.stringify(body),
+    signal,
+    cache: 'no-store',
+  });
+
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => '');
+    let detail: string | undefined;
+    try {
+      detail = JSON.parse(text)?.detail;
+    } catch {
+      detail = text || undefined;
+    }
+    throw new ApiError(res.status, detail || `${res.status} ${res.statusText}`, detail);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    // SSE frames are separated by a blank line.
+    let sep: number;
+    while ((sep = buf.indexOf('\n\n')) >= 0) {
+      const frame = buf.slice(0, sep);
+      buf = buf.slice(sep + 2);
+      const data = frame
+        .split('\n')
+        .filter((l) => l.startsWith('data:'))
+        .map((l) => l.slice(5).trimStart())
+        .join('\n');
+      if (!data) continue;
+      try {
+        onEvent(JSON.parse(data) as ChatStreamEvent);
+      } catch {
+        // Skip malformed frames rather than tearing down the stream.
+      }
+    }
+  }
 }
 
 // ─── API surface (one method ≈ one CLI command) ─────────────────────────────
@@ -324,60 +415,28 @@ export const api = {
     opts: { message: string; sessionId?: string; signal?: AbortSignal },
     onEvent: (ev: ChatStreamEvent) => void
   ): Promise<void> {
-    const res = await fetch(
-      `${apiBase()}/api/platform/agents/${encodeURIComponent(agentId)}/chat/stream`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-forgeos-caller': 'forgeos-dashboard',
-          ...authHeaders(),
-        },
-        body: JSON.stringify({
-          message: opts.message,
-          ...(opts.sessionId ? { session_id: opts.sessionId } : {}),
-        }),
-        signal: opts.signal,
-        cache: 'no-store',
-      }
+    await postSseStream(
+      `/api/platform/agents/${encodeURIComponent(agentId)}/chat/stream`,
+      { message: opts.message, ...(opts.sessionId ? { session_id: opts.sessionId } : {}) },
+      onEvent,
+      opts.signal
     );
+  },
 
-    if (!res.ok || !res.body) {
-      const text = await res.text().catch(() => '');
-      let detail: string | undefined;
-      try {
-        detail = JSON.parse(text)?.detail;
-      } catch {
-        detail = text || undefined;
-      }
-      throw new ApiError(res.status, detail || `${res.status} ${res.statusText}`, detail);
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      // SSE frames are separated by a blank line.
-      let sep: number;
-      while ((sep = buf.indexOf('\n\n')) >= 0) {
-        const frame = buf.slice(0, sep);
-        buf = buf.slice(sep + 2);
-        const data = frame
-          .split('\n')
-          .filter((l) => l.startsWith('data:'))
-          .map((l) => l.slice(5).trimStart())
-          .join('\n');
-        if (!data) continue;
-        try {
-          onEvent(JSON.parse(data) as ChatStreamEvent);
-        } catch {
-          // Skip malformed frames rather than tearing down the stream.
-        }
-      }
-    }
+  /** Approve a parked (ask_human) chat run and stream the continued result.
+   * The resumed run executes the approved tool and streams its continuation
+   * back as the same SSE events `streamChat` produces. */
+  async resumeChat(
+    agentId: string,
+    opts: { requestId: string; sessionId?: string; signal?: AbortSignal },
+    onEvent: (ev: ChatStreamEvent) => void
+  ): Promise<void> {
+    await postSseStream(
+      `/api/platform/agents/${encodeURIComponent(agentId)}/chat/resume`,
+      { request_id: opts.requestId, ...(opts.sessionId ? { session_id: opts.sessionId } : {}) },
+      onEvent,
+      opts.signal
+    );
   },
 
   // mcp servers
@@ -403,6 +462,76 @@ export const api = {
     }),
   removeMcp: (serverName: string) =>
     request<unknown>(`/api/platform/mcp/servers/${encodeURIComponent(serverName)}`, {
+      method: 'DELETE',
+    }),
+  /** Enroll an MCP server for a whole namespace (shared team credentials). */
+  enrollNamespaceMcp: (
+    namespace: string,
+    serverName: string,
+    payload: { package: string; env_vars?: Record<string, string>; secrets?: Record<string, string>; args?: string[] }
+  ) =>
+    request<unknown>(
+      `/api/namespaces/${encodeURIComponent(namespace)}/mcp/${encodeURIComponent(serverName)}`,
+      { method: 'POST', body: payload },
+    ),
+
+  // tools catalog (for the wizard's tool picker)
+  listTools: () => request<ToolDef[]>('/api/platform/tools'),
+
+  // three-tier scoped secrets (names only on read; write-only values)
+  listSecrets: (scope: SecretScope = 'user', namespace?: string) =>
+    request<{ scope: string; namespace: string | null; secrets: SecretRef[] }>('/api/secrets', {
+      query: { scope, ...(namespace ? { namespace } : {}) },
+    }),
+  putScopedSecret: (payload: { scope: SecretScope; namespace?: string; name: string; value: string; kind?: string }) =>
+    request<{ stored: boolean; scope: string; namespace: string | null; name: string }>('/api/secrets', {
+      method: 'POST',
+      body: payload,
+    }),
+  deleteSecret: (payload: { scope: SecretScope; namespace?: string; name: string }) =>
+    request<{ deleted: boolean }>('/api/secrets', {
+      method: 'DELETE',
+      query: { scope: payload.scope, name: payload.name, ...(payload.namespace ? { namespace: payload.namespace } : {}) },
+    }),
+
+  // namespace admins (tenant-admin only)
+  listNamespaceAdmins: (namespace: string) =>
+    request<{ namespace: string; admins: string[] }>(
+      `/api/platform/namespaces/${encodeURIComponent(namespace)}/admins`,
+    ),
+  grantNamespaceAdmin: (namespace: string, userId: string) =>
+    request<{ granted: boolean }>(
+      `/api/platform/namespaces/${encodeURIComponent(namespace)}/admins/${encodeURIComponent(userId)}`,
+      { method: 'PUT', body: {} },
+    ),
+  revokeNamespaceAdmin: (namespace: string, userId: string) =>
+    request<{ revoked: boolean }>(
+      `/api/platform/namespaces/${encodeURIComponent(namespace)}/admins/${encodeURIComponent(userId)}`,
+      { method: 'DELETE' },
+    ),
+
+  // environments (reusable pod templates)
+  listEnvs: () => request<Env[]>('/api/platform/environments'),
+  getEnv: (id: string) => request<Env>(`/api/platform/environments/${encodeURIComponent(id)}`),
+  createEnv: (payload: {
+    name: string;
+    image: string;
+    env_vars?: Record<string, string>;
+    resources?: Record<string, string>;
+  }) => request<Env>('/api/platform/environments', { method: 'POST', body: payload }),
+  updateEnv: (
+    id: string,
+    payload: Partial<{ name: string; image: string; env_vars: Record<string, string>; resources: Record<string, string> }>,
+  ) => request<Env>(`/api/platform/environments/${encodeURIComponent(id)}`, { method: 'PATCH', body: payload }),
+  deleteEnv: (id: string) =>
+    request<unknown>(`/api/platform/environments/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  attachEnv: (agentId: string, envDefId: string) =>
+    request<{ ok?: boolean; status?: string; pod?: string; error?: string }>(
+      `/api/platform/agents/${encodeURIComponent(agentId)}/environment`,
+      { method: 'POST', body: { env_def_id: envDefId } },
+    ),
+  detachEnv: (agentId: string) =>
+    request<{ detached?: boolean }>(`/api/platform/agents/${encodeURIComponent(agentId)}/environment`, {
       method: 'DELETE',
     }),
 

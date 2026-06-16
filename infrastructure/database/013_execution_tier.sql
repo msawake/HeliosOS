@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS continuations (
     -- serialized engine state
     provider            TEXT NOT NULL DEFAULT 'anthropic',
     chat_model          TEXT NOT NULL DEFAULT '',
+    -- per-agent OpenAI-compatible gateway override (atlas/vllm); carried so a
+    -- resumed run reaches the same endpoint/key instead of falling back to sim.
+    endpoint            TEXT,
+    api_key_ref         TEXT,
     message_history     JSONB NOT NULL DEFAULT '[]'::jsonb,
     pending_calls       JSONB NOT NULL DEFAULT '[]'::jsonb,
     tool_definitions    JSONB,

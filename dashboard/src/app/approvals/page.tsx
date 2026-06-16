@@ -109,19 +109,23 @@ export default function ApprovalsPage() {
   const [error, setError] = useState<string | null>(null);
   const [fromAgent, setFromAgent] = useState('');
 
-  const load = useCallback(async () => {
-    setApprovals(null);
+  // `silent` refetches in place (no skeleton flicker) — used by the poller so
+  // approvals parked while this page is open appear without a manual reload.
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setApprovals(null);
     setError(null);
     try {
       const data = await api.listApprovals(fromAgent || undefined);
       setApprovals(Array.isArray(data) ? data : []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load approvals');
+      if (!silent) setError(e instanceof Error ? e.message : 'Failed to load approvals');
     }
   }, [fromAgent]);
 
   useEffect(() => {
     load();
+    const t = setInterval(() => load(true), 4000);
+    return () => clearInterval(t);
   }, [load]);
 
   return (

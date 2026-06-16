@@ -13,6 +13,9 @@ const nextConfig = {
   // Increase proxy timeout for long-running wizard/admin requests (Opus tool loops)
   experimental: {
     proxyTimeout: 300000, // 5 minutes
+    // Rewrite barrel imports to per-icon paths so a single `import { X }`
+    // doesn't drag the whole icon set through the compiler (huge dev-compile win).
+    optimizePackageImports: ['@phosphor-icons/react'],
   },
 
   async rewrites() {

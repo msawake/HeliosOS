@@ -274,9 +274,13 @@ def build_agent_context(
     `mcp__*` calls (see `tool_executor._execute_mcp_tool`). Precedence:
         1. context["client_id"] if explicitly set
         2. agent_def.owner_id when ownership is CLIENT (existing behavior)
-        3. `user:<user_id>` for agents that opt into per-user MCP
+        3. `ns:<namespace>` when metadata.namespace_mcp is truthy — the agent
+           uses its namespace's shared MCP connection (team credentials).
+        4. `user:<user_id>` for agents that opt into per-user MCP
            (metadata.per_user_mcp truthy, or any `mcp__atlassian__` tool) — so a
            single shared agent serves each user with their own credentials.
+    `namespace` is always carried so MCP credential resolution can prefer
+    namespace-scoped secrets (then user, then platform).
     """
     metadata = agent_def.metadata or {}
     ctx = context or {}
@@ -285,6 +289,8 @@ def build_agent_context(
     client_id = ctx.get("client_id")
     if not client_id and agent_def.ownership == OwnershipType.CLIENT:
         client_id = agent_def.owner_id
+    if not client_id and metadata.get("namespace_mcp") and agent_def.namespace:
+        client_id = f"ns:{agent_def.namespace}"
     if not client_id:
         tools = agent_def.tools or []
         wants_per_user = bool(metadata.get("per_user_mcp")) or any(
@@ -309,6 +315,18 @@ def build_agent_context(
     # the tool handlers, which read them from agent_context["_credentials"].
     if isinstance(ctx.get("_credentials"), dict):
         out["_credentials"] = ctx["_credentials"]
+    # Per-agent Drive identity (manifest spec.drive → metadata._drive): the
+    # drive__* tools impersonate THIS agent's SA and default to its context
+    # folder. See src/platform/drive_tool.py (_apply_agent_drive_ctx).
+    drive = metadata.get("_drive")
+    if isinstance(drive, dict):
+        if drive.get("service_account"):
+            out["_drive_service_account"] = drive["service_account"]
+        folder = drive.get("folder_id")
+        # Ignore the manifest placeholder so an unconfigured agent lists ALL files
+        # shared with its SA (clean empty result) instead of a 404 on a fake id.
+        if folder and folder != "REPLACE_WITH_FOLDER_ID":
+            out["_drive_folder_id"] = folder
     if invocation_id:
         out["invocation_id"] = invocation_id
     return out

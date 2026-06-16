@@ -117,12 +117,18 @@ class SecretsManager:
         *,
         caller: str = "",
         reason: str = "",
+        allow_env: bool = True,
     ) -> str:
         """Get a secret value. Checks cache → Secret Manager → env vars.
 
         Every access is logged when an ``audit_recorder`` is wired (the
         detail payload never contains the value itself — just name,
         source, and caller).
+
+        ``allow_env=False`` disables the environment-variable fallback so a
+        miss returns ``default`` immediately. Scoped resolution walks
+        (CredentialStore.resolve) use this while probing candidate names, so a
+        coincidentally-matching env var can't shadow a more-specific scope.
         """
         # Check cache
         if name in self._cache:
@@ -173,7 +179,12 @@ class SecretsManager:
             except Exception as e:
                 logger.debug("Secret '%s' not in Secret Manager: %s", name, e)
 
-        # Fall back to environment variable
+        # Fall back to environment variable (unless disabled for scope probing)
+        if not allow_env:
+            self._emit_audit(
+                "secret.read", name=name, source="absent", caller=caller, reason=reason,
+            )
+            return default
         env_name = name.upper().replace("-", "_")
         value = os.environ.get(env_name, default)
         self._emit_audit(
@@ -222,20 +233,25 @@ class SecretsManager:
         reason: str = "",
         user_id: str = "default",
         kind: str = "generic",
+        scope: str = "user",
+        namespace: str | None = None,
     ) -> bool:
         """Write or overwrite a secret.
 
         Prefers GCP Secret Manager (creates the resource on first call, always
         adds a new version). When Secret Manager is unavailable, falls back to
         the encrypted Postgres backend if one is wired (local dev + per-user
-        credentials). ``user_id``/``kind`` are recorded by the Postgres backend
-        for lookup; they are ignored by Secret Manager. Returns True on success,
-        False if no writable backend exists (env-var fallback is intentionally
-        write-disabled — secrets must land in a real store, not the process env).
+        credentials). ``user_id``/``kind``/``scope``/``namespace`` are recorded
+        by the Postgres backend for lookup; they are ignored by Secret Manager
+        (where the scope is already encoded in ``name``). Returns True on
+        success, False if no writable backend exists (env-var fallback is
+        intentionally write-disabled — secrets must land in a real store).
         """
         if not (self._client and self._project_id):
             if self._db_backend is not None:
-                ok = self._db_backend.put(name, value, user_id=user_id, kind=kind)
+                ok = self._db_backend.put(
+                    name, value, user_id=user_id, kind=kind, scope=scope, namespace=namespace,
+                )
                 if ok:
                     self._cache.pop(name, None)
                     self._emit_audit(
@@ -272,3 +288,60 @@ class SecretsManager:
         self._cache.pop(name, None)
         self._emit_audit("secret.write", name=name, caller=caller, reason=reason)
         return True
+
+    def delete(self, name: str, *, caller: str = "", reason: str = "") -> bool:
+        """Delete a secret from every writable backend. Idempotent."""
+        self._cache.pop(name, None)
+        ok = False
+        if self._db_backend is not None and hasattr(self._db_backend, "delete"):
+            try:
+                ok = bool(self._db_backend.delete(name))
+            except Exception:
+                logger.debug("Secret backend delete failed for '%s'", name, exc_info=True)
+        if self._client and self._project_id:
+            try:
+                self._client.delete_secret(
+                    request={"name": f"projects/{self._project_id}/secrets/{name}"}
+                )
+                ok = True
+            except Exception as e:
+                logger.debug("Secret '%s' not deleted from Secret Manager: %s", name, e)
+        self._emit_audit("secret.delete", name=name, caller=caller, reason=reason)
+        return ok
+
+    def list_names(
+        self,
+        *,
+        scope: str = "user",
+        namespace: str | None = None,
+        user_id: str | None = None,
+        gcp_prefix: str | None = None,
+    ) -> list[dict]:
+        """List stored secrets at a tier — names + metadata only, never values.
+
+        Merges results from BOTH backends: the encrypted Postgres column query
+        AND a GCP Secret Manager prefix scan (``gcp_prefix`` supplied by the
+        caller, which owns the scope→name convention). Both are consulted
+        because writes prefer GCP when a project is configured while legacy
+        rows may still live in Postgres. Returns ``[]`` when neither enumerates.
+        """
+        out: dict[str, dict] = {}
+        if self._db_backend is not None and hasattr(self._db_backend, "list_names"):
+            try:
+                for r in self._db_backend.list_names(scope=scope, namespace=namespace, user_id=user_id):
+                    name = r.get("secret_name")
+                    if name:
+                        out[name] = r
+            except Exception:
+                logger.debug("Secret backend list_names failed (scope=%s)", scope, exc_info=True)
+        if self._client and self._project_id and gcp_prefix:
+            try:
+                parent = f"projects/{self._project_id}"
+                for s in self._client.list_secrets(request={"parent": parent}):
+                    sid = s.name.rsplit("/", 1)[-1]
+                    if sid.startswith(gcp_prefix) and sid not in out:
+                        out[sid] = {"secret_name": sid, "kind": "generic",
+                                    "scope": scope, "namespace": namespace, "user_id": user_id}
+            except Exception:
+                logger.debug("Secret Manager list_secrets failed", exc_info=True)
+        return list(out.values())

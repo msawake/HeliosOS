@@ -19,32 +19,56 @@ spec:
     endpoint: https://atlas-router.ally-code-dev.makingscience.com/v1
     api_key_ref: secret:litellm-allycode-key
   tools:
-    - shell__exec
-    - fs__write_file
+    - drive__list_files
+    - drive__find_by_name
+    - drive__read_file
+    - drive__create_file
+    - drive__update_file
     - company__search_knowledge
     - company__record_metric
     - human__ask
+  drive:
+    service_account: drive-agent-po@admachina-atomic-test-84.iam.gserviceaccount.com
+    folder_id: REPLACE_WITH_FOLDER_ID   # ← set after sharing the folder with the SA
+    access: readwrite
+  governance:
+    audit_level: full
+    approvals:
+      - {tool: drive__read_file, mode: never}
+      - {tool: drive__list_files, mode: never}
+      - {tool: drive__find_by_name, mode: never}
+      - tool: drive__create_file
+        mode: always
+        approvers: [antoni.bergas@makingscience.com]
+        sla_hours: 4
+        on_timeout: abort
+        priority: high
+        reason: "Writing a reconciliation report to the user's Drive folder"
+      - tool: drive__update_file
+        mode: always
+        approvers: [antoni.bergas@makingscience.com]
+        sla_hours: 4
+        on_timeout: abort
+        priority: high
+        reason: "Modifying a file in the user's Drive folder"
   metadata:
-    data_dir: src/companies/treasury/data
-    reports_dir: src/companies/treasury/reports
     as_of: "2026-06-09"
     approver: antoni.bergas@makingscience.com
-    data_source: mock
   system_prompt: |
     You are the Purchase-Order reconciliation agent for the Treasury department.
     You are a READ-ONLY analyst — produce a report and escalate; never approve or
-    release a vendor payment.
+    release a vendor payment. Your inputs and your report live in your own Google
+    Drive folder (shared with your service account); drive tools default to it.
 
-    On each run:
+    0. CLARIFY FIRST. If the request is ambiguous (which period? which vendor?),
+       ask the human via human__ask BEFORE doing anything. Don't guess.
 
     1. RULES. Optionally pull "Reconciliation Exception Taxonomy" and "GL
        Classification Rules" via company__search_knowledge. Tolerance:
        max(EUR 5.00, 0.5%).
 
-    2. LOAD with shell__exec (cwd = repo root):
-         cat src/companies/treasury/data/purchase_orders.csv
-         cat src/companies/treasury/data/vendor_invoices.csv
-         cat src/companies/treasury/data/ap_payments.csv
+    2. LOAD DATA from your Drive folder: drive__list_files then drive__read_file
+       for purchase_orders.csv, vendor_invoices.csv, ap_payments.csv.
 
     3. THREE-WAY MATCH per po_number:
          - invoice amount within tolerance of PO amount, and payment matches the
@@ -58,9 +82,9 @@ spec:
            unless also an exception).
 
     4. OUTPUT a markdown report (summary + matched table + exceptions table:
-       type, po/invoice/payment ids, EUR delta, proposed action) via
-       fs__write_file to
-       src/companies/treasury/reports/po_reconciliation_2026-06-09.md.
+       type, po/invoice/payment ids, EUR delta, proposed action). Write it back to
+       your Drive folder with drive__create_file as "po_reconciliation_<as_of>.md".
+       This WRITE pauses for human approval — state what you'll write, then call it.
 
     5. LOG via company__record_metric (name "po_reconciliation").
 

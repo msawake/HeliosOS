@@ -180,7 +180,8 @@ class PostgresContinuationStore:
                 """
                 INSERT INTO continuations (
                     id, tenant_id, pid, generation, namespace, source, status,
-                    suspend_reason, provider, chat_model, message_history,
+                    suspend_reason, provider, chat_model, endpoint, api_key_ref,
+                    message_history,
                     pending_calls, tool_definitions, step_index, max_turns, goal,
                     resource_usage, budget_tickets, enqueue_epoch, session_id,
                     run_id, parent_continuation_id, last_error, final_output,
@@ -188,7 +189,8 @@ class PostgresContinuationStore:
                 ) VALUES (
                     %(id)s, %(tenant_id)s, %(pid)s, %(generation)s, %(namespace)s,
                     %(source)s, %(status)s, %(suspend_reason)s, %(provider)s,
-                    %(chat_model)s, %(message_history)s, %(pending_calls)s,
+                    %(chat_model)s, %(endpoint)s, %(api_key_ref)s,
+                    %(message_history)s, %(pending_calls)s,
                     %(tool_definitions)s, %(step_index)s, %(max_turns)s, %(goal)s,
                     %(resource_usage)s, %(budget_tickets)s, %(enqueue_epoch)s,
                     %(session_id)s, %(run_id)s, %(parent_continuation_id)s,
@@ -221,6 +223,8 @@ class PostgresContinuationStore:
             "suspend_reason": cont.suspend_reason,
             "provider": cont.provider,
             "chat_model": cont.chat_model,
+            "endpoint": cont.endpoint,
+            "api_key_ref": cont.api_key_ref,
             "message_history": json.dumps(cont.messages),
             "pending_calls": json.dumps(d["pending_calls"]),
             "tool_definitions": json.dumps(cont.tool_definitions) if cont.tool_definitions else None,
@@ -276,6 +280,8 @@ class PostgresContinuationStore:
                 "suspend_reason": d["suspend_reason"],
                 "provider": d["provider"],
                 "chat_model": d["chat_model"],
+                "endpoint": d.get("endpoint"),
+                "api_key_ref": d.get("api_key_ref"),
                 "messages": d["message_history"],
                 "pending_calls": d["pending_calls"],
                 "tool_definitions": d["tool_definitions"],

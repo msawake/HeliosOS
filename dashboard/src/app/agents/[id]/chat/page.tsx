@@ -19,6 +19,7 @@ import { CodeBlock } from '@/components/ui/code-block';
 import { Markdown } from '@/components/ui/markdown';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/ui/error-state';
+import { toolLabel } from '@/lib/tools';
 import { cn } from '@/lib/utils';
 
 type ToolStatus = 'running' | 'ok' | 'error';
@@ -42,6 +43,9 @@ interface HitlRequest {
   title?: string;
   description?: string;
   risk?: string;
+  /** The gated tool + args, so the card previews what will run on approval. */
+  tool?: string;
+  args?: Record<string, unknown>;
 }
 
 interface Msg {
@@ -153,10 +157,25 @@ export default function AgentChatPage() {
         break;
       }
       case 'hitl_request':
-        setApprovals((a) => [
-          ...a,
-          { request_id: ev.request_id, title: ev.title, description: ev.description, risk: ev.risk },
-        ]);
+        // Dedupe by request_id: a partial multi-approval resume can re-surface a
+        // sibling that's already on screen. Showing it twice (and letting the
+        // operator approve the same call twice) is exactly the escalating-prompt
+        // bug — keep at most one chip per request_id.
+        setApprovals((a) =>
+          a.some((x) => x.request_id === ev.request_id)
+            ? a
+            : [
+                ...a,
+                {
+                  request_id: ev.request_id,
+                  title: ev.title,
+                  description: ev.description,
+                  risk: ev.risk,
+                  tool: ev.tool,
+                  args: ev.args,
+                },
+              ]
+        );
         return;
       case 'error':
         parts = parts.concat({
@@ -171,49 +190,78 @@ export default function AgentChatPage() {
     setStreaming({ role: 'agent', parts });
   };
 
-  const send = async () => {
-    const content = input.trim();
-    if (!content || !chatId || busy) return;
-
+  /** Drive one streamed agent turn (initial send OR an approval resume) into a
+   * fresh bubble, committing it to the thread when the stream ends. */
+  const runTurn = async (
+    streamFn: (onEvent: (ev: ChatStreamEvent) => void, signal: AbortSignal) => Promise<void>
+  ) => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
-    setInput('');
-    setMessages((m) => [...m, { role: 'human', content }]);
-    setApprovals([]);
     draftRef.current = [];
     toolSeq.current = 0;
     setStreaming({ role: 'agent', parts: [] });
     setBusy(true);
+
+    let fullText = '';
+    try {
+      await streamFn((ev) => {
+        if (ev.type === 'text_delta') fullText += ev.content;
+        applyEvent(ev);
+      }, ctrl.signal);
+    } catch (e) {
+      if (!ctrl.signal.aborted) {
+        applyEvent({ type: 'error', error: e instanceof Error ? e.message : 'Stream failed' });
+      }
+    } finally {
+      // The backend is turn-level: every tool_call is paired with its
+      // tool_result within the same stream, and a GATED tool is surfaced as an
+      // approval card (not a tool_call). So any chip still "running" once the
+      // stream ends is an orphan (e.g. a pre-approval call that will reappear
+      // resolved after approval) — dropping it stops the spinner-forever chip.
+      const finalParts = draftRef.current.filter(
+        (p) => !(p.kind === 'tool' && p.status === 'running')
+      );
+      if (finalParts.length) setMessages((m) => [...m, { role: 'agent', parts: finalParts }]);
+      setStreaming(null);
+      setBusy(false);
+    }
+
+    if (fullText && chatId) {
+      api
+        .postChatMessage(chatId, { role: 'agent', sender: agent?.name ?? 'agent', content: fullText })
+        .catch(() => {});
+    }
+  };
+
+  const send = async () => {
+    const content = input.trim();
+    if (!content || !chatId || busy) return;
+
+    setInput('');
+    setMessages((m) => [...m, { role: 'human', content }]);
+    setApprovals([]);
 
     // Best-effort transcript logging (A2H chat record); independent of the stream.
     api
       .postChatMessage(chatId, { role: 'human', sender: HUMAN, content, client_drives: true })
       .catch(() => {});
 
-    let fullText = '';
-    try {
-      await api.streamChat(id, { message: content, sessionId: chatId, signal: ctrl.signal }, (ev) => {
-        if (ev.type === 'text_delta') fullText += ev.content;
-        applyEvent(ev);
-      });
-    } catch (e) {
-      if (!ctrl.signal.aborted) {
-        applyEvent({ type: 'error', error: e instanceof Error ? e.message : 'Stream failed' });
-      }
-    } finally {
-      const finalParts = draftRef.current;
-      if (finalParts.length) setMessages((m) => [...m, { role: 'agent', parts: finalParts }]);
-      setStreaming(null);
-      setBusy(false);
-    }
+    await runTurn((onEvent, signal) =>
+      api.streamChat(id, { message: content, sessionId: chatId, signal }, onEvent)
+    );
+  };
 
-    if (fullText) {
-      api
-        .postChatMessage(chatId, { role: 'agent', sender: agent?.name ?? 'agent', content: fullText })
-        .catch(() => {});
-    }
+  /** Approve a parked tool call → resume the run and stream its continuation
+   * inline. The approval chip is removed immediately; the continued agent reply
+   * (or a follow-up approval, if it gates again) lands in a new bubble. */
+  const approveResume = async (requestId: string) => {
+    if (!chatId) return;
+    setApprovals((a) => a.filter((x) => x.request_id !== requestId));
+    await runTurn((onEvent, signal) =>
+      api.resumeChat(id, { requestId, sessionId: chatId, signal }, onEvent)
+    );
   };
 
   if (openError) {
@@ -255,9 +303,11 @@ export default function AgentChatPage() {
           )}
 
           {approvals.length ? (
-            <InlineApprovals approvals={approvals} onResolved={(rid) =>
-              setApprovals((a) => a.filter((x) => x.request_id !== rid))
-            } />
+            <InlineApprovals
+              approvals={approvals}
+              onApprove={approveResume}
+              onResolved={(rid) => setApprovals((a) => a.filter((x) => x.request_id !== rid))}
+            />
           ) : null}
 
           {showWorking ? (
@@ -401,18 +451,24 @@ function ToolStatusIcon({ status }: { status: ToolStatus }) {
 
 function InlineApprovals({
   approvals,
+  onApprove,
   onResolved,
 }: {
   approvals: HitlRequest[];
+  onApprove: (requestId: string) => Promise<void> | void;
   onResolved: (requestId: string) => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const act = async (requestId: string, kind: 'approve' | 'reject') => {
     setBusy(requestId);
     try {
-      if (kind === 'approve') await api.approve(requestId);
-      else await api.reject(requestId, 'Rejected from chat');
-      onResolved(requestId);
+      if (kind === 'approve') {
+        // Drives the resume stream + removes the chip (handled by the parent).
+        await onApprove(requestId);
+      } else {
+        await api.reject(requestId, 'Rejected from chat');
+        onResolved(requestId);
+      }
     } finally {
       setBusy(null);
     }
@@ -420,39 +476,90 @@ function InlineApprovals({
   return (
     <div className="space-y-2">
       {approvals.map((p) => (
-        <div key={p.request_id} className="rounded-md border border-warning/25 bg-warning-wash p-3">
-          <p className="text-[13px] text-primary">{p.title || 'Approval needed'}</p>
-          {p.description ? <p className="mt-1 text-xs text-secondary">{p.description}</p> : null}
-          <div className="mt-2 flex gap-2">
-            <Button size="sm" onClick={() => act(p.request_id, 'approve')} disabled={busy !== null}>
-              Approve
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => act(p.request_id, 'reject')}
-              disabled={busy !== null}
-            >
-              Reject
-            </Button>
-          </div>
-        </div>
+        <ApprovalRow key={p.request_id} approval={p} busy={busy} act={act} />
       ))}
     </div>
   );
 }
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
+/** One pending-approval card. The tool + args are expandable (collapsed shows a
+ *  one-line preview, click to reveal the FULL args JSON) so the operator can
+ *  review exactly what will run before approving. */
+function ApprovalRow({
+  approval: p,
+  busy,
+  act,
+}: {
+  approval: HitlRequest;
+  busy: string | null;
+  act: (requestId: string, kind: 'approve' | 'reject') => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const label = p.tool ? toolLabel(p.tool) : null;
+  const hasArgs = !!p.args && Object.keys(p.args).length > 0;
+  const preview = argSummary(p.args);
 
-/** Split a tool id into a namespace tag + a readable label.
- *  `mcp__atlassian__jira_search` → { ns: 'atlassian', label: 'jira_search' }
- *  `company__request_approval`   → { ns: 'company',  label: 'request_approval' } */
-function toolLabel(name: string): { ns?: string; label: string } {
-  const segs = name.split('__').filter(Boolean);
-  if (segs[0] === 'mcp' && segs.length >= 3) return { ns: segs[1], label: segs.slice(2).join('__') };
-  if (segs.length >= 2) return { ns: segs[0], label: segs.slice(1).join('__') };
-  return { label: name };
+  return (
+    <div className="rounded-md border border-warning/25 bg-warning-wash p-3">
+      <p className="text-[13px] text-primary">{p.title || 'Approval needed'}</p>
+      {label ? (
+        <>
+          <button
+            type="button"
+            onClick={() => hasArgs && setOpen((o) => !o)}
+            className={cn(
+              'mt-1.5 flex w-full items-center gap-2 text-left',
+              hasArgs ? 'cursor-pointer' : 'cursor-default'
+            )}
+            aria-expanded={hasArgs ? open : undefined}
+          >
+            <CaretRight
+              className={cn(
+                'h-3 w-3 shrink-0 text-muted transition-transform',
+                open && 'rotate-90',
+                !hasArgs && 'invisible'
+              )}
+              aria-hidden
+            />
+            <Wrench className="h-3.5 w-3.5 shrink-0 text-tertiary" aria-hidden />
+            {label.ns ? (
+              <span className="shrink-0 rounded bg-inset px-1.5 py-0.5 font-mono text-[10px] text-tertiary">
+                {label.ns}
+              </span>
+            ) : null}
+            <span className="shrink-0 font-mono text-[12px] text-secondary">{label.label}</span>
+            {preview ? (
+              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted">{preview}</span>
+            ) : (
+              <span className="flex-1" />
+            )}
+          </button>
+          {open && hasArgs ? (
+            <div className="mt-2">
+              <CodeBlock label="Arguments" code={JSON.stringify(p.args, null, 2)} wrap maxHeight={260} />
+            </div>
+          ) : null}
+        </>
+      ) : null}
+      {p.description ? <p className="mt-1 text-xs text-secondary">{p.description}</p> : null}
+      <div className="mt-2 flex gap-2">
+        <Button size="sm" onClick={() => act(p.request_id, 'approve')} disabled={busy !== null}>
+          Approve
+        </Button>
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={() => act(p.request_id, 'reject')}
+          disabled={busy !== null}
+        >
+          Reject
+        </Button>
+      </div>
+    </div>
+  );
 }
+
+// ─── helpers ─────────────────────────────────────────────────────────────────
 
 /** One-line preview of tool args for the collapsed chip. */
 function argSummary(input?: Record<string, unknown>): string {

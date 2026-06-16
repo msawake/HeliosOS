@@ -117,8 +117,21 @@ class PostgresSecretBackend:
             logger.exception("PostgresSecretBackend.get failed for '%s'", name)
             return None
 
-    def put(self, name: str, value: str, *, user_id: str = "default", kind: str = "generic") -> bool:
-        """Encrypt and upsert a secret. Returns True on success."""
+    def put(
+        self,
+        name: str,
+        value: str,
+        *,
+        user_id: str = "default",
+        kind: str = "generic",
+        scope: str = "user",
+        namespace: str | None = None,
+    ) -> bool:
+        """Encrypt and upsert a secret. Returns True on success.
+
+        ``scope``/``namespace`` are recorded so :meth:`list_names` can enumerate
+        by tier without parsing the (scope-qualified) ``secret_name``.
+        """
         if not self.available:
             return False
         try:
@@ -126,15 +139,67 @@ class PostgresSecretBackend:
             with self._db.tenant(self._tenant_id) as conn:
                 conn.execute(
                     "INSERT INTO user_credentials "
-                    "(tenant_id, user_id, kind, secret_name, enc_value, updated_at) "
-                    "VALUES (%s, %s, %s, %s, %s, NOW()) "
+                    "(tenant_id, user_id, kind, secret_name, enc_value, scope, namespace, updated_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, NOW()) "
                     "ON CONFLICT (tenant_id, secret_name) DO UPDATE SET "
                     "enc_value = EXCLUDED.enc_value, kind = EXCLUDED.kind, "
-                    "user_id = EXCLUDED.user_id, updated_at = NOW()",
-                    (self._tenant_id, user_id, kind, name, enc),
+                    "user_id = EXCLUDED.user_id, scope = EXCLUDED.scope, "
+                    "namespace = EXCLUDED.namespace, updated_at = NOW()",
+                    (self._tenant_id, user_id, kind, name, enc, scope, namespace),
                 )
                 conn.commit()
             return True
         except Exception:
             logger.exception("PostgresSecretBackend.put failed for '%s'", name)
             return False
+
+    def delete(self, name: str) -> bool:
+        """Remove a secret by its (scope-qualified) name. Idempotent."""
+        if not self.available:
+            return False
+        try:
+            with self._db.tenant(self._tenant_id) as conn:
+                conn.execute(
+                    "DELETE FROM user_credentials WHERE tenant_id = %s AND secret_name = %s",
+                    (self._tenant_id, name),
+                )
+                conn.commit()
+            return True
+        except Exception:
+            logger.exception("PostgresSecretBackend.delete failed for '%s'", name)
+            return False
+
+    def list_names(
+        self,
+        *,
+        scope: str = "user",
+        namespace: str | None = None,
+        user_id: str | None = None,
+    ) -> list[dict]:
+        """Enumerate stored secrets at a tier — names + metadata, never values.
+
+        Filters by the ``scope`` column (and ``namespace``/``user_id`` when
+        given). Returns rows ``{secret_name, kind, scope, namespace, user_id}``;
+        the caller maps ``secret_name`` back to its logical (unprefixed) form.
+        """
+        if not self.available:
+            return []
+        clauses = ["tenant_id = %s", "scope = %s"]
+        params: list[Any] = [self._tenant_id, scope]
+        if namespace is not None:
+            clauses.append("namespace = %s")
+            params.append(namespace)
+        if user_id is not None:
+            clauses.append("user_id = %s")
+            params.append(user_id)
+        sql = (
+            "SELECT secret_name, kind, scope, namespace, user_id FROM user_credentials "
+            "WHERE " + " AND ".join(clauses) + " ORDER BY secret_name"
+        )
+        try:
+            with self._db.tenant(self._tenant_id) as conn:
+                rows = conn.execute(sql, tuple(params))
+            return [dict(r) for r in (rows or [])]
+        except Exception:
+            logger.exception("PostgresSecretBackend.list_names failed (scope=%s)", scope)
+            return []

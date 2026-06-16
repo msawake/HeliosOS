@@ -61,12 +61,15 @@ class ClientMCPManager:
         self._tenant_id = tenant_id
         self._max_connections = max_connections
         self._ttl = ttl_seconds
-        self._connections: OrderedDict[tuple[str, str], ClientMCPConnection] = OrderedDict()
+        # Keyed by (client_id, server_name, namespace) — the namespace dimension
+        # lets one client run a server with namespace-scoped credentials in one
+        # namespace and user-scoped in another without cross-contamination.
+        self._connections: OrderedDict[tuple[str, str, str], ClientMCPConnection] = OrderedDict()
         self._lock = asyncio.Lock()
         # In-memory config cache for dev mode (no DB)
         self._config_cache: dict[str, list[dict]] = {}
         # Cooldown: track failed connections to avoid retry storms
-        self._connect_cooldowns: dict[tuple[str, str], float] = {}  # key → earliest_retry_time
+        self._connect_cooldowns: dict[tuple[str, str, str], float] = {}  # key → earliest_retry_time
         self._COOLDOWN_SECONDS = 60.0
         self._secrets_manager = secrets_manager
 
@@ -75,12 +78,17 @@ class ClientMCPManager:
         self._config_cache[client_id] = configs
         logger.info("Registered %d MCP configs for client '%s'", len(configs), client_id)
 
-    async def get_client(self, client_id: str, server_name: str) -> Any | None:
-        """Get or lazily connect a client's MCP server session."""
+    async def get_client(
+        self, client_id: str, server_name: str, namespace: str = "default"
+    ) -> Any | None:
+        """Get or lazily connect a client's MCP server session.
+
+        ``namespace`` scopes credential resolution: ``secret:`` env refs resolve
+        namespace-first, then user, then platform (see ``_connect``)."""
         if not HAS_MCP:
             return None
 
-        key = (client_id, server_name)
+        key = (client_id, server_name, namespace)
         async with self._lock:
             # Check cache
             conn = self._connections.get(key)
@@ -111,7 +119,7 @@ class ClientMCPManager:
 
             # Connect
             try:
-                conn = await self._connect(client_id, config)
+                conn = await self._connect(client_id, config, namespace=namespace)
                 if conn:
                     self._connections[key] = conn
                     logger.info(
@@ -126,15 +134,17 @@ class ClientMCPManager:
 
         return None
 
-    async def get_tool_schemas(self, client_id: str, server_name: str) -> list[dict]:
+    async def get_tool_schemas(
+        self, client_id: str, server_name: str, namespace: str = "default"
+    ) -> list[dict]:
         """Get tool schemas for a client's MCP server (connects if needed)."""
-        key = (client_id, server_name)
+        key = (client_id, server_name, namespace)
         conn = self._connections.get(key)
         if conn:
             return conn.tool_schemas
 
         # Force connection to discover tools
-        await self.get_client(client_id, server_name)
+        await self.get_client(client_id, server_name, namespace)
         conn = self._connections.get(key)
         return conn.tool_schemas if conn else []
 
@@ -158,14 +168,16 @@ class ClientMCPManager:
                 await self._disconnect_one(key)
             logger.info("Disconnected all MCP servers for client '%s'", client_id)
 
-    async def refresh_schemas(self, client_id: str, server_name: str) -> list[dict]:
+    async def refresh_schemas(
+        self, client_id: str, server_name: str, namespace: str = "default"
+    ) -> list[dict]:
         """Reconnect and rediscover tools for a client's MCP server."""
-        key = (client_id, server_name)
+        key = (client_id, server_name, namespace)
         async with self._lock:
             if key in self._connections:
                 await self._disconnect_one(key)
         # Reconnect
-        await self.get_client(client_id, server_name)
+        await self.get_client(client_id, server_name, namespace)
         conn = self._connections.get(key)
         return conn.tool_schemas if conn else []
 
@@ -226,8 +238,61 @@ class ClientMCPManager:
 
         return []
 
-    async def _connect(self, client_id: str, config: dict) -> ClientMCPConnection | None:
-        """Connect to a single MCP server for a client."""
+    def _resolve_env(
+        self, env_vars: dict, *, namespace: str, client_id: str, server_name: str = "",
+    ) -> dict:
+        """Resolve an MCP server's env, expanding ``secret:`` refs.
+
+        Starts from a copy of ``os.environ`` so the child inherits PATH, HOME,
+        TMPDIR, etc. (the mcp SDK forwards ``env`` straight to Popen — a bare
+        dict REPLACES the parent env, which makes some servers start but expose
+        zero tools). ``secret:<name>`` refs resolve through the three-tier
+        credential store **namespace → user → platform** (then literal/legacy +
+        env fallback) — "run with namespace credentials if available, otherwise
+        user credentials". The user is derived from a ``user:<id>`` client_id.
+        """
+        import os as _os
+        resolved_env = _os.environ.copy()
+        if not env_vars:
+            return resolved_env
+        cred_user = client_id[len("user:"):] if client_id.startswith("user:") else "default"
+        cred_store = None
+        if self._secrets_manager:
+            from src.platform.credentials import (
+                CredentialStore, SCOPE_NAMESPACE, SCOPE_PLATFORM, SCOPE_USER,
+            )
+            cred_store = CredentialStore(self._secrets_manager)
+            order = (SCOPE_NAMESPACE, SCOPE_USER, SCOPE_PLATFORM)
+        for k, v in env_vars.items():
+            if isinstance(v, str) and v.startswith("secret:"):
+                secret_name = v[len("secret:"):]
+                if cred_store is not None:
+                    resolved_val = cred_store.resolve(
+                        secret_name, namespace=namespace, user_id=cred_user,
+                        order=order, caller=f"client_mcp_{client_id}_{server_name}",
+                    )
+                    if resolved_val:
+                        resolved_env[k] = resolved_val
+                    else:
+                        logger.warning(
+                            "Secret '%s' not found for client MCP '%s'", secret_name, server_name
+                        )
+                else:
+                    # No secrets manager — best-effort env fallback.
+                    resolved_env[k] = _os.environ.get(secret_name.upper().replace("-", "_"), "")
+            else:
+                resolved_env[k] = v
+        return resolved_env
+
+    async def _connect(
+        self, client_id: str, config: dict, namespace: str = "default"
+    ) -> ClientMCPConnection | None:
+        """Connect to a single MCP server for a client.
+
+        ``secret:`` env refs resolve through the three-tier credential store
+        namespace-first, then user (derived from a ``user:<id>`` client_id),
+        then platform — i.e. "run with namespace credentials if available,
+        otherwise user credentials"."""
         package = config.get("package", "")
         server_name = config.get("server_name", "")
         env_vars = config.get("env_vars", {})
@@ -244,36 +309,8 @@ class ClientMCPManager:
             command = "uvx"
             args = [package] + extra_args
 
-        # Resolve environment variables securely at runtime. We always start
-        # from a copy of os.environ so the child inherits PATH, HOME, TMPDIR,
-        # etc. (the mcp SDK forwards `env` straight to Popen — a bare dict
-        # REPLACES the parent env, which causes some MCP servers to start but
-        # discover zero tools because dependent state can't be found).
-        import os as _os
-        resolved_env = _os.environ.copy()
-        if env_vars:
-            for k, v in env_vars.items():
-                if isinstance(v, str) and v.startswith("secret:"):
-                    # Extract secret name (e.g., "secret:github-token" -> "github-token")
-                    secret_name = v[7:]
-                    if self._secrets_manager:
-                        resolved_val = self._secrets_manager.get(
-                            secret_name,
-                            caller=f"client_mcp_{client_id}_{server_name}",
-                            reason="client_mcp_boot"
-                        )
-                        if resolved_val:
-                            resolved_env[k] = resolved_val
-                        else:
-                            logger.warning(f"Secret '{secret_name}' not found for client MCP '{server_name}'")
-                    else:
-                        # Fallback to os.environ if no secrets manager
-                        import os
-                        env_name = secret_name.upper().replace("-", "_")
-                        resolved_env[k] = os.environ.get(env_name, "")
-                else:
-                    # Plaintext value
-                    resolved_env[k] = v
+        resolved_env = self._resolve_env(env_vars, namespace=namespace, client_id=client_id,
+                                         server_name=server_name)
 
         server_params = StdioServerParameters(
             command=command,
@@ -323,7 +360,7 @@ class ClientMCPManager:
             tool_schemas=tool_schemas,
         )
 
-    async def _disconnect_one(self, key: tuple[str, str]) -> None:
+    async def _disconnect_one(self, key: tuple[str, str, str]) -> None:
         """Disconnect and remove a single connection."""
         conn = self._connections.pop(key, None)
         if conn:

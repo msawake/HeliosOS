@@ -53,7 +53,8 @@ def _resolve_pod_cwd(cwd: str | None, agent_context: dict | None) -> str:
 async def _exec(env_mgr: Any, agent_id: str, command: str, *,
                 stdin: str | None = None, env: dict[str, str] | None = None,
                 timeout: int = 300) -> dict[str, Any]:
-    return await env_mgr.exec(agent_id, command, stdin=stdin, env=env, timeout=timeout)
+    out = await env_mgr.exec(agent_id, command, stdin=stdin, env=env, timeout=timeout)
+    return dict(out)
 
 
 def _coerce_timeout(value: Any, default: int) -> int:

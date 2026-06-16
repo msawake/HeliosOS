@@ -79,6 +79,16 @@ class RunOutcome:
     output_tokens: int = 0
     tool_calls: int = 0
     model: str | None = None
+    # Executed tool calls in THIS run slice (name/input/result/is_error), so a
+    # caller (e.g. the chat stream) can render the function calls, not just the
+    # final text. Gated calls awaiting approval are in `pending`, not here.
+    tool_events: list[dict[str, Any]] = field(default_factory=list)
+    # True only for a PARTIAL multi-approval resume: this resolution executed,
+    # but sibling tool calls from the same turn are still parked. Those siblings
+    # are already in `pending`, but they were ALSO surfaced to the human when the
+    # run first parked — so the chat layer must NOT re-prompt for them (doing so
+    # re-asks for the same approvals on every partial resume). See StepEngine.resume.
+    awaiting_remaining: bool = False
 
     @property
     def suspended(self) -> bool:
@@ -257,25 +267,51 @@ class StepEngine:
 
         logger.info("[resume] cont=%s rec.status=%s -> %s", cont.continuation_id, rec.status,
                     "apply_resolution" if rec.status != "executed" else "SKIP (already executed)")
+        # Idempotent: if this call already executed (e.g. a duplicate approval /
+        # double-clicked chip), do NOT run the tool again — just settle below.
         if rec.status != "executed":
             await self._apply_resolution(cont, rec, resolution, tool_executor, agent_context)
 
-        # Multi-approval: stay parked until every pending call is resolved.
+        # The just-resolved tool ran (ACCEPT/RESULT) or was rejected in
+        # _apply_resolution, OUTSIDE the turn loop — capture it once here so the
+        # resume stream shows this function call + result, not just follow-up
+        # text. Each partial resume surfaces only the ONE call it resolved; a
+        # sibling resolved by an earlier resume was already surfaced by that
+        # resume, so we never double-emit it.
+        just_resolved = (
+            {"name": rec.name, "input": rec.arguments, "result": rec.result,
+             "is_error": rec.result_is_error}
+            if rec.status in ("executed", "rejected") else None
+        )
+
+        # Multi-approval: stay parked until every pending call is resolved. The
+        # siblings still pending were already surfaced to the human when the run
+        # first parked — flag the outcome (awaiting_remaining) so the chat layer
+        # does NOT re-prompt for them. Surface the call we just resolved so the
+        # operator sees progress instead of silence until the final approval.
         if any(r.status == "pending" for r in cont.pending_calls):
             cont.status = "suspended"
             self._store.save(cont)
-            return self._suspended_outcome(cont)
+            out = self._suspended_outcome(cont)
+            out.awaiting_remaining = True
+            if just_resolved is not None:
+                out.tool_events = [just_resolved]
+            return out
 
         # All resolved -> inject results into the message history and continue.
         kind = provider_kind(cont.provider, cont.chat_model)
         shape_tool_results(cont.messages, cont.pending_calls, kind)
+        resolved_events = [just_resolved] if just_resolved is not None else []
         cont.pending_calls = []
         cont.suspend_reason = None
         cont.status = "running"
         cont.step_index += 1
         self._store.save(cont)
         self._transition(cont, "running")
-        return await self._drive_or_step(cont, tool_executor, agent_context)
+        outcome = await self._drive_or_step(cont, tool_executor, agent_context)
+        if outcome is not None:
+            outcome.tool_events = resolved_events + list(outcome.tool_events or [])
+        return outcome
 
     # -- core loop ---------------------------------------------------------
 
@@ -296,12 +332,15 @@ class StepEngine:
         tools = cont.tool_definitions or None
         tokens = 0
 
+        tool_events: list[dict] = []
         turn = cont.step_index
         while turn < cont.max_turns:
             outcome, tokens = await self._run_one_turn(
                 cont, llm_config, kind, tools, turn, tokens, tool_executor, agent_context,
+                tool_events=tool_events,
             )
             if outcome is not None:
+                outcome.tool_events = tool_events
                 return outcome
             turn += 1
 
@@ -326,10 +365,13 @@ class StepEngine:
         kind = provider_kind(cont.provider, cont.chat_model)
         tools = cont.tool_definitions or None
 
+        tool_events: list[dict] = []
         outcome, tokens = await self._run_one_turn(
             cont, llm_config, kind, tools, turn, 0, tool_executor, agent_context,
+            tool_events=tool_events,
         )
         if outcome is not None:
+            outcome.tool_events = tool_events
             return outcome  # DONE / SUSPENDED / FAILED — end or park here.
 
         # The turn appended tool results (this is also the text+tool_call edge
@@ -352,6 +394,7 @@ class StepEngine:
         tokens_in: int,
         tool_executor,
         agent_context,
+        tool_events: list[dict] | None = None,
     ) -> tuple[RunOutcome | None, int]:
         """Run a single LLM turn (one ``chat`` call → admit+dispatch any tool
         calls through the kernel → append results). Returns
@@ -408,6 +451,13 @@ class StepEngine:
             else:
                 rec.status = "executed"
                 rec.result = res
+            if rec.status == "executed" and tool_events is not None:
+                tool_events.append({
+                    "name": rec.name,
+                    "input": rec.arguments,
+                    "result": rec.result,
+                    "is_error": rec.result_is_error,
+                })
 
         if suspended_any:
             return await self._suspend(cont, records, tokens), tokens

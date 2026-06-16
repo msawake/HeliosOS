@@ -280,6 +280,7 @@ class ForgeOSAdapter(AgentStackAdapter):
                     "continuation_id": outcome.continuation_id,
                     "suspend_reason": outcome.suspend_reason,
                     "pending": outcome.pending,
+                    "tool_events": outcome.tool_events,
                 },
             )
         if outcome.status is RunStatus.FAILED:
@@ -298,7 +299,8 @@ class ForgeOSAdapter(AgentStackAdapter):
             input_tokens=outcome.input_tokens,
             output_tokens=outcome.output_tokens,
             model=outcome.model,
-            metadata={"continuation_id": outcome.continuation_id},
+            metadata={"continuation_id": outcome.continuation_id,
+                      "tool_events": outcome.tool_events},
         )
 
     async def start_loop(self, agent_id: str) -> None:

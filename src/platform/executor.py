@@ -411,32 +411,24 @@ class PlatformExecutor:
                 )
                 self.process_table.heartbeat(agent_id)
 
-                # Save updated conversation to session store
-                if session_id and hasattr(self, '_session_store') and self._session_store:
-                    new_msgs = [
-                        {"role": "user", "content": prompt},
-                        {"role": "assistant", "content": result.output or ""},
-                    ]
-                    if session is None:
-                        from src.core.session_store import AgentSession
-                        session = AgentSession(
-                            session_id=session_id,
-                            agent_id=agent_id,
-                            tenant_id=(context or {}).get("tenant_id", "default"),
-                            messages=new_msgs,
-                            system_prompt=agent_def.system_prompt or agent_def.description or "",
-                        )
-                        session.turns_completed = 1
-                        session.output_tokens = result.tokens_used
-                        self._session_store.save(session)
-                    else:
-                        session.messages.extend(new_msgs)
-                        session.turns_completed += 1
-                        session.output_tokens += result.tokens_used
-                        if hasattr(self._session_store, "append_messages"):
-                            self._session_store.append_messages(session_id, new_msgs)
-                        else:
-                            self._session_store.save(session)
+                # Persist this turn so the NEXT turn sees the full conversation.
+                # A PAUSED (human-gated) turn is NOT finished — its real answer
+                # exists only once the human approves and the run resumes — so we
+                # record the user turn now and let the resume path
+                # (record_resumed_turn) append the assistant turn when it lands.
+                # Writing an empty assistant turn here instead erased what the
+                # agent actually did from the next turn's history (the "lost
+                # context after approval" bug).
+                if session_id and getattr(self, "_session_store", None):
+                    new_msgs: list[dict] = [{"role": "user", "content": prompt}]
+                    if result.status != AgentStatus.PAUSED:
+                        new_msgs.append({"role": "assistant", "content": result.output or ""})
+                    self._append_session_turn(
+                        session, session_id, agent_id, new_msgs,
+                        tokens_used=result.tokens_used or 0,
+                        tenant_id=(context or {}).get("tenant_id", "default"),
+                        system_prompt=agent_def.system_prompt or agent_def.description or "",
+                    )
 
                 return result
             except Exception as e:
@@ -505,6 +497,59 @@ class PlatformExecutor:
             async with session_lock:
                 return await _do_invoke()
         return await _do_invoke()
+
+    def _append_session_turn(
+        self, session, session_id, agent_id, new_msgs, *,
+        tokens_used: int = 0, tenant_id: str = "default", system_prompt: str = "",
+    ) -> None:
+        """Append ``new_msgs`` to the session store as ONE write.
+
+        Creates the session on first write. For InMemorySessionStore the object
+        returned by ``get`` IS the stored object, so we must NOT both ``extend``
+        it AND call ``append_messages`` — that double-records every turn.
+        ``append_messages`` alone mutates the stored list; Postgres returns a
+        copy, so the no-append_messages backend gets extend+save.
+        """
+        store = getattr(self, "_session_store", None)
+        if not store:
+            return
+        if session is None:
+            from src.core.session_store import AgentSession
+            session = AgentSession(
+                session_id=session_id, agent_id=agent_id, tenant_id=tenant_id,
+                messages=list(new_msgs), system_prompt=system_prompt,
+            )
+            session.turns_completed = 1
+            session.output_tokens = tokens_used
+            store.save(session)
+            return
+        session.turns_completed += 1
+        session.output_tokens += tokens_used
+        if hasattr(store, "append_messages"):
+            store.append_messages(session_id, new_msgs)
+        else:
+            session.messages.extend(new_msgs)
+            store.save(session)
+
+    def record_resumed_turn(
+        self, session_id: str, assistant_output: str, *, tokens_used: int = 0,
+    ) -> None:
+        """Complete a PAUSED turn after it resumes: append the assistant turn the
+        paused invoke deliberately withheld, so the NEXT turn's history reflects
+        what the agent actually did/said. Safe no-op without a session store or a
+        matching session. Call only when the resumed run reached a final answer
+        (DONE) — not on an intermediate re-suspend (which has no output)."""
+        store = getattr(self, "_session_store", None)
+        if not (session_id and store):
+            return
+        session = store.get(session_id)
+        if session is None:
+            return
+        self._append_session_turn(
+            session, session_id, session.agent_id,
+            [{"role": "assistant", "content": assistant_output or ""}],
+            tokens_used=tokens_used,
+        )
 
     async def stop_agent(self, agent_id: str) -> bool:
         agent_def = self.registry.get(agent_id)

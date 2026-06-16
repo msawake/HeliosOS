@@ -730,11 +730,15 @@ class ToolExecutor:
                     chunks.append(str(c))
             return (not is_error, "\n".join(chunks))
 
-        # Try client-specific MCP server first
+        # Try client-specific MCP server first. The agent's namespace scopes
+        # credential resolution (namespace creds preferred, else user creds).
         client_id = (agent_context or {}).get("client_id")
+        namespace = (agent_context or {}).get("namespace") or "default"
         if client_id and self._client_mcp_manager:
             try:
-                client_session = await self._client_mcp_manager.get_client(client_id, server_name)
+                client_session = await self._client_mcp_manager.get_client(
+                    client_id, server_name, namespace,
+                )
                 if client_session:
                     # Per-user MCP servers connect lazily and never went through
                     # ``register_mcp_tools`` at boot, so ``_get_tool_schema`` was
@@ -745,7 +749,7 @@ class ToolExecutor:
                     if server_name not in self._mcp_tool_definitions:
                         try:
                             schemas = await self._client_mcp_manager.get_tool_schemas(
-                                client_id, server_name,
+                                client_id, server_name, namespace,
                             )
                             if schemas:
                                 self.register_mcp_tools(server_name, schemas)

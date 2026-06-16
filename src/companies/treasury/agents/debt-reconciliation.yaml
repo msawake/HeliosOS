@@ -19,31 +19,57 @@ spec:
     endpoint: https://atlas-router.ally-code-dev.makingscience.com/v1
     api_key_ref: secret:litellm-allycode-key
   tools:
-    - shell__exec
-    - fs__write_file
+    - drive__list_files
+    - drive__find_by_name
+    - drive__read_file
+    - drive__create_file
+    - drive__update_file
     - company__search_knowledge
     - company__record_metric
     - human__ask
+  drive:
+    service_account: drive-agent-debt@admachina-atomic-test-84.iam.gserviceaccount.com
+    folder_id: REPLACE_WITH_FOLDER_ID   # ← set after sharing the folder with the SA
+    access: readwrite
+  governance:
+    audit_level: full
+    approvals:
+      - {tool: drive__read_file, mode: never}
+      - {tool: drive__list_files, mode: never}
+      - {tool: drive__find_by_name, mode: never}
+      - tool: drive__create_file
+        mode: always
+        approvers: [antoni.bergas@makingscience.com]
+        sla_hours: 4
+        on_timeout: abort
+        priority: high
+        reason: "Writing a reconciliation report to the user's Drive folder"
+      - tool: drive__update_file
+        mode: always
+        approvers: [antoni.bergas@makingscience.com]
+        sla_hours: 4
+        on_timeout: abort
+        priority: high
+        reason: "Modifying a file in the user's Drive folder"
   metadata:
-    data_dir: src/companies/treasury/data
-    reports_dir: src/companies/treasury/reports
     as_of: "2026-06-09"
     approver: antoni.bergas@makingscience.com
-    data_source: mock
   system_prompt: |
     You are the Debt reconciliation agent for the Treasury department. You are a
     READ-ONLY analyst — produce a report and escalate; never release payments.
+    Your input data and output reports live in your own Google Drive folder
+    (shared with your service account); drive tools default to that folder.
 
-    On each run:
+    0. CLARIFY FIRST. If the request is ambiguous (which period? a re-run?), ask
+       the human via human__ask BEFORE doing anything. Don't guess.
 
     1. RULES. Optionally pull "Reconciliation Matching Rules" and
        "Reconciliation Exception Taxonomy" via company__search_knowledge.
        Tolerance: amounts match within max(EUR 5.00, 0.5%).
 
-    2. LOAD with shell__exec (cwd = repo root):
-         cat src/companies/treasury/data/debt_schedule.csv
-         cat src/companies/treasury/data/debt_payments.csv
-         cat src/companies/treasury/data/debt_instruments.csv
+    2. LOAD DATA from your Drive folder: drive__list_files to see what's shared
+       (expect debt_schedule.csv, debt_payments.csv, debt_instruments.csv), then
+       drive__read_file by id to read each.
 
     3. RECONCILE per loan_id. Expected service for the period = scheduled_principal
        + scheduled_interest. Compare to the sum of payments for that loan:
@@ -55,8 +81,9 @@ spec:
            (unknown loan; recommend routing to suspense / investigation).
 
     4. OUTPUT a markdown report (summary + per-loan table + exceptions table with
-       EUR deltas and proposed action) via fs__write_file to
-       src/companies/treasury/reports/debt_reconciliation_2026-06-09.md.
+       EUR deltas and proposed action). Write it back to your Drive folder with
+       drive__create_file as "debt_reconciliation_<as_of>.md". This WRITE pauses
+       for human approval — state what you'll write, then call the tool.
 
     5. LOG via company__record_metric (name "debt_reconciliation").
 

@@ -24,6 +24,7 @@ wrong identity).
 """
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import os
@@ -31,6 +32,18 @@ import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Per-agent Drive identity for the in-flight tool call. The handler sets these
+# from `agent_context` (manifest `spec.drive`); `asyncio.to_thread` propagates
+# the contextvars into the blocking Drive op. Falls back to the platform env
+# default (`FORGEOS_DRIVE_AGENT_SA`) when unset. This is what makes the SA
+# **per-agent**: each agent impersonates its own SA, with per-SA token caching.
+_agent_sa_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "forgeos_drive_agent_sa", default=None
+)
+_agent_folder_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "forgeos_drive_folder", default=None
+)
 
 _DRIVE_API = "https://www.googleapis.com/drive/v3/files"
 _DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files"
@@ -68,7 +81,15 @@ def _resolve_upload_mime(target_mime: str, source_mime_type: str | None) -> str:
 
 
 def _target_sa() -> str:
-    return os.environ.get("FORGEOS_DRIVE_AGENT_SA", "").strip()
+    # Per-agent SA (set by the tool handler from the agent's manifest) wins;
+    # else the platform-wide default env var.
+    return (_agent_sa_var.get() or os.environ.get("FORGEOS_DRIVE_AGENT_SA", "")).strip()
+
+
+def _default_folder() -> str | None:
+    """The agent's default Drive context folder (manifest `spec.drive.folder_id`),
+    used when a drive call omits an explicit ``folder_id``."""
+    return _agent_folder_var.get()
 
 
 def _scopes() -> list[str]:
@@ -543,32 +564,56 @@ DRIVE_RW_TOOL_SCHEMAS: list[dict[str, Any]] = [
 ]
 
 
+def _apply_agent_drive_ctx(agent_context: dict | None, tool_input: dict, *, scope_folder: bool) -> None:
+    """Bind the agent's per-agent Drive SA + default folder for this call.
+
+    Sets the contextvars (propagated into the blocking op via asyncio.to_thread)
+    so the op impersonates THIS agent's SA. When ``scope_folder`` and the call
+    omits ``folder_id``, default it to the agent's manifest folder so the agent
+    operates within its shared context folder by default.
+    """
+    ac = agent_context or {}
+    sa = ac.get("_drive_service_account")
+    if sa:
+        _agent_sa_var.set(sa)
+    folder = ac.get("_drive_folder_id")
+    if folder:
+        _agent_folder_var.set(folder)
+        if scope_folder and not tool_input.get("folder_id"):
+            tool_input["folder_id"] = folder
+
+
 async def _handle_list(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
     import asyncio
+    _apply_agent_drive_ctx(agent_context, tool_input, scope_folder=True)
     result = await asyncio.to_thread(list_files, **tool_input)
     return {"success": result.get("ok", False), "result": result}
 
 
 async def _handle_find(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
     import asyncio
+    _apply_agent_drive_ctx(agent_context, tool_input, scope_folder=True)
     result = await asyncio.to_thread(find_by_name, **tool_input)
     return {"success": result.get("ok", False), "result": result}
 
 
 async def _handle_read(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
     import asyncio
+    _apply_agent_drive_ctx(agent_context, tool_input, scope_folder=False)
     result = await asyncio.to_thread(read_file, **tool_input)
     return {"success": result.get("ok", False), "result": result}
 
 
 async def _handle_update(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
     import asyncio
+    _apply_agent_drive_ctx(agent_context, tool_input, scope_folder=False)
     result = await asyncio.to_thread(update_file, **tool_input)
     return {"success": result.get("ok", False), "result": result}
 
 
 async def _handle_create(tool_input: dict, agent_context: dict | None = None) -> dict[str, Any]:
     import asyncio
+    _apply_agent_drive_ctx(agent_context, tool_input, scope_folder=True)
     result = await asyncio.to_thread(create_file, **tool_input)
     return {"success": result.get("ok", False), "result": result}
 

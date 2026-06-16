@@ -196,15 +196,23 @@ class MCPServerManager:
         import os as _os
         resolved_env = _os.environ.copy()
         if config.env_vars:
+            cred_store = None
+            if self._secrets_manager:
+                from src.platform.credentials import CredentialStore, SCOPE_PLATFORM
+                cred_store = CredentialStore(self._secrets_manager)
             for k, v in config.env_vars.items():
                 if v.startswith("secret:"):
                     # Extract secret name (e.g., "secret:github-token" -> "github-token")
                     secret_name = v[7:]
-                    if self._secrets_manager:
-                        resolved_val = self._secrets_manager.get(
-                            secret_name, 
+                    if cred_store is not None:
+                        # Boot-time servers are company-wide: resolve platform
+                        # scope, then literal/legacy names (+ env) as fallback.
+                        resolved_val = cred_store.resolve(
+                            secret_name,
+                            namespace=None,
+                            user_id="default",
+                            order=(SCOPE_PLATFORM,),
                             caller=f"mcp_server_{config.name}",
-                            reason="mcp_server_boot"
                         )
                         if resolved_val:
                             resolved_env[k] = resolved_val

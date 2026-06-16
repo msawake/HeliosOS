@@ -102,7 +102,9 @@ async def test_flag_on_routes_through_engine_and_parks(monkeypatch):
 
 
 async def test_flag_off_uses_legacy_loop(monkeypatch):
-    monkeypatch.delenv("FORGEOS_RUNTIME_V2", raising=False)
+    # Runtime-v2 is on by default now; setting the flag to 0 opts back into the
+    # legacy non-durable loop.
+    monkeypatch.setenv("FORGEOS_RUNTIME_V2", "0")
     kernel = Kernel(registry=FakeRegistry(FakeAgent("pid1")))
     # Legacy loop: a plain final response (no tool calls) completes normally.
     llm = FakeLLM([LLMResponse(text="done directly", model="m", provider="anthropic", tokens_used=4)])
