@@ -112,9 +112,18 @@ class AuthUser:
 class AuthManager:
     """Manages authentication via Firebase or API keys."""
 
-    def __init__(self, db_client=None):
+    def __init__(self, db_client=None, *, tenant_id: str | None = None):
         self._db = db_client
         self._firebase_initialized = False
+        # Bound tenant for the env-provisioned admin key (below). Defaults to
+        # the boot tenant; the standalone fallback keeps legacy callers working.
+        self._tenant_id = tenant_id or os.environ.get("FORGEOS_TENANT_ID") or "default"
+        # Platform admin API key, provisioned out-of-band (Pulumi → Secret
+        # Manager → FORGEOS_ADMIN_API_KEY env). Recognized as an ``admin``
+        # principal so auth-enabled deployments have a usable credential without
+        # seeding a DB row or wiring Firebase. Stored as a hash; never logged.
+        _admin_key = os.environ.get("FORGEOS_ADMIN_API_KEY", "").strip()
+        self._admin_key_hash = hashlib.sha256(_admin_key.encode()).hexdigest() if _admin_key else None
 
         if HAS_FIREBASE:
             try:
@@ -167,6 +176,25 @@ class AuthManager:
         except Exception as e:
             logger.warning("JWT verification failed: %s", e)
             return None
+
+    def verify_admin_key(self, api_key: str) -> AuthUser | None:
+        """Verify the platform admin API key (FORGEOS_ADMIN_API_KEY).
+
+        Returns an ``admin`` principal bound to the boot tenant. Constant-time
+        compared; no DB required (the key lives only in env/Secret Manager).
+        """
+        if not self._admin_key_hash:
+            return None
+        candidate = hashlib.sha256(api_key.encode()).hexdigest()
+        if hmac.compare_digest(candidate, self._admin_key_hash):
+            return AuthUser(
+                user_id="admin",
+                email="admin@platform",
+                tenant_id=self._tenant_id,
+                role=UserRole.ADMIN,
+                name="Platform Admin",
+            )
+        return None
 
     def verify_api_key(self, api_key: str) -> AuthUser | None:
         """Verify an API key and return a system user for the tenant.
@@ -221,10 +249,10 @@ class AuthManager:
                 _record_auth_failure(ip)
             return user
 
-        # API key
+        # API key — try the platform admin key first, then per-tenant keys.
         api_key = request.headers.get("X-API-Key", "")
         if api_key:
-            user = self.verify_api_key(api_key)
+            user = self.verify_admin_key(api_key) or self.verify_api_key(api_key)
             if not user:
                 _record_auth_failure(ip)
             return user

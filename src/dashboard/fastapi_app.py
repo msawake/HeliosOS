@@ -202,6 +202,11 @@ class ScopedSecretPutRequest(BaseModel):
     value: str = Field(..., min_length=1, description="The secret value. Write-only — never read back.")
     kind: str = Field("generic", description="Classification label recorded with the secret")
 
+class NamespaceCreateRequest(BaseModel):
+    namespace: str = Field(..., min_length=1, description="Namespace name (k8s-style logical isolation group)")
+    description: str = Field("", description="Optional human description")
+    admins: list[str] = Field(default_factory=list, description="User ids to appoint as namespace admins on create")
+
 class EventFireRequest(BaseModel):
     name: str
     payload: dict = {}
@@ -269,6 +274,9 @@ def create_fastapi_app(
     env_service=None,  # EnvironmentService — attach/detach envs to agents
     mcp_manager=None,  # boot-time MCPServerManager — for live connect on register
     tool_executor=None,  # ToolExecutor — to register tools discovered at runtime
+    auth_manager=None,  # injectable AuthManager (DI for tests); else built from db_client
+    namespace_admin_store=None,  # injectable (DI for tests); else built from db_client
+    namespace_store=None,  # injectable (DI for tests); else built from db_client
 ) -> FastAPI:
 
     app = FastAPI(
@@ -431,7 +439,7 @@ def create_fastapi_app(
     # The legacy "any Bearer dev-* string is accepted" path is now gated behind
     # FORGEOS_ALLOW_DEV_LOGIN so production never trusts an unsigned token.
     from src.api.auth import AuthManager, AuthUser, UserRole
-    _auth_manager = AuthManager(db_client=db_client) if auth_enabled else None
+    _auth_manager = auth_manager or (AuthManager(db_client=db_client, tenant_id=tenant_id) if auth_enabled else None)
     _allow_dev_login = os.environ.get("FORGEOS_ALLOW_DEV_LOGIN", "").lower() in ("1", "true", "yes")
 
     class _AuthReqShim:
@@ -2484,11 +2492,12 @@ def create_fastapi_app(
     # ===================================================================
 
     from src.platform.client_store import PostgresClientStore, PostgresClientMCPStore
-    from src.platform.namespace_admins import NamespaceAdminStore
+    from src.platform.namespace_admins import NamespaceAdminStore, NamespaceStore
 
     client_store = PostgresClientStore(db_client=db_client, tenant_id=tenant_id)
     client_mcp_store = PostgresClientMCPStore(db_client=db_client, tenant_id=tenant_id)
-    namespace_admin_store = NamespaceAdminStore(db_client=db_client, tenant_id=tenant_id)
+    namespace_admin_store = namespace_admin_store or NamespaceAdminStore(db_client=db_client, tenant_id=tenant_id)
+    namespace_store = namespace_store or NamespaceStore(db_client=db_client, tenant_id=tenant_id)
 
     # Optional: reference to the ClientMCPManager so we can refresh its cache
     # after config writes (the adapter-wired manager lives on the executor).
@@ -4293,6 +4302,38 @@ def create_fastapi_app(
             details={"scope": scope, "namespace": namespace, "name": name},
         )
         return {"deleted": bool(ok), "scope": scope, "namespace": namespace, "name": name}
+
+    @app.get("/api/platform/namespaces", tags=["platform"])
+    async def list_namespaces(_auth=Depends(check_auth)):
+        """List registered namespaces (any authenticated caller)."""
+        return {"namespaces": namespace_store.list_all()}
+
+    @app.post("/api/platform/namespaces", tags=["platform"], status_code=201)
+    async def create_namespace(req: NamespaceCreateRequest, request: Request,
+                               _auth=Depends(require_role("admin"))):
+        """Create/register a namespace and optionally appoint its admins.
+
+        Idempotent (re-create returns created=False). Admin-tier action — the
+        platform authority in the single-tenant model.
+        """
+        caller = request.headers.get("x-forgeos-caller") or "api"
+        created = namespace_store.create(req.namespace, created_by=caller, description=req.description or None)
+        granted: list[str] = []
+        for uid in req.admins:
+            if namespace_admin_store.grant(req.namespace, uid):
+                granted.append(uid)
+        _audit("namespace.create", actor=caller, resource_type="namespace",
+               resource_id=req.namespace, details={"admins": granted, "created": bool(created)})
+        return {"created": bool(created), "namespace": req.namespace, "admins": granted}
+
+    @app.delete("/api/platform/namespaces/{ns}", tags=["platform"])
+    async def delete_namespace(ns: str, request: Request, _auth=Depends(require_role("admin"))):
+        """Remove a namespace from the registry (governance only — does not
+        cascade to agents/secrets/admins)."""
+        ok = namespace_store.delete(ns)
+        caller = request.headers.get("x-forgeos-caller") or "api"
+        _audit("namespace.delete", actor=caller, resource_type="namespace", resource_id=ns, details={})
+        return {"deleted": bool(ok), "namespace": ns}
 
     @app.get("/api/platform/namespaces/{ns}/admins", tags=["platform"])
     async def list_namespace_admins(ns: str, _auth=Depends(require_role("admin"))):

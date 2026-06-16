@@ -80,6 +80,18 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   });
 
   if (!res.ok) {
+    // A 401 mid-session means the stored credential is missing/stale (a 403 is
+    // authenticated-but-forbidden and must NOT redirect). Clear it and bounce
+    // to /login so the user re-authenticates instead of hitting silent failures.
+    if (res.status === 401 && typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      const hadCred =
+        sessionStorage.getItem('forgeos_token') || sessionStorage.getItem('forgeos_api_key');
+      if (hadCred) {
+        sessionStorage.removeItem('forgeos_token');
+        sessionStorage.removeItem('forgeos_api_key');
+        window.location.assign('/login');
+      }
+    }
     const text = await res.text().catch(() => '');
     let detail: string | undefined;
     try {

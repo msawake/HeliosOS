@@ -130,3 +130,83 @@ class NamespaceAdminStore:
         except Exception:
             logger.exception("NamespaceAdminStore.revoke failed (%s/%s)", namespace, user_id)
             return False
+
+
+class NamespaceStore:
+    """Postgres-backed registry of namespaces (migration 019).
+
+    Lets a platform admin create/list/delete namespaces explicitly. Tenant-
+    isolated via RLS (uses ``db.tenant(...)``, never ``db.admin()``). Degrades
+    to an empty/no-op store when no database is wired (in-memory dev).
+    """
+
+    def __init__(self, db_client: Any = None, *, tenant_id: str = "default") -> None:
+        self._db = db_client
+        self._tenant_id = tenant_id
+
+    @property
+    def available(self) -> bool:
+        return bool(getattr(self._db, "is_connected", False))
+
+    def exists(self, namespace: str) -> bool:
+        if not self.available or not namespace:
+            return False
+        try:
+            with self._db.tenant(self._tenant_id) as conn:
+                row = conn.execute_one(
+                    "SELECT 1 FROM namespaces WHERE tenant_id = %s AND namespace = %s",
+                    (self._tenant_id, namespace),
+                )
+            return bool(row)
+        except Exception:
+            logger.exception("NamespaceStore.exists failed (%s)", namespace)
+            return False
+
+    def list_all(self) -> list[dict[str, Any]]:
+        if not self.available:
+            return []
+        try:
+            with self._db.tenant(self._tenant_id) as conn:
+                rows = conn.execute(
+                    "SELECT namespace, description, created_by, created_at FROM namespaces "
+                    "WHERE tenant_id = %s ORDER BY namespace",
+                    (self._tenant_id,),
+                )
+            return [dict(r) for r in (rows or [])]
+        except Exception:
+            logger.exception("NamespaceStore.list_all failed")
+            return []
+
+    def create(self, namespace: str, *, created_by: str = "", description: str | None = None) -> bool:
+        """Register a namespace. Idempotent (ON CONFLICT DO NOTHING)."""
+        if not self.available:
+            return False
+        try:
+            with self._db.tenant(self._tenant_id) as conn:
+                conn.execute(
+                    "INSERT INTO namespaces (tenant_id, namespace, description, created_by) "
+                    "VALUES (%s, %s, %s, %s) ON CONFLICT (tenant_id, namespace) DO NOTHING",
+                    (self._tenant_id, namespace, description, created_by),
+                )
+                conn.commit()
+            return True
+        except Exception:
+            logger.exception("NamespaceStore.create failed (%s)", namespace)
+            return False
+
+    def delete(self, namespace: str) -> bool:
+        """Remove a namespace from the registry (governance only — does not
+        cascade to agents/secrets/admins). Idempotent."""
+        if not self.available:
+            return False
+        try:
+            with self._db.tenant(self._tenant_id) as conn:
+                conn.execute(
+                    "DELETE FROM namespaces WHERE tenant_id = %s AND namespace = %s",
+                    (self._tenant_id, namespace),
+                )
+                conn.commit()
+            return True
+        except Exception:
+            logger.exception("NamespaceStore.delete failed (%s)", namespace)
+            return False

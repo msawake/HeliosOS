@@ -142,6 +142,11 @@ class WorkerTier(pulumi.ComponentResource):
                                 # (FORGEOS_RUNTIME_WORKERS). No --loop: the
                                 # company scheduler is platform-api's job, not the
                                 # worker's. The served API has no Service/ingress.
+                                # --no-auth is intentional: the worker drains the
+                                # Redis queue and has NO Service/ingress, so its
+                                # API is never reached by external role-gated
+                                # calls. Do not "fix" this — it would demand a key
+                                # the worker's internal callers don't send.
                                 command=["python", "-m", "src.bootstrap"],
                                 args=["--no-auth", "--dashboard", "--port", "8080"],
                                 env_from=[

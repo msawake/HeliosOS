@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import pulumi
 import pulumi_gcp as gcp
+import pulumi_random as random
 
 
 class Secrets(pulumi.ComponentResource):
@@ -66,6 +67,28 @@ class Secrets(pulumi.ComponentResource):
         self.jira_url = self._secret("jira-url", config.get_secret("jira_url"))
         self.jira_username = self._secret("jira-username", config.get_secret("jira_username"))
         self.jira_api_token = self._secret("jira-api-token", config.get_secret("jira_api_token"))
+
+        # Platform admin API key (FORGEOS_ADMIN_API_KEY) — recognized by
+        # AuthManager as an ``admin`` principal so auth-enabled API/CLI access
+        # works without seeding a DB row. Generated unless an operator supplies
+        # `admin_api_key` in config. Always has a version → always wired.
+        self.admin_api_key = self._secret(
+            "admin-api-key",
+            config.get_secret("admin_api_key")
+            or random.RandomString(
+                "forgeos-admin-api-key-gen", length=48, special=False, opts=child
+            ).result,
+        )
+        # Dashboard login password (FORGEOS_DEV_PASSWORD) — the platform API's
+        # /api/auth/token validates it for the dashboard's password login (gated
+        # by FORGEOS_ALLOW_DEV_LOGIN). Generated unless `dashboard_password` set.
+        self.dashboard_password = self._secret(
+            "dashboard-password",
+            config.get_secret("dashboard_password")
+            or random.RandomPassword(
+                "forgeos-dashboard-password-gen", length=20, special=False, opts=child
+            ).result,
+        )
 
         self.register_outputs({})
 

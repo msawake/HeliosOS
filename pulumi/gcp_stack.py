@@ -134,6 +134,9 @@ for sa, label in [
 
 secrets.grant_access("migrations-db-access", secrets.database_url, identity.migrations.email)
 secrets.grant_access("mcp-api-key-access", secrets.api_key, identity.mcp.email)
+# Auth secrets — platform-api only (worker/agent SAs don't authenticate users).
+secrets.grant_access("platform-api-admin-key-access", secrets.admin_api_key, identity.platform_api.email)
+secrets.grant_access("platform-api-dev-password-access", secrets.dashboard_password, identity.platform_api.email)
 
 # 6. GKE
 gke = Gke(
@@ -180,6 +183,11 @@ _pa_secret_specs = [
     ("JIRA_USERNAME", "jira-username", secrets.jira_username),
     ("JIRA_API_TOKEN", "jira-api-token", secrets.jira_api_token),
     ("VLLM_API_KEY", "vllm-api-key", secrets.vllm_api_key),
+    # Auth (enabled by default — the bootstrap CMD omits --no-auth):
+    #   admin API key → AuthManager admin principal (API/CLI);
+    #   dashboard password → /api/auth/token login (gated by FORGEOS_ALLOW_DEV_LOGIN).
+    ("FORGEOS_ADMIN_API_KEY", "admin-api-key", secrets.admin_api_key),
+    ("FORGEOS_DEV_PASSWORD", "dashboard-password", secrets.dashboard_password),
 ]
 if enable_redis:
     _pa_secret_specs.append(("REDIS_URL", "redis-url", secrets.redis_url))
@@ -201,6 +209,11 @@ _pa_extra_env: dict[str, pulumi.Input[str]] = {
     "FORGEOS_ENV_NAMESPACE": "forgeos-envs",
     "FORGEOS_KUBE_CONTEXT": gke.cluster.name,
     "FORGEOS_KUBECONFIG_CONTENT": gke.kubeconfig,
+    # Auth: bind the admin principal to this deployment's tenant, and enable the
+    # dashboard's password login (/api/auth/token validates FORGEOS_DEV_PASSWORD).
+    # Auth itself is on by default — the bootstrap CMD does not pass --no-auth.
+    "FORGEOS_TENANT_ID": config.get("company") or "leadforge",
+    "FORGEOS_ALLOW_DEV_LOGIN": "1",
 }
 if kernel_mode:
     _pa_extra_env["FORGEOS_KERNEL_MODE"] = kernel_mode
