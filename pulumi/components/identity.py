@@ -139,13 +139,21 @@ class Identity(pulumi.ComponentResource):
                 opts=child,
             )
             self.drive_agents[slug] = sa
-            gcp.serviceaccount.IAMMember(
-                f"{name}-drive-{slug}-tokencreator",
-                service_account_id=sa.name,
-                role="roles/iam.serviceAccountTokenCreator",
-                member=self.platform_api.email.apply(lambda e: f"serviceAccount:{e}"),
-                opts=child,
-            )
+            # platform-api (Cloud Run) AND agent_runtime (GKE worker tier) both
+            # need to mint impersonated tokens for this SA: invokes may run inline
+            # on the API or be drained by the worker tier (FORGEOS_RUNTIME_WORKERS),
+            # and the runner is the one that calls the drive__* tools.
+            for _holder, _suffix in (
+                (self.platform_api, "tokencreator"),
+                (self.agent_runtime, "tokencreator-worker"),
+            ):
+                gcp.serviceaccount.IAMMember(
+                    f"{name}-drive-{slug}-{_suffix}",
+                    service_account_id=sa.name,
+                    role="roles/iam.serviceAccountTokenCreator",
+                    member=_holder.email.apply(lambda e: f"serviceAccount:{e}"),
+                    opts=child,
+                )
 
         self.register_outputs({})
 
