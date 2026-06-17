@@ -1,5 +1,5 @@
 -- ============================================================================
--- ForgeOS Intelligence Platform — Ontology Tables
+-- Helios OS Intelligence Platform — Ontology Tables
 -- Migration 003: Knowledge graph storage for the intelligence layer
 --
 -- These tables store the typed, relationship-aware business data that agents

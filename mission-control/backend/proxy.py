@@ -1,4 +1,4 @@
-"""Proxy endpoints that forward to the ForgeOS backend (avoids CORS)."""
+"""Proxy endpoints that forward to the Helios OS backend (avoids CORS)."""
 
 import httpx
 from fastapi import APIRouter, Depends, Request

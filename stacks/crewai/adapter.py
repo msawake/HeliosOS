@@ -41,7 +41,7 @@ except ImportError:
 
 
 def _crewai_llm_id(llm_config) -> str:
-    """Map a ForgeOS LLMConfig to a CrewAI/LiteLLM-compatible model identifier.
+    """Map a Helios OS LLMConfig to a CrewAI/LiteLLM-compatible model identifier.
 
     CrewAI uses LiteLLM internally, which accepts either a bare model name
     (`gpt-4o`, `claude-3-5-sonnet-20241022`) or a prefixed form
@@ -52,7 +52,7 @@ def _crewai_llm_id(llm_config) -> str:
 
 
 def _build_crewai_tools(tool_executor, agent_def, agent_context: dict) -> list:
-    """Wrap ForgeOS tools as CrewAI BaseTool instances.
+    """Wrap Helios OS tools as CrewAI BaseTool instances.
 
     Each wrapper captures the tool name + schema and, on invocation, runs
     `tool_executor.execute(...)` in a fresh event loop. Since CrewAI's
@@ -70,7 +70,7 @@ def _build_crewai_tools(tool_executor, agent_def, agent_context: dict) -> list:
 
     for schema in schemas:
         tool_name = schema.get("name", "")
-        tool_desc = schema.get("description", "") or f"ForgeOS tool: {tool_name}"
+        tool_desc = schema.get("description", "") or f"Helios OS tool: {tool_name}"
         if not tool_name:
             continue
 

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BUSL-1.1
 """
-Platform RBAC — role-based access control for ForgeOS operations.
+Platform RBAC — role-based access control for Helios OS operations.
 
 Controls who can deploy, invoke, stop, quarantine agents and apply
 policies. Five roles with namespace-scoped bindings:

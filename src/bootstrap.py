@@ -1,7 +1,7 @@
 """
-ForgeOS Platform Bootstrap.
+Helios OS Platform Bootstrap.
 
-Multi-stack agent platform that supports four agent stacks (ForgeOS native,
+Multi-stack agent platform that supports four agent stacks (Helios OS native,
 CrewAI, Google ADK, OpenClaw) with five execution types (always-on, scheduled,
 event-driven, reflex, autonomous) and personal/shared ownership.
 
@@ -125,7 +125,7 @@ class OperatingMode:
 
 class PlatformBootstrap:
     """
-    Boots the ForgeOS multi-stack platform. Initializes all four stack adapters,
+    Boots the Helios OS multi-stack platform. Initializes all four stack adapters,
     the platform executor, scheduler, event bus, and legacy company subsystems.
     """
 
@@ -159,7 +159,7 @@ class PlatformBootstrap:
     async def boot(self, api_listen_port: int = 5000):
         _load_dotenv_from_repo_root()
         logger.info("=" * 60)
-        logger.info("BOOTING FORGEOS MULTI-STACK PLATFORM")
+        logger.info("BOOTING HELIOS OS MULTI-STACK PLATFORM")
         logger.info("Company: %s | Mode: %s", self.company_id, self.mode)
         logger.info("Time: %s", datetime.now(timezone.utc).isoformat())
         logger.info("=" * 60)
@@ -519,7 +519,7 @@ class PlatformBootstrap:
             raise
 
         logger.info("=" * 60)
-        logger.info("FORGEOS PLATFORM ONLINE")
+        logger.info("HELIOS OS PLATFORM ONLINE")
         logger.info("Stacks: %s", list(self._adapters.keys()))
         logger.info("Platform agents: %d", len(self.platform_registry.list_all()))
         if self.legacy_registry:
@@ -616,7 +616,7 @@ class PlatformBootstrap:
         logger.info("Seeded 2 demo HITL approvals (FORGEOS_SEED_HITL=1)")
 
     async def _init_legacy_subsystems(self):
-        """Initialize the existing ForgeOS company subsystems for backward compat."""
+        """Initialize the existing Helios OS company subsystems for backward compat."""
         self._init_stages.add("db_init")
         self._db = create_database_client()
         if self._db.is_connected:
@@ -903,7 +903,7 @@ class PlatformBootstrap:
 
     async def shutdown(self):
         """Graceful async shutdown — cancel tasks, disconnect services, close DB."""
-        logger.info("Shutting down ForgeOS Platform (graceful)...")
+        logger.info("Shutting down Helios OS Platform (graceful)...")
         self._running = False
         # 1. Cancel autonomous agent tasks
         if self.executor:
@@ -937,7 +937,7 @@ class PlatformBootstrap:
 
     def stop(self):
         """Synchronous stop — for backward compat and non-async contexts."""
-        logger.info("Shutting down ForgeOS Platform...")
+        logger.info("Shutting down Helios OS Platform...")
         self._running = False
         if self.scheduler:
             self.scheduler.stop_all()
@@ -1079,7 +1079,7 @@ def _validate_config(mode: str) -> list[str]:
 
 async def main():
     _load_dotenv_from_repo_root()
-    parser = argparse.ArgumentParser(description="Boot ForgeOS Multi-Stack Platform")
+    parser = argparse.ArgumentParser(description="Boot Helios OS Multi-Stack Platform")
     parser.add_argument("--company", type=str, default="leadforge", help="Company ID")
     parser.add_argument("--config", type=str, help="Path to company config YAML")
     parser.add_argument(

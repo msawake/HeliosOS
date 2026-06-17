@@ -117,7 +117,7 @@ def main() -> int:
     """CLI entry point: `python -m src.core.migrations`."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Run ForgeOS database migrations")
+    parser = argparse.ArgumentParser(description="Run Helios OS database migrations")
     parser.add_argument("--dir", help="Override migrations directory", default=None)
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()

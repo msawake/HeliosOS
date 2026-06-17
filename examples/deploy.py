@@ -1,5 +1,5 @@
 """
-ForgeOS Agent Deployment Framework.
+Helios OS Agent Deployment Framework.
 
 Scans examples/ for YAML manifests, validates, deploys, and reports.
 
@@ -102,7 +102,7 @@ def clean_all(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ForgeOS Agent Deployment Framework")
+    parser = argparse.ArgumentParser(description="Helios OS Agent Deployment Framework")
     parser.add_argument("--category", choices=CATEGORIES, help="Deploy one category only")
     parser.add_argument("--stack", choices=["forgeos", "crewai", "adk", "openclaw"], help="Filter by stack")
     parser.add_argument("--dry-run", action="store_true", help="Validate manifests without deploying")

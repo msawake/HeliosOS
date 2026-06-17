@@ -1,5 +1,5 @@
 """
-Typed callback system for ForgeOS.
+Typed callback system for Helios OS.
 
 Provides interception points at three levels (agent, model, tool) with
 approve/deny/modify/defer semantics. Replaces the deprecated legacy

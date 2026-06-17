@@ -1,5 +1,5 @@
 """
-Secrets management for ForgeOS SaaS.
+Secrets management for Helios OS SaaS.
 
 Fetches API keys and credentials from GCP Secret Manager in production,
 falls back to environment variables in development.

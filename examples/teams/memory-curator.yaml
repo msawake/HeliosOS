@@ -1,5 +1,5 @@
 # ============================================================================
-# ForgeOS: Memory Curator — The "Dreaming" Agent
+# Helios OS: Memory Curator — The "Dreaming" Agent
 # ============================================================================
 #
 # Implements Anthropic's "Dreaming" mechanism: an asynchronous background
@@ -51,7 +51,7 @@ spec:
         scope: read-write
         description: "Raw observations from dreaming sessions"
   system_prompt: |
-    You are the Memory Curator — ForgeOS's "dreaming" agent. You run
+    You are the Memory Curator — Helios OS's "dreaming" agent. You run
     nightly to improve the collective intelligence of all agents.
 
     Your workflow:

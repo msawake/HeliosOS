@@ -2,9 +2,9 @@
 # a Making Science Group, SA company.
 # SPDX-License-Identifier: BUSL-1.1
 """
-ForgeOS kernel callback for LangChain / LangGraph agents.
+Helios OS kernel callback for LangChain / LangGraph agents.
 
-ONE callback handler that gates ALL tool calls via the ForgeOS kernel.
+ONE callback handler that gates ALL tool calls via the Helios OS kernel.
 Works with any LangChain agent (AgentExecutor, create_tool_calling_agent)
 and any LangGraph workflow (ToolNode, create_react_agent).
 
@@ -12,7 +12,7 @@ Two modes:
   Mode A (in-process): kernel is in the same process → ~0.1ms per check
   Mode C (HTTP remote): kernel on separate Cloud Run → ~50ms per check
 
-Usage — add ForgeOS governance to ANY LangChain agent with one line::
+Usage — add Helios OS governance to ANY LangChain agent with one line::
 
     from stacks.langchain.callback import ForgeOSKernelCallback
 
@@ -59,12 +59,12 @@ except ImportError:
 
 
 class ForgeOSKernelCallback(BaseCallbackHandler):
-    """LangChain callback that checks ForgeOS kernel before every tool call.
+    """LangChain callback that checks Helios OS kernel before every tool call.
 
     Attributes:
         raise_error: Must be True for exceptions to propagate and block tools.
-        forgeos_url: Base URL of the ForgeOS control plane API.
-        agent_id: The agent's registered ID in ForgeOS.
+        forgeos_url: Base URL of the Helios OS control plane API.
+        agent_id: The agent's registered ID in Helios OS.
         api_key: Optional API key for authentication.
     """
 
@@ -81,9 +81,9 @@ class ForgeOSKernelCallback(BaseCallbackHandler):
         """Initialize the kernel callback.
 
         Args:
-            forgeos_url: ForgeOS API URL (Mode C — HTTP remote).
-            agent_id: Agent ID registered in ForgeOS.
-            api_key: Optional API key for ForgeOS.
+            forgeos_url: Helios OS API URL (Mode C — HTTP remote).
+            agent_id: Agent ID registered in Helios OS.
+            api_key: Optional API key for Helios OS.
             kernel: Direct kernel reference (Mode A — in-process).
                     If provided, HTTP is skipped.
         """
@@ -105,7 +105,7 @@ class ForgeOSKernelCallback(BaseCallbackHandler):
         inputs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
-        """Check ForgeOS kernel before every tool call.
+        """Check Helios OS kernel before every tool call.
 
         Raises ToolException if the kernel denies or rate-limits the call.
         The LLM sees this as a tool error and adapts naturally.
@@ -116,20 +116,20 @@ class ForgeOSKernelCallback(BaseCallbackHandler):
         try:
             decision = self._check_kernel(tool_name, tool_input)
         except Exception as e:
-            logger.debug("ForgeOS kernel check failed for %s: %s (allowing)", tool_name, e)
+            logger.debug("Helios OS kernel check failed for %s: %s (allowing)", tool_name, e)
             return
 
         action = decision.get("action", "allow") if isinstance(decision, dict) else getattr(decision, "action", "allow")
 
         if action == "deny":
             reason = decision.get("reason", "policy violation") if isinstance(decision, dict) else getattr(decision, "reason", "")
-            logger.info("ForgeOS DENIED tool %s for agent %s: %s", tool_name, self.agent_id, reason)
-            raise ToolException(f"ForgeOS denied: {reason}")
+            logger.info("Helios OS DENIED tool %s for agent %s: %s", tool_name, self.agent_id, reason)
+            raise ToolException(f"Helios OS denied: {reason}")
 
         if action == "rate_limit":
             reason = decision.get("reason", "budget exceeded") if isinstance(decision, dict) else getattr(decision, "reason", "")
-            logger.info("ForgeOS RATE LIMITED tool %s for agent %s: %s", tool_name, self.agent_id, reason)
-            raise ToolException(f"ForgeOS rate limited: {reason}")
+            logger.info("Helios OS RATE LIMITED tool %s for agent %s: %s", tool_name, self.agent_id, reason)
+            raise ToolException(f"Helios OS rate limited: {reason}")
 
     def on_tool_end(
         self,
@@ -160,7 +160,7 @@ class ForgeOSKernelCallback(BaseCallbackHandler):
             d = self._kernel.check_tool_call(self.agent_id, tool_name, tool_input)
             return d.to_dict() if hasattr(d, "to_dict") else d
 
-        # Mode A: try ForgeOS runtime (if we're inside the bootstrap)
+        # Mode A: try Helios OS runtime (if we're inside the bootstrap)
         try:
             from src.forgeos_sdk.runtime import runtime as _rt
             if _rt.is_registered and _rt.is_bound:

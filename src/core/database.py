@@ -1,5 +1,5 @@
 """
-Database connection layer for ForgeOS SaaS.
+Database connection layer for Helios OS SaaS.
 
 Provides connection pooling, tenant context management, and
 Row-Level Security (RLS) enforcement for multi-tenant isolation.

@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_BYTES = int(os.environ.get("FORGEOS_HTTP_MAX_BYTES", str(5 * 1024 * 1024)))
 DEFAULT_TIMEOUT = float(os.environ.get("FORGEOS_HTTP_TIMEOUT", "30"))
-DEFAULT_USER_AGENT = os.environ.get("FORGEOS_HTTP_USER_AGENT", "ForgeOS-Agent/1.0")
+DEFAULT_USER_AGENT = os.environ.get("FORGEOS_HTTP_USER_AGENT", "Helios OS-Agent/1.0")
 
 REDACTED_HEADERS = {"authorization", "cookie", "x-api-key", "api-key", "proxy-authorization"}
 

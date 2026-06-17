@@ -1,4 +1,4 @@
-# ForgeOS Platform API Reference
+# Helios OS Platform API Reference
 
 Complete reference for all FastAPI endpoints defined in `src/dashboard/fastapi_app.py`.
 

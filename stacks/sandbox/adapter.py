@@ -2,7 +2,7 @@
 Sandbox Stack Adapter — spawns agents in isolated Docker containers.
 
 Each container gets resource limits, network isolation, and a scoped API
-token. Tool calls are proxied through the ForgeOS API where the Kernel
+token. Tool calls are proxied through the Helios OS API where the Kernel
 validates permissions. Falls back to platform agentic loop if Docker
 is unavailable.
 """

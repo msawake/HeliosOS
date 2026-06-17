@@ -1,7 +1,7 @@
 """
 Risk & Compliance Auditor — NO GOVERNANCE (raw version).
 
-The same confidentiality scan as agent.py, with zero ForgeOS runtime checks.
+The same confidentiality scan as agent.py, with zero Helios OS runtime checks.
 Compare against agent.py to see exactly what governance adds.
 
 ⚠ RISKS WITHOUT GOVERNANCE (in a law-firm context):

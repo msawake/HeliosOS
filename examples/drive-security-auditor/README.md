@@ -3,7 +3,7 @@
 Daily read-only audit of Google Drive sharing permissions across the org.
 Flags public files, external sharing, credential exposure, and overly broad access.
 
-Uses **ADK** + **ForgeOS HTTP Kernel** (Mode C) for governance.
+Uses **ADK** + **Helios OS HTTP Kernel** (Mode C) for governance.
 
 ## What It Detects
 
@@ -62,7 +62,7 @@ export COMPANY_DOMAIN=yourdomain.com
 PYTHONPATH=. python3 examples/drive-security-auditor/agent.py
 ```
 
-### With ForgeOS HTTP Kernel
+### With Helios OS HTTP Kernel
 ```bash
 FORGEOS_API_URL=https://forgeos-api-xxx.run.app \
 FORGEOS_AGENT_ID=drive-security-auditor \

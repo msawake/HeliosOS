@@ -4,7 +4,7 @@ SRE Command Center — 7 Scenes, 6 Agents, 40+ Runtime Controls.
 What happens when your AI agent runs `kubectl delete namespace production`?
 
 This demo walks through a complete incident response lifecycle with
-ForgeOS governance at every step. Each scene demonstrates specific
+Helios OS governance at every step. Each scene demonstrates specific
 runtime controls that prevent catastrophic agent behavior.
 
 SCENE 1: Team Deploy     → admit 6 agents, validate contracts
@@ -18,15 +18,15 @@ SCENE 7: Post-Incident   → revoke tokens, audit trail, notify commander
 6 agents across 3 frameworks and 5 models:
   Alert Sentinel      — ADK / Gemini Flash (always_on)
   Incident Analyst    — Claude SDK / Opus (autonomous)
-  Remediation Agent   — ForgeOS / Sonnet (reflex)
-  Code Reviewer       — ForgeOS / GPT-4o (event_driven)
+  Remediation Agent   — Helios OS / Sonnet (reflex)
+  Code Reviewer       — Helios OS / GPT-4o (event_driven)
   Deploy Guardian     — ADK / Gemini Pro (reflex)
   SRE Lead            — Claude SDK / Opus (supervisor)
 
 Usage:
   PYTHONPATH=. python3 examples/sre-command-center/agent.py
 
-  # With ForgeOS kernel:
+  # With Helios OS kernel:
   FORGEOS_API_URL=https://forgeos-api-xxx.run.app \
   python3 examples/sre-command-center/agent.py
 """
@@ -46,7 +46,7 @@ logger = logging.getLogger("sre-command-center")
 FORGEOS_URL = os.environ.get("FORGEOS_API_URL", "")
 
 # ---------------------------------------------------------------------------
-# ForgeOS Runtime
+# Helios OS Runtime
 # ---------------------------------------------------------------------------
 
 _runtime_ok = False
@@ -679,7 +679,7 @@ async def run_command_center():
 
     logger.info("")
     logger.info("╔══════════════════════════════════════════════════════════════╗")
-    logger.info("║  SRE COMMAND CENTER — ForgeOS Governed Demo                 ║")
+    logger.info("║  SRE COMMAND CENTER — Helios OS Governed Demo                 ║")
     logger.info("║  6 agents × 3 frameworks × 5 models × 7 scenes             ║")
     logger.info("║  Kernel: %-10s                                           ║",
                 "HTTP" if FORGEOS_URL else ("local" if _runtime_ok else "simulated"))

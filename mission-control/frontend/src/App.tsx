@@ -96,7 +96,7 @@ export default function App() {
       {/* Header */}
       <div className="flex flex-shrink-0 items-center justify-between border-b border-border bg-surface px-4 py-2">
         <h1 className="text-[14px] text-bright">
-          <span className="text-ok">■</span> ForgeOS Mission Control
+          <span className="text-ok">■</span> Helios OS Mission Control
         </h1>
         <div className="flex items-center gap-3 text-[10px] text-dim">
           <a

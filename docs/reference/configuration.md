@@ -192,7 +192,7 @@ The top-level `docker-compose.yaml` defines three services:
 |---------|-------|------|---------|
 | `postgres` | `pgvector/pgvector:pg16` | 5433:5432 | Database with pgvector |
 | `redis` | `redis:7-alpine` | 6379:6379 | Rate limiting cache |
-| `app` | Built from Dockerfile | 5000:5000 | ForgeOS API server |
+| `app` | Built from Dockerfile | 5000:5000 | Helios OS API server |
 
 For local development, start only Postgres (from the repo root):
 

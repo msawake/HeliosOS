@@ -4,7 +4,7 @@ OpenClaw Stack Adapter.
 Manages a real OpenClaw gateway process and communicates via its HTTP REST API
 (OpenAI-compatible /v1/chat/completions) and CLI for agent invocation.
 
-The gateway runs as a subprocess on a dedicated port. Each ForgeOS agent maps
+The gateway runs as a subprocess on a dedicated port. Each Helios OS agent maps
 to an OpenClaw workspace with SOUL.md, AGENTS.md, and tool configurations.
 
 When the gateway is unavailable, falls back to the platform agentic loop.
@@ -464,7 +464,7 @@ class OpenClawAdapter(AgentStackAdapter):
                 f"To call a tool, POST to {proxy_url}/tool with:\n"
                 f'  {{"tool_name": "<name>", "tool_input": {{...}}}}\n'
                 f"  Header: X-Agent-Token: {agent_token}\n"
-                f"All tool calls are validated by the ForgeOS kernel.\n"
+                f"All tool calls are validated by the Helios OS kernel.\n"
             )
         (workspace / "SOUL.md").write_text(soul)
 
@@ -486,7 +486,7 @@ class OpenClawAdapter(AgentStackAdapter):
             skills_yaml += (
                 f"- name: {tool_name}\n"
                 f"  trigger: \"use {tool_name}\"\n"
-                f"  description: \"Calls {tool_name} via ForgeOS kernel proxy\"\n"
+                f"  description: \"Calls {tool_name} via Helios OS kernel proxy\"\n"
                 f"  method: POST\n"
                 f"  endpoint: \"{proxy_url}/tool\"\n"
                 f"  headers:\n"
@@ -665,7 +665,7 @@ class OpenClawAdapter(AgentStackAdapter):
             tools_yaml += textwrap.dedent(f"""\
                 - name: {tool_name}
                   trigger: "use {tool_name}"
-                  description: "Calls {tool_name} via ForgeOS kernel proxy"
+                  description: "Calls {tool_name} via Helios OS kernel proxy"
                   method: POST
                   endpoint: "{proxy_url}/tool"
                   body:

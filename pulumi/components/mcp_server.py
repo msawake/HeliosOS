@@ -1,4 +1,4 @@
-"""ForgeOS MCP Server on Cloud Run (FastMCP streamable-http).
+"""Helios OS MCP Server on Cloud Run (FastMCP streamable-http).
 
 Serves src/forgeos_mcp as a remote MCP endpoint so any MCP client (Claude,
 Cursor, …) can reach the fleet over HTTP instead of spawning a local stdio

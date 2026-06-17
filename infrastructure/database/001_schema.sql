@@ -1,5 +1,5 @@
 -- ============================================================================
--- ForgeOS SaaS Database Schema (Multi-Tenant)
+-- Helios OS SaaS Database Schema (Multi-Tenant)
 -- PostgreSQL schema for the AI company platform
 --
 -- Multi-tenancy via Row-Level Security (RLS):

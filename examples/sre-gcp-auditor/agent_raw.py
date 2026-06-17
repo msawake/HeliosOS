@@ -1,7 +1,7 @@
 """
 SRE GCP Auditor — NO GOVERNANCE (raw version).
 
-Same ADK + gcloud audit, zero ForgeOS runtime checks.
+Same ADK + gcloud audit, zero Helios OS runtime checks.
 Compare with agent.py to see what governance adds.
 
 ⚠ RISKS WITHOUT GOVERNANCE:

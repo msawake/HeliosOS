@@ -1,5 +1,5 @@
 """
-Scoped state manager for ForgeOS agents.
+Scoped state manager for Helios OS agents.
 
 Four state scopes with different lifecycles:
 - SESSION: lives for one session, cleared on completion

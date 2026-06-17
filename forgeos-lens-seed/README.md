@@ -1,6 +1,6 @@
-# ForgeOS Lens
+# Helios OS Lens
 
-A desktop client for ForgeOS — like OpenLens for Kubernetes. It wraps the
+A desktop client for Helios OS — like OpenLens for Kubernetes. It wraps the
 `forgeos` CLI in a Tauri shell and surfaces agents, runs, approvals, and
 logs in a UI you can actually navigate.
 

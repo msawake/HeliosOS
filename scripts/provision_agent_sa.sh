@@ -48,7 +48,7 @@ if ! gcloud iam service-accounts describe "${SA_EMAIL}" --project="${PROJECT}" >
   echo "▶ creating SA ${SA_EMAIL}"
   gcloud iam service-accounts create "${SA_NAME}" \
     --project="${PROJECT}" \
-    --display-name="ForgeOS Drive Agent — ${SLUG}" \
+    --display-name="Helios OS Drive Agent — ${SLUG}" \
     --description="Per-agent Drive SA for treasury agent ${SLUG}. Authorized via Drive folder sharing."
 else
   echo "▶ SA already exists"

@@ -1,7 +1,7 @@
 [project]
 name = "forgeos"
 version = "3.1.0"
-description = "ForgeOS — The agentic harness. Govern what your AI agents can do, on any framework, without changing their code."
+description = "Helios OS — The agentic harness. Govern what your AI agents can do, on any framework, without changing their code."
 license = "BUSL-1.1"
 requires-python = ">=3.11"
 dependencies = [
@@ -89,7 +89,7 @@ include = ["src", "src.*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-markers = ["kernel: requires ForgeOS kernel (proprietary)"]
+markers = ["kernel: requires Helios OS kernel (proprietary)"]
 
 [tool.ruff]
 target-version = "py311"

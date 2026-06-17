@@ -2,7 +2,7 @@
 Anthropic Managed Agents Stack Adapter.
 
 Deploys agents to Anthropic's hosted runtime via the Managed Agents API.
-ForgeOS handles governance (budget, ACL, audit, namespace isolation).
+Helios OS handles governance (budget, ACL, audit, namespace isolation).
 Anthropic handles execution (gVisor sandbox, tool running, state).
 
 Flow:
@@ -86,7 +86,7 @@ class AnthropicManagedClient:
         resp = await http.post("/v1/sessions", json={
             "agent": agent_id,
             "environment_id": environment_id,
-            "title": title or "ForgeOS session",
+            "title": title or "Helios OS session",
         })
         resp.raise_for_status()
         return resp.json()
@@ -219,7 +219,7 @@ class AnthropicManagedAdapter(AgentStackAdapter):
             session = await self._client.create_session(
                 agent_id=managed["managed_agent_id"],
                 environment_id=managed["managed_env_id"],
-                title=f"ForgeOS invocation: {agent_def.name}",
+                title=f"Helios OS invocation: {agent_def.name}",
             )
             session_id = session["id"]
             self._sessions[agent_id] = session_id
@@ -243,7 +243,7 @@ class AnthropicManagedAdapter(AgentStackAdapter):
     async def _invoke_fallback(
         self, agent_id, agent_def, prompt, context, history,
     ) -> AgentResult:
-        """Fallback to ForgeOS platform agentic loop when Managed API unavailable."""
+        """Fallback to Helios OS platform agentic loop when Managed API unavailable."""
         try:
             from src.platform.agentic_loop import run_agentic_loop
             agent_context = build_agent_context(agent_def, context)
@@ -327,5 +327,5 @@ class AnthropicManagedAdapter(AgentStackAdapter):
 
         return {
             "agent.py": agent_py,
-            "README.md": f"# {name}\n\nAnthropic Managed Agent deployed via ForgeOS.\n",
+            "README.md": f"# {name}\n\nAnthropic Managed Agent deployed via Helios OS.\n",
         }

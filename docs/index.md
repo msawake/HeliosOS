@@ -1,8 +1,8 @@
-# ForgeOS
+# Helios OS
 
-**The agentic harness.** Control what your agents do — on any framework, without changing their code. ForgeOS deploys, orchestrates, and governs AI agents across nine framework adapters with a kernel, syscall pipeline, runtime SDK, and inter-agent protocols.
+**The agentic harness.** Control what your agents do — on any framework, without changing their code. Helios OS deploys, orchestrates, and governs AI agents across nine framework adapters with a kernel, syscall pipeline, runtime SDK, and inter-agent protocols.
 
-> ForgeOS is the **harness**. Agents are the **processes** that run inside it.
+> Helios OS is the **harness**. Agents are the **processes** that run inside it.
 
 ## Where to start
 
@@ -29,7 +29,7 @@
 ## Layered model
 
 ```
-ForgeOS (the operating system)
+Helios OS (the operating system)
   Kernel:    admission control, permissions, budgets, policies, data boundaries
   Syscall:   identity -> capability -> quota -> policy -> boundary -> dispatch -> audit
   Runtime:   SDK that agents use to interact with the kernel at runtime

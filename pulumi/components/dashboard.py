@@ -1,4 +1,4 @@
-"""ForgeOS dashboard (Next.js) on Cloud Run.
+"""Helios OS dashboard (Next.js) on Cloud Run.
 
 The web UI — a pure HTTP client of the platform API. It holds no state and
 needs no DB/secret access; it just proxies the browser to the platform API via

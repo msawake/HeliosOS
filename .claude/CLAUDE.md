@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-**ForgeOS v3.1** — An agentic harness that governs AI agents across nine framework adapters (ForgeOS, CrewAI, Google ADK, LangChain, OpenClaw, Sandbox, Anthropic SDK, Anthropic Managed, OpenAI Agents) with five execution lifecycles and a Next.js dashboard.
+**Helios OS v3.1** — An agentic harness that governs AI agents across nine framework adapters (Helios OS, CrewAI, Google ADK, LangChain, OpenClaw, Sandbox, Anthropic SDK, Anthropic Managed, OpenAI Agents) with five execution lifecycles and a Next.js dashboard.
 
-**Key distinction:** ForgeOS is the *framework* (the operating system). Agents are the *programs* that run inside it. The framework provides scheduling, tool execution, LLM routing, persistence, and monitoring. Agents define what work gets done.
+**Key distinction:** Helios OS is the *framework* (the operating system). Agents are the *programs* that run inside it. The framework provides scheduling, tool execution, LLM routing, persistence, and monitoring. Agents define what work gets done.
 
 Eight gold-standard examples ship in `examples/` — each with a governed `agent.py` and an ungoverned `agent_raw.py` for side-by-side comparison. They are example workloads, not the framework itself.
 
@@ -59,7 +59,7 @@ Notes:
 
 | Adapter | File | Runtime | Fallback |
 |---------|------|---------|----------|
-| ForgeOS | `stacks/forgeos/adapter.py` | Native agentic loop | — |
+| Helios OS | `stacks/forgeos/adapter.py` | Native agentic loop | — |
 | CrewAI | `stacks/crewai/adapter.py` | CrewAI SDK (Crew.kickoff) | Platform loop |
 | ADK | `stacks/adk/adapter.py` | Google ADK Runner | Platform loop |
 | LangChain | `stacks/langchain/adapter.py` | LangChain AgentExecutor | Platform loop |
@@ -168,7 +168,7 @@ The single-binary `forgeos` CLI is **not** in this repo — it was extracted to
 - **5 execution types:** always_on, scheduled, event_driven, reflex, autonomous
 - **3 ownership types:** personal, shared, client
 - **Namespaces** (AgentOS v2): k8s-style logical isolation (`sales-team`, `legal`, `operations`)
-- **3-tier hierarchy** (ForgeOS stack): Executives (Opus) -> Department Leads (Opus) -> Workers (Sonnet/Haiku)
+- **3-tier hierarchy** (Helios OS stack): Executives (Opus) -> Department Leads (Opus) -> Workers (Sonnet/Haiku)
 - **Multi-model:** `claude-*` -> Anthropic, `gpt-*`/`o3-*` -> OpenAI (auto-detected from model prefix)
 - **74 deployed agents:** 53 shared + 21 personal across sales, marketing, finance, HR, legal, operations
 

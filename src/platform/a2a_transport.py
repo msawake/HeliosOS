@@ -1,7 +1,7 @@
 """
 A2A v0.2 protocol transport — HTTP client and server.
 
-Enables ForgeOS agents to:
+Enables Helios OS agents to:
 - Be discovered via /.well-known/agent.json (Agent Card)
 - Receive tasks from external agents (server)
 - Call external A2A-compatible agents (client)
@@ -41,7 +41,7 @@ class AgentCard:
     description: str
     url: str
     version: str = "0.2"
-    provider: str = "ForgeOS"
+    provider: str = "Helios OS"
     skills: list[AgentSkill] = field(default_factory=list)
     capabilities: dict[str, Any] = field(default_factory=dict)
     authentication: dict[str, Any] = field(default_factory=dict)
@@ -170,7 +170,7 @@ class A2ATask:
 # ---------------------------------------------------------------------------
 
 def generate_agent_card(agent_def: Any, base_url: str) -> AgentCard:
-    """Generate an A2A Agent Card from a ForgeOS agent definition."""
+    """Generate an A2A Agent Card from a Helios OS agent definition."""
     name = getattr(agent_def, "name", "unknown")
     namespace = getattr(agent_def, "namespace", "default")
     description = ""
@@ -181,7 +181,7 @@ def generate_agent_card(agent_def: Any, base_url: str) -> AgentCard:
         elif hasattr(sp, "content"):
             description = (sp.content or "")[:200]
     if not description:
-        description = f"ForgeOS agent: {name}"
+        description = f"Helios OS agent: {name}"
 
     tools = getattr(agent_def, "tools", []) or []
     skills = [
@@ -271,7 +271,7 @@ class A2ATransportClient:
 # ---------------------------------------------------------------------------
 
 class A2ATaskHandler:
-    """Handles incoming A2A tasks by routing to the ForgeOS executor."""
+    """Handles incoming A2A tasks by routing to the Helios OS executor."""
 
     def __init__(self, executor: Any = None, registry: Any = None):
         self._executor = executor

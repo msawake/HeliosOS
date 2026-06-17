@@ -1,17 +1,17 @@
 # SRE GCP Daily Auditor
 
 Daily read-only audit of all Google Cloud projects in the organization.
-Uses **ADK** (Google Agent Development Kit) + **ForgeOS HTTP Kernel** (Mode C) for governance.
+Uses **ADK** (Google Agent Development Kit) + **Helios OS HTTP Kernel** (Mode C) for governance.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────┐     HTTP (Mode C)     ┌──────────────────────┐
-│  Cloud Run: SRE Auditor     │◄─────────────────────►│  ForgeOS Control     │
+│  Cloud Run: SRE Auditor     │◄─────────────────────►│  Helios OS Control   │
 │                             │  check-tool, audit,    │  Plane (Cloud Run)   │
 │  ADK Agent (Gemini Flash)   │  budget, checkpoint    │                      │
 │  ├─ 10 gcloud read tools    │                        │  Kernel + ProcessTable│
-│  ├─ ForgeOS runtime (HTTP)  │                        │  + Audit Trail       │
+│  ├─ Helios OS runtime (HTTP)  │                        │  + Audit Trail     │
 │  └─ Daily at 6 AM UTC       │                        └──────────────────────┘
 └─────────────────────────────┘
          │ (read-only)
@@ -25,7 +25,7 @@ Uses **ADK** (Google Agent Development Kit) + **ForgeOS HTTP Kernel** (Mode C) f
    ORG_ID=$(gcloud organizations list --format="value(ID)")
 
    gcloud iam service-accounts create forgeos-sre-auditor \
-     --display-name="ForgeOS SRE Daily Auditor" \
+     --display-name="Helios OS SRE Daily Auditor" \
      --project=YOUR_PROJECT
 
    # Read-only roles
@@ -54,7 +54,7 @@ Uses **ADK** (Google Agent Development Kit) + **ForgeOS HTTP Kernel** (Mode C) f
 python3 examples/sre-gcp-auditor/agent.py
 ```
 
-### With ForgeOS HTTP Kernel (Mode C)
+### With Helios OS HTTP Kernel (Mode C)
 ```bash
 FORGEOS_API_URL=https://forgeos-api-xxx.run.app \
 FORGEOS_AGENT_ID=sre-gcp-auditor \
@@ -79,7 +79,7 @@ gcloud run deploy sre-gcp-auditor \
 | **Security** | list_firewall_rules, list_service_accounts, list_storage_buckets, list_secrets, list_iam_bindings | Public IPs, 0.0.0.0/0 rules, external members, unrotated secrets |
 | **Billing** | get_billing_info | Budget overruns, cost anomalies |
 
-## Governance (ForgeOS Kernel)
+## Governance (Helios OS Kernel)
 
 Every gcloud tool call is gated by the kernel via `runtime.check_tool()`:
 - Manifest allowlists 10 read-only tools

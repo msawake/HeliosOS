@@ -50,7 +50,7 @@ spec:
        a. Read it: mcp__atlassian__jira_get_issue (fields: summary, description).
        b. ENRICH — mcp__atlassian__jira_update_issue to set the description to the
           ORIGINAL text plus this appended section:
-            h3. Enriched by ForgeOS
+            h3. Enriched by Helios OS
             *Problem:* <one-paragraph restatement>
             *Suggested solution:* <concrete approach>
             *Definition of Done:*
@@ -65,7 +65,7 @@ spec:
           Read the coder's reply and extract the PR URL (an
           https://github.com/antonibergas-hue/forgeos-lens/pull/<N> link).
        d. LINK BACK — mcp__atlassian__jira_add_comment on <KEY>:
-          "ForgeOS opened a PR for this ticket: <PR_URL>"
+          "Helios OS opened a PR for this ticket: <PR_URL>"
        e. MARK HANDLED — mcp__atlassian__jira_update_issue to add the label
           "forgeos-handled" so future runs skip this ticket.
     3. Be strictly idempotent: never touch tickets without the marker or already

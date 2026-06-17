@@ -1,5 +1,5 @@
 """
-Tenant management API for ForgeOS SaaS.
+Tenant management API for Helios OS SaaS.
 
 Handles tenant CRUD, onboarding, configuration, and lifecycle.
 """

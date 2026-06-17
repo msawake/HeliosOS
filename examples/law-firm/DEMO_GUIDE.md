@@ -4,9 +4,9 @@ How to *deliver* the law-firm demo to a legal audience (managing partner, GC,
 COO/legal-ops, IT). ~20 minutes live. This is the meeting script; `README.md` is
 the reference and `TESTING.md` is the verification runbook.
 
-The through-line: **a law firm already runs on the exact controls ForgeOS
+The through-line: **a law firm already runs on the exact controls Helios OS
 enforces — ethical walls, privilege, partner sign-off, the conflicts check, an
-audit trail. ForgeOS lets AI agents do real work inside those controls instead
+audit trail. Helios OS lets AI agents do real work inside those controls instead
 of around them.**
 
 ---
@@ -42,14 +42,14 @@ firm, Marbury & Stone — it's a demo of the *governance*, not legal advice."
 > And you keep records of who did what, because the bar can ask.
 >
 > The problem with bolting AI onto a firm is that generic tools ignore all of
-> that. ForgeOS is the opposite: those controls *are* the platform. So we can
+> that. Helios OS is the opposite: those controls *are* the platform. So we can
 > put AI associates on real work — reading the matter files, checking conflicts,
 > reviewing contracts, watching deadlines — and every action runs inside the
 > wall, the sign-off, and the audit trail."
 
 Show the mapping (slide or just say it):
 
-| The firm's rule | What ForgeOS enforces |
+| The firm's rule | What Helios OS enforces |
 |---|---|
 | Ethical wall / conflict screen | namespace isolation + who-may-call-whom ACLs |
 | Attorney–client privilege | Drive sharing audit + data boundaries |

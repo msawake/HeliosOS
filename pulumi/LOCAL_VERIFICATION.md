@@ -1,4 +1,4 @@
-# Local verification results — dual-target ForgeOS (kind), law-firm fleet
+# Local verification results — dual-target Helios OS (kind), law-firm fleet
 
 What was built and **verified locally** (kind cluster, real Gemini, zero GCP creds),
 following `EXECUTION_PLAN.md`. The full pyramid P0→P2 is green.
@@ -43,7 +43,7 @@ pods resolve the host). At startup the pod **registers** with the platform
 to `POST /api/sandbox/tool`, where the host platform executes it with the
 service account (keyless SA impersonation via the host's ADC).
 - Verified: pod `POST /invoke "list the files you can access in Drive"` →
-  `drive__list_files` proxied → **real Drive files** (forge_folder, ForgeOS Drive
+  `drive__list_files` proxied → **real Drive files** (forge_folder, Helios OS Drive
   Demo, …). And `find_by_name`+`read_file` → **real document content**.
 - Platform fixes required (all pre-existing bugs in never-exercised routes):
   `/api/platform/tools` 500 (`tool_executor` not in scope) and `/api/sandbox/tool`

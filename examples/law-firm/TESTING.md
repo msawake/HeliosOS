@@ -100,7 +100,7 @@ FORGEOS_DRIVE_AGENT_SA="forgeos-drive-agent@admachina-atomic-test-84.iam.gservic
 FORGEOS_DRIVE_SCOPES="drive" \
 .venv/bin/python -m src.bootstrap --no-auth --dashboard --loop --port 5000
 ```
-**✓ expect** the banner `FORGEOS PLATFORM ONLINE`, `Stacks: [...]`,
+**✓ expect** the banner `HELIOS OS PLATFORM ONLINE`, `Stacks: [...]`,
 `API: http://localhost:5000`, then `Starting main loop (tick every 30s)...`.
 
 > The line `A2A handler: bound to platform executor` should appear (A2A works).

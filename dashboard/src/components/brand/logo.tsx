@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 
-// ForgeOS mark: an anvil reduced to solid ink (letterpress flatness) with a
+// Helios OS mark: an anvil reduced to solid ink (letterpress flatness) with a
 // trio of gold sparks struck off its face — the forge's single light against
 // the ink, the same role gold plays everywhere else. Coordinates are static
 // (no Math.random / Date), so server and client serialize identically.
@@ -57,7 +57,7 @@ export function Logo({
           size === 'lg' && 'text-xl'
         )}
       >
-        ForgeOS
+        Helios OS
       </span>
     </div>
   );

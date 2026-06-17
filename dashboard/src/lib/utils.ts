@@ -31,7 +31,7 @@ export const EXEC_TYPES = [
 export const OWNERSHIP_TYPES = ['personal', 'shared', 'client'] as const;
 
 export const STACK_LABELS: Record<string, string> = {
-  forgeos: 'ForgeOS',
+  forgeos: 'Helios OS',
   crewai: 'CrewAI',
   adk: 'Google ADK',
   langchain: 'LangChain',

@@ -1,4 +1,4 @@
-site_name: ForgeOS
+site_name: Helios OS
 site_description: The agentic harness — deploy, orchestrate, and govern AI agents across framework adapters.
 repo_url: https://github.com/makingscience-awake/forgeos
 repo_name: makingscience-awake/forgeos
@@ -97,7 +97,7 @@ nav:
       - Kernel Architecture (deep dive): runtime-kernel-architecture.md
       - Agentic Loop Integration: agentic-loop-integration.md
       - Governance Code Trace: governance-code-trace.md
-      - ADK vs ForgeOS: adk-vs-forgeos-comparison.md
+      - ADK vs Helios OS: adk-vs-forgeos-comparison.md
   - Protocols:
       - Overview: protocols/README.md
       - A2H Spec: protocols/a2h-spec.md

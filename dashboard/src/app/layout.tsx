@@ -5,7 +5,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { AuthProvider } from '@/lib/auth';
 
 export const metadata: Metadata = {
-  title: 'ForgeOS',
+  title: 'Helios OS',
   description: 'The agentic harness — deploy, invoke, and govern agents.',
 };
 

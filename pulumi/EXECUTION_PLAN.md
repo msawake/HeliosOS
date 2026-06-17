@@ -1,4 +1,4 @@
-# Execution Plan — dual-target ForgeOS (local → GCP), pyramid-first
+# Execution Plan — dual-target Helios OS (local → GCP), pyramid-first
 
 Sequencing companion to `LOCAL_PARITY_PLAN.md` (architecture) and the approved
 milestone plan. Principle: **build the cheap, high-fidelity layers first; let the

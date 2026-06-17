@@ -7,7 +7,7 @@ Split in two:
 - SDK-backed tests that are skipped when `google-adk` is not importable.
   These drive the real ADK Runner end-to-end with a scripted in-process
   LLM (no network), verifying that tool schemas, tool names, and
-  model-supplied arguments survive the ForgeOS<->ADK bridge intact.
+  model-supplied arguments survive the Helios OS<->ADK bridge intact.
 
 All tests scrub provider credentials from the environment so they are
 hermetic: nothing here may hit a real LLM API.
@@ -585,7 +585,7 @@ class TestRunnerEndToEnd:
         assert name == "company__query_events"
         assert tool_input == {"query": "Q1 revenue"}
 
-        # The ForgeOS result reports the real tool name and final output.
+        # The Helios OS result reports the real tool name and final output.
         assert result.status == AgentStatus.COMPLETED
         assert result.output == "Found 3 events."
         assert result.tool_calls == [

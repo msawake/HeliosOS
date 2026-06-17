@@ -1,5 +1,5 @@
 """
-ForgeOS durable continuation runtime.
+Helios OS durable continuation runtime.
 
 Replaces the in-process ``run_agentic_loop`` with a suspendable, resumable
 step engine. Every tool call is admitted by ``kernel.syscall``; when the

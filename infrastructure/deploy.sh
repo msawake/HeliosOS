@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ForgeOS Deployment Script
+# Helios OS Deployment Script
 # =============================================================================
 #
-# Deploys ForgeOS (API + Dashboard) to Google Cloud Run with:
+# Deploys Helios OS (API + Dashboard) to Google Cloud Run with:
 #   - Cloud SQL (PostgreSQL 16)
 #   - Secret Manager (all credentials)
 #   - Artifact Registry (Docker images)
@@ -37,7 +37,7 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-log()  { echo -e "${GREEN}[ForgeOS]${NC} $1"; }
+log()  { echo -e "${GREEN}[Helios OS]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 err()  { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 step() { echo -e "\n${CYAN}━━━ Step $1: $2 ━━━${NC}"; }
@@ -200,7 +200,7 @@ step 2 "Creating Artifact Registry"
 gcloud artifacts repositories create "$REPO_NAME" \
   --repository-format=docker \
   --location="$REGION" \
-  --description="ForgeOS platform images" \
+  --description="Helios OS platform images" \
   2>&1 || warn "Repository already exists"
 
 gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet 2>/dev/null
@@ -320,7 +320,7 @@ log "Secrets stored"
 # Step 6: Deploy API to Cloud Run
 # =============================================================================
 
-step 6 "Deploying ForgeOS API"
+step 6 "Deploying Helios OS API"
 
 SECRETS_FLAG="ANTHROPIC_API_KEY=${SECRET_PREFIX}_ANTHROPIC_KEY:latest"
 SECRETS_FLAG="$SECRETS_FLAG,DATABASE_URL=${SECRET_PREFIX}_DATABASE_URL:latest"
@@ -352,7 +352,7 @@ log "API deployed: $API_URL"
 # =============================================================================
 
 if [ "$SKIP_DASHBOARD" != "true" ]; then
-  step 7 "Deploying ForgeOS Dashboard"
+  step 7 "Deploying Helios OS Dashboard"
 
   gcloud run deploy "$WEB_SERVICE" \
     --image="$WEB_IMAGE" \
@@ -420,7 +420,7 @@ fi
 
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}  ForgeOS Deployment Complete${NC}"
+echo -e "${GREEN}  Helios OS Deployment Complete${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo -e "  ${CYAN}API:${NC}        $API_URL"

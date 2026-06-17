@@ -72,7 +72,7 @@ class Data(pulumi.ComponentResource):
             opts=child,
         )
 
-        # Memorystore Redis — optional. ForgeOS falls back to in-memory when absent.
+        # Memorystore Redis — optional. Helios OS falls back to in-memory when absent.
         self.redis: gcp.redis.Instance | None = None
         if enable_redis:
             self.redis = gcp.redis.Instance(

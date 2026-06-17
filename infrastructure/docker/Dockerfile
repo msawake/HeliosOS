@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.6
 # =============================================================================
-# ForgeOS API image
+# Helios OS API image
 #
 # Two-stage build:
 #   builder → installs production deps into /install (cached by pyproject.toml)

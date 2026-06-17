@@ -1,7 +1,7 @@
 """
 Base abstractions for the multi-stack agent platform.
 
-Every agent stack (ForgeOS, CrewAI, ADK, OpenClaw) implements the
+Every agent stack (Helios OS, CrewAI, ADK, OpenClaw) implements the
 AgentStackAdapter interface so the platform can manage them uniformly.
 """
 
@@ -165,7 +165,7 @@ class AgentStackAdapter(ABC):
 
     #: Whether this stack can be suspended mid-tool by the durable continuation
     #: runtime. Only stacks where the *platform* owns the LLM->tool loop
-    #: (ForgeOS, Sandbox, Anthropic SDK) can park on ``ask_human`` and resume
+    #: (Helios OS, Sandbox, Anthropic SDK) can park on ``ask_human`` and resume
     #: later. Frameworks that own their own loop or run in a subprocess
     #: (CrewAI, ADK, LangChain, OpenAI Agents, OpenClaw) cannot — for those the
     #: kernel downgrades a fine-grained ``ask_human`` to ``deny`` (you can't

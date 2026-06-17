@@ -1,5 +1,5 @@
 -- ============================================================================
--- ForgeOS Platform Audit Log — Migration 010
+-- Helios OS Platform Audit Log — Migration 010
 --
 -- The legacy `audit_log` table (migration 001) is keyed on agent/hook fields
 -- and is still written by src/core/hooks.py and src/mcp/persistence.py.

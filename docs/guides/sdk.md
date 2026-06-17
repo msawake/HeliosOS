@@ -1,6 +1,6 @@
 # Python SDK
 
-The `forgeos_sdk` package is the primary way developers interact with ForgeOS. It provides:
+The `forgeos_sdk` package is the primary way developers interact with Helios OS. It provides:
 
 - **`ForgeOSClient`** — sync HTTP client for agent CRUD + invoke + chat
 - **`Agent` / `AgentBuilder`** — declarative + fluent Python APIs for agent definition
@@ -10,7 +10,7 @@ The `forgeos_sdk` package is the primary way developers interact with ForgeOS. I
 
 ## Installation
 
-The SDK ships with ForgeOS:
+The SDK ships with Helios OS:
 
 ```bash
 cd forgeos/

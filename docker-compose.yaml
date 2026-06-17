@@ -1,5 +1,5 @@
 # ----------------------------------------------------------------------------
-# ForgeOS local stack — Postgres (pgvector) + Redis + platform API.
+# Helios OS local stack — Postgres (pgvector) + Redis + platform API.
 #
 # Zero-config quick start:
 #   docker compose up

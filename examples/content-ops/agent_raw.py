@@ -1,7 +1,7 @@
 """
 Content Pipeline — NO GOVERNANCE (raw version).
 
-Same dual-LLM pipeline, zero ForgeOS runtime checks.
+Same dual-LLM pipeline, zero Helios OS runtime checks.
 Compare with agent.py to see what governance adds.
 
 ⚠ RISKS WITHOUT GOVERNANCE:

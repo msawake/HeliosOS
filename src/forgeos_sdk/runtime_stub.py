@@ -2,7 +2,7 @@
 # a Making Science Group, SA company.
 # SPDX-License-Identifier: BUSL-1.1
 """
-Permissive runtime stub for ForgeOS Community Edition.
+Permissive runtime stub for Helios OS Community Edition.
 
 Provides the same API as the full Runtime but returns permissive defaults:
 - check_tool/check_a2a/check_data → always ALLOW

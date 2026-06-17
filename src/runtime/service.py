@@ -3,7 +3,7 @@ RuntimeService — the worker tier wired as one bootstrappable subsystem.
 
 Bundles the durable store, ledger, runnable queue, enqueuer, step engine,
 resume service, and a pool of stateless workers. Bootstrap builds one of these
-(behind FORGEOS_RUNTIME_WORKERS) and binds its engine to the ForgeOS adapter so
+(behind FORGEOS_RUNTIME_WORKERS) and binds its engine to the Helios OS adapter so
 invokes ENQUEUE a continuation instead of running inline — the worker pool then
 drives it off the queue, parks on ask_human (freeing the worker), and the
 resume service re-enqueues it on approval.

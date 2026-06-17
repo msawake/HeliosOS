@@ -1,5 +1,5 @@
 """
-SRE GCP Daily Auditor — ADK Agent with ForgeOS HTTP Kernel Governance.
+SRE GCP Daily Auditor — ADK Agent with Helios OS HTTP Kernel Governance.
 
 Audits all Google Cloud projects in the org every day at 6 AM:
   - Infrastructure: Cloud Run, GKE, Cloud SQL health
@@ -7,7 +7,7 @@ Audits all Google Cloud projects in the org every day at 6 AM:
   - Billing: spend vs budget, cost anomalies
 
 Uses ADK (Google Agent Development Kit) with Gemini Flash for cheap scanning.
-ForgeOS kernel (Mode C / HTTP) gates every gcloud tool call remotely.
+Helios OS kernel (Mode C / HTTP) gates every gcloud tool call remotely.
 
 ~10 runtime governance calls per audit cycle.
 
@@ -15,7 +15,7 @@ Usage:
   # Local (no governance):
   python3 examples/sre-gcp-auditor/agent.py
 
-  # With ForgeOS HTTP kernel:
+  # With Helios OS HTTP kernel:
   FORGEOS_API_URL=https://forgeos-api-xxx.run.app \
   FORGEOS_AGENT_ID=sre-gcp-auditor \
   GOOGLE_API_KEY=AIza... \
@@ -48,7 +48,7 @@ ATLAS_GATEWAY_URL = os.environ.get("ATLAS_GATEWAY_URL", "")
 ATLAS_GATEWAY_KEY = os.environ.get("ATLAS_GATEWAY_KEY", "")
 
 # ---------------------------------------------------------------------------
-# ForgeOS Runtime Setup (Mode C — HTTP kernel)
+# Helios OS Runtime Setup (Mode C — HTTP kernel)
 # ---------------------------------------------------------------------------
 
 _runtime_ok = False
@@ -95,10 +95,10 @@ import tools as gcp_tools
 
 
 def _make_governed_tool(tool_name: str, tool_fn):
-    """Wrap a gcloud tool with ForgeOS kernel governance."""
+    """Wrap a gcloud tool with Helios OS kernel governance."""
 
     async def governed_wrapper(**kwargs):
-        # Gate through ForgeOS kernel before executing
+        # Gate through Helios OS kernel before executing
         if _runtime_ok:
             try:
                 decision = await runtime.check_tool(tool_name, kwargs)
@@ -208,7 +208,7 @@ def _build_adk_agent():
 # ---------------------------------------------------------------------------
 
 async def run_audit():
-    """Run the daily GCP audit with full ForgeOS runtime governance."""
+    """Run the daily GCP audit with full Helios OS runtime governance."""
 
     # ── BOOT: Load checkpoint or start fresh ──
     state = {
@@ -229,7 +229,7 @@ async def run_audit():
 
     logger.info("")
     logger.info("╔══════════════════════════════════════════════════════════╗")
-    logger.info("║  SRE GCP DAILY AUDITOR — ADK + ForgeOS Kernel           ║")
+    logger.info("║  SRE GCP DAILY AUDITOR — ADK + Helios OS Kernel           ║")
     logger.info("║  Model: %-12s | Kernel: %-8s | Namespace: %-6s ║",
                 MODEL[:12], "HTTP" if FORGEOS_URL else "local", NAMESPACE[:6])
     logger.info("╚══════════════════════════════════════════════════════════╝")

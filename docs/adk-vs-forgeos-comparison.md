@@ -1,6 +1,6 @@
-# ADK Original vs ForgeOS: Side-by-Side Comparison
+# ADK Original vs Helios OS: Side-by-Side Comparison
 
-The customer-service agent from [google/adk-samples](https://github.com/google/adk-samples/tree/main/python/agents/customer-service) compared with the same agent running under ForgeOS governance.
+The customer-service agent from [google/adk-samples](https://github.com/google/adk-samples/tree/main/python/agents/customer-service) compared with the same agent running under Helios OS governance.
 
 ---
 
@@ -59,7 +59,7 @@ root_agent = Agent(
 
 ---
 
-### ForgeOS Version (`examples/adk-agents/customer-service.yaml`)
+### Helios OS Version (`examples/adk-agents/customer-service.yaml`)
 
 ```yaml
 apiVersion: forgeos/v1
@@ -161,7 +161,7 @@ def before_tool(tool, args, tool_context):
 - A prompt injection could bypass the `if value > 10` check
 - No way to change the policy without redeploying code
 
-### ForgeOS: Kernel Enforces Before Tool Executes
+### Helios OS: Kernel Enforces Before Tool Executes
 
 ```python
 # src/platform/agentic_loop.py — lines 428-438
@@ -222,7 +222,7 @@ def rate_limit_callback(callback_context, llm_request):
 - No cost tracking — just counts requests, not tokens or dollars
 - Hardcoded: 10 RPM, can't change without code change
 
-### ForgeOS: Budget Manager (per-agent, persistent)
+### Helios OS: Budget Manager (per-agent, persistent)
 
 ```yaml
 # In the manifest:
@@ -272,7 +272,7 @@ def validate_customer_id(customer_id, session_state):
         return True, None
 ```
 
-### ForgeOS: PII Policy + Namespace Isolation
+### Helios OS: PII Policy + Namespace Isolation
 
 ```yaml
 # In the manifest:
@@ -307,7 +307,7 @@ logger.info("Updating Salesforce CRM for customer ID %s", ...)
 # No structured audit. No hash chain. No dashboard.
 ```
 
-### ForgeOS: Hash-Chained Audit + Fleet Dashboard
+### Helios OS: Hash-Chained Audit + Fleet Dashboard
 
 ```
 Every kernel decision is recorded:
@@ -357,7 +357,7 @@ from google.adk.deployment import deploy
 deploy(agent=root_agent, ...)
 ```
 
-### ForgeOS: Declarative Manifest
+### Helios OS: Declarative Manifest
 
 ```bash
 # Deploy with governance:
@@ -374,9 +374,9 @@ forgeos deploy examples/adk-agents/customer-service.yaml
 
 ---
 
-## Summary: What ForgeOS Adds
+## Summary: What Helios OS Adds
 
-| Capability | ADK Original | ForgeOS |
+| Capability | ADK Original | Helios OS |
 |-----------|-------------|---------|
 | **Tool ACLs** | All 12 tools always available | Kernel allows/denies per tool per agent |
 | **Budget limits** | `time.sleep()` rate limit | $5/day, $0.50/task — enforced by kernel |
@@ -392,7 +392,7 @@ forgeos deploy examples/adk-agents/customer-service.yaml
 
 ### Lines of Code Comparison
 
-| Component | ADK Original | ForgeOS |
+| Component | ADK Original | Helios OS |
 |-----------|-------------|---------|
 | Agent definition | 77 lines Python | 85 lines YAML |
 | Tool governance | 175 lines Python (callbacks.py) | 0 lines (kernel handles it) |
@@ -401,4 +401,4 @@ forgeos deploy examples/adk-agents/customer-service.yaml
 | Audit | 0 | 0 (automatic) |
 | **Total agent code** | **~300 lines Python** | **85 lines YAML + 0 lines Python** |
 
-The agent's business logic (tools) stays the same. ForgeOS replaces the governance code (callbacks, rate limiting, validation) with declarative YAML enforced by the kernel.
+The agent's business logic (tools) stays the same. Helios OS replaces the governance code (callbacks, rate limiting, validation) with declarative YAML enforced by the kernel.

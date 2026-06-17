@@ -1,15 +1,15 @@
 # Call Center Deployment Guide
 
-Deploy a complete call center system: 10 humans + 8 AI agents across 3 namespaces, using ForgeOS, ADK, and CrewAI stacks.
+Deploy a complete call center system: 10 humans + 8 AI agents across 3 namespaces, using Helios OS, ADK, and CrewAI stacks.
 
 ## Stack Assignment
 
 | Agent | Stack | Execution | Namespace | Why this stack |
 |-------|-------|-----------|-----------|---------------|
-| Call Router | ForgeOS | always_on (5s) | operations | Tight loop, low latency, pure routing |
-| Knowledge Assistant | ForgeOS | reflex | support | High volume (180/day), CSRs wait mid-call |
-| Sentiment Monitor | ForgeOS | always_on (10s) | quality | Signal processing, no persona needed |
-| Escalation Manager | ForgeOS | always_on (30s) | support | SLA tracking, reliability over personality |
+| Call Router | Helios OS | always_on (5s) | operations | Tight loop, low latency, pure routing |
+| Knowledge Assistant | Helios OS | reflex | support | High volume (180/day), CSRs wait mid-call |
+| Sentiment Monitor | Helios OS | always_on (10s) | quality | Signal processing, no persona needed |
+| Escalation Manager | Helios OS | always_on (30s) | support | SLA tracking, reliability over personality |
 | Customer Profiler | ADK | event_driven | support | Session per customer, multi-step CRM queries |
 | Quality Scorer | ADK | scheduled (6am) | quality | Batch pipeline with checkpoints |
 | After-Call Automator | CrewAI | event_driven | support | Role: "Senior Call Analyst", structured task chain |
@@ -65,7 +65,7 @@ a2h.register_human(HumanAgent(
 
 ## Agent Manifests
 
-### 1. Call Router (ForgeOS, always_on)
+### 1. Call Router (Helios OS, always_on)
 
 ```yaml
 apiVersion: agentos/v1
@@ -124,7 +124,7 @@ Every 5 seconds you check for new incoming calls. For each call:
 Never modify customer records. Never approve anything. Just route.
 ```
 
-### 2. Knowledge Assistant (ForgeOS, reflex)
+### 2. Knowledge Assistant (Helios OS, reflex)
 
 ```yaml
 apiVersion: agentos/v1
@@ -171,7 +171,7 @@ CSRs ask you questions mid-call while a customer is waiting. You MUST:
 Speed is critical. The customer is on hold. Be direct.
 ```
 
-### 3. Sentiment Monitor (ForgeOS, always_on)
+### 3. Sentiment Monitor (Helios OS, always_on)
 
 ```yaml
 apiVersion: agentos/v1
@@ -221,7 +221,7 @@ You do NOT search the knowledge base. You do NOT make decisions.
 You monitor signals and fire alerts. That's all.
 ```
 
-### 4. Escalation Manager (ForgeOS, always_on)
+### 4. Escalation Manager (Helios OS, always_on)
 
 ```yaml
 apiVersion: agentos/v1
@@ -535,7 +535,7 @@ PYTHONPATH=. python3 examples/deploy_call_center.py
 ## Deployment Order
 
 1. **Register humans first** — agents may try to contact them immediately
-2. **Deploy ForgeOS agents** (Router, Knowledge, Sentiment, Escalation) — real-time agents must be running before calls arrive
+2. **Deploy Helios OS agents** (Router, Knowledge, Sentiment, Escalation) — real-time agents must be running before calls arrive
 3. **Deploy ADK agents** (Profiler, Scorer) — Profiler needed by Router, Scorer can start empty
 4. **Deploy CrewAI agents** (Automator, Reporter) — event-driven/scheduled, not needed until calls complete
 
@@ -543,10 +543,10 @@ PYTHONPATH=. python3 examples/deploy_call_center.py
 
 | Agent | Stack | Daily Budget | Expected Cost | Utilization |
 |-------|-------|-------------|---------------|-------------|
-| Call Router | ForgeOS | $3.00 | $1.20 | 40% |
-| Knowledge Assistant | ForgeOS | $8.00 | $6.40 | 80% |
-| Sentiment Monitor | ForgeOS | $2.00 | $0.90 | 45% |
-| Escalation Manager | ForgeOS | $4.00 | $1.80 | 45% |
+| Call Router | Helios OS | $3.00 | $1.20 | 40% |
+| Knowledge Assistant | Helios OS | $8.00 | $6.40 | 80% |
+| Sentiment Monitor | Helios OS | $2.00 | $0.90 | 45% |
+| Escalation Manager | Helios OS | $4.00 | $1.80 | 45% |
 | Customer Profiler | ADK | $5.00 | $3.60 | 72% |
 | Quality Scorer | ADK | $6.00 | $3.20 | 53% |
 | After-Call Automator | CrewAI | $6.00 | $4.80 | 80% |

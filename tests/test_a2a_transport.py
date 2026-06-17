@@ -25,7 +25,7 @@ class TestAgentCard:
     def test_defaults(self):
         card = AgentCard(name="test", description="test agent", url="http://localhost")
         assert card.version == "0.2"
-        assert card.provider == "ForgeOS"
+        assert card.provider == "Helios OS"
 
 
 class TestA2ATask:

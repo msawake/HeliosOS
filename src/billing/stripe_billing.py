@@ -1,5 +1,5 @@
 """
-Stripe billing integration for ForgeOS SaaS.
+Stripe billing integration for Helios OS SaaS.
 
 Manages subscriptions, usage-based billing, and webhook handling.
 """

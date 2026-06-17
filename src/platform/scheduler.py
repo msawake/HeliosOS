@@ -118,7 +118,7 @@ class ScheduledJob:
 
 
 def _build_apscheduler_trigger(cron_expr: str):
-    """Build an APScheduler trigger from a ForgeOS cron expression.
+    """Build an APScheduler trigger from a Helios OS cron expression.
 
     Supports:
       - "every Ns" / "every Nm" / "every Nh" → IntervalTrigger

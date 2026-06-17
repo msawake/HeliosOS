@@ -1,4 +1,4 @@
-# ForgeOS — The Agentic Harness
+# Helios OS — The Agentic Harness
 
 **Control what your agents do. On any framework. Without changing their code.**
 
@@ -10,7 +10,7 @@ Every agent framework gives you a way to *write* agents. None gives you a way to
 
 ## The Harness: 9 Capabilities No Other Framework Has
 
-A framework tells an agent what to do. A **harness** controls *how* it does it. Install the ForgeOS SDK, set one env var, and every agent — ADK, CrewAI, Claude SDK, LangChain, OpenAI, or your own — gets governance:
+A framework tells an agent what to do. A **harness** controls *how* it does it. Install the Helios OS SDK, set one env var, and every agent — ADK, CrewAI, Claude SDK, LangChain, OpenAI, or your own — gets governance:
 
 | Runtime Method | What It Does | Who Else Has This? |
 |---|---|---|
@@ -27,9 +27,9 @@ Works identically in-process (~0.1ms) or via HTTP to a remote kernel (~50ms). **
 
 ## One Kernel, Any Framework — No Code Changes
 
-ForgeOS wraps tools in each framework's native type with a kernel gate inside. Agent code is never modified. Governance is declared in YAML.
+Helios OS wraps tools in each framework's native type with a kernel gate inside. Agent code is never modified. Governance is declared in YAML.
 
-| Framework | Native Tool Type | ForgeOS Interception | Code Changed? |
+| Framework | Native Tool Type | Helios OS Interception | Code Changed? |
 |---|---|---|---|
 | **Google ADK** | `FunctionTool(func)` | Async wrapper function | No |
 | **CrewAI** | `BaseTool._run()` | Dynamic `BaseTool` subclass | No |
@@ -39,9 +39,9 @@ ForgeOS wraps tools in each framework's native type with a kernel gate inside. A
 | **OpenAI Agents SDK** | Function tools | Function wrapper with kernel gate | No |
 | **OpenClaw** | HTTP POST `/tool` | HTTP proxy server with kernel gate | No |
 | **Sandbox (Docker)** | HTTP POST to API | API endpoint with token validation | No |
-| **ForgeOS native** | dict schema | Inline in agentic loop | No |
+| **Helios OS native** | dict schema | Inline in agentic loop | No |
 
-**How it works:** You write `stack: adk` and `tools: [read_json]` in YAML. ForgeOS creates kernel-gated wrappers in the framework's native tool type and passes them to the agent constructor. The framework sees normal tools. The kernel sees every call.
+**How it works:** You write `stack: adk` and `tools: [read_json]` in YAML. Helios OS creates kernel-gated wrappers in the framework's native tool type and passes them to the agent constructor. The framework sees normal tools. The kernel sees every call.
 
 ---
 
@@ -49,7 +49,7 @@ ForgeOS wraps tools in each framework's native type with a kernel gate inside. A
 
 The harness can do what no other tool can because it's architected like a UNIX kernel — not a plugin layer.
 
-| UNIX / Linux | ForgeOS | Purpose |
+| UNIX / Linux | Helios OS | Purpose |
 |---|---|---|
 | Process | Agent | Unit of execution with identity and lifecycle |
 | Kernel | Kernel (6 subsystems) | Policy engine: permissions, budgets, policies |
@@ -92,7 +92,7 @@ The order is enforced, not convention. You can plug in custom stages or set any 
 
 ## Remote Kernel: Network Transparency
 
-Like NFS gives the same `read()`/`write()` API for local and remote files, ForgeOS gives the same `runtime.check_tool()` in-process and across the network. Set `FORGEOS_API_URL` and the SDK automatically uses HTTP. 200 remote agents making 10 tool calls each = 2,000 HTTP requests — trivial for FastAPI, invisible next to 5-30s LLM calls.
+Like NFS gives the same `read()`/`write()` API for local and remote files, Helios OS gives the same `runtime.check_tool()` in-process and across the network. Set `FORGEOS_API_URL` and the SDK automatically uses HTTP. 200 remote agents making 10 tool calls each = 2,000 HTTP requests — trivial for FastAPI, invisible next to 5-30s LLM calls.
 
 ## Licensing: Source-Available, Not Closed Source
 
@@ -108,6 +108,6 @@ BSL auto-converts to Apache 2.0 on **2030-05-20**.
 
 ---
 
-*ForgeOS is not another agent framework. It's the harness that every framework is missing — the control layer for AI agents. Under the hood, it's built like an operating system, because that's the only architecture that scales.*
+*Helios OS is not another agent framework. It's the harness that every framework is missing — the control layer for AI agents. Under the hood, it's built like an operating system, because that's the only architecture that scales.*
 
 **github.com/makingscience-awake/forgeos**

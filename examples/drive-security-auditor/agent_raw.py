@@ -1,7 +1,7 @@
 """
 Google Drive Security Auditor — NO GOVERNANCE (raw version).
 
-Same Drive permission scan, zero ForgeOS runtime checks.
+Same Drive permission scan, zero Helios OS runtime checks.
 Compare with agent.py (28 controls) to see what governance adds.
 
 ⚠ RISKS WITHOUT GOVERNANCE:

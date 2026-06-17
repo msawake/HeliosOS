@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ----------------------------------------------------------------------------
-# ForgeOS database backup script.
+# Helios OS database backup script.
 #
 # Runs pg_dump against the configured DATABASE_URL, compresses the output
 # with gzip, and uploads to S3 or GCS (whichever is configured). Creates

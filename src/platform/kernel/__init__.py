@@ -2,7 +2,7 @@
 # a Making Science Group, SA company.
 # SPDX-License-Identifier: BUSL-1.1
 """
-ForgeOS Kernel — policy engine, admission pipeline, capability tokens.
+Helios OS Kernel — policy engine, admission pipeline, capability tokens.
 
 When the full kernel is installed, this package exposes the proprietary
 implementation. When running the Community Edition (kernel files absent),

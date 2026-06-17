@@ -1,5 +1,5 @@
 """
-PostgreSQL-backed implementations of ForgeOS subsystems.
+PostgreSQL-backed implementations of Helios OS subsystems.
 
 Replaces in-memory EventBus, KnowledgeBase, and MetricsStore with
 persistent, multi-tenant-aware PostgreSQL implementations.

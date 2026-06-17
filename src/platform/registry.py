@@ -1,7 +1,7 @@
 """
 Universal Agent Registry.
 
-Single source of truth for all agents across all stacks (ForgeOS, CrewAI,
+Single source of truth for all agents across all stacks (Helios OS, CrewAI,
 ADK, OpenClaw). Agents are keyed by agent_id and queryable by stack,
 execution type, ownership, department, and owner.
 """

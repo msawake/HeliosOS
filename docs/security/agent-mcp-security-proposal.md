@@ -3,13 +3,13 @@
 **Status:** Step 1 (problem definition) — COMPLETE · Step 2 (solutions) — REVISED post security review (see §13) + compute topology (§11.7) · Step 3 (draw.io) — DONE → 3 diagrams (architecture, analogy, compute-topology)
 **Date:** 2026-05-28
 **Owner:** antoni.bergas@makingscience.com
-**Scope:** ForgeOS agent/MCP authorization. Driven by two concrete needs: a multi-project read-only GCP auditor, and multi-user Google Workspace access with permission layers.
+**Scope:** Helios OS agent/MCP authorization. Driven by two concrete needs: a multi-project read-only GCP auditor, and multi-user Google Workspace access with permission layers.
 
 ---
 
 ## 1. Thesis
 
-ForgeOS *attempts* per-user credential isolation for GitHub: a PAT is stored per user (`forgeos-github-pat-{user_id}`), write-only, no read-back (`src/platform/credentials.py`). **But the security review found this path is broken and leaky** (§13.1): the injected credential is **serialized into the LLM prompt** (`agentic_loop.py:141`) and does **not** reach tools via the documented `agent_context` (`build_agent_context` omits `_credentials`). So even the one integration we believed was right must be **fixed before** it can be the template the broker generalizes.
+Helios OS *attempts* per-user credential isolation for GitHub: a PAT is stored per user (`forgeos-github-pat-{user_id}`), write-only, no read-back (`src/platform/credentials.py`). **But the security review found this path is broken and leaky** (§13.1): the injected credential is **serialized into the LLM prompt** (`agentic_loop.py:141`) and does **not** reach tools via the documented `agent_context` (`build_agent_context` omits `_credentials`). So even the one integration we believed was right must be **fixed before** it can be the template the broker generalizes.
 
 **GCP and Google Workspace do not follow it.** Both run on a **single ambient platform identity**, shared by every agent and every user, with "read-only / one-project / one-mailbox" enforced by **prompt text, not the credential or IAM boundary.**
 
@@ -42,7 +42,7 @@ The two drivers — *audit all projects* and *share Workspace across users with 
 
 ## 4. Core problem (root cause)
 
-> ForgeOS grants cloud/SaaS access through a single, ambient, shared identity, constrained by prompts rather than the identity/permission boundary. Per-user/per-agent least privilege exists only for GitHub. Widening GCP scope (all projects) or Workspace usage (all users) on this model expands one blast radius instead of partitioning it.
+> Helios OS grants cloud/SaaS access through a single, ambient, shared identity, constrained by prompts rather than the identity/permission boundary. Per-user/per-agent least privilege exists only for GitHub. Widening GCP scope (all projects) or Workspace usage (all users) on this model expands one blast radius instead of partitioning it.
 
 ## 5. Threat model
 
@@ -107,7 +107,7 @@ This chokepoint makes least privilege *enforceable* and attribution *complete*. 
 
 | Option | Blast radius | Least priv | Ops cost | Auditor integrity | Verdict |
 |---|---|---|---|---|---|
-| A1 ForgeOS in every project | 1 proj/instance | High | **Very high** (N deploys/upgrades/secrets) | Med | Over-isolates; fragments reporting; not "one agent" |
+| A1 Helios OS in every project | 1 proj/instance | High | **Very high** (N deploys/upgrades/secrets) | Med | Over-isolates; fragments reporting; not "one agent" |
 | A2 Central + single audit SA on allowlist | **entire allowlist** | Med | Low | Med | Simple but one SA reads everything |
 | **A3 Central + per-project read-only SA, broker-impersonated** | **1 proj / credential** | **High** | Med (automatable via TF) | Med | **Recommended** — per-project least priv + central control; hard-exclude = no SA |
 | A4 External / out-of-org host | per-proj (w/ A3) | High | High | **High** (tamper-resistant) | Defense-in-depth layer on A3 for sensitive estates |
@@ -138,7 +138,7 @@ Scheduled/service agents that must email use a **service mailbox** or narrow dom
 
 ### 11.5 Recommended architecture (the secure way, in one paragraph)
 
-A **central ForgeOS** platform with a **Credential Broker** at its core. **Scheduled auditors** run as service principals that obtain **per-project (or per-included-folder) read-only** credentials via **broker-gated SA impersonation** — hard-exclude = no grant; optionally hosted **externally** for tamper-resistance. **Interactive agents** run **on-behalf-of the launching user**, the broker minting per-user GitHub/Workspace/GCP credentials scoped ≤ the user, with **required-integration preflight** and **no default fallback**. The whole thing sits on **per-user SSO auth** and **enforced per-team namespaces** (authz + broker + per-request RLS), with the **kernel verified live** and read-only/scope **encoded as IAM/policy, not prompt**.
+A **central Helios OS** platform with a **Credential Broker** at its core. **Scheduled auditors** run as service principals that obtain **per-project (or per-included-folder) read-only** credentials via **broker-gated SA impersonation** — hard-exclude = no grant; optionally hosted **externally** for tamper-resistance. **Interactive agents** run **on-behalf-of the launching user**, the broker minting per-user GitHub/Workspace/GCP credentials scoped ≤ the user, with **required-integration preflight** and **no default fallback**. The whole thing sits on **per-user SSO auth** and **enforced per-team namespaces** (authz + broker + per-request RLS), with the **kernel verified live** and read-only/scope **encoded as IAM/policy, not prompt**.
 
 ### 11.6 Residual risks & decisions
 

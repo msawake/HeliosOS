@@ -1,1 +1,1 @@
-"""ForgeOS API layer — auth, tenants, billing endpoints."""
+"""Helios OS API layer — auth, tenants, billing endpoints."""

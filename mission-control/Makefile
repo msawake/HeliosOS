@@ -1,7 +1,7 @@
-# ForgeOS Mission Control — local dev shortcuts.
+# Helios OS Mission Control — local dev shortcuts.
 #
 # `make install` creates a .venv and installs backend + frontend deps.
-# `make serve` boots the backend against the SAME upstream ForgeOS API
+# `make serve` boots the backend against the SAME upstream Helios OS API
 # (and therefore the same database) the deployed Cloud Run service uses —
 # FORGEOS_API_URL is read from the deployed service, FORGEOS_API_TOKEN from
 # Secret Manager. Nothing hardcoded.
@@ -31,11 +31,11 @@ help:
 	@echo "Mission Control — make targets"
 	@echo ""
 	@echo "  make install       Create .venv and install backend + frontend deps."
-	@echo "  make serve         Run backend (no password gate) against the deployed ForgeOS API."
+	@echo "  make serve         Run backend (no password gate) against the deployed Helios OS API."
 	@echo "  make serve-prod    Same as serve, but pulls the operator password from Secret Manager."
-	@echo "  make serve-local   Run backend against a LOCAL ForgeOS API ($(LOCAL_API)). No gcloud."
+	@echo "  make serve-local   Run backend against a LOCAL Helios OS API ($(LOCAL_API)). No gcloud."
 	@echo "  make dev           Run backend AND vite dev server in parallel."
-	@echo "  make dev-local     Same as dev, but against a local ForgeOS API (no gcloud)."
+	@echo "  make dev-local     Same as dev, but against a local Helios OS API (no gcloud)."
 	@echo "  make frontend      Run only the vite dev server on :$(FRONTEND_PORT)."
 	@echo "  make build         Build the React bundle into frontend/dist."
 	@echo "  make clean         Remove .venv, node_modules, dist, __pycache__."
@@ -101,7 +101,7 @@ serve-prod: check-gcloud backend-install backend/static/index.html
 	  ../$(VPY) -m uvicorn main:app --reload --port $(BACKEND_PORT)
 
 serve-local: backend-install backend/static/index.html
-	@echo "→ serving against LOCAL ForgeOS API at $(LOCAL_API) (override with LOCAL_API=...)"
+	@echo "→ serving against LOCAL Helios OS API at $(LOCAL_API) (override with LOCAL_API=...)"
 	FORGEOS_API_URL="$(LOCAL_API)" \
 	  FORGEOS_API_TOKEN="" \
 	  FORGEOS_MC_PASSWORD="" \

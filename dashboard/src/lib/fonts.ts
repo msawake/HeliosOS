@@ -1,6 +1,6 @@
 import { EB_Garamond, Geist, Geist_Mono } from "next/font/google";
 
-// ForgeOS type system — three voices:
+// Helios OS type system — three voices:
 //   display: editorial serif, the engraved letterpress voice.
 //            Page H1s + the brand wordmark, never body.
 //   sans:    grotesque UI workhorse for everything else.

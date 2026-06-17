@@ -3,7 +3,7 @@
 # ============================================================================
 #
 # Uses Gemini Flash for scanning (cheap/fast) and Claude Opus for deep
-# analysis (expensive/thorough). ForgeOS kernel gates every action via HTTP.
+# analysis (expensive/thorough). Helios OS kernel gates every action via HTTP.
 #
 # 13 runtime calls per invocation:
 #   budget checks, data boundaries, tool gates, audit trail,
@@ -17,7 +17,7 @@ kind: Agent
 metadata:
   name: competitive-intel
   namespace: strategy
-  description: "Dual-LLM competitive intelligence — Gemini scans, Claude analyzes, ForgeOS governs"
+  description: "Dual-LLM competitive intelligence — Gemini scans, Claude analyzes, Helios OS governs"
   labels:
     category: intelligence
     llm-count: "2"

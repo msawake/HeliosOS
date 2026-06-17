@@ -1,5 +1,5 @@
 """
-ForgeOS Agent Test Harness.
+Helios OS Agent Test Harness.
 
 Deploys and invokes all example agents, validating each works end-to-end.
 
@@ -46,7 +46,7 @@ def find_all(category=None, exec_type=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ForgeOS Agent Test Harness")
+    parser = argparse.ArgumentParser(description="Helios OS Agent Test Harness")
     parser.add_argument("--category", choices=ALL_CATEGORIES)
     parser.add_argument("--type", choices=["reflex", "scheduled", "always_on", "event_driven", "autonomous"])
     parser.add_argument("--no-cleanup", action="store_true", help="Keep agents after test")

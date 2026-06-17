@@ -8,7 +8,7 @@ SDK-side Kernel accessor.
 Agents deployed with the SDK can use this class to check permissions, query
 their contract, and record audit events. Works in two modes:
 
-    1. In-process: when the agent runs inside the ForgeOS bootstrap, the
+    1. In-process: when the agent runs inside the Helios OS bootstrap, the
        Kernel is directly accessible — zero HTTP overhead.
 
     2. Remote:     when the agent runs externally (e.g. CrewAI in a Docker

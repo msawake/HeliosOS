@@ -1,4 +1,4 @@
-"""ForgeOS Pulumi entrypoint — dual-target dispatcher.
+"""Helios OS Pulumi entrypoint — dual-target dispatcher.
 
 One program, two targets, selected by `forgeos:target`:
   - target=gcp   (default) → gcp_stack.py: GKE Autopilot + Cloud Run + Cloud SQL

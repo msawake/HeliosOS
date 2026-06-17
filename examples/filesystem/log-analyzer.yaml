@@ -1,5 +1,5 @@
 # ============================================================================
-# ForgeOS Example: Reflex Agent — Log Analyzer (ADK Stack)
+# Helios OS Example: Reflex Agent — Log Analyzer (ADK Stack)
 # ============================================================================
 #
 # EXECUTION TYPE: reflex
@@ -8,7 +8,7 @@
 #
 # STACK: adk
 #   This agent uses the Google ADK (Agent Development Kit) stack adapter,
-#   demonstrating ForgeOS's multi-stack capability.
+#   demonstrating Helios OS's multi-stack capability.
 #
 # TOOLS USED:
 #   - mcp__filesystem__read_file: Reads a file from the local filesystem

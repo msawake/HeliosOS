@@ -2,7 +2,7 @@
 # a Making Science Group, SA company.
 # SPDX-License-Identifier: BUSL-1.1
 """
-ForgeOS CLI.
+Helios OS CLI.
 
 Usage:
     forgeos deploy ./agent.yaml
@@ -238,7 +238,7 @@ def cmd_health(args) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="forgeos",
-        description="ForgeOS CLI — declare and manage agents from the command line",
+        description="Helios OS CLI — declare and manage agents from the command line",
     )
     parser.add_argument("--url", help="API base URL (overrides --config / env)")
     parser.add_argument("--api-key", help="Bearer token / X-API-Key value (overrides --config / env)")

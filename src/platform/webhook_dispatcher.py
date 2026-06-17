@@ -2,7 +2,7 @@
 """
 Webhook dispatcher — pushes tasks to remote agents via HTTP.
 
-Cloud Run agents scale to zero when idle. When ForgeOS receives a task
+Cloud Run agents scale to zero when idle. When Helios OS receives a task
 for a remote agent, it POSTs to the agent's webhook endpoint, which
 triggers a cold start. This is more efficient than polling.
 """

@@ -1,5 +1,5 @@
 """
-ForgeOS Native Stack Adapter.
+Helios OS Native Stack Adapter.
 
 Wraps the existing AgentInvoker / hook chain / tool executor into the
 AgentStackAdapter interface. This is the built-in "simple" stack that
@@ -101,7 +101,7 @@ class ForgeOSAdapter(AgentStackAdapter):
 
     async def create_agent(self, agent_def: AgentDefinition) -> str:
         self._agents[agent_def.agent_id] = agent_def
-        logger.info("ForgeOS agent created: %s (%s)", agent_def.name, agent_def.agent_id)
+        logger.info("Helios OS agent created: %s (%s)", agent_def.name, agent_def.agent_id)
         return agent_def.agent_id
 
     async def _forward_to_pod(self, agent_id: str, pod_url: str, prompt: str) -> AgentResult:
@@ -150,7 +150,7 @@ class ForgeOSAdapter(AgentStackAdapter):
 
         if self._llm_router:
             if not self._tool_executor:
-                logger.warning("ForgeOS invoke for %s: no tool_executor — agent will run without tools", agent_id)
+                logger.warning("Helios OS invoke for %s: no tool_executor — agent will run without tools", agent_id)
             from src.platform.agentic_loop import (
                 run_agentic_loop, build_tool_definitions, append_client_mcp_tools,
             )
@@ -316,17 +316,17 @@ class ForgeOSAdapter(AgentStackAdapter):
                 except asyncio.CancelledError:
                     break
                 except Exception:
-                    logger.exception("ForgeOS loop error for %s", agent_id)
+                    logger.exception("Helios OS loop error for %s", agent_id)
                 await asyncio.sleep(interval)
 
         self._loops[agent_id] = asyncio.create_task(_loop(), name=f"forgeos-loop-{agent_id}")
-        logger.info("Started ForgeOS loop for %s", agent_id)
+        logger.info("Started Helios OS loop for %s", agent_id)
 
     async def stop(self, agent_id: str) -> None:
         task = self._loops.pop(agent_id, None)
         if task:
             task.cancel()
-        logger.info("Stopped ForgeOS agent %s", agent_id)
+        logger.info("Stopped Helios OS agent %s", agent_id)
 
     def get_status(self, agent_id: str) -> AgentStatus:
         if agent_id in self._loops and not self._loops[agent_id].done():
@@ -339,7 +339,7 @@ class ForgeOSAdapter(AgentStackAdapter):
         return {
             "agent.py": textwrap.dedent(f"""\
                 \"\"\"
-                ForgeOS Agent: {agent_def.name}
+                Helios OS Agent: {agent_def.name}
                 Stack: forgeos | Type: {agent_def.execution_type.value}
                 \"\"\"
                 from stacks.base import AgentDefinition, ExecutionType, OwnershipType, LLMConfig
@@ -366,7 +366,7 @@ class ForgeOSAdapter(AgentStackAdapter):
             "prompts/system.md": textwrap.dedent(f"""\
                 # {agent_def.name}
 
-                You are {agent_def.name}, a ForgeOS agent.
+                You are {agent_def.name}, a Helios OS agent.
 
                 ## Role
                 {agent_def.description or 'General-purpose assistant.'}

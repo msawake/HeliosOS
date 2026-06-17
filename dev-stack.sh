@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # ----------------------------------------------------------------------------
-# Local ForgeOS dev stack in a single tmux window (4 panes):
+# Local Helios OS dev stack in a single tmux window (4 panes):
 #
 #   ┌──────────────────────┬──────────────────────┐
-#   │ ForgeOS server       │ Redis logs           │
+#   │ Helios OS server       │ Redis logs           │
 #   │ (run-local-server.sh)│ (docker logs -f)     │
 #   ├──────────────────────┼──────────────────────┤
 #   │ forgeos CLI          │ Postgres logs        │
 #   │ (health + list)      │ (docker logs -f)     │
 #   └──────────────────────┴──────────────────────┘
 #
-# Postgres + Redis run as Docker containers; ForgeOS runs locally on the host.
+# Postgres + Redis run as Docker containers; Helios OS runs locally on the host.
 # Usage: ./dev-stack.sh   (run from inside tmux; opens a new window)
 # ----------------------------------------------------------------------------
 set -euo pipefail
@@ -33,7 +33,7 @@ if ! docker info >/dev/null 2>&1; then
 fi
 echo "Docker is running."
 
-# 2. Bring up postgres + redis (ForgeOS itself runs on the host) -------------
+# 2. Bring up postgres + redis (Helios OS itself runs on the host) -------------
 echo "Bringing up postgres + redis containers…"
 "${COMPOSE[@]}" up -d postgres redis
 
@@ -53,7 +53,7 @@ wait_healthy postgres
 wait_healthy redis
 
 # 3. tmux window with 4 panes ------------------------------------------------
-CLI_CMD='echo "waiting for ForgeOS on :5000…"; until forgeos health >/dev/null 2>&1; do sleep 2; done; forgeos health; echo; forgeos list; exec $SHELL'
+CLI_CMD='echo "waiting for Helios OS on :5000…"; until forgeos health >/dev/null 2>&1; do sleep 2; done; forgeos health; echo; forgeos list; exec $SHELL'
 REDIS_LOGS="${COMPOSE[*]} logs -f --tail=50 redis"
 PG_LOGS="${COMPOSE[*]} logs -f --tail=50 postgres"
 REDIS_CLI="${COMPOSE[*]} exec redis redis-cli"
@@ -63,7 +63,7 @@ WIN="${SESSION}:${WINDOW}"
 tmux kill-window -t "$WIN" 2>/dev/null || true
 
 # Capture pane IDs (%N) so layout is robust to pane-base-index settings.
-P0=$(tmux new-window -P -F '#{pane_id}' -t "$SESSION" -n "$WINDOW" -c "$REPO")  # top-left: ForgeOS server
+P0=$(tmux new-window -P -F '#{pane_id}' -t "$SESSION" -n "$WINDOW" -c "$REPO")  # top-left: Helios OS server
 tmux send-keys -t "$P0" "./run-local-server.sh" C-m
 
 P1=$(tmux split-window -P -F '#{pane_id}' -h -t "$P0" -c "$REPO")               # top-right: Redis logs

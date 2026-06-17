@@ -1,6 +1,6 @@
-# ForgeOS Stack Adapters — Complete Guide
+# Helios OS Stack Adapters — Complete Guide
 
-ForgeOS governs agents across 8 different frameworks. Each adapter wraps the framework's standard tool interface with kernel governance. This document explains how each adapter works, what it intercepts, and how to use it.
+Helios OS governs agents across 8 different frameworks. Each adapter wraps the framework's standard tool interface with kernel governance. This document explains how each adapter works, what it intercepts, and how to use it.
 
 ---
 
@@ -8,7 +8,7 @@ ForgeOS governs agents across 8 different frameworks. Each adapter wraps the fra
 
 | # | Adapter | Stack Name | Framework | Governance Hook | File |
 |---|---------|-----------|-----------|----------------|------|
-| 1 | ForgeOS Native | `forgeos` | ForgeOS agentic loop | `runtime.check_tool()` in loop | `stacks/forgeos/adapter.py` |
+| 1 | Helios OS Native | `forgeos` | Helios OS agentic loop | `runtime.check_tool()` in loop | `stacks/forgeos/adapter.py` |
 | 2 | CrewAI | `crewai` | CrewAI SDK (Crew.kickoff) | `BaseTool._run()` override | `stacks/crewai/adapter.py` |
 | 3 | Google ADK | `adk` | Google ADK Runner | `FunctionTool` wrapper | `stacks/adk/adapter.py` |
 | 4 | OpenClaw | `openclaw` | HTTP gateway subprocess | Tool proxy server | `stacks/openclaw/adapter.py` |
@@ -25,7 +25,7 @@ ForgeOS governs agents across 8 different frameworks. Each adapter wraps the fra
 
 ### What it does
 
-When `claude-agent-sdk` is installed, this adapter runs real Claude agents using the official SDK. ForgeOS tools are exposed as an in-process MCP server, and a single `PreToolUse` hook gates ALL tool calls through the kernel.
+When `claude-agent-sdk` is installed, this adapter runs real Claude agents using the official SDK. Helios OS tools are exposed as an in-process MCP server, and a single `PreToolUse` hook gates ALL tool calls through the kernel.
 
 ### How it works
 
@@ -47,9 +47,9 @@ Agent code → Claude SDK query() → LLM decides to call tool
 
 | Mode | Where agent runs | Kernel transport | Hook function |
 |------|-----------------|-----------------|---------------|
-| **A** (in-process) | Inside ForgeOS | Direct Python call | `_forgeos_kernel_hook()` |
+| **A** (in-process) | Inside Helios OS | Direct Python call | `_forgeos_kernel_hook()` |
 | **B** (pure) | Own Cloud Run | None | No governance |
-| **C** (remote) | Own Cloud Run | HTTP to ForgeOS | `make_remote_kernel_hook(url, agent_id)` |
+| **C** (remote) | Own Cloud Run | HTTP to Helios OS | `make_remote_kernel_hook(url, agent_id)` |
 
 ### SDK detection
 
@@ -58,17 +58,17 @@ try:
     from claude_agent_sdk import query, ClaudeAgentOptions, HookMatcher
     SDK_AVAILABLE = True
 except ImportError:
-    SDK_AVAILABLE = False  # falls back to ForgeOS agentic loop
+    SDK_AVAILABLE = False  # falls back to Helios OS agentic loop
 ```
 
 ### Tool bridging
 
-ForgeOS tools are wrapped as an in-process MCP server that the SDK connects to:
+Helios OS tools are wrapped as an in-process MCP server that the SDK connects to:
 
 ```python
 mcp_server = create_sdk_mcp_server(
     name="forgeos", version="1.0.0",
-    tools=[...ForgeOS tools wrapped as @tool functions...]
+    tools=[...Helios OS tools wrapped as @tool functions...]
 )
 options = ClaudeAgentOptions(
     mcp_servers={"forgeos": mcp_server},
@@ -104,15 +104,15 @@ spec:
 
 ### What it does
 
-Deploys agents to Anthropic's hosted runtime via the Managed Agents REST API. Anthropic runs the agent in a gVisor sandbox. ForgeOS gates at session creation and tracks usage after completion.
+Deploys agents to Anthropic's hosted runtime via the Managed Agents REST API. Anthropic runs the agent in a gVisor sandbox. Helios OS gates at session creation and tracks usage after completion.
 
 ### How it works
 
 ```
-ForgeOS deploy → kernel admit() → POST /v1/agents → POST /v1/environments
+Helios OS deploy → kernel admit() → POST /v1/agents → POST /v1/environments
   → Store managed_agent_id + managed_env_id
 
-ForgeOS invoke → POST /v1/sessions → POST /v1/sessions/{id}/events
+Helios OS invoke → POST /v1/sessions → POST /v1/sessions/{id}/events
   → Agent runs INSIDE Anthropic's sandbox (tools execute freely)
   → Poll GET /v1/sessions/{id} until status == "idle"
   → Read usage → record in process table
@@ -120,10 +120,10 @@ ForgeOS invoke → POST /v1/sessions → POST /v1/sessions/{id}/events
 
 ### Important limitation
 
-**No per-tool interception.** Built-in tools (bash, read, write, web_search) run ungoverned inside Anthropic's sandbox. ForgeOS can only:
+**No per-tool interception.** Built-in tools (bash, read, write, web_search) run ungoverned inside Anthropic's sandbox. Helios OS can only:
 - Gate at session level (budget/ACL check before creating session)
 - Track usage after completion
-- Gate custom MCP tools (if exposed via ForgeOS MCP server URL)
+- Gate custom MCP tools (if exposed via Helios OS MCP server URL)
 
 ### API endpoints used
 
@@ -184,16 +184,16 @@ Agent code → OpenAI Runner.run() → LLM decides to call tool
 ### How it works (Responses API fallback)
 
 ```
-ForgeOS invoke → POST /v1/responses
+Helios OS invoke → POST /v1/responses
   → OpenAI runs LLM → returns function_call
-  → ForgeOS checks kernel → ALLOW/DENY
-  → If ALLOW: ForgeOS executes tool, submits result
+  → Helios OS checks kernel → ALLOW/DENY
+  → If ALLOW: Helios OS executes tool, submits result
   → Poll until completed
 ```
 
 ### Key advantage over Anthropic Managed
 
-The Responses API returns `requires_action` for custom function calls — **YOUR code executes the tool**. This means ForgeOS gates every custom tool call, unlike Managed Agents where tools run in Anthropic's sandbox.
+The Responses API returns `requires_action` for custom function calls — **YOUR code executes the tool**. This means Helios OS gates every custom tool call, unlike Managed Agents where tools run in Anthropic's sandbox.
 
 ### Three execution paths
 
@@ -201,7 +201,7 @@ The Responses API returns `requires_action` for custom function calls — **YOUR
 |----------|------|------|
 | 1 | OpenAI Agents SDK (`Runner.run()`) | `openai-agents` package installed |
 | 2 | Responses API (`POST /v1/responses`) | SDK not installed, `OPENAI_API_KEY` set |
-| 3 | ForgeOS agentic loop | Neither available |
+| 3 | Helios OS agentic loop | Neither available |
 
 ### SDK detection
 
@@ -220,12 +220,12 @@ class ForgeOSKernelHooks(AgentHooks):
     async def on_tool_start(self, context, agent, tool) -> None:
         decision = await runtime.check_tool(tool.name, {})
         if decision.denied:
-            raise PermissionError(f"ForgeOS denied: {decision.reason}")
+            raise PermissionError(f"Helios OS denied: {decision.reason}")
 ```
 
 ### Built-in tool mapping
 
-| ForgeOS tool name | OpenAI tool type |
+| Helios OS tool name | OpenAI tool type |
 |-------------------|-----------------|
 | `web_search` | `{"type": "web_search_preview"}` |
 | `code_interpreter` | `{"type": "code_interpreter"}` |
@@ -255,7 +255,7 @@ spec:
 
 | Adapter | Tool gate | Budget gate | Audit | HITL | Namespace isolation |
 |---------|----------|-------------|-------|------|-------------------|
-| ForgeOS native | Per-tool | Per-tool | Every decision | Yes | Yes |
+| Helios OS native | Per-tool | Per-tool | Every decision | Yes | Yes |
 | CrewAI | Per-tool | Per-tool | Every decision | Yes | Yes |
 | Google ADK | Per-tool | Per-tool | Every decision | Yes | Yes |
 | OpenClaw | Per-tool | Per-tool | Every decision | Yes | Yes |
@@ -266,9 +266,9 @@ spec:
 
 ### How Each Framework's Tool System is Wrapped
 
-| Framework | Standard tool interface | ForgeOS wraps it as |
+| Framework | Standard tool interface | Helios OS wraps it as |
 |-----------|----------------------|-------------------|
-| ForgeOS | `_execute_tool()` function | Direct check in the loop |
+| Helios OS | `_execute_tool()` function | Direct check in the loop |
 | CrewAI | `BaseTool._run()` method | `class ForgeOSTool(BaseTool)` with kernel check in `_run()` |
 | Google ADK | `FunctionTool(callable)` | `FunctionTool(async wrapper)` with kernel check inside |
 | Claude Agent SDK | `hooks.PreToolUse` | One `_forgeos_kernel_hook()` for all tools |
@@ -280,7 +280,7 @@ spec:
 
 | Platform | Auto (zero agent code) | Explicit (agent adds runtime calls) |
 |----------|----------------------|-----------------------------------|
-| ForgeOS native | 10 lines (in agentic_loop.py) | + N lines per call |
+| Helios OS native | 10 lines (in agentic_loop.py) | + N lines per call |
 | CrewAI | ~20 lines (per-tool subclass) | + N lines per call |
 | Google ADK | ~30 lines (per-tool wrapper) | + N lines per call |
 | **Anthropic Agent SDK** | **~15 lines (one hook)** | **+ N lines per call** |
@@ -294,7 +294,7 @@ Every adapter has a fallback path when the SDK is not installed:
 ```
 SDK available?
   ├── YES → Use real SDK runtime (ADK Runner, CrewAI Crew, Claude query(), OpenAI Runner)
-  └── NO  → Fall back to ForgeOS native agentic loop (run_agentic_loop())
+  └── NO  → Fall back to Helios OS native agentic loop (run_agentic_loop())
             Same governance, same tools, different LLM call path
 ```
 

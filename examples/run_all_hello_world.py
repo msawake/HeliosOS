@@ -1,5 +1,5 @@
 """
-Deploy and test hello-world agents for all 4 ForgeOS stacks.
+Deploy and test hello-world agents for all 4 Helios OS stacks.
 
 Verifies each stack adapter works end-to-end: deploy → invoke → validate output.
 
@@ -21,8 +21,8 @@ AGENTS = [
     {
         "name": "hello-forgeos",
         "stack": "forgeos",
-        "label": "ForgeOS Native",
-        "prompt": "You are a hello-world agent on ForgeOS native stack. Introduce yourself in 2 sentences.",
+        "label": "Helios OS Native",
+        "prompt": "You are a hello-world agent on Helios OS native stack. Introduce yourself in 2 sentences.",
     },
     {
         "name": "hello-crewai",
@@ -50,7 +50,7 @@ def main():
     results = {}
 
     print("=" * 60)
-    print("ForgeOS Hello World — All 4 Stacks")
+    print("Helios OS Hello World — All 4 Stacks")
     print("=" * 60)
 
     for spec in AGENTS:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ForgeOS Full Platform Demo
+Helios OS Full Platform Demo
 ==========================
 
 Deploys two agents and exercises every kernel/runtime capability:
@@ -354,7 +354,7 @@ async def demo_audit(audit: AuditLog):
 # ---------------------------------------------------------------------------
 
 async def main():
-    print(f"\n{BOLD}ForgeOS Full Platform Demo{RESET}")
+    print(f"\n{BOLD}Helios OS Full Platform Demo{RESET}")
     print(f"Exercises all 9 kernel/runtime capabilities\n")
 
     registry, kernel, pt, cs, audit, worker_id, reviewer_id = build_platform()

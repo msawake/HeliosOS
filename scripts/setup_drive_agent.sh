@@ -42,7 +42,7 @@ if ! gcloud iam service-accounts describe "${DRIVE_SA_EMAIL}" --project="${PROJE
   echo "▶ creating SA ${DRIVE_SA_EMAIL}"
   gcloud iam service-accounts create "${DRIVE_SA_NAME}" \
     --project="${PROJECT}" \
-    --display-name="ForgeOS Drive agent" \
+    --display-name="Helios OS Drive agent" \
     --description="Identity used by drive-chat-agent. Authorized via Drive sharing."
 else
   echo "▶ SA already exists"
@@ -87,7 +87,7 @@ cat <<EOF
 
 Next steps (manual, ~30 s each):
 
-  1. Create a Drive folder (e.g. "ForgeOS Drive Demo") in Google Drive.
+  1. Create a Drive folder (e.g. "Helios OS Drive Demo") in Google Drive.
   2. Right-click the folder → Share → add this email as **Editor**:
         ${DRIVE_SA_EMAIL}
      (Important: the agent can ONLY see files shared with that SA email.)

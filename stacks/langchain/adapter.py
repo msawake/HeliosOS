@@ -4,14 +4,14 @@
 """
 LangChain / LangGraph Stack Adapter.
 
-When ``langchain-core`` is installed, wraps ForgeOS tools as LangChain
-``BaseTool`` instances and runs them via ``AgentExecutor``. The ForgeOS
+When ``langchain-core`` is installed, wraps Helios OS tools as LangChain
+``BaseTool`` instances and runs them via ``AgentExecutor``. The Helios OS
 kernel callback is auto-attached so every tool call is checked.
 
 When the SDK is not available, falls back to the platform agentic loop.
 
 Key integration:
-- Tools: ForgeOS tool_executor wrapped as LangChain BaseTool subclasses
+- Tools: Helios OS tool_executor wrapped as LangChain BaseTool subclasses
 - Kernel gate: ForgeOSKernelCallback on_tool_start (ONE handler for all tools)
 - Fallback: platform agentic loop when langchain not installed
 """
@@ -49,13 +49,13 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# Tool wrapping — ForgeOS tools as LangChain BaseTool instances
+# Tool wrapping — Helios OS tools as LangChain BaseTool instances
 # ---------------------------------------------------------------------------
 
 def _build_langchain_tools(
     tool_executor, agent_def: AgentDefinition, agent_context: dict,
 ) -> list:
-    """Wrap ForgeOS tools as LangChain BaseTool instances.
+    """Wrap Helios OS tools as LangChain BaseTool instances.
 
     Each wrapper calls tool_executor.execute() internally. The kernel gate
     is handled by ForgeOSKernelCallback (not per-tool), so these wrappers
@@ -73,7 +73,7 @@ def _build_langchain_tools(
 
     for schema in schemas:
         tool_name = schema.get("name", "")
-        tool_desc = schema.get("description", "") or f"ForgeOS tool: {tool_name}"
+        tool_desc = schema.get("description", "") or f"Helios OS tool: {tool_name}"
         if not tool_name:
             continue
 
@@ -156,7 +156,7 @@ class LangChainAdapter(AgentStackAdapter):
     async def _invoke_via_langchain(
         self, agent_id, agent_def, prompt, agent_context, history,
     ) -> AgentResult:
-        """Invoke using real LangChain SDK with ForgeOS kernel callback."""
+        """Invoke using real LangChain SDK with Helios OS kernel callback."""
         from stacks.langchain.callback import ForgeOSKernelCallback
 
         tools = _build_langchain_tools(self._tool_executor, agent_def, agent_context)
@@ -194,7 +194,7 @@ class LangChainAdapter(AgentStackAdapter):
     async def _invoke_via_platform(
         self, agent_id, agent_def, prompt, agent_context, history,
     ) -> AgentResult:
-        """Fallback: use ForgeOS platform agentic loop."""
+        """Fallback: use Helios OS platform agentic loop."""
         try:
             from src.platform.agentic_loop import run_agentic_loop, build_tool_definitions
             tools = build_tool_definitions(self._tool_executor, agent_def.tools or None)
@@ -231,23 +231,23 @@ class LangChainAdapter(AgentStackAdapter):
         model = agent_def.llm_config.chat_model if agent_def.llm_config else "gpt-4o"
         tools_str = ", ".join(f'"{t}"' for t in (agent_def.tools or []))
 
-        agent_py = f'''"""LangChain agent: {name} — managed by ForgeOS."""
+        agent_py = f'''"""LangChain agent: {name} — managed by Helios OS."""
 from langchain_openai import ChatOpenAI
 from stacks.langchain.callback import ForgeOSKernelCallback
 
 llm = ChatOpenAI(model="{model}")
 
-# Add ForgeOS governance:
+# Add Helios OS governance:
 callback = ForgeOSKernelCallback(
     forgeos_url="https://forgeos-api.example.com",
     agent_id="{name}",
 )
 
-# Every tool call checked by ForgeOS kernel:
+# Every tool call checked by Helios OS kernel:
 # result = executor.invoke(prompt, config={{"callbacks": [callback]}})
 '''
 
         return {
             "agent.py": agent_py,
-            "README.md": f"# {name}\n\nLangChain agent managed by ForgeOS.\n",
+            "README.md": f"# {name}\n\nLangChain agent managed by Helios OS.\n",
         }

@@ -1,5 +1,5 @@
 -- ============================================================================
--- ForgeOS Audit Log — Migration 005 (no-op)
+-- Helios OS Audit Log — Migration 005 (no-op)
 --
 -- The audit_log table and all its indexes are already created by
 -- 001_schema.sql. This migration is kept as a placeholder for the

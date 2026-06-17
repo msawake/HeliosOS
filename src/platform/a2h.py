@@ -1,13 +1,13 @@
 """
-A2H Protocol — ForgeOS Implementation.
+A2H Protocol — Helios OS Implementation.
 
 Implements the A2H protocol specification (a2h/v1) for human-agent
-interaction. Adds ForgeOS-specific extensions: kernel audit integration,
+interaction. Adds Helios OS-specific extensions: kernel audit integration,
 process table awareness, and namespace-scoped permissions.
 
 This module follows the A2H spec types (Status, Priority, ResponseType)
 and patterns (Gateway.ask returns object, structured Response, delegation
-rules with matches(), separate Notification). ForgeOS extensions are
+rules with matches(), separate Notification). Helios OS extensions are
 clearly marked and don't break spec conformance.
 
 See: docs/protocols/a2h-spec.md
@@ -45,7 +45,7 @@ from a2h.models import (
     Participant as A2HParticipant,
 )
 
-# ForgeOS extension: ResponseType with NONE for notifications
+# Helios OS extension: ResponseType with NONE for notifications
 class ResponseType(str, Enum):
     CHOICE = "choice"
     APPROVAL = "approval"
@@ -53,9 +53,9 @@ class ResponseType(str, Enum):
     NUMBER = "number"
     CONFIRM = "confirm"
     FORM = "form"
-    NONE = "none"  # ForgeOS extension: notifications
+    NONE = "none"  # Helios OS extension: notifications
 
-# ForgeOS-only: request type categories
+# Helios OS-only: request type categories
 class RequestType(str, Enum):
     QUESTION = "question"
     APPROVAL = "approval"
@@ -517,17 +517,17 @@ class LogChannel:
 
 
 # ---------------------------------------------------------------------------
-# A2H Gateway (A2H spec-conformant + ForgeOS kernel extensions)
+# A2H Gateway (A2H spec-conformant + Helios OS kernel extensions)
 # ---------------------------------------------------------------------------
 
 class A2HGateway:
-    """A2H protocol gateway for ForgeOS.
+    """A2H protocol gateway for Helios OS.
 
     Conformant with the A2H spec: ask() returns the HumanRequest object,
     responses are structured HumanResponse, delegation uses DelegationRule
     with matches(), status lifecycle includes AUTO_DELEGATED.
 
-    ForgeOS extensions: kernel audit logging on ask/respond/notify.
+    Helios OS extensions: kernel audit logging on ask/respond/notify.
     """
 
     def __init__(self, store=None, channels=None, kernel=None):
@@ -535,7 +535,7 @@ class A2HGateway:
         self._channels = channels or [DashboardChannel(), LogChannel()]
         self._kernel = kernel
         self._humans: dict[str, HumanAgent] = {}
-        # ForgeOS A2H chat extension (multi-turn sessions on top of the spec).
+        # Helios OS A2H chat extension (multi-turn sessions on top of the spec).
         # See src/platform/a2h_chat.py.
         from src.platform.a2h_chat import A2HChatGateway
         self.chat = A2HChatGateway(self)
@@ -666,7 +666,7 @@ class A2HGateway:
                 except Exception as e:
                     logger.warning("A2H delivery failed: %s", e)
 
-        # ForgeOS extension: kernel audit
+        # Helios OS extension: kernel audit
         if self._kernel and hasattr(self._kernel, "audit"):
             self._kernel.audit(from_agent, "a2h.ask", {
                 "request_id": request.id,

@@ -17,7 +17,7 @@
   <rect width="1100" height="800" fill="url(#bgGrad)" rx="12"/>
 
   <!-- Title -->
-  <text x="550" y="36" text-anchor="middle" fill="#F8FAFC" font-size="22" font-weight="700" letter-spacing="-0.5">ForgeOS Boot Sequence</text>
+  <text x="550" y="36" text-anchor="middle" fill="#F8FAFC" font-size="22" font-weight="700" letter-spacing="-0.5">Helios OS Boot Sequence</text>
   <text x="550" y="54" text-anchor="middle" fill="#94A3B8" font-size="11">15-step platform initialization &mdash; python -m src.bootstrap</text>
 
   <!-- Legend -->
@@ -144,7 +144,7 @@
     <line x1="92" y1="432" x2="130" y2="432" stroke="#A78BFA" stroke-width="1.5"/>
     <rect x="130" y="416" width="380" height="32" rx="6" fill="#1E293B" stroke="#A78BFA" stroke-width="1" filter="url(#shadow)"/>
     <text x="145" y="430" fill="#F8FAFC" font-size="12" font-weight="600">Register Adapters</text>
-    <text x="145" y="442" fill="#94A3B8" font-size="9.5">ForgeOS, CrewAI, ADK, OpenClaw</text>
+    <text x="145" y="442" fill="#94A3B8" font-size="9.5">Helios OS, CrewAI, ADK, OpenClaw</text>
   </g>
 
   <!-- Step 10: Build PlatformExecutor -->
@@ -215,7 +215,7 @@
   <!-- BOTTOM: PLATFORM ONLINE BOX                                   -->
   <!-- ============================================================ -->
   <rect x="40" y="730" width="1020" height="50" rx="8" fill="#0F172A" stroke="#34D399" stroke-width="2" filter="url(#shadow)"/>
-  <text x="550" y="753" text-anchor="middle" fill="#34D399" font-size="16" font-weight="700" letter-spacing="2">FORGEOS PLATFORM ONLINE</text>
+  <text x="550" y="753" text-anchor="middle" fill="#34D399" font-size="16" font-weight="700" letter-spacing="2">HELIOS OS PLATFORM ONLINE</text>
   <text x="550" y="770" text-anchor="middle" fill="#64748B" font-size="10">Stacks registered | Platform agents loaded | API serving | Dashboard at :3000</text>
 
   <!-- ============================================================ -->

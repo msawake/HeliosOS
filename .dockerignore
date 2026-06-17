@@ -1,5 +1,5 @@
 # ----------------------------------------------------------------------------
-# ForgeOS .dockerignore
+# Helios OS .dockerignore
 #
 # Keeps the build context small and excludes files that would otherwise bloat
 # the final image or leak secrets. Applies to BOTH the API Dockerfile

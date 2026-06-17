@@ -1,12 +1,12 @@
 <mxfile host="app.diagrams.net" agent="forgeos" version="24.0.0">
-  <diagram id="runtime-v2" name="ForgeOS Runtime v2 — Durable Continuations">
+  <diagram id="runtime-v2" name="Helios OS Runtime v2 — Durable Continuations">
     <mxGraphModel dx="1100" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="900" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
 
         <!-- Title -->
-        <mxCell id="title" value="ForgeOS Runtime v2 — durable continuations (suspend on ask_human, resume on approval)" style="text;html=1;fontStyle=1;fontSize=15;align=left;verticalAlign=middle;" vertex="1" parent="1">
+        <mxCell id="title" value="Helios OS Runtime v2 — durable continuations (suspend on ask_human, resume on approval)" style="text;html=1;fontStyle=1;fontSize=15;align=left;verticalAlign=middle;" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="900" height="30" as="geometry" />
         </mxCell>
 

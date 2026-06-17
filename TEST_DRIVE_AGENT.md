@@ -10,7 +10,7 @@ how to drive them.
 > - **Cloud Run revision:** `forgeos-platform-api-00037-dvk`
 > - **Service account:** `forgeos-drive-agent@admachina-atomic-test-84.iam.gserviceaccount.com`
 > - **Scope:** `drive` (so files shared with the SA via the Drive UI are visible)
-> - **Known shared folder:** `1W1fZkc5cE0Dhx6JdPdPmyoOjr4eRQw9h` ("ForgeOS Drive Demo")
+> - **Known shared folder:** `1W1fZkc5cE0Dhx6JdPdPmyoOjr4eRQw9h` ("Helios OS Drive Demo")
 
 ---
 

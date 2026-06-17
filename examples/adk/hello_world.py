@@ -2,7 +2,7 @@
 Google ADK Hello World — deploy and invoke via Python SDK.
 
 If the ADK SDK is installed (`pip install google-adk`), the agent runs through
-the real ADK Runner.run_async() path. Otherwise, falls back to ForgeOS native.
+the real ADK Runner.run_async() path. Otherwise, falls back to Helios OS native.
 
 Usage:
     PYTHONPATH=. python examples/adk/hello_world.py

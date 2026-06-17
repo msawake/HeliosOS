@@ -4,7 +4,7 @@
 End-to-end tests for `forgeos mc …`.
 
 Each test stands up a stub HTTP server on an ephemeral port that mimics the
-relevant ForgeOS platform endpoints, then invokes the CLI's argparse `main()`
+relevant Helios OS platform endpoints, then invokes the CLI's argparse `main()`
 with `--url=http://localhost:<port>` and captures stdout/stderr/exit-code.
 
 This guards every verb against:

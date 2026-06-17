@@ -1,4 +1,4 @@
-# Drive Security Auditor: Raw vs ForgeOS Governed
+# Drive Security Auditor: Raw vs Helios OS Governed
 
 Two files, same audit, completely different security posture.
 
@@ -9,7 +9,7 @@ agent.py      → 912 lines, 28 runtime checks, 7 phases of governance
 
 ## Side-by-Side: The Core Audit
 
-### WITHOUT ForgeOS (`agent_raw.py`)
+### WITHOUT Helios OS (`agent_raw.py`)
 
 ```python
 async def run_audit():
@@ -41,7 +41,7 @@ async def run_audit():
 
 ---
 
-### WITH ForgeOS — 28 Controls in 7 Phases (`agent.py`)
+### WITH Helios OS — 28 Controls in 7 Phases (`agent.py`)
 
 ```python
 async def run_audit():
@@ -137,7 +137,7 @@ async def run_audit():
 
 ## The Numbers
 
-|  | Raw | ForgeOS Governed |
+|  | Raw | Helios OS Governed |
 |--|-----|-----------------|
 | Lines of code | 96 | 912 |
 | Runtime controls | 0 | **28** |

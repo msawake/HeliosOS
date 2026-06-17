@@ -1,5 +1,5 @@
 """
-Competitive Intelligence Agent — Dual-LLM ADK with Full ForgeOS Runtime Governance.
+Competitive Intelligence Agent — Dual-LLM ADK with Full Helios OS Runtime Governance.
 
 Architecture:
   Phase 1: SCAN    → Gemini 2.5 Flash (fast, $0.15/M tokens)
@@ -42,7 +42,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(name)s | %(messa
 logger = logging.getLogger("competitive-intel")
 
 # ---------------------------------------------------------------------------
-# ForgeOS Runtime Setup
+# Helios OS Runtime Setup
 # ---------------------------------------------------------------------------
 
 FORGEOS_URL = os.environ.get("FORGEOS_API_URL", "")
@@ -71,7 +71,7 @@ try:
         _runtime_available = True
         logger.info("Runtime bound: agent=%s namespace=strategy", AGENT_ID)
 except ImportError:
-    logger.warning("ForgeOS SDK not installed — running without governance")
+    logger.warning("Helios OS SDK not installed — running without governance")
     runtime = None
 
 

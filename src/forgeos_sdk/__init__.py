@@ -2,9 +2,9 @@
 # a Making Science Group, SA company.
 # SPDX-License-Identifier: BUSL-1.1
 """
-ForgeOS Python SDK.
+Helios OS Python SDK.
 
-Declare, deploy, and manage ForgeOS agents from Python.
+Declare, deploy, and manage Helios OS agents from Python.
 
 Quickstart:
     from forgeos_sdk import Agent, ForgeOSClient

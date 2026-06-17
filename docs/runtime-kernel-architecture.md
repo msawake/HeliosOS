@@ -7,7 +7,7 @@ How `runtime` and `kernel` interact in both modes: in-process (direct Python) an
 ## 1. The Two Modes at a Glance
 
 ```
-MODE A: IN-PROCESS (agent runs inside ForgeOS)
+MODE A: IN-PROCESS (agent runs inside Helios OS)
 ═══════════════════════════════════════════════
 
   ┌──────────────────────────────────────────────────────────────────┐
@@ -23,7 +23,7 @@ MODE C: HTTP (agent runs on separate Cloud Run)
 ═══════════════════════════════════════════════
 
   ┌──────────────────────┐         ┌──────────────────────────────┐
-  │  AGENT CLOUD RUN      │  HTTP   │  FORGEOS CLOUD RUN            │
+  │  AGENT CLOUD RUN      │  HTTP   │  HELIOS OS CLOUD RUN          │
   │                       │ (~50ms) │                               │
   │  Agent ──→ runtime    │────────▶│  FastAPI ──→ Kernel           │
   │            │          │         │                               │
@@ -37,7 +37,7 @@ MODE C: HTTP (agent runs on separate Cloud Run)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         FORGEOS CLOUD RUN CONTAINER                          │
+│                         HELIOS OS CLOUD RUN CONTAINER                        │
 │                         (forgeos-api on port 5000)                            │
 │                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
@@ -244,7 +244,7 @@ MODE C: HTTP (agent runs on separate Cloud Run)
         │
         ▼
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│  FORGEOS CLOUD RUN (forgeos-api — the control plane)                           │
+│  HELIOS OS CLOUD RUN (forgeos-api — the control plane)                         │
 │                                                                                │
 │  ┌──────────────────────────────────────────────────────────────────────────┐ │
 │  │  LAYER 3: FASTAPI ENDPOINT                                                │ │
@@ -573,17 +573,17 @@ src/bootstrap.py — PlatformBootstrap.boot()
 ```
 Q: Where does my agent run?
 
-  ┌─── INSIDE ForgeOS (deployed via manifest YAML)
+  ┌─── INSIDE Helios OS (deployed via manifest YAML)
   │
   │    → Mode A: In-process
   │    → runtime auto-wired by bootstrap
   │    → Kernel checks via _InProcessBackend (~0.1ms)
   │    → Zero code changes needed
-  │    → ForgeOS handles: bind, check_tool, unbind, record_usage
+  │    → Helios OS handles: bind, check_tool, unbind, record_usage
   │
-  └─── OUTSIDE ForgeOS (own Cloud Run / Lambda / K8s)
+  └─── OUTSIDE Helios OS (own Cloud Run / Lambda / K8s)
 
-       Q: Do I want ForgeOS governance?
+       Q: Do I want Helios OS governance?
 
        ├─── YES → Mode C: HTTP kernel
        │
@@ -604,11 +604,11 @@ Q: Where does my agent run?
        │    await runtime.record_usage(tokens, cost)
        │    await runtime.heartbeat()
        │
-       │    → All checks go via HTTP to ForgeOS (~50ms each)
+       │    → All checks go via HTTP to Helios OS (~50ms each)
        │    → Same kernel, same rules, same audit trail
        │
        └─── NO → Mode B: Pure agent
-            → No ForgeOS SDK
+            → No Helios OS SDK
             → No governance
             → Agent runs freely
 ```

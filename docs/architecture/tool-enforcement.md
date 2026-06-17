@@ -1,6 +1,6 @@
 # Tool Enforcement Across Adapters
 
-Every tool call in ForgeOS passes through the kernel before execution — regardless of which framework adapter runs the agent. This document explains the enforcement mechanism for each adapter.
+Every tool call in Helios OS passes through the kernel before execution — regardless of which framework adapter runs the agent. This document explains the enforcement mechanism for each adapter.
 
 ## The Core Gate
 
@@ -22,7 +22,7 @@ What `check_tool` does internally:
 3. **Policy evaluation** — do any declarative `deny_if` rules match?
 4. **Audit recording** — log the decision (allow or deny) with full context
 
-## ForgeOS (Native)
+## Helios OS (Native)
 
 **File**: `src/platform/agentic_loop.py` — `_execute_tool()`
 
@@ -167,7 +167,7 @@ This path always has full kernel enforcement because `_execute_tool()` contains 
 
 | Adapter | Real SDK Path | Gate Location | Fallback |
 |---------|--------------|---------------|----------|
-| ForgeOS | agentic_loop | `_execute_tool()` | — |
+| Helios OS | agentic_loop | `_execute_tool()` | — |
 | CrewAI | Crew.kickoff() | `BaseTool._run()` | agentic_loop |
 | ADK | Runner.run_async() | `FunctionTool._wrapper()` | agentic_loop |
 | OpenClaw | Node.js gateway | `ToolProxyServer` HTTP | agentic_loop |

@@ -1,4 +1,4 @@
-"""Tests for the A2H protocol — ForgeOS implementation."""
+"""Tests for the A2H protocol — Helios OS implementation."""
 
 import pytest
 

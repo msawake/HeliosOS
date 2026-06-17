@@ -2,10 +2,10 @@
 """
 Deploy and run the file-tracker agent.
 
-    # Standalone (no ForgeOS needed)
+    # Standalone (no Helios OS needed)
     python agents/local/file-tracker/deploy.py
 
-    # Deploy to running ForgeOS
+    # Deploy to running Helios OS
     python agents/local/file-tracker/deploy.py --deploy
 
     # Deploy + invoke with custom prompt
@@ -63,7 +63,7 @@ def print_report(data: dict):
 
 
 async def deploy_to_forgeos(prompt: str | None = None):
-    """Deploy as a ForgeOS agent."""
+    """Deploy as a Helios OS agent."""
     import httpx
 
     BASE = "http://localhost:5000"
@@ -129,7 +129,7 @@ def main():
         print(f"{Y}→{RS} Scanning filesystem (last 7 days)...")
         data = scan_recent_files(days=7)
         print_report(data)
-        print(f"{D}  Deploy to ForgeOS: python agents/local/file-tracker/deploy.py --deploy{RS}\n")
+        print(f"{D}  Deploy to Helios OS: python agents/local/file-tracker/deploy.py --deploy{RS}\n")
 
 
 if __name__ == "__main__":

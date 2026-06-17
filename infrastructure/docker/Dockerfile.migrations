@@ -1,5 +1,5 @@
 # =============================================================================
-# ForgeOS DB migrations image
+# Helios OS DB migrations image
 #
 # Runs every infrastructure/database/*.sql file (sorted by name) against the
 # database identified by $DATABASE_URL. Idempotent: each migration uses

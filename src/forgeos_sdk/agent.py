@@ -2,7 +2,7 @@
 # a Making Science Group, SA company.
 # SPDX-License-Identifier: BUSL-1.1
 """
-ForgeOS Agent builder — ergonomic Python APIs that compile to an AgentManifest.
+Helios OS Agent builder — ergonomic Python APIs that compile to an AgentManifest.
 
 Two styles:
 

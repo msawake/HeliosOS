@@ -4,26 +4,26 @@
 
 ## The Core Distinction: Framework vs Agents
 
-ForgeOS has two halves that must not be confused:
+Helios OS has two halves that must not be confused:
 
-**The ForgeOS Framework** is the infrastructure layer. It is the operating system. It boots once, runs continuously, and provides services to everything inside it. The framework does not perform business tasks -- it enables agents to perform them.
+**The Helios OS Framework** is the infrastructure layer. It is the operating system. It boots once, runs continuously, and provides services to everything inside it. The framework does not perform business tasks -- it enables agents to perform them.
 
 **Agents** are the AI workloads that run inside the framework. Each agent has a name, a system prompt, a set of tools, and an execution lifecycle. Agents perform the actual work: sending emails, scoring leads, generating reports, answering questions.
 
 ### The Container Analogy
 
-| Concept | Traditional Infrastructure | ForgeOS |
+| Concept | Traditional Infrastructure | Helios OS |
 |---------|--------------------------|---------|
-| **The platform** | Kubernetes | ForgeOS framework |
+| **The platform** | Kubernetes | Helios OS framework |
 | **The workloads** | Pods/containers | Agents |
 | **Scheduling** | CronJobs, Deployments | SchedulerEngine (cron), EventBus (pub/sub) |
 | **Networking** | Services, Ingress | EventBus (cross-agent messaging) |
 | **Storage** | PersistentVolumes | Session store, knowledge base |
 | **Monitoring** | Prometheus, Grafana | AuditLog, Metrics, AlertDispatcher |
-| **Runtime** | containerd, CRI-O | Stack adapters (ForgeOS, CrewAI, ADK, OpenClaw) |
+| **Runtime** | containerd, CRI-O | Stack adapters (Helios OS, CrewAI, ADK, OpenClaw) |
 | **Registry** | Container registry | AgentRegistry |
 
-Just as Kubernetes does not care whether a container runs nginx or PostgreSQL, ForgeOS does not care whether an agent scores leads or drafts emails. The framework provides the lifecycle; agents provide the behavior.
+Just as Kubernetes does not care whether a container runs nginx or PostgreSQL, Helios OS does not care whether an agent scores leads or drafts emails. The framework provides the lifecycle; agents provide the behavior.
 
 ---
 
@@ -31,7 +31,7 @@ Just as Kubernetes does not care whether a container runs nginx or PostgreSQL, F
 
 ## Three-Layer Architecture
 
-ForgeOS is built in three layers. Each layer has a clear responsibility, and the boundaries are enforced by Python package structure:
+Helios OS is built in three layers. Each layer has a clear responsibility, and the boundaries are enforced by Python package structure:
 
 ```
 stacks/            <-- Layer 1: Stack Adapters (the runtimes)
@@ -43,7 +43,7 @@ src/core/ + src/companies/ + src/mcp/   <-- Layer 3: Core + Companies (the found
 
 **What they do:** Provide different agent runtimes. Each adapter wraps a different AI framework behind a common interface (`AgentStackAdapter`).
 
-**Why they exist:** Different agent frameworks have different strengths. CrewAI excels at multi-role collaboration. Google ADK integrates with the Google ecosystem. OpenClaw uses a markdown-first approach. ForgeOS native is the simplest and most flexible. Rather than choosing one, ForgeOS supports all four and lets each agent pick the best fit.
+**Why they exist:** Different agent frameworks have different strengths. CrewAI excels at multi-role collaboration. Google ADK integrates with the Google ecosystem. OpenClaw uses a markdown-first approach. Helios OS native is the simplest and most flexible. Rather than choosing one, Helios OS supports all four and lets each agent pick the best fit.
 
 **The interface** (from `stacks/base.py`):
 
@@ -59,7 +59,7 @@ class AgentStackAdapter(ABC):
 
 Every adapter implements this interface. The platform layer calls these methods without knowing which adapter it's talking to.
 
-**Fallback pattern:** When a framework SDK is not installed (e.g., `crewai` package missing), the adapter automatically falls back to the ForgeOS native agentic loop. This means every agent works out of the box -- the SDK just provides enhanced capabilities.
+**Fallback pattern:** When a framework SDK is not installed (e.g., `crewai` package missing), the adapter automatically falls back to the Helios OS native agentic loop. This means every agent works out of the box -- the SDK just provides enhanced capabilities.
 
 ### Layer 2: Platform Layer (`src/platform/`)
 
@@ -194,7 +194,7 @@ Every agent is defined by `AgentDefinition` (from `stacks/base.py`):
 
 ## Boot Sequence
 
-When ForgeOS starts (`python -m src.bootstrap`), this happens in order:
+When Helios OS starts (`python -m src.bootstrap`), this happens in order:
 
 1. **Load .env** -- API keys, DATABASE_URL, REDIS_URL
 2. **Initialize LLM Router** -- Detect available providers (Anthropic, OpenAI)
@@ -204,7 +204,7 @@ When ForgeOS starts (`python -m src.bootstrap`), this happens in order:
 6. **Connect MCP servers** -- Spawn stdio processes, discover tools (30s timeout)
 7. **Create ToolExecutor** -- Register MCP tools + custom tools + platform tools
 8. **Wire UsageEnforcer** -- Token/cost tracking per tenant
-9. **Register stack adapters** -- ForgeOS, CrewAI, ADK, OpenClaw
+9. **Register stack adapters** -- Helios OS, CrewAI, ADK, OpenClaw
 10. **Build PlatformExecutor** -- Connect registry, scheduler, event bus
 11. **Recover agents** -- Load from DB, re-wire execution lifecycles
 12. **Create tenant** -- Ensure default tenant exists (FK constraints)

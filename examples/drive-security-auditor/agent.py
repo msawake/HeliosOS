@@ -1,7 +1,7 @@
 """
 Google Drive Security Auditor — Daily Sharing & Permission Risk Scanner.
 
-28 ForgeOS runtime governance controls across 7 phases:
+28 Helios OS runtime governance controls across 7 phases:
 
   PHASE 1 — BOOT & RESUME (4 controls)
     ①  last_checkpoint()       — resume from last scan position
@@ -54,7 +54,7 @@ Usage:
   # Single-user:
   PYTHONPATH=. python3 examples/drive-security-auditor/agent.py
 
-  # With ForgeOS HTTP kernel (Mode C):
+  # With Helios OS HTTP kernel (Mode C):
   FORGEOS_API_URL=https://forgeos-api-xxx.run.app \
   ATLAS_GATEWAY_URL=https://atlas-gateway-xxx.run.app/v1 \
   ATLAS_GATEWAY_KEY=sk-... \
@@ -89,7 +89,7 @@ COMPANY_DOMAIN = os.environ.get("COMPANY_DOMAIN", "example.com")
 SENSITIVE_USERS = os.environ.get("SENSITIVE_USERS", "").split(",")  # CEO, legal, HR
 
 # ---------------------------------------------------------------------------
-# ForgeOS Runtime Setup (Mode C — HTTP kernel)
+# Helios OS Runtime Setup (Mode C — HTTP kernel)
 # ---------------------------------------------------------------------------
 
 _runtime_ok = False
@@ -134,7 +134,7 @@ import tools as drive_tools
 
 
 def _make_governed_tool(tool_name: str, tool_fn):
-    """Wrap a Drive tool with ForgeOS kernel governance (checks ⑬ + ⑭)."""
+    """Wrap a Drive tool with Helios OS kernel governance (checks ⑬ + ⑭)."""
 
     async def governed_wrapper(**kwargs):
         # ⑬ check_tool() — enforce read-only per API call
@@ -265,7 +265,7 @@ def _extract_risks(audit_result: str) -> dict:
 # ---------------------------------------------------------------------------
 
 async def run_audit():
-    """Run the daily Drive security audit with 28 ForgeOS runtime governance controls."""
+    """Run the daily Drive security audit with 28 Helios OS runtime governance controls."""
 
     # ══════════════════════════════════════════════════════════════
     # PHASE 1: BOOT & RESUME (controls ①-④)

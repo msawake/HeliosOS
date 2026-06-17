@@ -1,4 +1,4 @@
-"""Tests for ForgeOS MCP Server — tool, resource, and prompt registration."""
+"""Tests for Helios OS MCP Server — tool, resource, and prompt registration."""
 
 from __future__ import annotations
 

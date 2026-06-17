@@ -8,7 +8,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ============================================================
-   ForgeOS token architecture — "ink on paper" (HELIOS design language)
+   Helios OS token architecture — "ink on paper" (HELIOS design language)
    ============================================================
    light  "ink on paper"  — ivory paper, warm ink, hairline rules,
                             near-zero elevation (flat letterpress).

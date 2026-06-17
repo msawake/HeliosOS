@@ -2,9 +2,9 @@
 
 ## 1. Overview
 
-The platform layer (`src/platform/`) provides stack-agnostic orchestration services shared by every agent regardless of its stack adapter (ForgeOS, CrewAI, ADK, OpenClaw). It sits between the stack adapters (`stacks/`) and the core/company layer (`src/core/`, `src/companies/`), owning the full agent lifecycle: registration, deployment, invocation, scheduling, eventing, LLM routing, and observability.
+The platform layer (`src/platform/`) provides stack-agnostic orchestration services shared by every agent regardless of its stack adapter (Helios OS, CrewAI, ADK, OpenClaw). It sits between the stack adapters (`stacks/`) and the core/company layer (`src/core/`, `src/companies/`), owning the full agent lifecycle: registration, deployment, invocation, scheduling, eventing, LLM routing, and observability.
 
-All components follow the same graceful-degradation principle used across ForgeOS: when an external dependency (PostgreSQL, Redis, APScheduler, Prometheus) is unavailable, the component falls back to an in-memory implementation so the platform still boots in dev/test environments.
+All components follow the same graceful-degradation principle used across Helios OS: when an external dependency (PostgreSQL, Redis, APScheduler, Prometheus) is unavailable, the component falls back to an in-memory implementation so the platform still boots in dev/test environments.
 
 ### Component map
 

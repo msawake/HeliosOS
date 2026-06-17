@@ -1,8 +1,8 @@
 ]]# SDK Developer Guide — One Agent Per Stack
 
-Build a real agent on each ForgeOS stack, using every SDK runtime capability. Each section is self-contained — read only your framework's section to get the full picture.
+Build a real agent on each Helios OS stack, using every SDK runtime capability. Each section is self-contained — read only your framework's section to get the full picture.
 
-**Quick links:** [ForgeOS](#1-forgeos--sales-pipeline-agent) | [CrewAI](#2-crewai--competitive-analyst) | [Google ADK](#3-google-adk--research-analyst) | [OpenClaw](#4-openclaw--compliance-monitor) | [Sandbox](#5-sandbox--data-processor)
+**Quick links:** [Helios OS](#1-forgeos--sales-pipeline-agent) | [CrewAI](#2-crewai--competitive-analyst) | [Google ADK](#3-google-adk--research-analyst) | [OpenClaw](#4-openclaw--compliance-monitor) | [Sandbox](#5-sandbox--data-processor)
 
 ---
 
@@ -13,7 +13,7 @@ Before diving into each stack, here's the universal pattern:
 ```python
 from forgeos_sdk import runtime
 
-# These work identically in ForgeOS, CrewAI, ADK, OpenClaw, and Sandbox.
+# These work identically in Helios OS, CrewAI, ADK, OpenClaw, and Sandbox.
 # Identity is set automatically — you never pass agent_id.
 
 await runtime.check_tool("email.send")         # Permission check
@@ -32,7 +32,7 @@ The executor calls `runtime.bind(agent_id, namespace)` before your agent code ru
 
 ---
 
-## 1. ForgeOS — Sales Pipeline Agent
+## 1. Helios OS — Sales Pipeline Agent
 
 **Purpose:** Autonomous agent that qualifies leads, tracks budget, saves checkpoints at each pipeline stage, and handles shutdown signals gracefully.
 
@@ -279,7 +279,7 @@ result = crew.kickoff()    # kernel gates every tool call inside
 
 ### SDK Runtime from Inside CrewAI Tools
 
-Every ForgeOS tool wrapped as a `BaseTool` has access to the runtime:
+Every Helios OS tool wrapped as a `BaseTool` has access to the runtime:
 
 ```python
 class CompetitorResearchTool(CrewBaseTool):
@@ -325,8 +325,8 @@ agents/shared/competitive-analyst/
   agents.py     # Agent(role="Senior Competitive...", goal="Map competitor...")
   tasks.py      # Task(description=..., expected_output=...)
   crew.py       # Crew(agents=[...], tasks=[...], process='sequential')
-  tools.py      # ForgeOS tools wrapped as CrewBaseTool
-  config.yaml   # CrewAI config + ForgeOS boundaries
+  tools.py      # Helios OS tools wrapped as CrewBaseTool
+  config.yaml   # CrewAI config + Helios OS boundaries
 ```
 
 ---
@@ -608,7 +608,7 @@ Goal: Monitor policy compliance and report violations.
 To call a tool, POST to http://127.0.0.1:18790/tool with:
   {"tool_name": "<name>", "tool_input": {...}}
   Header: X-Agent-Token: sbx_a3b2c1d4e5f6...
-All tool calls are validated by the ForgeOS kernel.
+All tool calls are validated by the Helios OS kernel.
 ```
 
 **SKILLS/default.yaml** (auto-generated):
@@ -616,7 +616,7 @@ All tool calls are validated by the ForgeOS kernel.
 ```yaml
 - name: company__search_knowledge
   trigger: "use company__search_knowledge"
-  description: "Calls company__search_knowledge via ForgeOS kernel proxy"
+  description: "Calls company__search_knowledge via Helios OS kernel proxy"
   method: POST
   endpoint: "http://127.0.0.1:18790/tool"
   headers:
@@ -627,7 +627,7 @@ All tool calls are validated by the ForgeOS kernel.
 
 - name: company__publish_event
   trigger: "use company__publish_event"
-  description: "Calls company__publish_event via ForgeOS kernel proxy"
+  description: "Calls company__publish_event via Helios OS kernel proxy"
   method: POST
   endpoint: "http://127.0.0.1:18790/tool"
   headers:
@@ -665,7 +665,7 @@ Agent tries: company__add_decision
 
 ## 5. Sandbox — Data Processor
 
-**Purpose:** Reflex agent that runs in a Docker container with resource limits and network isolation. Demonstrates the most secure execution model — every tool call proxied through the ForgeOS API with token authentication.
+**Purpose:** Reflex agent that runs in a Docker container with resource limits and network isolation. Demonstrates the most secure execution model — every tool call proxied through the Helios OS API with token authentication.
 
 ### Manifest
 
@@ -814,7 +814,7 @@ agents/shared/data-processor/
 
 ## Quick Comparison
 
-| | ForgeOS | CrewAI | ADK | OpenClaw | Sandbox |
+| | Helios OS | CrewAI | ADK | OpenClaw | Sandbox |
 |---|---------|--------|-----|----------|---------|
 | **Runtime** | Native agentic loop | Crew.kickoff() | Runner.run_async() | Node.js gateway | Docker container |
 | **Kernel gate location** | `_execute_tool()` | `BaseTool._run()` | `FunctionTool._wrapper()` | `ToolProxyServer` | `/api/sandbox/tool` |
@@ -829,7 +829,7 @@ agents/shared/data-processor/
 ## Running the Demos
 
 ```bash
-# ForgeOS + all capabilities (no API keys needed)
+# Helios OS + all capabilities (no API keys needed)
 PYTHONPATH=. python3 examples/full_platform_demo.py
 
 # ADK + all capabilities (no API keys needed)

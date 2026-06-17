@@ -1,5 +1,5 @@
 -- ============================================================================
--- ForgeOS Client-Scoped Agents & Per-Client MCP Infrastructure
+-- Helios OS Client-Scoped Agents & Per-Client MCP Infrastructure
 -- Migration 003: Adds tables for client management and per-client MCP
 -- server configurations with credential isolation.
 -- ============================================================================

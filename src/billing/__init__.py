@@ -1,1 +1,1 @@
-"""ForgeOS billing — usage metering, plans, Stripe integration."""
+"""Helios OS billing — usage metering, plans, Stripe integration."""

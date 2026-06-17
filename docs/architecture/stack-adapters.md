@@ -1,10 +1,10 @@
 # Stack Adapters
 
-ForgeOS supports four agent runtime frameworks. Each is wrapped in a **stack adapter** that implements the `AgentStackAdapter` interface from `stacks/base.py`. The platform layer calls the same methods regardless of which adapter an agent uses.
+Helios OS supports four agent runtime frameworks. Each is wrapped in a **stack adapter** that implements the `AgentStackAdapter` interface from `stacks/base.py`. The platform layer calls the same methods regardless of which adapter an agent uses.
 
 ## Comparison
 
-| | ForgeOS Native | CrewAI | Google ADK | OpenClaw |
+| | Helios OS Native | CrewAI | Google ADK | OpenClaw |
 |---|---|---|---|---|
 | **File** | `stacks/forgeos/adapter.py` | `stacks/crewai/adapter.py` | `stacks/adk/adapter.py` | `stacks/openclaw/adapter.py` |
 | **Runtime** | Platform agentic loop | CrewAI SDK (`Crew.kickoff()`) | ADK Runner (`run_async()`) | HTTP gateway subprocess |
@@ -36,7 +36,7 @@ The platform executor calls these methods and never reaches into adapter interna
 
 ---
 
-## ForgeOS Native (`stacks/forgeos/adapter.py`)
+## Helios OS Native (`stacks/forgeos/adapter.py`)
 
 The default and simplest adapter. Uses the platform's own agentic loop directly.
 
@@ -64,7 +64,7 @@ Wraps the CrewAI framework for role-based agent collaboration.
 
 **Create:** If `crewai` SDK is installed:
 1. Builds `agent_context` via `build_agent_context()`
-2. Wraps each ForgeOS tool as a `CrewBaseTool` subclass (see "Tool Bridging" below)
+2. Wraps each Helios OS tool as a `CrewBaseTool` subclass (see "Tool Bridging" below)
 3. Creates a `CrewAgent(role=name, goal=..., backstory=..., tools=[...])`
 4. Stores in `_crew_agents` dict
 
@@ -77,11 +77,11 @@ If SDK is missing or creation fails: agent is stored but not in `_crew_agents`. 
 4. Returns string output as `AgentResult`
 
 **Invoke (fallback path):** If SDK missing or agent not in `_crew_agents`:
-- Calls `run_agentic_loop()` (same as ForgeOS native)
+- Calls `run_agentic_loop()` (same as Helios OS native)
 
 ### Tool bridging
 
-CrewAI tools must be `BaseTool` subclasses with a `_run(**kwargs) -> str` method. The adapter creates a wrapper class for each ForgeOS tool:
+CrewAI tools must be `BaseTool` subclasses with a `_run(**kwargs) -> str` method. The adapter creates a wrapper class for each Helios OS tool:
 
 ```python
 class ForgeOSTool(CrewBaseTool):
@@ -114,7 +114,7 @@ Wraps Google's Agent Development Kit for enterprise workflows.
    - `claude-*` -> `AnthropicLlm` or `LiteLlm("anthropic/...")`
    - `gpt-*` / `o3-*` -> `LiteLlm("openai/...")`
    - `gemini-*` -> bare string (ADK native)
-2. Wraps ForgeOS tools as `FunctionTool` instances (async wrappers)
+2. Wraps Helios OS tools as `FunctionTool` instances (async wrappers)
 3. Creates `ADKAgent(name=..., model=model, instruction=..., tools=[...])`
 4. Creates `Runner(agent=adk_agent, session_service=InMemorySessionService())`
 
@@ -186,7 +186,7 @@ The gateway auto-restarts after crashes (no one-shot gate).
 
 Each adapter generates different files when an agent is deployed:
 
-### ForgeOS
+### Helios OS
 ```
 agent.py          -- AgentDefinition Python object
 tools.py          -- Tool definitions list

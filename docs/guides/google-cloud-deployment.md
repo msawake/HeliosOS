@@ -1,6 +1,6 @@
-# Deploying ForgeOS on Google Cloud
+# Deploying Helios OS on Google Cloud
 
-This guide deploys ForgeOS (API + Dashboard + Mission Control) on Google Cloud Run with Cloud SQL for persistence and Secret Manager for credentials.
+This guide deploys Helios OS (API + Dashboard + Mission Control) on Google Cloud Run with Cloud SQL for persistence and Secret Manager for credentials.
 
 > **Prefer Infrastructure-as-Code?** The steps below are the manual `gcloud`
 > path. For a repeatable, automated deployment (GKE Autopilot for agent
@@ -46,7 +46,7 @@ export PROJECT_ID=my-forgeos-prod
 export REGION=europe-west1
 
 # Create and configure
-gcloud projects create $PROJECT_ID --name="ForgeOS Platform"
+gcloud projects create $PROJECT_ID --name="Helios OS Platform"
 gcloud config set project $PROJECT_ID
 
 # Enable required APIs
@@ -66,7 +66,7 @@ gcloud services enable \
 gcloud artifacts repositories create forgeos \
   --repository-format=docker \
   --location=$REGION \
-  --description="ForgeOS Docker images"
+  --description="Helios OS Docker images"
 ```
 
 ## Step 3: Create Cloud SQL Database
@@ -113,7 +113,7 @@ echo -n "$(openssl rand -hex 16)" | gcloud secrets create forgeos-mc-password --
 ```bash
 # Service account for Cloud Run
 gcloud iam service-accounts create forgeos-runner \
-  --display-name="ForgeOS Cloud Run"
+  --display-name="Helios OS Cloud Run"
 
 SA_EMAIL=forgeos-runner@${PROJECT_ID}.iam.gserviceaccount.com
 
@@ -326,7 +326,7 @@ This outputs two values to add as GitHub secrets.
 
 ## Kubernetes Alternative
 
-For Kubernetes deployment, ForgeOS ships with Kustomize manifests:
+For Kubernetes deployment, Helios OS ships with Kustomize manifests:
 
 ```
 deploy/k8s/

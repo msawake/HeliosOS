@@ -2,7 +2,7 @@
 """
 Deploy the 5 SDK Developer Guide agents — one per stack.
 
-Deploys to a running ForgeOS platform at localhost:5000, then invokes
+Deploys to a running Helios OS platform at localhost:5000, then invokes
 each agent to prove it's working.
 
 Run:
@@ -166,7 +166,7 @@ AGENTS = [
 
 PROMPTS = {
     "sales-pipeline-agent": "Research and qualify enterprise leads from the knowledge base. Focus on companies with >500 employees. Score them using BANT criteria and publish your top 3.",
-    "competitive-analyst": "Analyze our competitive landscape. Who are the top 3 competitors in the AI agent platform space? What are their strengths and weaknesses compared to ForgeOS?",
+    "competitive-analyst": "Analyze our competitive landscape. Who are the top 3 competitors in the AI agent platform space? What are their strengths and weaknesses compared to Helios OS?",
     "research-analyst": "Investigate the latest trends in enterprise AI adoption. Search the knowledge base for relevant data and publish a brief summary of your findings.",
     "compliance-monitor": "Check our current compliance posture. Search for any policy documents in the knowledge base and report on potential gaps or violations.",
     "data-processor": "Analyze our platform usage data. Search the knowledge base for metrics and usage patterns. Record a summary metric of your findings.",
@@ -204,7 +204,7 @@ def invoke_agent(agent_id, prompt):
 
 
 def main():
-    print(f"\n{B}ForgeOS — Deploy 5 Agents (One Per Stack){RST}")
+    print(f"\n{B}Helios OS — Deploy 5 Agents (One Per Stack){RST}")
     print(f"Platform: {BASE}\n")
 
     # Check platform health

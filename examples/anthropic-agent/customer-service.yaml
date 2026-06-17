@@ -3,10 +3,10 @@
 # ============================================================================
 #
 # Same customer-service agent, running on the Anthropic Agent SDK runtime.
-# Uses Claude's built-in tools + ForgeOS governance via PreToolUse hooks.
+# Uses Claude's built-in tools + Helios OS governance via PreToolUse hooks.
 #
 # When claude-agent-sdk is installed: runs real SDK with query()
-# When not installed: falls back to ForgeOS agentic loop (same behavior)
+# When not installed: falls back to Helios OS agentic loop (same behavior)
 #
 # DEPLOY:  forgeos deploy examples/anthropic-agent/customer-service.yaml
 # INVOKE:  forgeos invoke anthropic-customer-service "Help me with my plant"

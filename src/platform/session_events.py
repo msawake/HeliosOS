@@ -1,5 +1,5 @@
 """
-Event-sourced session model for ForgeOS.
+Event-sourced session model for Helios OS.
 
 Defines immutable session events and a derived ``EventSourcedSession``
 that replays them to reconstruct state.  The event log is the source of

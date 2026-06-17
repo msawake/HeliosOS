@@ -1,7 +1,7 @@
 """
 Codebase Guardian — NO GOVERNANCE (raw version).
 
-Same PR review pipeline, zero ForgeOS runtime checks.
+Same PR review pipeline, zero Helios OS runtime checks.
 Compare with agent.py (15 controls) to see what governance adds.
 
 ⚠ RISKS WITHOUT GOVERNANCE:

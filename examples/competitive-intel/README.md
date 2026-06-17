@@ -1,6 +1,6 @@
 # Competitive Intelligence Agent
 
-Dual-LLM research pipeline: Gemini Flash scans for data (fast, cheap), Claude Opus analyzes findings (deep reasoning). 13 ForgeOS runtime governance checks per invocation.
+Dual-LLM research pipeline: Gemini Flash scans for data (fast, cheap), Claude Opus analyzes findings (deep reasoning). 13 Helios OS runtime governance checks per invocation.
 
 ## Run
 
@@ -16,4 +16,4 @@ python3 examples/competitive-intel/agent.py "Analyze competitor X strategy"
 | File | Purpose |
 |------|---------|
 | `agent.py` | 3-phase pipeline (scan, analyze, recommend) with 13 runtime controls |
-| `manifest.yaml` | ForgeOS contract |
+| `manifest.yaml` | Helios OS contract |

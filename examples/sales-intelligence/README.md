@@ -1,10 +1,10 @@
 # Sales Intelligence Platform
 
-Enterprise Sales Intelligence Platform built on ForgeOS -- 6 agents, 3 frameworks, 5 models working together to automate the full B2B sales intelligence pipeline.
+Enterprise Sales Intelligence Platform built on Helios OS -- 6 agents, 3 frameworks, 5 models working together to automate the full B2B sales intelligence pipeline.
 
 ## Overview
 
-This example demonstrates ForgeOS's multi-framework orchestration by deploying a complete sales intelligence team where agents from different stacks (ForgeOS, Google ADK, Anthropic Agent SDK) collaborate through the platform's A2A protocol, share state through namespaced boundaries, and operate under unified governance.
+This example demonstrates Helios OS's multi-framework orchestration by deploying a complete sales intelligence team where agents from different stacks (Helios OS, Google ADK, Anthropic Agent SDK) collaborate through the platform's A2A protocol, share state through namespaced boundaries, and operate under unified governance.
 
 ## Architecture
 
@@ -22,7 +22,7 @@ This example demonstrates ForgeOS's multi-framework orchestration by deploying a
             |monitor | |analyst | |qualfier| |composer| |analyst |
             +--------+ +--------+ +--------+ +--------+ +--------+
             |Gem Flash| |Opus 4.6| |Sonnet  | | GPT-4o | |Gem Pro |
-            | ADK     | |Anth SDK| |ForgeOS | |ForgeOS | | ADK    |
+            | ADK     | |Anth SDK| |Helios OS | |Helios OS | | ADK    |
             |always_on| |autonom. | | reflex | | reflex | |sched.  |
             | $3/d    | | $10/d  | | $5/d   | | $3/d   | | $2/d   |
             +--------+ +--------+ +--------+ +--------+ +--------+
@@ -43,7 +43,7 @@ This example demonstrates ForgeOS's multi-framework orchestration by deploying a
 
 ## Frameworks
 
-- **ForgeOS** -- Native agentic loop (lead-qualifier, outreach-composer)
+- **Helios OS** -- Native agentic loop (lead-qualifier, outreach-composer)
 - **Google ADK** -- Google AI agent framework (market-monitor, pipeline-analyst)
 - **Anthropic Agent SDK** -- Claude-native agents (research-analyst, sales-manager)
 
@@ -57,7 +57,7 @@ This example demonstrates ForgeOS's multi-framework orchestration by deploying a
 
 ## Demo Scenes
 
-Seven scenarios demonstrate the full range of ForgeOS capabilities:
+Seven scenarios demonstrate the full range of Helios OS capabilities:
 
 ### Scene 1: Cold Start Deploy
 
@@ -73,7 +73,7 @@ forgeos deploy team.yaml
 
 A new lead arrives. The lead-qualifier scores it using BANT, calls market-monitor for context via A2A, and for borderline leads (score 60-70) dispatches an async research request to research-analyst.
 
-**Demonstrates:** A2A sync calls (`agent__call`), A2A async calls (`agent__async_call`), cross-stack communication (ForgeOS -> ADK), reflex execution, data boundary enforcement.
+**Demonstrates:** A2A sync calls (`agent__call`), A2A async calls (`agent__async_call`), cross-stack communication (Helios OS -> ADK), reflex execution, data boundary enforcement.
 
 ### Scene 3: Supervised Outreach
 
@@ -115,7 +115,7 @@ Located at `policies/email-daily-limit.json`. Enforces CAN-SPAM compliance by ca
 
 ### Prerequisites
 
-- ForgeOS platform running (`python3 -m src.bootstrap`)
+- Helios OS platform running (`python3 -m src.bootstrap`)
 - API keys configured in `.env` for Anthropic, OpenAI, and Google AI
 - Python 3.11+
 
@@ -169,4 +169,4 @@ sales-intelligence/
 
 ## Capability Coverage
 
-See [CAPABILITIES.md](CAPABILITIES.md) for the full matrix showing which ForgeOS capability is exercised by which agent in which demo scene.
+See [CAPABILITIES.md](CAPABILITIES.md) for the full matrix showing which Helios OS capability is exercised by which agent in which demo scene.

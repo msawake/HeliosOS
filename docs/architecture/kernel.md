@@ -97,7 +97,7 @@ Agents deployed with the SDK can call the kernel to check permissions before act
 ```python
 from forgeos_sdk import Kernel
 
-# In-process (ForgeOS native stack)
+# In-process (Helios OS native stack)
 kernel = Kernel.local()
 
 # Remote (CrewAI containers, external agents)

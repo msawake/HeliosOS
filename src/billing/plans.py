@@ -1,5 +1,5 @@
 """
-ForgeOS pricing plans and usage enforcement.
+Helios OS pricing plans and usage enforcement.
 
 Defines plan tiers with token limits, agent counts, and workflow quotas.
 Enforces limits before agent invocations.

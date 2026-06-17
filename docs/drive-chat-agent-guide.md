@@ -34,7 +34,7 @@ Done — both appear in your shared folder as real Google Docs/Sheets.
 ## Prerequisites
 
 - A GCP project (this guide uses `admachina-atomic-test-84`).
-- The ForgeOS platform deployed to that project as Cloud Run service
+- The Helios OS platform deployed to that project as Cloud Run service
   `forgeos-platform-api`.
 - `gcloud`, `forgeos` CLIs on your machine, signed in.
 - **A Google Workspace edition that supports Shared Drives** (Business Standard
@@ -95,7 +95,7 @@ Next steps (manual, ~30 s each):
 In the Drive UI (https://drive.google.com):
 
 1. Left sidebar → **Shared drives** → **+ New** (top-left).
-2. Name it, e.g. **"ForgeOS Demo"** → **Create**.
+2. Name it, e.g. **"Helios OS Demo"** → **Create**.
 3. Open the new Shared Drive.
 4. **Manage members** (people icon, top-right) → paste the SA email
    (`forgeos-drive-agent@admachina-atomic-test-84.iam.gserviceaccount.com`)

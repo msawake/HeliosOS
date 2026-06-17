@@ -2,7 +2,7 @@
 
 **What happens when your AI agent runs `kubectl delete namespace production`?**
 
-This example deploys 6 agents across 3 frameworks and 5 LLM models, demonstrating every ForgeOS capability in a scenario developers live every day: incident response, code review, and deployment governance.
+This example deploys 6 agents across 3 frameworks and 5 LLM models, demonstrating every Helios OS capability in a scenario developers live every day: incident response, code review, and deployment governance.
 
 ---
 
@@ -19,8 +19,8 @@ This example deploys 6 agents across 3 frameworks and 5 LLM models, demonstratin
             ▼          ▼       ▼       ▼          ▼
   ┌──────────────┐ ┌────────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐
   │Alert Sentinel│ │  Incident  │ │Remediate │ │  Code    │ │  Deploy   │
-  │ADK / Flash   │ │  Analyst   │ │ForgeOS / │ │ Reviewer │ │ Guardian  │
-  │always_on     │ │Claude/Opus │ │ Sonnet   │ │ForgeOS / │ │ADK / Pro  │
+  │ADK / Flash   │ │  Analyst   │ │Helios OS / │ │ Reviewer │ │ Guardian  │
+  │always_on     │ │Claude/Opus │ │ Sonnet   │ │Helios OS / │ │ADK / Pro  │
   │              │ │autonomous  │ │ reflex   │ │ GPT-4o   │ │ reflex    │
   └──────────────┘ └────────────┘ └──────────┘ │event_drv │ └───────────┘
                                                 └──────────┘
@@ -33,14 +33,14 @@ This example deploys 6 agents across 3 frameworks and 5 LLM models, demonstratin
 |---|---|---|---|---|---|
 | Alert Sentinel | ADK | Gemini 2.0 Flash | always_on | $2/day | Continuous alert monitoring |
 | Incident Analyst | Anthropic Agent SDK | Claude Opus | autonomous | $10/day, $2/task | Deep root cause analysis |
-| Remediation Agent | ForgeOS native | Claude Sonnet | reflex | $3/day | Execute infrastructure fixes |
-| Code Reviewer | ForgeOS native | GPT-4o | event_driven | $4/day | PR security and quality review |
+| Remediation Agent | Helios OS native | Claude Sonnet | reflex | $3/day | Execute infrastructure fixes |
+| Code Reviewer | Helios OS native | GPT-4o | event_driven | $4/day | PR security and quality review |
 | Deploy Guardian | ADK | Gemini 2.5 Pro | reflex | $3/day | Pre-deployment validation |
 | SRE Lead | Anthropic Agent SDK | Claude Opus | reflex (supervisor) | $15/day | Orchestrate incident response |
 
 ## Why Governance Matters Here
 
-**Without ForgeOS, these agents could:**
+**Without Helios OS, these agents could:**
 - Run `kubectl delete namespace production` (Remediation Agent)
 - Execute `DROP TABLE users` during investigation (Incident Analyst)
 - Deploy to production during a P0 incident (Deploy Guardian)
@@ -48,7 +48,7 @@ This example deploys 6 agents across 3 frameworks and 5 LLM models, demonstratin
 - Burn $500 in Opus tokens on a P4 alert (Incident Analyst)
 - Run infinite remediation loops (Remediation Agent)
 
-**With ForgeOS:**
+**With Helios OS:**
 - `kubectl_delete`, `DROP_TABLE`, `rm_rf` are in the DENIED tool list
 - Every remediation action requires on-call engineer approval
 - Deploys are blocked during P0/P1 incidents (declarative policy)
@@ -108,4 +108,4 @@ forgeos deploy examples/sre-command-center/agents/alert-sentinel/manifest.yaml
 
 - **Google ADK**: Alert Sentinel (Google Search grounding), Deploy Guardian (code execution for tests)
 - **Anthropic Agent SDK**: Incident Analyst (deep reasoning + PreToolUse hook), SRE Lead (orchestration)
-- **ForgeOS native**: Remediation Agent (tool denial), Code Reviewer (event-driven PR reviews)
+- **Helios OS native**: Remediation Agent (tool denial), Code Reviewer (event-driven PR reviews)

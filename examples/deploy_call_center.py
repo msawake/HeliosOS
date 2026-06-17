@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Deploy the ForgeOS Call Center — 10 humans + 8 agents.
+Deploy the Helios OS Call Center — 10 humans + 8 agents.
 
 Run:
     PYTHONPATH=. python3 examples/deploy_call_center.py
@@ -26,7 +26,7 @@ def err(t): print(f"  {R}✗{RST} {t}")
 # ─── Agent definitions (8 agents across 3 stacks) ───
 
 AGENTS = [
-    # ForgeOS (4) — real-time / monitoring
+    # Helios OS (4) — real-time / monitoring
     {
         "name": "call-router",
         "stack": "forgeos",
@@ -233,7 +233,7 @@ def invoke(agent_id, prompt):
 
 
 def main():
-    print(f"\n{B}ForgeOS Call Center — Deploy 8 Agents{RST}")
+    print(f"\n{B}Helios OS Call Center — Deploy 8 Agents{RST}")
     print(f"Platform: {BASE}\n")
 
     try:
@@ -244,7 +244,7 @@ def main():
         sys.exit(1)
 
     # Deploy
-    header("Deploying 8 Agents (4 ForgeOS + 2 ADK + 2 CrewAI)")
+    header("Deploying 8 Agents (4 Helios OS + 2 ADK + 2 CrewAI)")
     deployed = {}
     for agent_def in AGENTS:
         name = agent_def["name"]

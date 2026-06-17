@@ -1,7 +1,7 @@
 """
 Risk & Compliance Auditor — GOVERNED.
 
-The same confidentiality scan as agent_raw.py, wrapped in ForgeOS runtime
+The same confidentiality scan as agent_raw.py, wrapped in Helios OS runtime
 governance. This is the law-firm cut of examples/drive-security-auditor: the
 audit *logic* (tools.py) is identical between the two files — the only
 difference is the runtime controls below, which is exactly the point.

@@ -2,7 +2,7 @@
 Risk & Compliance Auditor — shared scan + classification logic.
 
 Used by both agent.py (governed) and agent_raw.py (ungoverned) so the *only*
-difference between them is the ForgeOS runtime governance, not the audit logic.
+difference between them is the Helios OS runtime governance, not the audit logic.
 
 The scan calls the real, in-repo `drive__audit_sharing` tool
 (src/platform/drive_audit_tool.py), which uses the operator's FORGEOS_GWS_*

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ----------------------------------------------------------------------------
-# ForgeOS database restore script.
+# Helios OS database restore script.
 #
 # Downloads a backup from S3/GCS and restores it into a target Postgres.
 # ALWAYS restores into a FRESH database — never onto the running production

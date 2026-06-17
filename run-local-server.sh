@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local dev launcher for the ForgeOS platform with the per-turn worker tier +
+# Local dev launcher for the Helios OS platform with the per-turn worker tier +
 # verbose kernel logging. Runs in the FOREGROUND so you watch kernel decisions
 # live; run `forgeos chat <agent>` from another terminal. Ctrl-C to stop.
 #
@@ -41,7 +41,7 @@ export FORGEOS_KERNEL_VERBOSE="${FORGEOS_KERNEL_VERBOSE:-1}"   # narrate every k
 # (gcloud application-default creds). Override/unset to disable real sends.
 export GCP_PROJECT_ID="${GCP_PROJECT_ID:-admachina-atomic-test-84}"
 
-echo "Booting ForgeOS on :${PORT}  (worker tier + verbose kernel)"
+echo "Booting Helios OS on :${PORT}  (worker tier + verbose kernel)"
 echo "  Postgres: ${DATABASE_URL}"
 echo "  Redis:    ${REDIS_URL}"
 echo "  Qwen:     ${VLLM_BASE_URL:-<unset>}"

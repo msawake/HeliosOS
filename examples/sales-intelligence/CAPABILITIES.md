@@ -1,6 +1,6 @@
 # Capability Coverage Matrix
 
-Which ForgeOS capability is exercised by which agent in which demo scene.
+Which Helios OS capability is exercised by which agent in which demo scene.
 
 ## Legend
 
@@ -117,7 +117,7 @@ Which ForgeOS capability is exercised by which agent in which demo scene.
 
 | Capability | S1 | S2 | S3 | S4 | S5 | S6 | S7 | Agents |
 |---|---|---|---|---|---|---|---|
-| ForgeOS adapter | x | x | x | | | | | LQ, OC |
+| Helios OS adapter | x | x | x | | | | | LQ, OC |
 | ADK adapter | x | x | | | | | x | MM, PA |
 | Anthropic Agent SDK | x | x | | x | x | x | | RA, SM |
 | Cross-stack A2A | | x | | | | | x | LQ->MM, PA->LQ |

@@ -1,4 +1,4 @@
-# Cloud Build CI/CD pipeline for ForgeOS
+# Cloud Build CI/CD pipeline for Helios OS
 # Triggers on push to main branch
 # 1. Run tests
 # 2. Build Docker image

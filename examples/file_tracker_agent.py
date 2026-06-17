@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-ForgeOS File Tracker Agent
+Helios OS File Tracker Agent
 
 Deploys a local agent that counts files added to your computer
 in the last 7 days. Scans ~/Documents, ~/Downloads, ~/Desktop.
 
 Run:
-    # Option 1: Standalone (no ForgeOS server needed)
+    # Option 1: Standalone (no Helios OS server needed)
     PYTHONPATH=. python3 examples/file_tracker_agent.py
 
-    # Option 2: Deploy to running ForgeOS
+    # Option 2: Deploy to running Helios OS
     PYTHONPATH=. python3 examples/file_tracker_agent.py --deploy
 
 What it does:
@@ -175,7 +175,7 @@ def print_report(data: dict):
 
 
 async def deploy_to_forgeos():
-    """Deploy as a ForgeOS agent to a running platform."""
+    """Deploy as a Helios OS agent to a running platform."""
     import httpx
 
     BASE = "http://localhost:5000"
@@ -235,13 +235,13 @@ def main():
     if "--deploy" in sys.argv:
         asyncio.run(deploy_to_forgeos())
     else:
-        # Standalone mode — scan directly, no ForgeOS needed
+        # Standalone mode — scan directly, no Helios OS needed
         print(f"{Y}→{RS} Scanning filesystem (last 7 days)...")
         data = scan_recent_files(days=7)
         print_report(data)
 
-        # Show what ForgeOS would do
-        print(f"{D}  To deploy this as a ForgeOS agent:{RS}")
+        # Show what Helios OS would do
+        print(f"{D}  To deploy this as a Helios OS agent:{RS}")
         print(f"{D}  PYTHONPATH=. python3 examples/file_tracker_agent.py --deploy{RS}")
         print()
 

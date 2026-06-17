@@ -1,5 +1,5 @@
 /**
- * ForgeOS API client.
+ * Helios OS API client.
  * Handles all communication with the Flask backend.
  */
 

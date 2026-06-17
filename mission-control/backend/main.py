@@ -1,4 +1,4 @@
-"""ForgeOS Mission Control — FastAPI entrypoint.
+"""Helios OS Mission Control — FastAPI entrypoint.
 
 Serves:
   - /login          → password gate
@@ -18,7 +18,7 @@ from .proxy import router as proxy_router
 
 # docs_url=None disables FastAPI's built-in Swagger UI at /docs so we can serve
 # the mkdocs-built documentation site at that path instead.
-app = FastAPI(title="ForgeOS Mission Control", docs_url=None, redoc_url=None)
+app = FastAPI(title="Helios OS Mission Control", docs_url=None, redoc_url=None)
 app.include_router(auth_router)
 app.include_router(proxy_router)
 
@@ -61,6 +61,6 @@ async def spa(path: str, request: Request):
 
 
 if __name__ == "__main__":
-    print(f"ForgeOS Mission Control -> {FORGEOS_API}")
+    print(f"Helios OS Mission Control -> {FORGEOS_API}")
     print(f"Open http://localhost:{PORT}")
     uvicorn.run(app, host="0.0.0.0", port=PORT)

@@ -1,6 +1,6 @@
 # SDK Runtime
 
-The agent-side interface to the ForgeOS kernel. Every agent gets a `runtime` singleton that knows who it is and mediates all interactions with governance, budget, checkpoints, capabilities, and signals.
+The agent-side interface to the Helios OS kernel. Every agent gets a `runtime` singleton that knows who it is and mediates all interactions with governance, budget, checkpoints, capabilities, and signals.
 
 ## Why It Exists
 
@@ -12,7 +12,7 @@ Before the runtime, agents had no way to interact with the kernel. Tool calls we
 - Request capability tokens for cross-namespace operations
 - Handle shutdown signals gracefully
 
-The runtime solves all five. It's the "libc" of ForgeOS — the standard library agents use to interact with their operating system.
+The runtime solves all five. It's the "libc" of Helios OS — the standard library agents use to interact with their operating system.
 
 ## Architecture
 
@@ -122,7 +122,7 @@ The runtime is injected at the executor level (before any adapter code runs), so
 
 | Adapter | How tools hit the kernel |
 |---------|------------------------|
-| ForgeOS | `_execute_tool()` calls `runtime.check_tool()` before `tool_executor.execute()` |
+| Helios OS | `_execute_tool()` calls `runtime.check_tool()` before `tool_executor.execute()` |
 | CrewAI | `BaseTool._run()` calls `runtime.check_tool()` in a sync event loop |
 | ADK | `FunctionTool` async wrapper calls `runtime.check_tool()` before execution |
 | OpenClaw | `ToolProxyServer` validates token + calls `runtime.check_tool()` via HTTP |

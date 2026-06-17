@@ -2,7 +2,7 @@
 # a Making Science Group, SA company.
 # SPDX-License-Identifier: Apache-2.0
 """
-Run the ForgeOS MCP Server.
+Run the Helios OS MCP Server.
 
     python3 -m src.forgeos_mcp                              # stdio
     python3 -m src.forgeos_mcp --transport sse              # SSE
@@ -15,7 +15,7 @@ from src.forgeos_mcp.server import server
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ForgeOS MCP Server")
+    parser = argparse.ArgumentParser(description="Helios OS MCP Server")
     parser.add_argument(
         "--transport",
         choices=["stdio", "sse", "streamable-http"],

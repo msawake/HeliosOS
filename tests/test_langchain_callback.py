@@ -1,4 +1,4 @@
-"""Tests for ForgeOS LangChain/LangGraph kernel callback."""
+"""Tests for Helios OS LangChain/LangGraph kernel callback."""
 
 import pytest
 from unittest.mock import MagicMock, patch
@@ -36,7 +36,7 @@ class TestForgeOSKernelCallback:
     def test_deny_raises_tool_exception(self):
         from langchain_core.tools import ToolException
         cb = self._make_callback({"action": "deny", "reason": "tool not in allowed list"})
-        with pytest.raises(ToolException, match="ForgeOS denied"):
+        with pytest.raises(ToolException, match="Helios OS denied"):
             cb.on_tool_start(
                 {"name": "send_email"}, '{"to": "all"}', run_id=uuid4(),
             )
@@ -146,7 +146,7 @@ class TestCallbackWithBaseTool:
             return_value={"action": "deny", "reason": "forbidden"}
         )
 
-        with pytest.raises(ToolException, match="ForgeOS denied"):
+        with pytest.raises(ToolException, match="Helios OS denied"):
             tool.run(
                 {"input": "test"},
                 callbacks=[cb],

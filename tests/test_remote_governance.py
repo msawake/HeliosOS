@@ -24,7 +24,7 @@ class TestRemoteKernelCheck:
 
 
 class TestRemoteUsageReporting:
-    """Remote agents POST usage back to ForgeOS. ProcessTable tracks it."""
+    """Remote agents POST usage back to Helios OS. ProcessTable tracks it."""
 
     def test_record_usage_from_remote(self):
         pt = ProcessTable()

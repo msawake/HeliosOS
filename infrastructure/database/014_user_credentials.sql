@@ -1,5 +1,5 @@
 -- ============================================================================
--- ForgeOS Per-User Encrypted Credential Store
+-- Helios OS Per-User Encrypted Credential Store
 -- Migration 014: app-level-encrypted, tenant-scoped per-user credentials.
 --
 -- Backs `src/core/secret_backends.PostgresSecretBackend`, which slots under

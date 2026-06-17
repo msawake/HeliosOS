@@ -1,11 +1,11 @@
 """
-Autonomous Content Operations Pipeline — Multi-Client, Dual-LLM, ForgeOS Governed.
+Autonomous Content Operations Pipeline — Multi-Client, Dual-LLM, Helios OS Governed.
 
 Two-agent pipeline per content piece:
   1. PRODUCER (Gemini Flash via Atlas) → drafts content, SEO, images
   2. EDITOR  (Claude Sonnet via Atlas) → reviews brand voice, compliance, quality
 
-ForgeOS runtime (Mode C / HTTP kernel) enforces:
+Helios OS runtime (Mode C / HTTP kernel) enforces:
   • Client namespace isolation (pharma can't see fintech data)
   • Per-client budget caps ($500-$1500/month)
   • Per-client tool allowlists (no AI images for pharma)
@@ -31,7 +31,7 @@ Usage:
   # Local (no governance):
   PYTHONPATH=. python3 examples/content-ops/agent.py
 
-  # With ForgeOS HTTP kernel (Mode C):
+  # With Helios OS HTTP kernel (Mode C):
   FORGEOS_API_URL=https://forgeos-api-xxx.run.app \
   ATLAS_GATEWAY_URL=https://atlas-gateway-xxx.run.app/v1 \
   ATLAS_GATEWAY_KEY=sk-... \
@@ -67,7 +67,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from clients import CLIENTS, CONTENT_TYPES
 
 # ---------------------------------------------------------------------------
-# ForgeOS Runtime Setup (Mode C — HTTP Kernel)
+# Helios OS Runtime Setup (Mode C — HTTP Kernel)
 # ---------------------------------------------------------------------------
 
 _runtime_ok = False
@@ -188,7 +188,7 @@ async def produce_content(
 ) -> dict:
     """
     Full content production pipeline for one piece.
-    12 ForgeOS runtime governance calls, numbered ① through ⑫.
+    12 Helios OS runtime governance calls, numbered ① through ⑫.
     """
 
     client = CLIENTS[client_id]
@@ -471,7 +471,7 @@ Perform your full editorial and compliance review."""
             logger.info("    → Awaiting human decision (async — continues in background)")
         else:
             logger.info("  ⑨ ask_human(): SIMULATED — auto-approving for demo")
-            logger.info("    → In production: human reviews in ForgeOS dashboard")
+            logger.info("    → In production: human reviews in Helios OS dashboard")
             hitl_result = {"id": "simulated", "status": "pending"}
     else:
         logger.info("  ⑨ ask_human(): NOT REQUIRED (unregulated client, low risk)")
@@ -563,7 +563,7 @@ async def run_content_ops():
 
     logger.info("")
     logger.info("╔═══════════════════════════════════════════════════════════════════╗")
-    logger.info("║  CONTENT OPERATIONS PIPELINE — ForgeOS Governed                   ║")
+    logger.info("║  CONTENT OPERATIONS PIPELINE — Helios OS Governed                   ║")
     logger.info("║  Producer: %-20s Editor: %-20s       ║", PRODUCER_MODEL, EDITOR_MODEL)
     logger.info("║  Clients: %d | Kernel: %-10s                                  ║",
                 len(CLIENTS), "HTTP" if FORGEOS_URL else ("local" if _runtime_ok else "none"))

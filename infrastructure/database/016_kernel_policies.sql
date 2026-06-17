@@ -1,5 +1,5 @@
 -- ============================================================================
--- ForgeOS Kernel Policy Store
+-- Helios OS Kernel Policy Store
 -- Migration 016: durable namespace + global governance policies.
 --
 -- Backs `src/platform/namespace_policy.PostgresNamespacePolicyStore` and

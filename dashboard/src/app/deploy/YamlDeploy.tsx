@@ -23,7 +23,7 @@ spec:
   tools: []
   goal: Describe what this agent should accomplish.
   system_prompt: |
-    You are a helpful ForgeOS agent.
+    You are a helpful Helios OS agent.
 `;
 
 interface Preview {

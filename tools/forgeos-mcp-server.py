@@ -3,10 +3,10 @@
 # a Making Science Group, SA company.
 # SPDX-License-Identifier: Apache-2.0
 """
-ForgeOS MCP Server — expose the full agent fleet to any MCP-compatible client.
+Helios OS MCP Server — expose the full agent fleet to any MCP-compatible client.
 
 Self-contained single file: the only third-party dependencies are ``mcp`` and
-``httpx``, and it imports nothing from the ForgeOS source tree, so it runs from
+``httpx``, and it imports nothing from the Helios OS source tree, so it runs from
 any working directory without ``PYTHONPATH``. This is the file that ``.mcp.json``
 launches; the importable package ``src/forgeos_mcp`` mirrors it (a parity test
 keeps the two tool sets in sync).
@@ -52,7 +52,7 @@ FORGEOS_USER = os.environ.get("FORGEOS_USER", "")
 server = FastMCP(
     "forgeos",
     instructions=(
-        "ForgeOS MCP Server — talk to AI agents, approve their requests, "
+        "Helios OS MCP Server — talk to AI agents, approve their requests, "
         "manage the fleet, and invoke any agent as a tool. "
         "Use forgeos_list_agents to discover available agents, then "
         "forgeos_chat to have a conversation or forgeos_invoke to run a task."
@@ -84,7 +84,7 @@ async def _api(
     acting_user: str | None = None,
     timeout: float = 120,
 ) -> dict:
-    """Call the ForgeOS API. Use ``raw_body`` to send a non-JSON request body
+    """Call the Helios OS API. Use ``raw_body`` to send a non-JSON request body
     (e.g. a YAML manifest) with the given ``content_type``."""
     headers = _headers(acting_user, content_type if raw_body is not None else "application/json")
     async with httpx.AsyncClient(base_url=FORGEOS_URL, timeout=timeout) as c:
@@ -136,7 +136,7 @@ async def forgeos_list_agents(
     status: str | None = None,
     stack: str | None = None,
 ) -> str:
-    """List all agents in the ForgeOS fleet with their status, stack, and model.
+    """List all agents in the Helios OS fleet with their status, stack, and model.
 
     Filter by department (sales, engineering, legal, ...), status (running,
     idle, failed), or stack (forgeos, crewai, adk, langchain, ...).
@@ -317,7 +317,7 @@ async def forgeos_agent_contract(agent_id: str) -> str:
 
 @server.tool()
 async def forgeos_health() -> str:
-    """Check ForgeOS system health: running agents, LLM providers,
+    """Check Helios OS system health: running agents, LLM providers,
     pending approvals, database status."""
     return _fmt(await _api("GET", "/api/health"))
 
@@ -355,7 +355,7 @@ async def forgeos_deploy(
     provider: str | None = None,
     daily_budget_usd: float | None = None,
 ) -> str:
-    """Deploy a new agent on the ForgeOS platform.
+    """Deploy a new agent on the Helios OS platform.
 
     Stack options: forgeos, crewai, adk, langchain, openclaw, sandbox,
     anthropic_agent, anthropic_managed, openai_agents.
@@ -481,7 +481,7 @@ async def forgeos_run_status(run_id: str, acting_user: str | None = None) -> str
 
 @server.tool()
 async def forgeos_fire_event(name: str, payload: dict[str, Any] | None = None) -> str:
-    """Fire an event on the ForgeOS event bus to trigger event-driven agents."""
+    """Fire an event on the Helios OS event bus to trigger event-driven agents."""
     return _fmt(await _api("POST", "/api/platform/events", {
         "name": name,
         "payload": payload or {},
@@ -600,7 +600,7 @@ async def agent_diagnostics(agent_id: str) -> str:
 # =========================================================================
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="ForgeOS MCP Server")
+    parser = argparse.ArgumentParser(description="Helios OS MCP Server")
     parser.add_argument(
         "--transport",
         choices=["stdio", "sse", "streamable-http"],
@@ -616,7 +616,7 @@ def main() -> None:
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
-    logger.info("ForgeOS MCP Server — url=%s transport=%s", FORGEOS_URL, args.transport)
+    logger.info("Helios OS MCP Server — url=%s transport=%s", FORGEOS_URL, args.transport)
 
     if args.transport != "stdio":
         server.settings.port = args.port

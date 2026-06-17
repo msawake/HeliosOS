@@ -1,6 +1,6 @@
-# ForgeOS Load Tests
+# Helios OS Load Tests
 
-[k6](https://k6.io/docs/) scripts for measuring ForgeOS throughput under
+[k6](https://k6.io/docs/) scripts for measuring Helios OS throughput under
 realistic and adversarial conditions.
 
 ## Install k6

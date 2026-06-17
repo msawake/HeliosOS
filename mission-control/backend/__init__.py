@@ -1,1 +1,1 @@
-"""ForgeOS Mission Control — FastAPI backend."""
+"""Helios OS Mission Control — FastAPI backend."""

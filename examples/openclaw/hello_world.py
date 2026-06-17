@@ -2,7 +2,7 @@
 OpenClaw Hello World — deploy and invoke via Python SDK.
 
 If the OpenClaw gateway (openclaw2/) is available, the agent runs through
-the real HTTP gateway. Otherwise, falls back to ForgeOS native agentic loop.
+the real HTTP gateway. Otherwise, falls back to Helios OS native agentic loop.
 
 Usage:
     PYTHONPATH=. python examples/openclaw/hello_world.py

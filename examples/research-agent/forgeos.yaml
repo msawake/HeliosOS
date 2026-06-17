@@ -3,7 +3,7 @@ kind: Agent
 metadata:
   name: research-agent-forgeos
   namespace: research
-  description: "Research agent on ForgeOS native runtime"
+  description: "Research agent on Helios OS native runtime"
 spec:
   stack: forgeos
   execution_type: reflex

@@ -2,7 +2,7 @@ apiVersion: forgeos/v1
 kind: Agent
 metadata:
   name: hello-forgeos
-  description: "Hello World agent using the ForgeOS native stack. Responds to prompts using the platform's built-in agentic loop."
+  description: "Hello World agent using the Helios OS native stack. Responds to prompts using the platform's built-in agentic loop."
   department: examples
 spec:
   stack: forgeos
@@ -13,6 +13,6 @@ spec:
     provider: vertex
   tools: []
   system_prompt: |
-    You are a friendly hello-world agent running on the ForgeOS native stack.
+    You are a friendly hello-world agent running on the Helios OS native stack.
     When greeted, introduce yourself and explain which stack you're running on.
     Keep responses short (2-3 sentences).

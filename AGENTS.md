@@ -1,6 +1,6 @@
-# ForgeOS — AI Coding Agent Context
+# Helios OS — AI Coding Agent Context
 
-ForgeOS is an operating system for AI agents. It governs what agents can do — budgets, permissions, tool access, human-in-the-loop — across 9 framework adapters (ForgeOS, CrewAI, ADK, LangChain, OpenClaw, Sandbox, Anthropic SDK, Anthropic Managed, OpenAI Agents). The kernel enforces policy. The runtime is the agent-side interface. Agents don't change their code — governance wraps around them.
+Helios OS is an operating system for AI agents. It governs what agents can do — budgets, permissions, tool access, human-in-the-loop — across 9 framework adapters (Helios OS, CrewAI, ADK, LangChain, OpenClaw, Sandbox, Anthropic SDK, Anthropic Managed, OpenAI Agents). The kernel enforces policy. The runtime is the agent-side interface. Agents don't change their code — governance wraps around them.
 
 ## Quick Start
 

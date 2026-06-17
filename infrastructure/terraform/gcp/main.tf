@@ -1,5 +1,5 @@
 # ============================================================================
-# ForgeOS SaaS — Google Cloud Platform Infrastructure
+# Helios OS SaaS — Google Cloud Platform Infrastructure
 # ============================================================================
 #
 # Provisions:
@@ -339,7 +339,7 @@ resource "google_cloud_run_v2_service" "api" {
 
 resource "google_billing_budget" "daily" {
   billing_account = data.google_billing_account.account.id
-  display_name    = "ForgeOS ${var.environment} Daily Budget"
+  display_name    = "Helios OS ${var.environment} Daily Budget"
 
   budget_filter {
     projects = ["projects/${var.project_id}"]

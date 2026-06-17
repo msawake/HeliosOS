@@ -1,9 +1,9 @@
 # ============================================================================
-# ForgeOS Example: LangChain / LangGraph Agent
+# Helios OS Example: LangChain / LangGraph Agent
 # ============================================================================
 #
 # WHAT IT DOES:
-#   A simple LangChain agent with ForgeOS governance. Uses the platform's
+#   A simple LangChain agent with Helios OS governance. Uses the platform's
 #   agentic loop when LangChain is installed, with kernel permission checks
 #   on every tool call via ForgeOSKernelCallback.
 #
@@ -15,7 +15,7 @@ kind: Agent
 metadata:
   name: langchain-assistant
   namespace: default
-  description: "LangChain agent with ForgeOS kernel governance"
+  description: "LangChain agent with Helios OS kernel governance"
 spec:
   stack: langchain
   execution_type: reflex

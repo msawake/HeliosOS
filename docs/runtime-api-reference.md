@@ -1,8 +1,8 @@
-# ForgeOS Runtime API Reference
+# Helios OS Runtime API Reference
 
-Complete reference for `from forgeos_sdk.runtime import runtime` — the agent-side interface to the ForgeOS kernel.
+Complete reference for `from forgeos_sdk.runtime import runtime` — the agent-side interface to the Helios OS kernel.
 
-This API works from ANY agent on ANY platform (ADK, CrewAI, Claude SDK, OpenAI, ForgeOS native). When used in-process, calls go directly to the kernel (~0.1ms). When used remotely (Mode C), calls go via HTTP (~50ms).
+This API works from ANY agent on ANY platform (ADK, CrewAI, Claude SDK, OpenAI, Helios OS native). When used in-process, calls go directly to the kernel (~0.1ms). When used remotely (Mode C), calls go via HTTP (~50ms).
 
 ---
 
@@ -12,7 +12,7 @@ This API works from ANY agent on ANY platform (ADK, CrewAI, Claude SDK, OpenAI, 
 from forgeos_sdk.runtime import runtime
 ```
 
-The runtime is a **module-level singleton**. It's automatically wired by ForgeOS at boot (`bootstrap.py:275`). In remote mode (Mode C), connect manually:
+The runtime is a **module-level singleton**. It's automatically wired by Helios OS at boot (`bootstrap.py:275`). In remote mode (Mode C), connect manually:
 
 ```python
 from forgeos_sdk.kernel import Kernel
@@ -44,7 +44,7 @@ print(f"I am {runtime.agent_id} in namespace {runtime.namespace}")
 
 ### `runtime.check_tool(tool_name, tool_input, estimated_cost_usd)` → `KernelDecision`
 
-Check if the agent is allowed to call a tool. This is what ForgeOS calls automatically before every tool — but you can also call it explicitly for custom actions.
+Check if the agent is allowed to call a tool. This is what Helios OS calls automatically before every tool — but you can also call it explicitly for custom actions.
 
 ```python
 decision = await runtime.check_tool("approve_discount", {"value": 500})
@@ -383,7 +383,7 @@ The event is recorded with:
 
 ## How It Works Across Platforms
 
-### In-Process (ForgeOS, ADK, CrewAI when running inside ForgeOS)
+### In-Process (Helios OS, ADK, CrewAI when running inside Helios OS)
 
 ```python
 runtime.check_tool("approve_discount", {"value": 500})
@@ -410,7 +410,7 @@ The runtime auto-detects which path to use based on how `register_platform()` wa
 
 ## Complete Method Index
 
-| Category | Method | Returns | Auto-called by ForgeOS? |
+| Category | Method | Returns | Auto-called by Helios OS? |
 |----------|--------|---------|------------------------|
 | **Identity** | `runtime.agent_id` | `str` | Yes (bind at invoke) |
 | **Identity** | `runtime.namespace` | `str` | Yes (bind at invoke) |
@@ -440,17 +440,17 @@ The runtime auto-detects which path to use based on how `register_platform()` wa
 | **A2H** | `runtime.notify_human(namespace, name, message, ...)` | `dict` | No — explicit only |
 | **Audit** | `runtime.audit(event, details)` | `None` | No — explicit only |
 
-**"Auto-called by ForgeOS?"** = ForgeOS calls this automatically. The rest are available for agent developers who want deeper governance integration.
+**"Auto-called by Helios OS?"** = Helios OS calls this automatically. The rest are available for agent developers who want deeper governance integration.
 
 ---
 
 ## Platform Interception Summary
 
-ForgeOS automatically calls these runtime methods through each platform's native extension point:
+Helios OS automatically calls these runtime methods through each platform's native extension point:
 
-| Platform | Extension Point | ForgeOS Auto-Calls | Agent Code Changes Needed |
+| Platform | Extension Point | Helios OS Auto-Calls | Agent Code Changes Needed |
 |----------|----------------|-------------------|--------------------------|
-| **ForgeOS native** | `_execute_tool()` in agentic loop | `bind()`, `check_tool()`, `unbind()` | 0 lines |
+| **Helios OS native** | `_execute_tool()` in agentic loop | `bind()`, `check_tool()`, `unbind()` | 0 lines |
 | **Google ADK** | `FunctionTool(async wrapper)` | `bind()`, `check_tool()`, `unbind()` | 0 lines |
 | **CrewAI** | `class ForgeOSTool(BaseTool)._run()` | `bind()`, `check_tool()`, `unbind()` | 0 lines |
 | **Claude Agent SDK** | `PreToolUse` hook | `bind()`, `check_tool()`, `unbind()` | 0 lines |

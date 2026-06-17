@@ -1,5 +1,5 @@
 -- ============================================================================
--- ForgeOS Agent Execution Environments
+-- Helios OS Agent Execution Environments
 -- Migration 015: a per-agent execution environment = a Kubernetes pod (spawned
 -- from a Docker image) that the agent's shell commands run inside, gated by the
 -- kernel `env.exec` syscall. Backs src/platform/environments.EnvironmentManager.

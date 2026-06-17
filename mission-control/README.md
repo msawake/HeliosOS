@@ -1,6 +1,6 @@
-# ForgeOS Mission Control
+# Helios OS Mission Control
 
-Operator console for the ForgeOS platform — Fleet / Governance / Cost / Topology / Manifest / Billing / MCP.
+Operator console for the Helios OS platform — Fleet / Governance / Cost / Topology / Manifest / Billing / MCP.
 
 ## Layout
 

@@ -1,4 +1,4 @@
-# ForgeOS local dev — Postgres + FastAPI backend + Next.js dashboard.
+# Helios OS local dev — Postgres + FastAPI backend + Next.js dashboard.
 #
 #   make start      # stop anything stale, then bring up pg → backend → dashboard
 #   make stop       # kill all three (ports 3000, 5055, container forgeos-pg-local)

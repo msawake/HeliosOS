@@ -2,7 +2,7 @@
 GCP Read-Only Audit Tools — gcloud CLI wrappers for the SRE Daily Auditor.
 
 Each function shells out to `gcloud ... --format=json` and returns structured
-data. All commands are read-only (list, describe, get). The ForgeOS kernel
+data. All commands are read-only (list, describe, get). The Helios OS kernel
 gates every call via the ADK adapter — the manifest allowlist controls which
 tools the agent may invoke.
 

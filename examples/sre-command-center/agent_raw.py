@@ -1,7 +1,7 @@
 """
 SRE Command Center — NO GOVERNANCE (raw version).
 
-Same 7 scenes, zero ForgeOS runtime checks.
+Same 7 scenes, zero Helios OS runtime checks.
 Compare with agent.py (35 controls) to see what governance adds.
 
 What goes wrong without governance:

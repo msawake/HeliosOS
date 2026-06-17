@@ -1,10 +1,10 @@
-# ForgeOS Examples
+# Helios OS Examples
 
 Agent examples across 9 stack adapters — from hello-world to production-grade governed agents.
 
 ## Gold Standard Examples (Production-Ready)
 
-Full governance with ForgeOS runtime controls, raw vs governed comparison, and real-world integrations:
+Full governance with Helios OS runtime controls, raw vs governed comparison, and real-world integrations:
 
 | Agent | Controls | Framework | What It Does |
 |-------|----------|-----------|-------------|
@@ -19,7 +19,7 @@ Each gold-standard example includes:
 - `agent.py` — full governance with numbered runtime controls
 - `agent_raw.py` — same pipeline, zero governance (for comparison)
 - `COMPARISON.md` — side-by-side code + risk table
-- `manifest.yaml` — ForgeOS contract
+- `manifest.yaml` — Helios OS contract
 
 ## Hello-World (Stack Adapters)
 
@@ -29,7 +29,7 @@ PYTHONPATH=. python3 examples/run_all_hello_world.py
 
 | Stack | Hello World | Runtime |
 |-------|------------|---------|
-| [ForgeOS](forgeos/) | `forgeos/hello_world.py` | Native agentic loop |
+| [Helios OS](forgeos/) | `forgeos/hello_world.py` | Native agentic loop |
 | [CrewAI](crewai/) | `crewai/hello_world.py` | `Crew.kickoff()` |
 | [Google ADK](adk/) | `adk/hello_world.py` | `Runner.run_async()` |
 | [OpenClaw](openclaw/) | `openclaw/hello_world.py` | HTTP gateway |
@@ -58,7 +58,7 @@ Additional adapters (LangChain/LangGraph, Anthropic SDK, Anthropic Managed, Open
 | `deploy_5_stack_agents.py` | Deploy 5 agents across 3 stacks |
 | `deploy_call_center.py` | Deploy 10 humans + 8 agents (call center) |
 | `full_platform_demo.py` | Exercise all kernel capabilities |
-| `terminal_quickstart.py` | 3 ways to use ForgeOS (SDK / CLI / REST) |
+| `terminal_quickstart.py` | 3 ways to use Helios OS (SDK / CLI / REST) |
 | `file_tracker_agent.py` | Scan recent files with custom tools |
 | `cleanup.py` | Undeploy all example agents |
 | `test.py` | Integration test harness |

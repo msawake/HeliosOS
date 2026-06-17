@@ -1,5 +1,5 @@
 -- ============================================================================
--- ForgeOS Namespace Registry
+-- Helios OS Namespace Registry
 -- Migration 019: an explicit registry of namespaces so an admin can CREATE a
 -- namespace (and appoint its namespace admins) as a first-class action, rather
 -- than namespaces only existing implicitly as a string on deployed agents.

@@ -29,7 +29,7 @@ export function BillingTab({ billing }: { billing: BillingMetering | null }) {
           <div className="p-4">
             <div className="rounded-md border border-border bg-bg p-[10px]">
               <h4 className="mb-[6px] text-[11px] uppercase tracking-wider text-warn">
-                ForgeOS Commercial License
+                Helios OS Commercial License
               </h4>
               <pre className="whitespace-pre-wrap text-[10px] leading-relaxed text-text">
                 {PRICING_BLOCK}

@@ -1,6 +1,6 @@
 # Capability Coverage Matrix — SRE Command Center
 
-Every ForgeOS capability exercised by which agent in which scene.
+Every Helios OS capability exercised by which agent in which scene.
 
 ## Kernel Capabilities
 
@@ -68,7 +68,7 @@ Every ForgeOS capability exercised by which agent in which scene.
 |---|---|---|
 | Google ADK | Alert Sentinel, Deploy Guardian | Google Search grounding, code execution for tests |
 | Anthropic Agent SDK | Incident Analyst, SRE Lead | Deep reasoning (Opus), PreToolUse hook for kernel gate |
-| ForgeOS native | Remediation Agent, Code Reviewer | Tool denial enforcement, event-driven PR triggers |
+| Helios OS native | Remediation Agent, Code Reviewer | Tool denial enforcement, event-driven PR triggers |
 
 ## Multi-Model
 

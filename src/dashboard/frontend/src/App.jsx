@@ -20,7 +20,7 @@ function Sidebar() {
   return (
     <nav className="sidebar">
       <div className="sidebar-header">
-        <h1 className="logo">ForgeOS</h1>
+        <h1 className="logo">Helios OS</h1>
         <span className="logo-sub">Command Center</span>
       </div>
       <ul className="nav-list">

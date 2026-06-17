@@ -1,6 +1,6 @@
 # Runbook — Incident Response
 
-**Purpose**: Standard playbook for any SEV1/SEV2 incident on ForgeOS.
+**Purpose**: Standard playbook for any SEV1/SEV2 incident on Helios OS.
 
 ## Incident severities
 

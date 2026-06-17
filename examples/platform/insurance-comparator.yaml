@@ -1,5 +1,5 @@
 # ============================================================================
-# ForgeOS Example: Reflex Agent — Insurance Comparator (OpenClaw Stack)
+# Helios OS Example: Reflex Agent — Insurance Comparator (OpenClaw Stack)
 # ============================================================================
 #
 # EXECUTION TYPE: reflex
@@ -7,7 +7,7 @@
 #   insurance quotes across providers and records its recommendation.
 #
 # STACK: openclaw
-#   This agent uses the OpenClaw stack adapter, demonstrating ForgeOS's
+#   This agent uses the OpenClaw stack adapter, demonstrating Helios OS's
 #   multi-stack capability. OpenClaw is well-suited for compliance-heavy
 #   domains like insurance.
 #

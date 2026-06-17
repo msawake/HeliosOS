@@ -1,5 +1,5 @@
 -- ============================================================================
--- ForgeOS Three-Tier Scoped Secrets
+-- Helios OS Three-Tier Scoped Secrets
 -- Migration 018: add scope + namespace to the encrypted credential store so the
 -- same table holds PLATFORM-wide, NAMESPACE-shared, and per-USER secrets.
 --

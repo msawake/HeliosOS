@@ -57,7 +57,7 @@ This starts all three services. The API listens on port 5000.
 |---------|-------|------|---------|
 | `postgres` | `pgvector/pgvector:pg16` | 5433 | Database with vector extensions |
 | `redis` | `redis:7-alpine` | 6379 | Rate limiting, caching |
-| `app` | Built from `Dockerfile` | 5000 | ForgeOS API |
+| `app` | Built from `Dockerfile` | 5000 | Helios OS API |
 
 ---
 

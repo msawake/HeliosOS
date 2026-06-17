@@ -1,5 +1,5 @@
 """
-ForgeOS agent-base runtime (M1) — long-running per-agent HTTP server.
+Helios OS agent-base runtime (M1) — long-running per-agent HTTP server.
 
 This is the process that runs inside a per-agent Kubernetes pod
 (`pulumi/components/agent_base.py`). Unlike the one-shot

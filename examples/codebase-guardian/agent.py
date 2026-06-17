@@ -1,5 +1,5 @@
 """
-Codebase Guardian — Always-On GitHub Security Monitor with ForgeOS Governance.
+Codebase Guardian — Always-On GitHub Security Monitor with Helios OS Governance.
 
 Continuously monitors a GitHub repo every 5 minutes:
   - Reviews open PRs for security issues, code quality, compliance
@@ -9,7 +9,7 @@ Continuously monitors a GitHub repo every 5 minutes:
   - Files findings with severity classification
 
 Uses Claude (via Atlas Gateway) for deep code analysis.
-ForgeOS kernel (Mode C / HTTP) enforces governance.
+Helios OS kernel (Mode C / HTTP) enforces governance.
 
 15 runtime governance controls:
 
@@ -46,7 +46,7 @@ Usage:
   GITHUB_REPO=makingscience-awake/forgeos \
   python3 examples/codebase-guardian/agent.py
 
-  # With ForgeOS HTTP kernel:
+  # With Helios OS HTTP kernel:
   FORGEOS_API_URL=https://forgeos-api-xxx.run.app \
   ATLAS_GATEWAY_URL=https://atlas-gateway-xxx.run.app/v1 \
   ATLAS_GATEWAY_KEY=sk-... \
@@ -82,7 +82,7 @@ ATLAS_URL = os.environ.get("ATLAS_GATEWAY_URL", "")
 ATLAS_KEY = os.environ.get("ATLAS_GATEWAY_KEY", "")
 
 # ---------------------------------------------------------------------------
-# ForgeOS Runtime (Mode C — HTTP Kernel)
+# Helios OS Runtime (Mode C — HTTP Kernel)
 # ---------------------------------------------------------------------------
 
 _runtime_ok = False
@@ -420,7 +420,7 @@ Provide your full security and code quality review."""
 # ---------------------------------------------------------------------------
 
 async def run_guardian():
-    """Continuous monitoring loop with ForgeOS runtime governance."""
+    """Continuous monitoring loop with Helios OS runtime governance."""
 
     state = {
         "iteration": 0,
@@ -448,7 +448,7 @@ async def run_guardian():
 
     logger.info("")
     logger.info("╔═══════════════════════════════════════════════════════════════╗")
-    logger.info("║  CODEBASE GUARDIAN — ForgeOS Governed (15 controls)           ║")
+    logger.info("║  CODEBASE GUARDIAN — Helios OS Governed (15 controls)           ║")
     logger.info("║  Repo: %-30s Model: %-12s  ║", GITHUB_REPO[:30], MODEL[:12])
     logger.info("║  Interval: %ds | Kernel: %-10s                         ║",
                 INTERVAL, "HTTP" if FORGEOS_URL else ("local" if _runtime_ok else "none"))

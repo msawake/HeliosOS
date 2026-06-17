@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-Get ForgeOS running locally in 5 minutes.
+Get Helios OS running locally in 5 minutes.
 
 ## Prerequisites
 
@@ -56,7 +56,7 @@ PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
 You should see:
 
 ```
-BOOTING FORGEOS MULTI-STACK PLATFORM
+BOOTING HELIOS OS MULTI-STACK PLATFORM
 Company: leadforge | Mode: supervised
 [Phase 1] Initializing platform subsystems...
   LLM Router: providers=['anthropic']
@@ -68,7 +68,7 @@ Company: leadforge | Mode: supervised
   Stack registered: adk
   Stack registered: openclaw
 ...
-FORGEOS PLATFORM ONLINE
+HELIOS OS PLATFORM ONLINE
 API: http://localhost:5000 (FastAPI)
 ```
 
@@ -81,7 +81,7 @@ cd forgeos//dashboard
 npm run dev
 ```
 
-Open http://localhost:3000 in your browser. You'll see the ForgeOS dashboard with agent management, admin chat, and system monitoring.
+Open http://localhost:3000 in your browser. You'll see the Helios OS dashboard with agent management, admin chat, and system monitoring.
 
 ## 5. Deploy Your First Agent
 
@@ -113,7 +113,7 @@ Use the streaming chat endpoint:
 ```bash
 curl -N http://localhost:5000/api/platform/agents/my-first-agent/chat/stream \
   -H "Content-Type: application/json" \
-  -d '{"message": "What is ForgeOS?"}'
+  -d '{"message": "What is Helios OS?"}'
 ```
 
 Or open the agent in the dashboard and use the chat interface.

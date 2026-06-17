@@ -2,7 +2,7 @@ apiVersion: forgeos/v1
 kind: Agent
 metadata:
   name: gateway-routed
-  description: "ForgeOS agent routed through an OpenAI-compatible LLM gateway (e.g. a LiteLLM proxy). The endpoint is declared per-agent and the API key is a reference resolved from the encrypted secret store at invoke time — never stored in the manifest."
+  description: "Helios OS agent routed through an OpenAI-compatible LLM gateway (e.g. a LiteLLM proxy). The endpoint is declared per-agent and the API key is a reference resolved from the encrypted secret store at invoke time — never stored in the manifest."
   department: examples
 spec:
   stack: forgeos

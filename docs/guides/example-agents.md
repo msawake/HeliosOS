@@ -1,6 +1,6 @@
-# Example Agents — How They Use the ForgeOS Platform
+# Example Agents — How They Use the Helios OS Platform
 
-This guide explains every example agent in the repository: what it does, which ForgeOS platform features it exercises, and how the kernel governs its behavior at runtime.
+This guide explains every example agent in the repository: what it does, which Helios OS platform features it exercises, and how the kernel governs its behavior at runtime.
 
 ## How to Read This Guide
 
@@ -34,7 +34,7 @@ Every agent gets `PERM`, `AUDIT`, and `PROC` automatically — the kernel enforc
 
 ---
 
-## ForgeOS Native Agents (`examples/forgeos/`)
+## Helios OS Native Agents (`examples/forgeos/`)
 
 ### hello-forgeos
 **Type:** reflex | **Tools:** none | **Features:** `PERM` `AUDIT` `PROC`
@@ -80,7 +80,7 @@ CrewAI agents add the role/goal/backstory pattern. The kernel gates are inside `
 ### hello-crewai
 **Type:** reflex | **Tools:** none | **Metadata:** `crewai_role="Greeter"` | **Features:** `PERM` `AUDIT` `PROC`
 
-Greeting agent with CrewAI role pattern. If the CrewAI SDK is installed, runs via `Crew.kickoff()` with a single-task crew. Otherwise falls back to ForgeOS native loop. Either way, kernel governs identically.
+Greeting agent with CrewAI role pattern. If the CrewAI SDK is installed, runs via `Crew.kickoff()` with a single-task crew. Otherwise falls back to Helios OS native loop. Either way, kernel governs identically.
 
 ### crew-support-agent
 **Type:** always_on (60s loop) | **Tools:** `company__query_events`, `company__publish_event` | **Metadata:** role/goal/backstory | **Features:** `PERM` `LOOP` `PUB` `EVENT` `AUDIT` `PROC`
@@ -120,7 +120,7 @@ ADK agents use `FunctionTool` async wrappers. The kernel gate runs inside each w
 ### hello-adk
 **Type:** reflex | **Tools:** none | **Features:** `PERM` `AUDIT` `PROC`
 
-ADK hello world. If `google-adk` is installed, runs through real ADK Runner. Otherwise falls back to ForgeOS native loop.
+ADK hello world. If `google-adk` is installed, runs through real ADK Runner. Otherwise falls back to Helios OS native loop.
 
 ### always-on-workflow-engine
 **Type:** always_on (90s loop) | **Tools:** `company__query_events`, `company__publish_event`, `company__get_dashboard` | **Features:** `PERM` `LOOP` `PUB` `METRIC` `AUDIT` `PROC`
@@ -160,7 +160,7 @@ The comprehensive demo. Deploys 3 agents (research-analyst, finance-approver, da
 
 ## OpenClaw Agents (`examples/openclaw/`)
 
-OpenClaw agents use SOUL.md for personality and a local `ToolProxyServer` for kernel-gated tool execution. When the Node.js gateway is running, tool calls go through `POST /tool` with token validation. Otherwise, they fall back to the ForgeOS agentic loop.
+OpenClaw agents use SOUL.md for personality and a local `ToolProxyServer` for kernel-gated tool execution. When the Node.js gateway is running, tool calls go through `POST /tool` with token validation. Otherwise, they fall back to the Helios OS agentic loop.
 
 ### hello-openclaw
 **Type:** reflex | **Tools:** none | **Features:** `PERM` `AUDIT` `PROC`
@@ -369,7 +369,7 @@ PYTHONPATH=. python3 examples/adk/full_platform_adk_agent.py
 ```
 
 ### deploy.py / run_all_hello_world.py
-Utility scripts for deploying agents to a running ForgeOS instance. Requires the platform to be booted first.
+Utility scripts for deploying agents to a running Helios OS instance. Requires the platform to be booted first.
 
 ```bash
 # Boot platform
@@ -383,7 +383,7 @@ PYTHONPATH=. python3 examples/run_all_hello_world.py
 
 ## Platform Feature Coverage Matrix
 
-| Feature | ForgeOS | CrewAI | ADK | OpenClaw | A2A | Advanced | Filesystem | Workspace | Mixed | Platform |
+| Feature | Helios OS | CrewAI | ADK | OpenClaw | A2A | Advanced | Filesystem | Workspace | Mixed | Platform |
 |---------|---------|--------|-----|----------|-----|----------|------------|-----------|-------|----------|
 | `PERM` | 5/5 | 6/6 | 7/7 | 6/6 | 4/4 | 2/2 | 4/4 | 4/4 | 4/4 | 6/6 |
 | `SCHED` | 1 | 1 | 1 | 1 | - | - | 1 | 3 | 1 | 2 |

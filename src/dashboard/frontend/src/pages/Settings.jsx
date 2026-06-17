@@ -28,7 +28,7 @@ export default function Settings() {
             onChange={e => setApiKey(e.target.value)}
             placeholder="fos_..."
           />
-          <small className="muted">Your ForgeOS API key for accessing the platform</small>
+          <small className="muted">Your Helios OS API key for accessing the platform</small>
         </div>
         <button className="btn btn-primary" onClick={handleSave}>
           {saved ? 'Saved!' : 'Save'}
@@ -38,7 +38,7 @@ export default function Settings() {
       <div className="card" style={{ maxWidth: 600, marginTop: 20 }}>
         <h3>Company Info</h3>
         <div className="detail-grid">
-          <div><strong>Platform:</strong> ForgeOS v2.0.0</div>
+          <div><strong>Platform:</strong> Helios OS v2.0.0</div>
           <div><strong>Company:</strong> LeadForge AI</div>
           <div><strong>Plan:</strong> Starter</div>
           <div><strong>Agents:</strong> 26</div>

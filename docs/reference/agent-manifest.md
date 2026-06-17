@@ -1,6 +1,6 @@
 # Agent Manifest Reference
 
-The canonical format for declaring a ForgeOS agent. Inspired by Kubernetes CRDs, Microsoft Declarative Agents, and Open Agent Spec.
+The canonical format for declaring a Helios OS agent. Inspired by Kubernetes CRDs, Microsoft Declarative Agents, and Open Agent Spec.
 
 ## Top-Level Structure
 
@@ -474,7 +474,7 @@ $ forgeos validate bad.yaml
 
 ## Team manifests (`kind: Team`)
 
-ForgeOS also supports declaring a *team* of agents in a single manifest. Teams share defaults (stack, LLM, guardrails) and an orchestration pattern.
+Helios OS also supports declaring a *team* of agents in a single manifest. Teams share defaults (stack, LLM, guardrails) and an orchestration pattern.
 
 ```yaml
 apiVersion: agentos/v1

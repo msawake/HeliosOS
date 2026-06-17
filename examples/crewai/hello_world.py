@@ -2,7 +2,7 @@
 CrewAI Hello World — deploy and invoke via Python SDK.
 
 If the CrewAI SDK is installed (`pip install crewai`), the agent runs through
-the real Crew.kickoff() path. Otherwise, it falls back to the ForgeOS native
+the real Crew.kickoff() path. Otherwise, it falls back to the Helios OS native
 agentic loop (same output, different runtime).
 
 Usage:

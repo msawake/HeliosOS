@@ -1,4 +1,4 @@
-# SRE GCP Auditor: Raw vs ForgeOS Governed
+# SRE GCP Auditor: Raw vs Helios OS Governed
 
 Two files, same audit, completely different operational readiness.
 
@@ -9,7 +9,7 @@ agent.py      → 626 lines, 10 runtime checks, critical findings page on-call
 
 ## Side-by-Side: The Core Audit
 
-### WITHOUT ForgeOS (`agent_raw.py`)
+### WITHOUT Helios OS (`agent_raw.py`)
 
 ```python
 async def run_audit():
@@ -38,7 +38,7 @@ async def run_audit():
 
 ---
 
-### WITH ForgeOS (`agent.py`)
+### WITH Helios OS (`agent.py`)
 
 ```python
 async def run_audit():
@@ -158,7 +158,7 @@ PYTHONPATH=. ATLAS_GATEWAY_URL=... ATLAS_GATEWAY_KEY=... \
 
 ## The Numbers
 
-|  | Raw | ForgeOS Governed |
+|  | Raw | Helios OS Governed |
 |--|-----|-----------------|
 | Lines of code | 77 | 626 |
 | Loop-level checks | 0 | 10 |
@@ -172,4 +172,4 @@ PYTHONPATH=. ATLAS_GATEWAY_URL=... ATLAS_GATEWAY_KEY=... \
 | Audit trail | None | Every tool call + findings |
 | Cost to add | — | **$0** (same gcloud calls) |
 
-**The gcloud commands are identical.** ForgeOS wraps governance around them — the agent finds the same things, but now someone actually sees the findings and acts on them.
+**The gcloud commands are identical.** Helios OS wraps governance around them — the agent finds the same things, but now someone actually sees the findings and acts on them.

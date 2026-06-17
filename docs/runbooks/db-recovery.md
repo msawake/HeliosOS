@@ -77,7 +77,7 @@ If the DB instance is itself down:
 
 If the DB won't start or there's obvious corruption:
 
-1. **Put ForgeOS in maintenance mode**:
+1. **Put Helios OS in maintenance mode**:
    ```bash
    kubectl scale deploy/forgeos-api --replicas=0 -n forgeos
    kubectl scale deploy/forgeos-web --replicas=0 -n forgeos

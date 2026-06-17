@@ -2,7 +2,7 @@
 """
 File Tracker — Platform-aware runner.
 
-Unlike deploy.py (standalone), this uses the ForgeOS kernel, runtime,
+Unlike deploy.py (standalone), this uses the Helios OS kernel, runtime,
 and syscall pipeline for every operation:
 
   - Runtime identity: the agent knows who it is

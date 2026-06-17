@@ -1,5 +1,5 @@
 # ============================================================================
-# ForgeOS Example: Scheduled Agent — Ad Campaign Optimizer (CrewAI Stack)
+# Helios OS Example: Scheduled Agent — Ad Campaign Optimizer (CrewAI Stack)
 # ============================================================================
 #
 # EXECUTION TYPE: scheduled
@@ -7,9 +7,9 @@
 #   to review and optimize advertising campaign performance.
 #
 # STACK: crewai
-#   This agent uses the CrewAI stack adapter, demonstrating ForgeOS's
+#   This agent uses the CrewAI stack adapter, demonstrating Helios OS's
 #   multi-stack capability. The platform layer handles it identically to
-#   ForgeOS-native agents.
+#   Helios OS-native agents.
 #
 # TOOLS USED:
 #   - platform__ads_get_campaigns: Retrieves campaign performance data

@@ -2,7 +2,7 @@
 GitHub Read-Only Tools for the Codebase Guardian.
 
 Uses the `gh` CLI (GitHub CLI) for repo operations. All commands are read-only.
-The ForgeOS kernel gates every tool call via the ADK adapter wrapper.
+The Helios OS kernel gates every tool call via the ADK adapter wrapper.
 
 Requires: `gh` CLI authenticated (`gh auth login`).
 """

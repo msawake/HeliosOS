@@ -2,7 +2,7 @@
 # a Making Science Group, SA company.
 # SPDX-License-Identifier: BUSL-1.1
 """
-ForgeOS Agent Manifest Schema.
+Helios OS Agent Manifest Schema.
 
 Defines the canonical agent.yaml format. Every agent — whether declared in
 Python code, a YAML file, or an API call — ultimately reduces to this schema.
@@ -618,7 +618,7 @@ class Spec(BaseModel):
 
 class AgentManifest(BaseModel):
     """
-    The complete agent manifest. Every agent in ForgeOS is an instance of this.
+    The complete agent manifest. Every agent in Helios OS is an instance of this.
 
     This is the wire format for agent.yaml files and the target schema that
     Python SDK builders / decorators compile to.

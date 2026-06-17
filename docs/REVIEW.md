@@ -1,10 +1,10 @@
-# ForgeOS Codebase Review — May 2026
+# Helios OS Codebase Review — May 2026
 
 ## Verdict: Is This a Real Harness?
 
 **The architecture is real. The wiring is 70% complete. Some critical paths are scaffolding.**
 
-ForgeOS has genuine OS-level primitives that no other framework has (capability tokens, two-phase budget reservation, signal delivery, syscall pipeline). The kernel, process table, and adapter interception patterns are well-designed. But several advertised features are declared in schema/docs but not enforced in code.
+Helios OS has genuine OS-level primitives that no other framework has (capability tokens, two-phase budget reservation, signal delivery, syscall pipeline). The kernel, process table, and adapter interception patterns are well-designed. But several advertised features are declared in schema/docs but not enforced in code.
 
 ---
 
@@ -45,7 +45,7 @@ ForgeOS has genuine OS-level primitives that no other framework has (capability 
 
 | Adapter | Rating | Notes |
 |---|---|---|
-| ForgeOS native | **REAL** | Missing callback_registry pass |
+| Helios OS native | **REAL** | Missing callback_registry pass |
 | Google ADK | **REAL** | Full SDK + fallback |
 | CrewAI | **REAL** | Full SDK + fallback |
 | Anthropic Agent SDK | **REAL** | PreToolUse hook + fallback |

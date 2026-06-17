@@ -2,9 +2,9 @@
 # a Making Science Group, SA company.
 # SPDX-License-Identifier: BUSL-1.1
 """
-ForgeOS Python Client.
+Helios OS Python Client.
 
-A thin, typed wrapper over the ForgeOS REST API. Lets developers manage agents
+A thin, typed wrapper over the Helios OS REST API. Lets developers manage agents
 from Python without writing curl commands.
 
 Example:
@@ -37,7 +37,7 @@ class ForgeOSError(Exception):
 
 
 class ForgeOSClient:
-    """Synchronous client for the ForgeOS REST API."""
+    """Synchronous client for the Helios OS REST API."""
 
     def __init__(
         self,

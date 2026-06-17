@@ -1,10 +1,10 @@
-# ForgeOS — Onboarding Guide
+# Helios OS — Onboarding Guide
 
 > The agentic harness: deploy, orchestrate, and govern AI agents across 9 framework adapters with a kernel, syscall pipeline, runtime SDK, and inter-agent protocols.
 
 ## What is this?
 
-ForgeOS is the **harness** (the operating system); agents are the **processes** that run inside it. The framework provides scheduling, tool execution, LLM routing, persistence, and monitoring — agents define what work gets done, declared as k8s-style YAML manifests and governed by the kernel on every tool call, budget spend, and agent-to-agent call.
+Helios OS is the **harness** (the operating system); agents are the **processes** that run inside it. The framework provides scheduling, tool execution, LLM routing, persistence, and monitoring — agents define what work gets done, declared as k8s-style YAML manifests and governed by the kernel on every tool call, budget spend, and agent-to-agent call.
 
 **Repo:** [makingscience-awake/forgeos](https://github.com/makingscience-awake/forgeos) · **CLI:** [antonibergas-hue/forgeos-cli](https://github.com/antonibergas-hue/forgeos-cli)
 

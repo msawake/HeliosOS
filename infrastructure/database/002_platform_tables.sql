@@ -1,5 +1,5 @@
 -- ============================================================================
--- ForgeOS Platform Layer Tables (Multi-Stack Agent Management)
+-- Helios OS Platform Layer Tables (Multi-Stack Agent Management)
 -- Migration 002: Adds tables for persistent agent registry, event
 -- subscriptions, scheduled jobs, and inter-agent messaging.
 -- ============================================================================

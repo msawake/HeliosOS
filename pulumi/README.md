@@ -1,6 +1,6 @@
-# ForgeOS Pulumi (GCP)
+# Helios OS Pulumi (GCP)
 
-Pulumi project that provisions ForgeOS on GCP — Cloud Run for the control plane
+Pulumi project that provisions Helios OS on GCP — Cloud Run for the control plane
 (API + dashboard + MCP), an always-on GKE Autopilot worker tier for the durable
 runtime plus a `kubectl exec` sandbox, and Cloud SQL + Memorystore + Pub/Sub for
 data.

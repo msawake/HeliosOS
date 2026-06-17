@@ -3,7 +3,7 @@
 Both files run the **same confidentiality scan** (`tools.py`): find Drive
 documents shared by public link or whole-domain, and flag any that look
 privileged. The audit logic is byte-for-byte identical. The only difference is
-the ForgeOS runtime governance in `agent.py`.
+the Helios OS runtime governance in `agent.py`.
 
 | Concern | `agent_raw.py` (ungoverned) | `agent.py` (governed) |
 |---|---|---|

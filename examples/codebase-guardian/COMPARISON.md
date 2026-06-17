@@ -1,4 +1,4 @@
-# Codebase Guardian: Raw vs ForgeOS Governed
+# Codebase Guardian: Raw vs Helios OS Governed
 
 ```
 agent_raw.py  →  67 lines,  0 runtime checks, findings go to stdout
@@ -7,7 +7,7 @@ agent.py      → 719 lines, 15 runtime checks, CRITICAL findings page security 
 
 ## Side-by-Side
 
-### WITHOUT ForgeOS (`agent_raw.py`)
+### WITHOUT Helios OS (`agent_raw.py`)
 
 ```python
 async def run_guardian():
@@ -26,7 +26,7 @@ async def run_guardian():
 
 ---
 
-### WITH ForgeOS (`agent.py` — 15 controls)
+### WITH Helios OS (`agent.py` — 15 controls)
 
 ```python
 async def run_guardian():
@@ -108,7 +108,7 @@ Guardian finds a `private_key` hardcoded in PR #87:
 
 ## The Numbers
 
-|  | Raw | ForgeOS Governed |
+|  | Raw | Helios OS Governed |
 |--|-----|-----------------|
 | Lines of code | 67 | 719 |
 | Runtime controls | 0 | **15** per iteration |

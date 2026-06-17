@@ -2,7 +2,7 @@
 # SRE Ops Agent — Always-On Infrastructure Monitor
 # ============================================================================
 #
-# Long-running autonomous agent using Claude Agent SDK + ForgeOS runtime.
+# Long-running autonomous agent using Claude Agent SDK + Helios OS runtime.
 # Monitors infrastructure, detects anomalies, runs diagnostics,
 # proposes fixes, escalates critical issues to humans.
 #

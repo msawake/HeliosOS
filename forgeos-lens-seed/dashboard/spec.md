@@ -1,4 +1,4 @@
-# ForgeOS Lens — UI spec
+# Helios OS Lens — UI spec
 
 This is the contract the **forgeos-lens-builder** agent works against. When
 it's unclear about a choice it asks the human via A2H; otherwise it iterates
@@ -6,7 +6,7 @@ opencode + `pnpm build` until the view in question renders and a PR is open.
 
 ## North star
 
-OpenLens-style desktop client for ForgeOS:
+OpenLens-style desktop client for Helios OS:
 
 - One window, dark theme by default.
 - Sidebar (left) for navigation.

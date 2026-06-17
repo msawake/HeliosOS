@@ -1,5 +1,5 @@
 # ============================================================================
-# ForgeOS Example: Scheduled Agent — Report Writer (CrewAI Stack)
+# Helios OS Example: Scheduled Agent — Report Writer (CrewAI Stack)
 # ============================================================================
 #
 # EXECUTION TYPE: scheduled
@@ -7,7 +7,7 @@
 #   10:00 AM to generate a dashboard report and save it to disk.
 #
 # STACK: crewai
-#   This agent uses the CrewAI stack adapter, demonstrating ForgeOS's
+#   This agent uses the CrewAI stack adapter, demonstrating Helios OS's
 #   multi-stack capability for scheduled report generation.
 #
 # TOOLS USED:

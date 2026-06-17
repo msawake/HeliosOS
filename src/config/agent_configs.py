@@ -1,5 +1,5 @@
 """
-Agent configuration loader — ForgeOS platform layer.
+Agent configuration loader — Helios OS platform layer.
 
 This module delegates to the active company package (default: leadforge).
 All symbols are re-exported for backward compatibility.

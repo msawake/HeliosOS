@@ -1,10 +1,10 @@
-# ForgeOS — Copilot Context
+# Helios OS — Copilot Context
 
-ForgeOS is an agentic harness — an operating system for AI agents. It governs tool access, budgets, permissions, and human-in-the-loop across 9 framework adapters.
+Helios OS is an agentic harness — an operating system for AI agents. It governs tool access, budgets, permissions, and human-in-the-loop across 9 framework adapters.
 
 ## Key Facts
 - Python 3.11+, FastAPI backend, Next.js dashboard
-- 9 adapters: ForgeOS, CrewAI, ADK, LangChain, OpenClaw, Sandbox, Anthropic SDK, Anthropic Managed, OpenAI Agents
+- 9 adapters: Helios OS, CrewAI, ADK, LangChain, OpenClaw, Sandbox, Anthropic SDK, Anthropic Managed, OpenAI Agents
 - Kernel (BSL 1.1): `src/platform/kernel/` — permissions, budgets, policies, capabilities, syscall pipeline
 - Runtime (BSL 1.1): `src/forgeos_sdk/runtime.py` — 27-method agent-side API
 - Adapters + SDK client + examples: Apache 2.0

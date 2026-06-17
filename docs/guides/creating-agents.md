@@ -1,7 +1,7 @@
-# Creating and Managing Agents in ForgeOS
+# Creating and Managing Agents in Helios OS
 
 This guide covers everything you need to deploy, invoke, and manage agents on
-the ForgeOS platform. It assumes the platform is running (via `python -m
+the Helios OS platform. It assumes the platform is running (via `python -m
 src.bootstrap` or equivalent) and you can reach the API at
 `http://localhost:5001`.
 
@@ -10,7 +10,7 @@ src.bootstrap` or equivalent) and you can reach the API at
 ## 1. What is an Agent?
 
 An agent is a configured AI workload. It has a name, a runtime (stack), an
-execution lifecycle, a set of tools, and a system prompt. The ForgeOS framework
+execution lifecycle, a set of tools, and a system prompt. The Helios OS framework
 deploys it, manages its lifecycle, and routes its LLM and tool calls.
 
 The key distinction: **the framework is the platform; agents are the programs.**
@@ -303,7 +303,7 @@ update, delete).
 
 ## 6. Deploy via Dashboard (AI Wizard)
 
-The ForgeOS dashboard includes a conversational agent creation wizard powered by
+The Helios OS dashboard includes a conversational agent creation wizard powered by
 the `AgentWizardPlanner`. Instead of filling out a form, you describe what you
 want in plain language.
 

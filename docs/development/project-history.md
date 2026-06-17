@@ -1,6 +1,6 @@
 # Project History
 
-ForgeOS was built over 5 weeks (March 8 -- April 12, 2026) through iterative development sessions using Claude Code. Each phase added a major architectural layer on top of the previous one.
+Helios OS was built over 5 weeks (March 8 -- April 12, 2026) through iterative development sessions using Claude Code. Each phase added a major architectural layer on top of the previous one.
 
 ## Timeline
 
@@ -72,7 +72,7 @@ April 7-12   [Phase 4]  Production hardening + dashboard polish
 **What was built:**
 - The `AgentStackAdapter` interface in `stacks/base.py` -- the universal adapter contract
 - Four stack implementations:
-  - **ForgeOS native** -- the existing agentic loop, now wrapped as an adapter
+  - **Helios OS native** -- the existing agentic loop, now wrapped as an adapter
   - **CrewAI** -- real SDK integration with `Crew.kickoff()` and `BaseTool` wrapping
   - **Google ADK** -- real SDK integration with `Runner.run_async()` and `FunctionTool` wrapping
   - **OpenClaw** -- gateway subprocess management with HTTP communication
@@ -91,7 +91,7 @@ April 7-12   [Phase 4]  Production hardening + dashboard polish
 - Agent creation wizard (conversational AI-assisted agent design)
 
 **Key design decisions:**
-- All adapters fall back to ForgeOS native when SDK is missing -- zero-dependency baseline
+- All adapters fall back to Helios OS native when SDK is missing -- zero-dependency baseline
 - The platform layer is stack-agnostic -- same registry, executor, scheduler for all agents
 - Tools are bridged to each framework's native format (BaseTool for CrewAI, FunctionTool for ADK)
 - The agentic loop handles both sync (`AgentResult`) and streaming (`SSE events`)

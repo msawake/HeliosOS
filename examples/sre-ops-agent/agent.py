@@ -9,7 +9,7 @@ A long-running autonomous agent that:
 - Paces budget across 24 hours
 - Records every action in the audit trail
 
-Uses Claude Agent SDK for investigation + ForgeOS runtime for governance.
+Uses Claude Agent SDK for investigation + Helios OS runtime for governance.
 ~6-11 runtime calls per iteration, ~4,300 per day.
 
 Usage:
@@ -36,7 +36,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(name)-20s | %(me
 logger = logging.getLogger("sre-ops")
 
 # ---------------------------------------------------------------------------
-# ForgeOS Runtime Setup
+# Helios OS Runtime Setup
 # ---------------------------------------------------------------------------
 
 FORGEOS_URL = os.environ.get("FORGEOS_API_URL", "")
@@ -174,7 +174,7 @@ Be concise and actionable."""
 # ---------------------------------------------------------------------------
 
 async def run_sre_loop():
-    """The main autonomous monitoring loop with full ForgeOS runtime governance."""
+    """The main autonomous monitoring loop with full Helios OS runtime governance."""
 
     # ── BOOT: Load checkpoint or start fresh ──
     state = {"iteration": 0, "anomalies_today": 0, "cost_today": 0.0, "session_id": None}

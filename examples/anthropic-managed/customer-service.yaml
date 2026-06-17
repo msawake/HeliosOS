@@ -3,7 +3,7 @@
 # ============================================================================
 #
 # Deploys to Anthropic's hosted runtime via the Managed Agents API.
-# ForgeOS handles governance (budget, ACL, audit). Anthropic handles execution.
+# Helios OS handles governance (budget, ACL, audit). Anthropic handles execution.
 #
 # Requires: ANTHROPIC_API_KEY with beta access
 #
@@ -17,7 +17,7 @@ kind: Agent
 metadata:
   name: managed-customer-service
   namespace: support
-  description: "Customer service on Anthropic Managed Agents — hosted runtime + ForgeOS governance"
+  description: "Customer service on Anthropic Managed Agents — hosted runtime + Helios OS governance"
 spec:
   stack: anthropic-managed
   execution_type: reflex

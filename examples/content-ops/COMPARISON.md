@@ -1,4 +1,4 @@
-# Content Pipeline: Raw vs ForgeOS Governed
+# Content Pipeline: Raw vs Helios OS Governed
 
 Two files, same pipeline, completely different risk profile.
 
@@ -9,7 +9,7 @@ agent.py      → 629 lines, 12 runtime checks, full governance
 
 ## Side-by-Side: The Core Pipeline
 
-### WITHOUT ForgeOS (`agent_raw.py`)
+### WITHOUT Helios OS (`agent_raw.py`)
 
 ```python
 async def produce_content(client_id: str, topic: str):
@@ -31,7 +31,7 @@ async def produce_content(client_id: str, topic: str):
 
 ---
 
-### WITH ForgeOS (`agent.py`)
+### WITH Helios OS (`agent.py`)
 
 ```python
 async def produce_content(client_id: str, topic: str):
@@ -142,7 +142,7 @@ PYTHONPATH=. ATLAS_GATEWAY_URL=... ATLAS_GATEWAY_KEY=... \
 
 ## The Numbers
 
-|  | Raw | ForgeOS Governed |
+|  | Raw | Helios OS Governed |
 |--|-----|-----------------|
 | Lines of code | 92 | 629 |
 | Runtime checks | 0 | 12 per piece |
@@ -155,4 +155,4 @@ PYTHONPATH=. ATLAS_GATEWAY_URL=... ATLAS_GATEWAY_KEY=... \
 | A2A boundaries | Open | Scoped to client |
 | Cost to add governance | — | $0 (same LLM calls, governance is metadata) |
 
-**The LLM calls are identical.** ForgeOS adds the governance layer around them — namespace isolation, budget, HITL, audit — without changing the AI logic.
+**The LLM calls are identical.** Helios OS adds the governance layer around them — namespace isolation, budget, HITL, audit — without changing the AI logic.

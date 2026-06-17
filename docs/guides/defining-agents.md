@@ -79,7 +79,7 @@ spec:
 | `openclaw` | HTTP gateway subprocess (`stacks/openclaw/adapter.py`) |
 | `langgraph`| LangChain/LangGraph adapter |
 
-The SRE auditor uses **ADK** — its `agent.py` instantiates a `google.adk.Agent` and wraps every tool with `runtime.check_tool()` so the ForgeOS kernel still gets the final say. See [Where does the agent run?](runtime-and-deployment.md) for what `image` means in practice.
+The SRE auditor uses **ADK** — its `agent.py` instantiates a `google.adk.Agent` and wraps every tool with `runtime.check_tool()` so the Helios OS kernel still gets the final say. See [Where does the agent run?](runtime-and-deployment.md) for what `image` means in practice.
 
 ### 3. `spec.lifecycle` — when it runs
 

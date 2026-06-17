@@ -1,5 +1,5 @@
 """
-Workflow engine and primitives for ForgeOS platform.
+Workflow engine and primitives for Helios OS platform.
 
 Generic workflow infrastructure used by all companies. Company-specific
 workflow templates live in src/companies/<company>/workflows.py.

@@ -1,11 +1,11 @@
-# ForgeOS
+# Helios OS
 
 **The agentic harness.** Control what your agents do — on any framework, without changing their code. Deploy, orchestrate, and govern agents across 9 framework adapters with a kernel, syscall pipeline, runtime SDK, and inter-agent protocols.
 
-ForgeOS is the **harness**. Agents are the **processes** that run inside it.
+Helios OS is the **harness**. Agents are the **processes** that run inside it.
 
 ```
-ForgeOS (the operating system)
+Helios OS (the operating system)
   Kernel:    admission control, permissions, budgets, policies, data boundaries
   Syscall:   identity -> capability -> quota -> policy -> boundary -> dispatch -> audit
   Runtime:   SDK that agents use to interact with the kernel at runtime
@@ -15,7 +15,7 @@ ForgeOS (the operating system)
 Agents (the processes)
   Defined by: manifest (name, framework, lifecycle, tools, boundaries)
   Deployed via: API, CLI, or SDK
-  Run on: one of 9 framework adapters (ForgeOS, CrewAI, ADK, LangChain/LangGraph, OpenClaw, Sandbox, Anthropic SDK, Anthropic Managed, OpenAI Agents)
+  Run on: one of 9 framework adapters (Helios OS, CrewAI, ADK, LangChain/LangGraph, OpenClaw, Sandbox, Anthropic SDK, Anthropic Managed, OpenAI Agents)
   Governed by: kernel enforcement on every tool call, budget check, and agent call
 ```
 
@@ -171,7 +171,7 @@ curl -s -X POST http://localhost:5000/api/platform/agents \
     |                      STACK ADAPTERS (9)                        |
     |                                                               |
     |  +---------+ +--------+ +------+ +----------+ +---------+    |
-    |  | ForgeOS | | CrewAI | |  ADK | | OpenClaw | | Sandbox |    |
+    |  | Helios OS | | CrewAI | |  ADK | | OpenClaw | | Sandbox |    |
     |  | (native)| |(crews) | |(Goog)| |(gateway) | | (Docker)|    |
     |  +---------+ +--------+ +------+ +----------+ +---------+    |
     |  +-------------+ +--------------+ +--------------+           |
@@ -243,8 +243,8 @@ from forgeos_sdk import runtime
 | Method | What It Does | Who Else Has This? |
 |---|---|---|
 | `check_tool(name, input)` | Check permission before calling a tool | **Nobody** does proactive checks |
-| `check_a2a(namespace, name)` | Check if allowed to call another agent | Only ForgeOS |
-| `check_data(namespace)` | Check namespace boundary access | Only ForgeOS |
+| `check_a2a(namespace, name)` | Check if allowed to call another agent | Only Helios OS |
+| `check_data(namespace)` | Check namespace boundary access | Only Helios OS |
 | `syscall(verb, target, args)` | Run through full 7-stage admission pipeline | **Nobody** — the Linux syscall model for agents |
 
 ### Budget Management
@@ -272,10 +272,10 @@ from forgeos_sdk import runtime
 | `request_capability(target, verb, ttl)` | Issue time-limited delegation token | **Nobody** — OS capability security for agents |
 | `revoke_capability(token_id)` | Revoke a delegation token | **Nobody** |
 | `ask_human(question, options, deadline)` | Ask human for approval with typed response | Strands has basic `interrupt()`; this is richer |
-| `notify_human(message, priority)` | Alert human without blocking | Only ForgeOS |
+| `notify_human(message, priority)` | Alert human without blocking | Only Helios OS |
 | `contract()` | Read own deployment contract (budget, policies) | **Nobody** — agents can't see their own constraints |
 | `process()` | Read own resource usage (tokens, dollars, tool calls) | **Nobody** |
-| `audit(event, details)` | Record custom event to hash-chained audit trail | Only ForgeOS |
+| `audit(event, details)` | Record custom event to hash-chained audit trail | Only Helios OS |
 
 ### Example
 
@@ -316,11 +316,11 @@ The runtime is bound per-invocation via `contextvars` — each concurrent agent 
 
 ## Remote Kernel (HTTP Mode)
 
-Agents can run on **separate Cloud Run instances** or VMs, governed by ForgeOS via HTTP. The same `runtime.check_tool()` API works identically — the SDK auto-detects whether to make a direct Python call or an HTTP request.
+Agents can run on **separate Cloud Run instances** or VMs, governed by Helios OS via HTTP. The same `runtime.check_tool()` API works identically — the SDK auto-detects whether to make a direct Python call or an HTTP request.
 
 ```
 ┌──────────────────────────────┐     ┌──────────────────────────────┐
-│  Cloud Run: Agent Fleet       │     │  Cloud Run: ForgeOS Control   │
+│  Cloud Run: Agent Fleet       │     │  Cloud Run: Helios OS Control │
 │                               │     │  Plane (kernel lives here)    │
 │  ┌─────┐ ┌─────┐ ┌─────┐    │HTTP │                               │
 │  │ADK  │ │CrewAI│ │Lang │    │────▶│  POST /kernel/check-tool      │
@@ -342,7 +342,7 @@ export FORGEOS_API_KEY=fos_sales_xxxx
 # Agent code — identical to in-process mode:
 from forgeos_sdk import runtime
 decision = await runtime.check_tool("send_email")
-# → HTTP POST to ForgeOS control plane → kernel decides → ~50ms
+# → HTTP POST to Helios OS control plane → kernel decides → ~50ms
 ```
 
 200 remote agents × 10 tool calls = 2,000 HTTP requests — trivial for FastAPI, invisible next to 5-30s LLM calls.
@@ -353,14 +353,14 @@ decision = await runtime.check_tool("send_email")
 
 | Stack | Runtime | SDK Required | Best For |
 |-------|---------|-------------|----------|
-| **ForgeOS** | Native agentic loop | None | Default. Full flexibility, all kernel features |
+| **Helios OS** | Native agentic loop | None | Default. Full flexibility, all kernel features |
 | **CrewAI** | `Crew.kickoff()` | `pip install crewai` | Role-based multi-agent collaboration |
 | **Google ADK** | `Runner.run_async()` | `pip install google-adk` | Google ecosystem, Gemini models |
 | **LangChain/LangGraph** | `AgentExecutor` / `ToolNode` | `pip install langchain` | Existing LangChain apps, complex tool chains |
 | **OpenClaw** | HTTP gateway subprocess | Node.js + openclaw2 | Markdown-driven, SOUL/HEARTBEAT pattern |
 | **Sandbox** | Docker container | Docker | Untrusted code, isolated execution |
 
-**External SDK Adapters** (agents can also run on separate infrastructure, governed by ForgeOS kernel via HTTP):
+**External SDK Adapters** (agents can also run on separate infrastructure, governed by Helios OS kernel via HTTP):
 
 | Stack | Runtime | SDK Required | Governance Hook |
 |-------|---------|-------------|----------------|
@@ -372,7 +372,7 @@ decision = await runtime.check_tool("send_email")
 All 9 adapters implement the same `AgentStackAdapter` interface. All adapters have kernel gates — every tool call is checked through `runtime.check_tool()` regardless of which framework runs the agent. External SDK adapters fall back to the platform agentic loop when their SDK is not installed.
 
 The Anthropic, OpenAI, and LangChain adapters support three deployment modes:
-- **Mode A** (in-process): agent runs inside ForgeOS, kernel check is a direct Python call (~0.1ms)
+- **Mode A** (in-process): agent runs inside Helios OS, kernel check is a direct Python call (~0.1ms)
 - **Mode B** (pure): agent runs standalone, no governance
 - **Mode C** (remote HTTP): agent runs on separate Cloud Run, kernel checked via HTTP (~50ms)
 
@@ -485,7 +485,7 @@ See [Agent Manifest Reference](docs/reference/agent-manifest.md) for the full sc
 |
 +-- stacks/                         # Stack adapter layer (9 adapters)
 |   +-- base.py                     # AgentStackAdapter ABC, AgentDefinition, enums
-|   +-- forgeos/adapter.py          # Native ForgeOS adapter
+|   +-- forgeos/adapter.py          # Native Helios OS adapter
 |   +-- crewai/adapter.py           # CrewAI adapter
 |   +-- adk/adapter.py              # Google ADK adapter
 |   +-- openclaw/adapter.py         # OpenClaw gateway adapter
@@ -501,7 +501,7 @@ See [Agent Manifest Reference](docs/reference/agent-manifest.md) for the full sc
 |   +-- tests/                      # Protocol conformance tests
 |
 +-- dashboard/                      # Next.js 15 + React 19 + Tailwind frontend
-+-- examples/                       # Example agents per stack (ForgeOS, CrewAI, ADK, etc.)
++-- examples/                       # Example agents per stack (Helios OS, CrewAI, ADK, etc.)
 +-- agents/                         # Deployed agent configurations (gitignored)
 +-- tests/                          # ~1249 tests across 67 files
 +-- docs/                           # Architecture, guides, reference, runbooks, protocols
@@ -514,7 +514,7 @@ See [Agent Manifest Reference](docs/reference/agent-manifest.md) for the full sc
 
 ## Graceful Degradation
 
-ForgeOS runs with whatever is available:
+Helios OS runs with whatever is available:
 
 | Component | Available | Unavailable |
 |-----------|-----------|-------------|
@@ -522,7 +522,7 @@ ForgeOS runs with whatever is available:
 | PostgreSQL | Persistent storage + RLS | In-memory (lost on restart) |
 | Redis | Distributed rate limiting | In-memory rate limiting |
 | MCP servers | Real tool execution | "Not connected" errors |
-| CrewAI/ADK/LangChain/OpenClaw SDK | Native framework execution | Falls back to ForgeOS agentic loop |
+| CrewAI/ADK/LangChain/OpenClaw SDK | Native framework execution | Falls back to Helios OS agentic loop |
 
 ---
 
@@ -539,7 +539,7 @@ ForgeOS runs with whatever is available:
 | [A2A Protocol](docs/architecture/a2a-protocol.md) | Agent-to-agent calling across frameworks |
 | [A2H Protocol](docs/protocols/a2h-spec.md) | Agent-to-human interaction protocol |
 | [Platform Layer](docs/architecture/platform-layer.md) | Registry, executor, scheduler, event bus, LLM router |
-| [Stack Adapters](docs/architecture/stack-adapters.md) | ForgeOS, CrewAI, ADK, LangChain, OpenClaw, Sandbox, Anthropic, OpenAI |
+| [Stack Adapters](docs/architecture/stack-adapters.md) | Helios OS, CrewAI, ADK, LangChain, OpenClaw, Sandbox, Anthropic, OpenAI |
 | [Python SDK](docs/guides/sdk.md) | Agent, Runtime, Kernel, Manifest, CLI |
 | [Agent Manifest](docs/reference/agent-manifest.md) | Full `agent.yaml` schema |
 | [API Reference](docs/reference/api-endpoints.md) | All FastAPI endpoints |

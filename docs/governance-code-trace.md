@@ -1,4 +1,4 @@
-# ForgeOS Governance Code Trace
+# Helios OS Governance Code Trace
 
 Exactly where the kernel runs for each deployed agent — file paths, line numbers, and complete request traces.
 
@@ -270,7 +270,7 @@ User types "help me with my plant" in browser
 
 4. PlatformExecutor.invoke() (executor.py:275)
    → Looks up agent "3cd5d08f-5f4" in registry
-   → Gets ForgeOS adapter
+   → Gets Helios OS adapter
    → Loads session history for "sess-abc"
 
 5. ★ POINT ①: Runtime bind (executor.py:306-311)
@@ -385,7 +385,7 @@ Total kernel checks for this one request:
 
 ## Remote Governance Endpoints
 
-When agents run OUTSIDE ForgeOS (separate Cloud Run service), they call these HTTP endpoints instead:
+When agents run OUTSIDE Helios OS (separate Cloud Run service), they call these HTTP endpoints instead:
 
 | Endpoint | File:Line | In-Process Equivalent |
 |----------|-----------|----------------------|

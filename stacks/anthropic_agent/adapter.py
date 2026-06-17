@@ -2,15 +2,15 @@
 Anthropic Agent SDK Stack Adapter.
 
 When `claude-agent-sdk` is installed, this adapter runs real Claude agents
-using the official SDK with `query()` / `ClaudeSDKClient`. ForgeOS tools are
+using the official SDK with `query()` / `ClaudeSDKClient`. Helios OS tools are
 exposed as an in-process MCP server, and a PreToolUse hook integrates the
 kernel for permission checks.
 
 When the SDK is not available, it falls back to the platform's shared
-agentic loop (same behavior as the ForgeOS native adapter).
+agentic loop (same behavior as the Helios OS native adapter).
 
 Key integration:
-- Tools: ForgeOS tool_executor wrapped as MCP server tools
+- Tools: Helios OS tool_executor wrapped as MCP server tools
 - Kernel gate: ONE PreToolUse hook gates ALL tools (no per-tool wrappers)
 - Sessions: SDK session_id stored for multi-turn resume
 - Subagents: team manifest workers mapped to SDK AgentDefinition
@@ -74,7 +74,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 async def _forgeos_kernel_hook(input_data: dict, tool_use_id: str, context: Any) -> dict:
-    """PreToolUse hook — checks ForgeOS kernel before every tool call.
+    """PreToolUse hook — checks Helios OS kernel before every tool call.
 
     This ONE hook gates ALL tools. No per-tool wrapper needed.
     Returns {"hookSpecificOutput": {"permissionDecision": "deny"}} to block.
@@ -104,9 +104,9 @@ async def _forgeos_kernel_hook(input_data: dict, tool_use_id: str, context: Any)
 # ---------------------------------------------------------------------------
 
 def make_remote_kernel_hook(forgeos_url: str, agent_id: str):
-    """Create a PreToolUse hook that checks ForgeOS kernel via HTTP.
+    """Create a PreToolUse hook that checks Helios OS kernel via HTTP.
 
-    Use this when the agent runs OUTSIDE ForgeOS (Mode C).
+    Use this when the agent runs OUTSIDE Helios OS (Mode C).
     """
     async def _hook(input_data: dict, tool_use_id: str, context: Any) -> dict:
         tool_name = input_data.get("tool_name", "")
@@ -136,11 +136,11 @@ def make_remote_kernel_hook(forgeos_url: str, agent_id: str):
 
 
 # ---------------------------------------------------------------------------
-# Tool bridge — ForgeOS tools as in-process MCP server
+# Tool bridge — Helios OS tools as in-process MCP server
 # ---------------------------------------------------------------------------
 
 def _build_forgeos_mcp_server(tool_executor, agent_def: AgentDefinition, agent_context: dict):
-    """Wrap ForgeOS tools as an in-process MCP server for the Anthropic SDK.
+    """Wrap Helios OS tools as an in-process MCP server for the Anthropic SDK.
 
     Each tool becomes a @tool-decorated function. The SDK handles schema
     discovery automatically.
@@ -156,7 +156,7 @@ def _build_forgeos_mcp_server(tool_executor, agent_def: AgentDefinition, agent_c
     tools = []
     for schema in schemas:
         name = schema.get("name", "")
-        desc = schema.get("description", "") or f"ForgeOS tool: {name}"
+        desc = schema.get("description", "") or f"Helios OS tool: {name}"
         input_schema = schema.get("input_schema", {"type": "object", "properties": {}})
 
         if not name:
@@ -232,7 +232,7 @@ class AnthropicAgentSDKAdapter(AgentStackAdapter):
         self, agent_id, agent_def, prompt, agent_context, history,
     ) -> AgentResult:
         """Invoke using the real Anthropic Agent SDK."""
-        # Build MCP server from ForgeOS tools
+        # Build MCP server from Helios OS tools
         mcp_server = _build_forgeos_mcp_server(self._tool_executor, agent_def, agent_context)
 
         # Build options
@@ -300,7 +300,7 @@ class AnthropicAgentSDKAdapter(AgentStackAdapter):
     async def _invoke_via_platform(
         self, agent_id, agent_def, prompt, agent_context, history,
     ) -> AgentResult:
-        """Fallback: use ForgeOS platform agentic loop."""
+        """Fallback: use Helios OS platform agentic loop."""
         try:
             from src.platform.agentic_loop import run_agentic_loop
             return await run_agentic_loop(
@@ -372,5 +372,5 @@ class AnthropicAgentSDKAdapter(AgentStackAdapter):
 
         return {
             "agent.py": agent_py,
-            "README.md": f"# {name}\n\nAnthropic Agent SDK agent managed by ForgeOS.\n",
+            "README.md": f"# {name}\n\nAnthropic Agent SDK agent managed by Helios OS.\n",
         }

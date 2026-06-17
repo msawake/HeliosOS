@@ -27,31 +27,31 @@ class Identity(pulumi.ComponentResource):
         self.platform_api = gcp.serviceaccount.Account(
             f"{name}-platform-api",
             account_id="forgeos-platform-api",
-            display_name="ForgeOS Platform API (Cloud Run)",
+            display_name="Helios OS Platform API (Cloud Run)",
             opts=child,
         )
         self.agent_runtime = gcp.serviceaccount.Account(
             f"{name}-agent",
             account_id="forgeos-agent-runtime",
-            display_name="ForgeOS Agent Runtime (GKE pods)",
+            display_name="Helios OS Agent Runtime (GKE pods)",
             opts=child,
         )
         self.migrations = gcp.serviceaccount.Account(
             f"{name}-migrations",
             account_id="forgeos-migrations",
-            display_name="ForgeOS DB Migrations (Cloud Run Job)",
+            display_name="Helios OS DB Migrations (Cloud Run Job)",
             opts=child,
         )
         self.mcp = gcp.serviceaccount.Account(
             f"{name}-mcp",
             account_id="forgeos-mcp",
-            display_name="ForgeOS MCP Server (Cloud Run)",
+            display_name="Helios OS MCP Server (Cloud Run)",
             opts=child,
         )
         self.dashboard = gcp.serviceaccount.Account(
             f"{name}-dashboard",
             account_id="forgeos-dashboard",
-            display_name="ForgeOS Dashboard (Cloud Run)",
+            display_name="Helios OS Dashboard (Cloud Run)",
             opts=child,
         )
 
@@ -134,7 +134,7 @@ class Identity(pulumi.ComponentResource):
             sa = gcp.serviceaccount.Account(
                 f"{name}-drive-{slug}",
                 account_id=f"drive-agent-{slug}",  # <=30 chars
-                display_name=f"ForgeOS Drive Agent — {slug}",
+                display_name=f"Helios OS Drive Agent — {slug}",
                 description=f"Per-agent Drive SA for treasury agent {slug}",
                 opts=child,
             )

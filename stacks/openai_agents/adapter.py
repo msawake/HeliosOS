@@ -2,10 +2,10 @@
 OpenAI Agents Stack Adapter.
 
 Dual-path: when `openai-agents` SDK is installed, uses the real Agent/Runner
-with an on_tool_start hook for ForgeOS kernel governance. Falls back to
+with an on_tool_start hook for Helios OS kernel governance. Falls back to
 direct Responses API HTTP calls when the SDK is not available.
 
-The on_tool_start hook gates EVERY tool call through the ForgeOS kernel —
+The on_tool_start hook gates EVERY tool call through the Helios OS kernel —
 same pattern as the Anthropic Agent SDK's PreToolUse hook.
 """
 from __future__ import annotations
@@ -49,7 +49,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 class ForgeOSKernelHooks(AgentHooks if AgentHooks else object):
-    """AgentHooks implementation that checks ForgeOS kernel before every tool."""
+    """AgentHooks implementation that checks Helios OS kernel before every tool."""
 
     async def on_tool_start(self, context, agent, tool) -> None:
         tool_name = getattr(tool, "name", str(tool))
@@ -59,7 +59,7 @@ class ForgeOSKernelHooks(AgentHooks if AgentHooks else object):
                 decision = await _rt.check_tool(tool_name, {})
                 if decision.denied:
                     logger.info("Kernel DENIED tool %s: %s", tool_name, decision.reason)
-                    raise PermissionError(f"ForgeOS kernel denied: {decision.reason}")
+                    raise PermissionError(f"Helios OS kernel denied: {decision.reason}")
         except PermissionError:
             raise
         except Exception as e:
@@ -85,7 +85,7 @@ class ForgeOSKernelHooks(AgentHooks if AgentHooks else object):
 
 
 def make_remote_kernel_hooks(forgeos_url: str, agent_id: str):
-    """Create hooks that check ForgeOS kernel via HTTP (Mode C)."""
+    """Create hooks that check Helios OS kernel via HTTP (Mode C)."""
 
     class RemoteKernelHooks:
         async def on_tool_start(self, context, agent, tool) -> None:
@@ -98,7 +98,7 @@ def make_remote_kernel_hooks(forgeos_url: str, agent_id: str):
                     })
                     decision = resp.json()
                     if decision.get("action") == "deny":
-                        raise PermissionError(f"ForgeOS kernel denied: {decision.get('reason')}")
+                        raise PermissionError(f"Helios OS kernel denied: {decision.get('reason')}")
             except PermissionError:
                 raise
             except Exception as e:
@@ -205,7 +205,7 @@ class OpenAIAgentsAdapter(AgentStackAdapter):
             )
         except PermissionError as e:
             return AgentResult(agent_id=agent_id, status=AgentStatus.COMPLETED,
-                               output=f"Tool denied by ForgeOS kernel: {e}")
+                               output=f"Tool denied by Helios OS kernel: {e}")
         except Exception as e:
             logger.exception("OpenAI SDK invoke failed")
             return await self._invoke_via_api(agent_id, agent_def, prompt, None, None)
@@ -256,7 +256,7 @@ class OpenAIAgentsAdapter(AgentStackAdapter):
             def _make(name_captured):
                 @function_tool(name_override=name_captured)
                 async def tool_fn(input: str = "") -> str:
-                    """ForgeOS tool."""
+                    """Helios OS tool."""
                     if self._tool_executor:
                         try:
                             result = await self._tool_executor.execute(
@@ -279,7 +279,7 @@ class OpenAIAgentsAdapter(AgentStackAdapter):
                 tools.append({"type": "code_interpreter"})
             else:
                 tools.append({"type": "function", "name": name,
-                              "description": f"ForgeOS tool: {name}",
+                              "description": f"Helios OS tool: {name}",
                               "parameters": {"type": "object", "properties": {}}})
         return tools
 
@@ -299,5 +299,5 @@ class OpenAIAgentsAdapter(AgentStackAdapter):
                 result = asyncio.run(Runner.run(agent, input="Hello!"))
                 print(result.final_output)
             '''),
-            "README.md": f"# {agent_def.name}\n\nOpenAI Agents SDK agent managed by ForgeOS.\n",
+            "README.md": f"# {agent_def.name}\n\nOpenAI Agents SDK agent managed by Helios OS.\n",
         }

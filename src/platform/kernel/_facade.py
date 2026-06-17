@@ -4,7 +4,7 @@
 # Change Date: 2030-05-20. Change License: Apache License, Version 2.0.
 # See LICENSE for full terms.
 """
-ForgeOS AgentOS Kernel.
+Helios OS AgentOS Kernel.
 
 The policy decision point for every meaningful agent action. Composes existing
 subsystems (tool executor, A2A handler, usage enforcer, audit log) behind a

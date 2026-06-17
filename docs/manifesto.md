@@ -1,4 +1,4 @@
-# ForgeOS — The Agentic Harness
+# Helios OS — The Agentic Harness
 
 ## Control what your agents do. On any framework. Without changing their code.
 
@@ -20,7 +20,7 @@ Every agent framework today — LangGraph, CrewAI, Google ADK, Strands, OpenAI A
 
 What happens when you deploy 200 agents across sales, marketing, finance, and operations — and one of them starts sending emails to your entire customer database? Or exceeds its budget by 10x? Or calls a tool it was never supposed to access?
 
-In the server world, we solved this 50 years ago. ForgeOS applies those lessons to agents.
+In the server world, we solved this 50 years ago. Helios OS applies those lessons to agents.
 
 ---
 
@@ -28,16 +28,16 @@ In the server world, we solved this 50 years ago. ForgeOS applies those lessons 
 
 A framework tells an agent what to do. A **harness** controls *how* it does it — enforcing budgets, checking permissions, delivering signals, saving checkpoints — regardless of which framework drives the LLM loop.
 
-Install the ForgeOS SDK, set one env var, and every agent — ADK, CrewAI, LangChain, Claude SDK, OpenAI, or your own — gets governance:
+Install the Helios OS SDK, set one env var, and every agent — ADK, CrewAI, LangChain, Claude SDK, OpenAI, or your own — gets governance:
 
 | Runtime Method | OS Analogy | Who Else Has This? |
 |---|---|---|
-| `check_tool()` | `access()` — check permission before action | Strands has hooks (reactive). ForgeOS is **proactive**. |
+| `check_tool()` | `access()` — check permission before action | Strands has hooks (reactive). Helios OS is **proactive**. |
 | `budget()` / `reserve()` / `commit()` / `release()` | Two-phase commit — a database transaction for money | **Nobody.** ADK, CrewAI, Strands have no budget primitives. |
 | `checkpoint()` / `last_checkpoint()` | Process checkpointing — like CRIU for containers | LangGraph has checkpoints. **Nobody else** in the agent space. |
 | `pending_signals()` / `signal()` | POSIX signals — SIGTERM/SIGSTOP for cooperative preemption | **Nobody.** Agents in other frameworks just get killed. |
 | `request_capability()` / `revoke_capability()` | Capability tokens — unforgeable file descriptors | **Nobody.** OS research (capability-based security) applied to agents. |
-| `ask_human()` / `notify_human()` | IPC with a human process — human as first-class agent | Strands has `interrupt()`. ForgeOS is richer (typed responses, deadlines, channels). |
+| `ask_human()` / `notify_human()` | IPC with a human process — human as first-class agent | Strands has `interrupt()`. Helios OS is richer (typed responses, deadlines, channels). |
 | `contract()` / `process()` | `/proc/self/status` — introspect own constraints | **Nobody.** Agents in other frameworks can't see their own budget or policy. |
 | `syscall()` | Unified system call — one entry point for all kernel operations | **Nobody.** The Linux syscall model applied to agents. |
 | `bind()` / `unbind()` | Thread-local storage — identity scoped to async task | Standard pattern, uniquely applied to agent identity. |
@@ -52,7 +52,7 @@ The harness can do what no other tool can because it's architected like a UNIX k
 
 ```
 ┌──────────────────────────────────┬────────────────────────────────────────────┐
-│           UNIX / Linux           │                  ForgeOS                    │
+│           UNIX / Linux           │                  Helios OS                  │
 ├──────────────────────────────────┼────────────────────────────────────────────┤
 │ Process                          │ Agent                                      │
 │ Binary (ELF)                     │ Manifest (agent.yaml)                      │
@@ -77,13 +77,13 @@ The harness can do what no other tool can because it's architected like a UNIX k
 └──────────────────────────────────┴────────────────────────────────────────────┘
 ```
 
-ForgeOS is not another agent framework. It's the layer that sits **between** the framework and the agent — managing lifecycle, enforcing policy, tracking resources, and providing the primitives that make multi-agent systems safe.
+Helios OS is not another agent framework. It's the layer that sits **between** the framework and the agent — managing lifecycle, enforcing policy, tracking resources, and providing the primitives that make multi-agent systems safe.
 
 ---
 
 ## 4. The Kernel — 6 Subsystems
 
-The ForgeOS kernel is the policy decision point for every meaningful agent action. Like the Linux kernel, it sits between the agent (userspace) and the resources (tools, data, other agents). No agent touches a resource without the kernel's approval.
+The Helios OS kernel is the policy decision point for every meaningful agent action. Like the Linux kernel, it sits between the agent (userspace) and the resources (tools, data, other agents). No agent touches a resource without the kernel's approval.
 
 ### Architecture
 
@@ -129,7 +129,7 @@ The ForgeOS kernel is the policy decision point for every meaningful agent actio
 
 Before a program runs on Linux, the kernel validates the ELF binary: is it a valid executable? Does the user have execute permission? Are the shared libraries available?
 
-ForgeOS does the same for agents. Before an agent deploys, the AdmissionController validates its contract:
+Helios OS does the same for agents. Before an agent deploys, the AdmissionController validates its contract:
 
 - Is the name valid? (regex: `^[a-zA-Z][a-zA-Z0-9_-]{1,63}$`)
 - Is the (namespace, name) pair unique?
@@ -147,7 +147,7 @@ If admission fails, the agent doesn't deploy. Period.
 
 ### 3.2 PermissionManager — like DAC (rwx) + ACLs
 
-Linux has file permissions (read/write/execute for owner/group/other) and Access Control Lists. ForgeOS has tool permissions and A2A peer ACLs.
+Linux has file permissions (read/write/execute for owner/group/other) and Access Control Lists. Helios OS has tool permissions and A2A peer ACLs.
 
 **Tool permissions** are declared in the manifest:
 
@@ -187,7 +187,7 @@ This is the agent equivalent of socket permissions — who can connect to whom.
 
 ### 3.3 BudgetManager — like cgroups (resource limits)
 
-Linux cgroups limit how much CPU, memory, and I/O a process can consume. ForgeOS budgets limit how much money and compute an agent can spend.
+Linux cgroups limit how much CPU, memory, and I/O a process can consume. Helios OS budgets limit how much money and compute an agent can spend.
 
 ```yaml
 spec:
@@ -224,7 +224,7 @@ When an agent hits its daily budget, the kernel returns `rate_limit` — the age
 
 ### 3.4 PolicyEngine — like SELinux/AppArmor (Mandatory Access Control)
 
-Linux has Discretionary Access Control (file permissions set by the owner) and Mandatory Access Control (system-wide policies that override per-file permissions). ForgeOS has both:
+Linux has Discretionary Access Control (file permissions set by the owner) and Mandatory Access Control (system-wide policies that override per-file permissions). Helios OS has both:
 
 - **Permissions** (§3.2) = DAC — the agent's owner defines what it can do
 - **Policies** (§3.4) = MAC — the platform enforces rules the agent can't override
@@ -255,7 +255,7 @@ If any policy denies, the action is blocked — regardless of what the agent's o
 
 ### 3.5 DataBoundaryManager — like Linux namespaces
 
-Linux namespaces isolate processes from each other: a process in one PID namespace can't see processes in another. ForgeOS namespaces isolate agents from each other's data:
+Linux namespaces isolate processes from each other: a process in one PID namespace can't see processes in another. Helios OS namespaces isolate agents from each other's data:
 
 ```yaml
 spec:
@@ -273,13 +273,13 @@ decision = await runtime.check_data("finance")
 # KernelDecision(action="deny", reason="Namespace 'finance' is blocked")
 ```
 
-**PII policy** adds another layer — like Linux's `prctl(PR_SET_DUMPABLE, 0)` which prevents core dumps from leaking sensitive memory. ForgeOS can detect, mask, redact, or block PII in tool inputs and outputs.
+**PII policy** adds another layer — like Linux's `prctl(PR_SET_DUMPABLE, 0)` which prevents core dumps from leaking sensitive memory. Helios OS can detect, mask, redact, or block PII in tool inputs and outputs.
 
 ### 3.6 CapabilityManager — like Linux capabilities (CAP_*)
 
 In Linux, a process doesn't need full root access to bind to port 80 — it just needs `CAP_NET_BIND_SERVICE`. This fine-grained approach replaces the all-or-nothing setuid model.
 
-ForgeOS capability tokens work the same way. Instead of giving an agent permanent A2A permission to call the CFO agent, you issue a time-limited token:
+Helios OS capability tokens work the same way. Instead of giving an agent permanent A2A permission to call the CFO agent, you issue a time-limited token:
 
 ```python
 # Sales manager needs to ask CFO for budget approval — just this once
@@ -303,7 +303,7 @@ await runtime.revoke_capability(token.id)
 
 When a Linux process calls `write(fd, buf, count)`, the kernel doesn't just write. It checks file permissions, disk quotas, mandatory locks, SELinux labels, and audits the operation. These checks happen in a fixed order.
 
-ForgeOS has the same concept: the **syscall pipeline**. Every agent action flows through 7 stages in a fixed, immutable order:
+Helios OS has the same concept: the **syscall pipeline**. Every agent action flows through 7 stages in a fixed, immutable order:
 
 ```
 ┌──────────┐  ┌────────────┐  ┌───────┐  ┌────────┐  ┌──────────┐  ┌──────────┐  ┌───────┐
@@ -347,7 +347,7 @@ Return `None` to pass. Return a `KernelDecision` to short-circuit. The pipeline 
 
 ### Phase Machine
 
-Every process in Linux has a state: running, sleeping, stopped, zombie. ForgeOS agents have phases:
+Every process in Linux has a state: running, sleeping, stopped, zombie. Helios OS agents have phases:
 
 ```
                     ┌──────────────────────────────────────────────────────────┐
@@ -381,7 +381,7 @@ Every process in Linux has a state: running, sleeping, stopped, zombie. ForgeOS 
 
 ### Resource Accounting
 
-Like `/proc/<pid>/stat` tracks CPU time, memory, and I/O for each process, ForgeOS tracks 5 resource dimensions for each agent:
+Like `/proc/<pid>/stat` tracks CPU time, memory, and I/O for each process, Helios OS tracks 5 resource dimensions for each agent:
 
 ```python
 process = await runtime.process()
@@ -399,7 +399,7 @@ process = await runtime.process()
 
 ### Signals
 
-Linux signals (SIGTERM, SIGSTOP, SIGKILL) provide cooperative and forceful process control. ForgeOS has the same:
+Linux signals (SIGTERM, SIGSTOP, SIGKILL) provide cooperative and forceful process control. Helios OS has the same:
 
 | Signal | Linux Equivalent | Behavior |
 |--------|-----------------|----------|
@@ -436,7 +436,7 @@ await runtime.signal(target_pid="sdr-01", signal_name="SIGTERM", reason="Budget 
 
 In Linux, user programs don't talk to the kernel directly — they call libc functions like `open()`, `read()`, `write()`, `fork()`. The C library translates these into system calls.
 
-ForgeOS has the **Runtime** — the agent-side library that translates high-level operations into kernel checks. Every agent gets a `runtime` singleton that carries its identity and mediates all interactions with the kernel.
+Helios OS has the **Runtime** — the agent-side library that translates high-level operations into kernel checks. Every agent gets a `runtime` singleton that carries its identity and mediates all interactions with the kernel.
 
 ### The Full API, Mapped to POSIX
 
@@ -515,7 +515,7 @@ await runtime.audit("email_sent", {"to": "customer@...", "subject": "Follow up"}
 
 ## 8. The Manifest — Agent Binary Format
 
-When you compile a C program, the compiler produces an ELF binary with headers, sections, symbol tables, and dependency lists. When you declare a ForgeOS agent, you write a YAML manifest with metadata, spec sections, and dependency declarations.
+When you compile a C program, the compiler produces an ELF binary with headers, sections, symbol tables, and dependency lists. When you declare a Helios OS agent, you write a YAML manifest with metadata, spec sections, and dependency declarations.
 
 ### ELF ↔ Manifest Mapping
 
@@ -618,18 +618,18 @@ spec:
 
 ## 9. Stack Adapters — Hardware Abstraction Layer
 
-Linux runs on x86, ARM, RISC-V, MIPS — the same kernel, different hardware. ForgeOS runs agents on 9 different runtimes — the same kernel, different agent frameworks.
+Linux runs on x86, ARM, RISC-V, MIPS — the same kernel, different hardware. Helios OS runs agents on 9 different runtimes — the same kernel, different agent frameworks.
 
 ### The Adapter Pattern
 
-Each framework has its own way of defining tools. ForgeOS **wraps** tools in each framework's native type with a kernel gate injected inside:
+Each framework has its own way of defining tools. Helios OS **wraps** tools in each framework's native type with a kernel gate injected inside:
 
 ```
-ORIGINAL (without ForgeOS):
+ORIGINAL (without Helios OS):
   LLM → "call read_json" → Framework → read_json() → result
 
-WITH ForgeOS (no agent code change):
-  LLM → "call read_json" → Framework → [ForgeOS Wrapper] → result
+WITH Helios OS (no agent code change):
+  LLM → "call read_json" → Framework → [Helios OS Wrapper] → result
                                               │
                                     ┌─────────┴──────────┐
                                     │ kernel.check_tool() │
@@ -640,9 +640,9 @@ WITH ForgeOS (no agent code change):
 
 ### Interception Table
 
-| Framework | Native Tool Type | ForgeOS Wraps As | Kernel Gate Inside | Agent Code Changed? |
+| Framework | Native Tool Type | Helios OS Wraps As | Kernel Gate Inside | Agent Code Changed? |
 |---|---|---|---|---|
-| **ForgeOS** | dict schema | `_execute_tool()` | Inline in agentic loop | No |
+| **Helios OS** | dict schema | `_execute_tool()` | Inline in agentic loop | No |
 | **Google ADK** | `FunctionTool(func)` | Async wrapper → `FunctionTool` | Inside wrapper, before `execute()` | No |
 | **CrewAI** | `BaseTool._run()` | `ForgeOSTool(BaseTool)` subclass | Inside `_run()`, before `execute()` | No |
 | **LangChain / LangGraph** | `BaseTool._run()` | `on_tool_start` callback handler | ONE callback gates ALL tools | No |
@@ -654,28 +654,28 @@ WITH ForgeOS (no agent code change):
 
 ### Why It Works Without Changing Agent Code
 
-Each framework has an extension point for tools. ForgeOS exploits these points:
+Each framework has an extension point for tools. Helios OS exploits these points:
 
-- **ADK:** `FunctionTool` accepts any async function. ForgeOS creates a wrapper function with the correct `__name__` and `__doc__` — ADK can't tell the difference.
-- **CrewAI:** `BaseTool` is a Pydantic class. ForgeOS creates a dynamic subclass where `_run()` checks the kernel first. CrewAI can't tell the difference.
-- **LangChain / LangGraph:** LangChain fires `on_tool_start()` before every tool via its callback system. ForgeOS registers ONE `ForgeOSKernelCallback` with `raise_error=True` — if the kernel denies, the callback raises `ToolException` and the tool is blocked. Works with `AgentExecutor`, `create_react_agent`, and any `ToolNode`.
-- **OpenAI Agents SDK:** Function tools accept any callable. ForgeOS wraps each function with a kernel gate — same pattern as ADK.
-- **Anthropic Agent SDK:** The SDK has a `PreToolUse` hook system. ForgeOS registers ONE hook that intercepts ALL tools. No per-tool wrapping needed.
-- **Anthropic Managed:** Agents run in Anthropic's hosted sandbox. ForgeOS checks budget and permissions BEFORE submitting the session to the API (pre-flight check at session boundary).
-- **OpenClaw:** The gateway calls tools via HTTP. ForgeOS runs a proxy server on localhost. The gateway POSTs to it. Our handler checks the kernel.
+- **ADK:** `FunctionTool` accepts any async function. Helios OS creates a wrapper function with the correct `__name__` and `__doc__` — ADK can't tell the difference.
+- **CrewAI:** `BaseTool` is a Pydantic class. Helios OS creates a dynamic subclass where `_run()` checks the kernel first. CrewAI can't tell the difference.
+- **LangChain / LangGraph:** LangChain fires `on_tool_start()` before every tool via its callback system. Helios OS registers ONE `ForgeOSKernelCallback` with `raise_error=True` — if the kernel denies, the callback raises `ToolException` and the tool is blocked. Works with `AgentExecutor`, `create_react_agent`, and any `ToolNode`.
+- **OpenAI Agents SDK:** Function tools accept any callable. Helios OS wraps each function with a kernel gate — same pattern as ADK.
+- **Anthropic Agent SDK:** The SDK has a `PreToolUse` hook system. Helios OS registers ONE hook that intercepts ALL tools. No per-tool wrapping needed.
+- **Anthropic Managed:** Agents run in Anthropic's hosted sandbox. Helios OS checks budget and permissions BEFORE submitting the session to the API (pre-flight check at session boundary).
+- **OpenClaw:** The gateway calls tools via HTTP. Helios OS runs a proxy server on localhost. The gateway POSTs to it. Our handler checks the kernel.
 - **Sandbox:** The container receives a `FORGEOS_API_URL`. Tool calls go through the API. Kernel checks happen at the endpoint.
 
-**Everything is driven by the YAML manifest.** The developer writes `stack: adk` and `tools: [read_json, write_json]`, and ForgeOS handles the wrapping automatically.
+**Everything is driven by the YAML manifest.** The developer writes `stack: adk` and `tools: [read_json, write_json]`, and Helios OS handles the wrapping automatically.
 
 ---
 
 ## 10. A2A — Inter-Process Communication
 
-When processes need to communicate in UNIX, they use IPC mechanisms: pipes, sockets, message queues, shared memory. ForgeOS agents communicate via the A2A (Agent-to-Agent) protocol.
+When processes need to communicate in UNIX, they use IPC mechanisms: pipes, sockets, message queues, shared memory. Helios OS agents communicate via the A2A (Agent-to-Agent) protocol.
 
 ### IPC Mapping
 
-| ForgeOS A2A | UNIX IPC | Pattern |
+| Helios OS A2A | UNIX IPC | Pattern |
 |---|---|---|
 | `agent__call(ns, name, task)` | `send()` on connected socket | Synchronous: send task, wait for result |
 | `agent__async_call(ns, name, task)` | `msgsnd()` to message queue | Fire-and-forget: returns job_id immediately |
@@ -688,7 +688,7 @@ When processes need to communicate in UNIX, they use IPC mechanisms: pipes, sock
 
 Like socket connections, A2A calls can create chains: A calls B calls C calls D. Without limits, this leads to infinite recursion (stack overflow) or circular dependencies (deadlock).
 
-ForgeOS prevents this with:
+Helios OS prevents this with:
 
 1. **Depth limit** (default 5) — like `RLIMIT_NPROC` for processes
 2. **Cycle detection** — `DelegationContext.would_cycle(agent_id)` checks the call path
@@ -703,7 +703,7 @@ By default, A2A calls are **isolated**: the callee gets a fresh context (no inhe
 
 ## 11. Teams — systemd Unit Groups
 
-A systemd target groups related services: `multi-user.target` starts networking, logging, and SSH together. A ForgeOS Team Manifest groups related agents:
+A systemd target groups related services: `multi-user.target` starts networking, logging, and SSH together. A Helios OS Team Manifest groups related agents:
 
 ```yaml
 apiVersion: forgeos/v1
@@ -747,12 +747,12 @@ spec:
 
 ## 12. Remote Kernel — Network Transparency
 
-NFS gives you the same `open()`/`read()`/`write()` API whether the file is local or on a remote server. ForgeOS gives you the same `runtime.check_tool()` whether the kernel is in-process or across the network.
+NFS gives you the same `open()`/`read()`/`write()` API whether the file is local or on a remote server. Helios OS gives you the same `runtime.check_tool()` whether the kernel is in-process or across the network.
 
 ### Two Backends, Same API
 
 ```python
-# In-process (agent runs inside ForgeOS):
+# In-process (agent runs inside Helios OS):
 kernel = Kernel.connect()  # detects local instance → _InProcessBackend
 # runtime.check_tool() → direct Python call → ~0.1ms
 
@@ -764,7 +764,7 @@ kernel = Kernel.connect()  # no local instance → _HTTPBackend
 The agent code is identical. The backend is selected automatically based on environment:
 
 ```bash
-# If running inside ForgeOS bootstrap → in-process (auto-detected)
+# If running inside Helios OS bootstrap → in-process (auto-detected)
 # If running externally → set these env vars:
 export FORGEOS_API_URL=https://forgeos-api.example.com
 export FORGEOS_API_KEY=fos_sales_xxxx
@@ -774,7 +774,7 @@ export FORGEOS_API_KEY=fos_sales_xxxx
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│  ForgeOS Control Plane (Cloud Run)                                  │
+│  Helios OS Control Plane (Cloud Run)                                │
 │  - Kernel (policy decisions)           ◀── HTTP kernel checks ──── │
 │  - Registry (200 agents)                                           │
 │  - Dashboard (monitoring)                                          │
@@ -799,23 +799,23 @@ The kernel check adds ~50-100ms per tool call. LLM calls take 5-30 seconds. The 
 
 ---
 
-## 13. What ForgeOS Is NOT
+## 13. What Helios OS Is NOT
 
-**ForgeOS is not an LLM.** It routes to Claude, GPT, Gemini, or any other model. It doesn't contain one.
+**Helios OS is not an LLM.** It routes to Claude, GPT, Gemini, or any other model. It doesn't contain one.
 
-**ForgeOS is not a framework like LangGraph or CrewAI.** It runs ON TOP of them. Your ADK agent, CrewAI crew, LangChain chain, or OpenAI agent runs inside ForgeOS. ForgeOS manages the lifecycle and enforces governance — the framework handles the LLM interaction.
+**Helios OS is not a framework like LangGraph or CrewAI.** It runs ON TOP of them. Your ADK agent, CrewAI crew, LangChain chain, or OpenAI agent runs inside Helios OS. Helios OS manages the lifecycle and enforces governance — the framework handles the LLM interaction.
 
-**ForgeOS is not a chatbot.** Agents are programs that do work autonomously — researching leads, processing data, writing reports, monitoring systems. Some have a chat interface. Many don't.
+**Helios OS is not a chatbot.** Agents are programs that do work autonomously — researching leads, processing data, writing reports, monitoring systems. Some have a chat interface. Many don't.
 
-**ForgeOS is not Kubernetes.** Kubernetes manages containers. ForgeOS manages the agent logic inside the containers. They're complementary: Kubernetes scales the infrastructure, ForgeOS governs the agents.
+**Helios OS is not Kubernetes.** Kubernetes manages containers. Helios OS manages the agent logic inside the containers. They're complementary: Kubernetes scales the infrastructure, Helios OS governs the agents.
 
-**ForgeOS is not a permissions database.** It's a runtime policy engine. Permissions are checked in real-time, on every tool call, with context-aware decisions. Not a static lookup table.
+**Helios OS is not a permissions database.** It's a runtime policy engine. Permissions are checked in real-time, on every tool call, with context-aware decisions. Not a static lookup table.
 
 ---
 
 ## 14. The Licensing Model
 
-The entire ForgeOS codebase is licensed under the **Business Source License 1.1**.
+The entire Helios OS codebase is licensed under the **Business Source License 1.1**.
 
 ### Source-Available, Not Closed Source
 
@@ -845,14 +845,14 @@ On **2030-05-20**, the BSL auto-converts to **Apache License 2.0** and all restr
 
 UNIX succeeded because it got the abstractions right: processes, files, permissions, pipes. These primitives have survived 50 years because they map to how humans think about computation.
 
-ForgeOS applies the same approach to AI agents:
+Helios OS applies the same approach to AI agents:
 
 - **Agents are processes** — they have identity, lifecycle, resource limits, and signals.
 - **Tools are system calls** — every invocation is checked by the kernel.
 - **Manifests are binaries** — they declare what an agent is and what it can do.
 - **The kernel is the arbiter** — no agent touches a resource without approval.
 
-The frameworks (ADK, CrewAI, LangChain, Anthropic SDK, OpenAI) are the compilers — they produce agents. ForgeOS is the harness — it runs them safely.
+The frameworks (ADK, CrewAI, LangChain, Anthropic SDK, OpenAI) are the compilers — they produce agents. Helios OS is the harness — it runs them safely.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -864,7 +864,7 @@ The frameworks (ADK, CrewAI, LangChain, Anthropic SDK, OpenAI) are the compilers
 │   Those who do not understand operating systems               │
 │   are condemned to reinvent them for AI agents.               │
 │                                                               │
-│   ForgeOS is the harness that gets it right.                 │
+│   Helios OS is the harness that gets it right.               │
 │                                                               │
 └──────────────────────────────────────────────────────────────┘
 ```

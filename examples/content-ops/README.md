@@ -1,6 +1,6 @@
 # Content Operations Pipeline
 
-Multi-client content production with namespace isolation. Gemini Flash produces, Claude Sonnet reviews. 12 ForgeOS runtime controls per content piece.
+Multi-client content production with namespace isolation. Gemini Flash produces, Claude Sonnet reviews. 12 Helios OS runtime controls per content piece.
 
 3 clients with different rules: PharmaCo (HIPAA, no AI images), FinTech (SEC/FINRA), ShopWave (unregulated).
 
@@ -20,5 +20,5 @@ python3 examples/content-ops/agent.py
 | `agent.py` | Full pipeline — 12 numbered runtime controls per piece |
 | `agent_raw.py` | Same pipeline, zero governance (for comparison) |
 | `clients.py` | Per-client config: brand voice, compliance rules, budget |
-| `manifest.yaml` | ForgeOS contract |
+| `manifest.yaml` | Helios OS contract |
 | `COMPARISON.md` | Side-by-side raw vs governed |

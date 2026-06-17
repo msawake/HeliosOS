@@ -90,7 +90,7 @@ export function StepBasics({ s, patch, errors }: StepProps) {
 
       <LabeledField label="System prompt">
         <Textarea value={s.systemPrompt} onChange={(e) => patch({ systemPrompt: e.target.value })}
-          placeholder="You are a helpful ForgeOS agent…" className="min-h-32" />
+          placeholder="You are a helpful Helios OS agent…" className="min-h-32" />
       </LabeledField>
     </div>
   );

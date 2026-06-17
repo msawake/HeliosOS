@@ -1,6 +1,6 @@
-# ForgeOS Observability
+# Helios OS Observability
 
-Prometheus + Grafana integration for the ForgeOS platform.
+Prometheus + Grafana integration for the Helios OS platform.
 
 ## Architecture
 
@@ -59,7 +59,7 @@ helm install prometheus prometheus-community/kube-prometheus-stack \
   --namespace monitoring --create-namespace
 ```
 
-### 2. Apply ForgeOS observability manifests
+### 2. Apply Helios OS observability manifests
 
 ```bash
 kubectl apply -f deploy/k8s/base/observability/servicemonitor.yaml

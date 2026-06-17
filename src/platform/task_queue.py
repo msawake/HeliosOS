@@ -2,7 +2,7 @@
 """
 Distributed task queue for async A2A between remote agents.
 
-Agents submit tasks via the ForgeOS control plane. Tasks are stored
+Agents submit tasks via the Helios OS control plane. Tasks are stored
 persistently, dispatched to workers via webhook (push) or polling (pull),
 and results are returned to callers.
 

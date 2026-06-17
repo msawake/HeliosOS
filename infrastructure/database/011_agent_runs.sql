@@ -1,5 +1,5 @@
 -- ============================================================================
--- ForgeOS Agent Runs — Migration 011
+-- Helios OS Agent Runs — Migration 011
 --
 -- Per-invocation history for every agent run (manual RUN NOW, cron tick,
 -- event-driven, A2A). Feeds the Mission Control "Recent Runs" side panel

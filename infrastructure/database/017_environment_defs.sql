@@ -1,5 +1,5 @@
 -- ============================================================================
--- ForgeOS Environment Definitions (reusable pod templates)
+-- Helios OS Environment Definitions (reusable pod templates)
 -- Migration 017: an *environment definition* is a reusable template — a name,
 -- a Docker image, optional env vars, and optional resource limits — that users
 -- create in the dashboard and attach to many agents. Attaching a def to an

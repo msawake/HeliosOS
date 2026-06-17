@@ -1,7 +1,7 @@
 """Exec-environment sandbox: the `forgeos-envs` namespace + the access the
 platform-api needs to drive per-agent sandbox pods.
 
-Background: ForgeOS' EnvironmentManager (src/platform/environments.py) gives a
+Background: Helios OS' EnvironmentManager (src/platform/environments.py) gives a
 governed agent a `bash`/`env__exec` tool that the kernel admits (verb
 `env.exec`) and then runs *inside a per-agent pod* via `kubectl exec`. The pod
 is the sandbox boundary. The app is fully wired for this, but nothing in the

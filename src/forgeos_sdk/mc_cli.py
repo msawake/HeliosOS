@@ -424,7 +424,7 @@ def cmd_watch(args) -> int:
     try:
         while True:
             print("\033[2J\033[H", end="")
-            print(f"{C_BOLD}FORGEOS MC — watching {pid}{C_RST}  "
+            print(f"{C_BOLD}HELIOS OS MC — watching {pid}{C_RST}  "
                   f"{C_DIM}{time.strftime('%H:%M:%S')}{C_RST}\n")
 
             try:

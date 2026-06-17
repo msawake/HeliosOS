@@ -1,11 +1,11 @@
-# Marbury & Stone LLP — a law-firm demo for ForgeOS
+# Marbury & Stone LLP — a law-firm demo for Helios OS
 
 A small, coordinated "firm" of governed agents that work a law firm's real
 Google Drive. It exists to show, on one believable workload, why a law firm is
-an almost perfect fit for ForgeOS: the things a firm cares about map directly
-onto ForgeOS primitives.
+an almost perfect fit for Helios OS: the things a firm cares about map directly
+onto Helios OS primitives.
 
-| Law-firm reality | ForgeOS primitive it becomes |
+| Law-firm reality | Helios OS primitive it becomes |
 |---|---|
 | **Ethical walls / conflict screens** (one side of a deal can't see the other) | **Namespace isolation + A2A `canBeCalledBy` ACLs** |
 | **Attorney–client privilege / confidentiality** | **Drive sharing audit + data boundaries** |

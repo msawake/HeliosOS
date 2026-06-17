@@ -2,7 +2,7 @@
 Sandbox agent runtime — runs inside an isolated Docker container.
 
 Executes an agentic loop (LLM -> tool_use -> proxy to API -> tool_result -> LLM).
-All tool calls are proxied through the ForgeOS API where the Kernel validates
+All tool calls are proxied through the Helios OS API where the Kernel validates
 permissions before executing.
 
 Environment variables:

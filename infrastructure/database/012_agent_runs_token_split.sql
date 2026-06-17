@@ -1,5 +1,5 @@
 -- ============================================================================
--- ForgeOS Agent Runs — Migration 012
+-- Helios OS Agent Runs — Migration 012
 --
 -- Add per-run input/output token split + model name so the dashboard can
 -- compute USD cost on read (model price × tokens) rather than storing a

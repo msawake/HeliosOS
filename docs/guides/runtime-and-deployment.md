@@ -64,7 +64,7 @@ For `always_on` agents, the equivalent is a Cloud Run *service* (not a job) with
 
 ## How manifest fields map to the actual runtime
 
-The manifest borrows Kubernetes vocabulary, but ForgeOS does not run on Kubernetes today. Here is the actual mapping:
+The manifest borrows Kubernetes vocabulary, but Helios OS does not run on Kubernetes today. Here is the actual mapping:
 
 | Manifest field            | Local dev                    | In-platform                  | Cloud Run                                   |
 |---------------------------|------------------------------|------------------------------|---------------------------------------------|

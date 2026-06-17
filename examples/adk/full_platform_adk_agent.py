@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-ForgeOS + Google ADK — Full Platform Agent Demo
+Helios OS + Google ADK — Full Platform Agent Demo
 ================================================
 
 Deploys an ADK agent and two supporting agents, then runs a multi-step
-research workflow that exercises every ForgeOS kernel/runtime capability
+research workflow that exercises every Helios OS kernel/runtime capability
 from inside the agent's tool execution path.
 
 What this demo shows (9 capabilities, all from agent code):
@@ -538,7 +538,7 @@ def show_adk_scaffold(registry, analyst_id):
 # ---------------------------------------------------------------------------
 
 async def main():
-    print(f"\n{B}ForgeOS + Google ADK — Full Platform Agent Demo{RST}")
+    print(f"\n{B}Helios OS + Google ADK — Full Platform Agent Demo{RST}")
     print(f"Exercises all 9 kernel/runtime capabilities from an ADK agent\n")
 
     # Build platform

@@ -1,6 +1,6 @@
 # Mission Control
 
-Mission Control is the operator console for the ForgeOS platform. It runs as a
+Mission Control is the operator console for the Helios OS platform. It runs as a
 small FastAPI + React app in `mission-control/` and talks to the platform
 through HTTP proxies — there is no shared in-process state, so you can point it
 at a local platform or a remote Cloud Run deployment with a single env var.

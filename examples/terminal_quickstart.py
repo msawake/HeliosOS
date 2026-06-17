@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-ForgeOS Terminal Quickstart Example
+Helios OS Terminal Quickstart Example
 
-This script demonstrates all three ways to interact with ForgeOS from the terminal:
+This script demonstrates all three ways to interact with Helios OS from the terminal:
 1. Python SDK (programmatic)
 2. CLI commands (via subprocess)
 3. REST API (via requests)
@@ -38,7 +38,7 @@ def method_1_python_sdk():
         .reflex()
         .model("gpt-4o", provider="openai")
         .tools("mcp__filesystem__*")
-        .prompt("You are a helpful assistant for the ForgeOS quickstart example.")
+        .prompt("You are a helpful assistant for the Helios OS quickstart example.")
         .description("Example agent created via Python SDK")
         .department("examples")
         .build())
@@ -102,7 +102,7 @@ spec:
     - mcp__filesystem__*
   
   system_prompt: |
-    You are a helpful assistant for the ForgeOS CLI quickstart example.
+    You are a helpful assistant for the Helios OS CLI quickstart example.
 """
     
     yaml_file = Path("/tmp/quickstart-cli.yaml")
@@ -175,7 +175,7 @@ def method_3_rest_api():
             "chat_model": "gpt-4o",
             "provider": "openai",
             "tools": ["mcp__filesystem__*"],
-            "system_prompt": "You are a helpful assistant for the ForgeOS REST API quickstart example."
+            "system_prompt": "You are a helpful assistant for the Helios OS REST API quickstart example."
         })
     ]
     
@@ -253,9 +253,9 @@ def main():
     print("""
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                                                                              ║
-║                   ForgeOS Terminal Quickstart Examples                      ║
+║                   Helios OS Terminal Quickstart Examples                      ║
 ║                                                                              ║
-║  This script demonstrates three ways to use ForgeOS from the terminal:      ║
+║  This script demonstrates three ways to use Helios OS from the terminal:      ║
 ║  1. Python SDK (programmatic)                                               ║
 ║  2. CLI tool (forgeos command)                                              ║
 ║  3. REST API (cURL)                                                         ║

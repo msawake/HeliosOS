@@ -80,7 +80,7 @@ POST /a2h/v1/requests/req_abc/respond
 
 ## Reference Implementation
 
-The ForgeOS platform includes a reference implementation:
+The Helios OS platform includes a reference implementation:
 
 - `src/platform/a2h.py` — A2HGateway, HumanAgent, HumanRequest, delivery channels
 - `tests/test_a2h_protocol.py` — Protocol conformance tests

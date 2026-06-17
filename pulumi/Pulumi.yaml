@@ -3,4 +3,4 @@ runtime:
   name: python
   options:
     virtualenv: venv
-description: ForgeOS infrastructure on GCP (Cloud Run + GKE Autopilot + Cloud SQL)
+description: Helios OS infrastructure on GCP (Cloud Run + GKE Autopilot + Cloud SQL)

@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 # See LICENSE for full terms.
 """
-Agent Runtime — the agent-side interface to the ForgeOS kernel.
+Agent Runtime — the agent-side interface to the Helios OS kernel.
 
 Every agent gets a ``runtime`` that knows who it is and mediates all
 interactions with the kernel, process table, checkpoints, budget, and
@@ -192,7 +192,7 @@ _agent_ctx: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar(
 # ---------------------------------------------------------------------------
 
 class Runtime:
-    """Agent-side interface to the ForgeOS kernel.
+    """Agent-side interface to the Helios OS kernel.
 
     Module-level singleton.  Platform references are registered once at
     boot; per-invocation identity is bound via :meth:`bind` (called by

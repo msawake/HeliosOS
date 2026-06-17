@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the ForgeOS Community Edition distribution (kernel-free).
+# Build the Helios OS Community Edition distribution (kernel-free).
 #
 # Usage: bash scripts/build_oss.sh [output_dir]
 #
@@ -11,7 +11,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUTPUT_DIR="${1:-${REPO_ROOT}/dist/forgeos-community}"
 
-echo "=== ForgeOS Community Edition build ==="
+echo "=== Helios OS Community Edition build ==="
 echo "  Source: $REPO_ROOT"
 echo "  Output: $OUTPUT_DIR"
 

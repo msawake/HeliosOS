@@ -7,7 +7,7 @@
 Agent process table.
 
 Introduces the first-class runtime unit of scheduling and accounting for
-ForgeOS: the ``AgentProcess``. Every agent admitted by the kernel gets a
+Helios OS: the ``AgentProcess``. Every agent admitted by the kernel gets a
 process record with a stable PID (carried over from
 ``AgentDefinition.agent_id``), a unified phase machine, and resource
 accounting (tokens, dollars, tool calls, wallclock).

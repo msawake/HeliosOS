@@ -1,4 +1,4 @@
-"""Tests for ForgeOS SaaS platform: auth, tenants, billing, persistence, secrets."""
+"""Tests for Helios OS SaaS platform: auth, tenants, billing, persistence, secrets."""
 
 import hashlib
 import time

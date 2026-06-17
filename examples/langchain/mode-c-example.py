@@ -1,12 +1,12 @@
 # Copyright 2024-2026 Awake Venture Studio, a Making Science Group company.
 # SPDX-License-Identifier: BUSL-1.1
 """
-LangChain agent with ForgeOS governance via HTTP (Mode C).
+LangChain agent with Helios OS governance via HTTP (Mode C).
 
-This example shows how to add ForgeOS governance to ANY existing
+This example shows how to add Helios OS governance to ANY existing
 LangChain agent with ONE callback — no code changes to the agent itself.
 
-The ForgeOSKernelCallback checks the ForgeOS kernel before every tool call:
+The ForgeOSKernelCallback checks the Helios OS kernel before every tool call:
   - ALLOW: tool executes normally
   - DENY: ToolException raised, LLM adapts naturally
   - RATE_LIMIT: ToolException raised with budget exceeded message
@@ -46,7 +46,7 @@ def record_metric(name: str, value: float) -> str:
     return f"Recorded {name}={value}"
 
 
-# --- Add ForgeOS governance (ONE import + ONE callback) ---
+# --- Add Helios OS governance (ONE import + ONE callback) ---
 
 from stacks.langchain.callback import ForgeOSKernelCallback
 
@@ -58,7 +58,7 @@ callback = ForgeOSKernelCallback(
 
 
 async def main():
-    """Run the agent with ForgeOS governance."""
+    """Run the agent with Helios OS governance."""
     tools = [search_knowledge, send_email, record_metric]
 
     # Simulate tool calls with kernel checks

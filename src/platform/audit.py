@@ -1,5 +1,5 @@
 """
-Audit log writer for the ForgeOS platform.
+Audit log writer for the Helios OS platform.
 
 Writes immutable action records to the `platform_audit_log` table with tenant
 isolation (RLS). When no database is available, falls back to a bounded

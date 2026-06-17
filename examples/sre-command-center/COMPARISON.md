@@ -1,4 +1,4 @@
-# SRE Command Center: Raw vs ForgeOS Governed
+# SRE Command Center: Raw vs Helios OS Governed
 
 ```
 agent_raw.py  →  70 lines,  0 controls, kubectl delete SUCCEEDS
@@ -9,7 +9,7 @@ agent.py      → 550 lines, 35 controls, kubectl delete BLOCKED by kernel
 
 The Remediation Agent decides to fix a database connection pool issue by deleting the auth namespace:
 
-**Without ForgeOS:**
+**Without Helios OS:**
 ```
 kubectl delete namespace auth → DELETED
 DROP TABLE users             → DROPPED
@@ -17,7 +17,7 @@ deploy during P0             → DEPLOYED
 ```
 Production destroyed. Nobody approved. No record it happened.
 
-**With ForgeOS:**
+**With Helios OS:**
 ```
 kubectl delete namespace auth → ✗ DENIED by kernel (tool in denied list)
 DROP TABLE users              → ✗ DENIED by kernel (tool in denied list)
@@ -73,7 +73,7 @@ kubectl restart auth-service  → ✓ ALLOWED, but requires human approval
 
 ## The Numbers
 
-|  | Raw | ForgeOS Governed |
+|  | Raw | Helios OS Governed |
 |--|-----|-----------------|
 | Lines of code | 70 | 550 |
 | Runtime controls | 0 | **35** across 7 scenes |

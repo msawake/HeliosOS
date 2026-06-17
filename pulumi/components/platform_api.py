@@ -1,4 +1,4 @@
-"""ForgeOS Platform API on Cloud Run (FastAPI :5099).
+"""Helios OS Platform API on Cloud Run (FastAPI :5099).
 
 Direct VPC Egress to reach Cloud SQL (private IP), Memorystore, and agent Pods.
 Secrets mounted as env from Secret Manager. Public ingress on *.run.app URL.

@@ -1,9 +1,9 @@
-# ForgeOS MCP Server
+# Helios OS MCP Server
 
-`forgeos-mcp-server.py` exposes the ForgeOS agent fleet to any MCP-compatible
+`forgeos-mcp-server.py` exposes the Helios OS agent fleet to any MCP-compatible
 client (Claude Code, Cursor, …). It is a **self-contained single file** — its
 only third-party dependencies are `mcp` and `httpx`, and it imports nothing from
-the ForgeOS source tree, so it runs from any working directory without
+the Helios OS source tree, so it runs from any working directory without
 `PYTHONPATH`. This is the file that the repo's `.mcp.json` launches.
 
 The importable package `src/forgeos_mcp` mirrors this file (same tools,
@@ -11,7 +11,7 @@ resources, and prompts) for the `forgeos-mcp` console script / installed-wheel
 use case. A parity test (`tests/test_forgeos_mcp.py`) keeps the two tool sets in
 sync.
 
-It talks to a running ForgeOS API (FastAPI backend) over HTTP and wraps each
+It talks to a running Helios OS API (FastAPI backend) over HTTP and wraps each
 platform operation as an MCP tool.
 
 ## Install
@@ -33,7 +33,7 @@ python3 tools/forgeos-mcp-server.py --transport streamable-http --port 8000
 python3 -m src.forgeos_mcp
 ```
 
-Point it at a ForgeOS API first, e.g.:
+Point it at a Helios OS API first, e.g.:
 
 ```bash
 PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
@@ -43,7 +43,7 @@ PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
 
 | Var | Default | Purpose |
 |-----|---------|---------|
-| `FORGEOS_URL` | `http://localhost:5000` | ForgeOS API base URL |
+| `FORGEOS_URL` | `http://localhost:5000` | Helios OS API base URL |
 | `FORGEOS_API_KEY` | _(empty)_ | Sent as `X-API-Key` when set (auth-enabled deployments) |
 | `FORGEOS_USER` | _(empty)_ | Acting user, sent as `X-Forgeos-User` for per-user identity / credentials. Individual tools accept an `acting_user` argument that overrides it per call. |
 
