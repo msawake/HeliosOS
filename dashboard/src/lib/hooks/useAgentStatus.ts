@@ -1,16 +1,18 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { api } from '@/lib/api';
 
 /**
- * Live agent status stream via the FastAPI /ws/agents WebSocket.
+ * Live agent status via authenticated REST polling of /api/platform/agents.
  *
- * The backend broadcasts a snapshot of all agents every 5 seconds:
- *   { timestamp, agents: [...], total, running }
+ * The platform also exposes a /ws/agents WebSocket, but browsers can't attach
+ * the bearer/API-key auth header to a WebSocket and the dashboard origin
+ * doesn't proxy WS upgrades — so on the hosted deployment it never connects.
+ * Polling the same data the agents page reads is reliable and auth-aware.
  *
- * This hook keeps a React state map keyed by agent_id so components can
- * render live status badges without polling. It auto-reconnects on drop
- * with exponential backoff.
+ * `connected` reflects whether the last poll succeeded (so the Topbar shows a
+ * real count instead of a misleading "Offline").
  */
 
 export interface LiveAgentStatus {
@@ -28,24 +30,9 @@ export interface AgentStatusSnapshot {
   connected: boolean;
 }
 
-function wsUrl(path: string): string {
-  if (typeof window === 'undefined') return '';
-  // Env override: NEXT_PUBLIC_WS_URL=ws://localhost:5000 (dev) or wss://api.example.com (prod)
-  const envBase = process.env.NEXT_PUBLIC_WS_URL;
-  if (envBase) {
-    return `${envBase.replace(/\/$/, '')}${path}`;
-  }
-  // Dev fallback: connect to Next.js host swapping http->ws. Next.js rewrites
-  // don't proxy WebSocket upgrades, so this only works if the backend is on
-  // the same host (e.g., production ingress). For dev, set NEXT_PUBLIC_WS_URL.
-  const { protocol, hostname } = window.location;
-  const wsProto = protocol === 'https:' ? 'wss:' : 'ws:';
-  // Default dev backend port is 5000
-  const port = process.env.NEXT_PUBLIC_API_PORT || '5000';
-  return `${wsProto}//${hostname}:${port}${path}`;
-}
+const RUNNING_STATES = new Set(['running', 'active', 'busy', 'processing', 'executing']);
 
-export function useAgentStatus(): AgentStatusSnapshot {
+export function useAgentStatus(pollMs = 10_000): AgentStatusSnapshot {
   const [snapshot, setSnapshot] = useState<AgentStatusSnapshot>({
     timestamp: '',
     total: 0,
@@ -53,76 +40,36 @@ export function useAgentStatus(): AgentStatusSnapshot {
     agents: [],
     connected: false,
   });
-  const reconnectTimer = useRef<number | null>(null);
-  const backoff = useRef<number>(1000);
+  const timer = useRef<number | null>(null);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
     let cancelled = false;
-    let ws: WebSocket | null = null;
 
-    const connect = () => {
+    const poll = async () => {
       try {
-        ws = new WebSocket(wsUrl('/ws/agents'));
+        const data = await api.listAgents();
+        if (cancelled) return;
+        const list = Array.isArray(data) ? data : [];
+        setSnapshot({
+          timestamp: new Date().toISOString(),
+          total: list.length,
+          running: list.filter((a) => RUNNING_STATES.has(String(a.status ?? '').toLowerCase())).length,
+          agents: list.map((a) => ({ agent_id: a.agent_id, name: a.name, status: a.status })),
+          connected: true,
+        });
       } catch {
-        // Scheduled reconnect
-        scheduleReconnect();
-        return;
+        if (!cancelled) setSnapshot((prev) => ({ ...prev, connected: false }));
+      } finally {
+        if (!cancelled) timer.current = window.setTimeout(poll, pollMs);
       }
-
-      ws.onopen = () => {
-        backoff.current = 1000;
-        setSnapshot((prev) => ({ ...prev, connected: true }));
-      };
-
-      ws.onmessage = (event: MessageEvent) => {
-        try {
-          const data = JSON.parse(event.data);
-          setSnapshot({
-            timestamp: data.timestamp || new Date().toISOString(),
-            total: data.total || (Array.isArray(data.agents) ? data.agents.length : 0),
-            running: data.running || 0,
-            agents: data.agents || [],
-            connected: true,
-          });
-        } catch {
-          // Ignore malformed frames
-        }
-      };
-
-      ws.onerror = () => {
-        // onclose will fire next
-      };
-
-      ws.onclose = () => {
-        setSnapshot((prev) => ({ ...prev, connected: false }));
-        if (!cancelled) scheduleReconnect();
-      };
     };
 
-    const scheduleReconnect = () => {
-      if (cancelled) return;
-      const delay = Math.min(backoff.current, 30_000);
-      backoff.current = delay * 2;
-      reconnectTimer.current = window.setTimeout(connect, delay);
-    };
-
-    connect();
-
+    poll();
     return () => {
       cancelled = true;
-      if (reconnectTimer.current !== null) {
-        window.clearTimeout(reconnectTimer.current);
-      }
-      if (ws) {
-        try {
-          ws.close();
-        } catch {
-          // ignore
-        }
-      }
+      if (timer.current !== null) window.clearTimeout(timer.current);
     };
-  }, []);
+  }, [pollMs]);
 
   return snapshot;
 }

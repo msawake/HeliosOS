@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Trash } from '@phosphor-icons/react';
 
-import { api, ApiError, type ManagedUser, type NamespaceDef } from '@/lib/api';
+import { api, ApiError, type Agent, type ManagedUser, type NamespaceDef } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -191,8 +191,11 @@ function CreateUserDialog({
 
 // ─── Namespaces ───────────────────────────────────────────────────────────
 
+interface NsRow { namespace: string; description?: string; registered: boolean; agents: number; }
+
 function NamespacesTab() {
-  const [namespaces, setNamespaces] = useState<NamespaceDef[]>([]);
+  const [registry, setRegistry] = useState<NamespaceDef[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -201,12 +204,31 @@ function NamespacesTab() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      setNamespaces((await api.listNamespaces()).namespaces ?? []);
+      // Merge the formal registry with namespaces actually in use by agents —
+      // a namespace can exist (agents reference it) without being registered.
+      const [ns, ag] = await Promise.all([
+        api.listNamespaces().then((r) => r.namespaces ?? []).catch(() => []),
+        api.listAgents().then((a) => (Array.isArray(a) ? a : [])).catch(() => []),
+      ]);
+      setRegistry(ns);
+      setAgents(ag);
     } catch (e) {
       setError(errText(e));
     }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  const rows: NsRow[] = useMemo(() => {
+    const m = new Map<string, NsRow>();
+    for (const n of registry) m.set(n.namespace, { namespace: n.namespace, description: n.description, registered: true, agents: 0 });
+    for (const a of agents) {
+      const ns = a.namespace || 'default';
+      const e = m.get(ns) ?? { namespace: ns, registered: false, agents: 0 };
+      e.agents += 1;
+      m.set(ns, e);
+    }
+    return [...m.values()].sort((a, b) => a.namespace.localeCompare(b.namespace));
+  }, [registry, agents]);
 
   const create = async () => {
     setError(null);
@@ -227,21 +249,29 @@ function NamespacesTab() {
     <Card>
       <CardContent className="space-y-3 pt-5">
         <div className="flex items-center justify-between">
-          <p className="text-[13px] text-tertiary">{namespaces.length} namespace(s)</p>
+          <p className="text-[13px] text-tertiary">{rows.length} namespace(s)</p>
           <Button size="sm" onClick={() => setCreating(true)}><Plus className="h-3.5 w-3.5" aria-hidden /> New namespace</Button>
         </div>
         {error ? <p className="text-xs text-danger">{error}</p> : null}
         <Table>
-          <TableHeader><TableRow><TableHead>Namespace</TableHead><TableHead>Description</TableHead><TableHead /></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Namespace</TableHead><TableHead>Agents</TableHead><TableHead>Status</TableHead><TableHead>Description</TableHead><TableHead /></TableRow></TableHeader>
           <TableBody>
-            {namespaces.map((n) => (
+            {rows.map((n) => (
               <TableRow key={n.namespace}>
                 <TableCell className="font-mono text-xs">{n.namespace}</TableCell>
+                <TableCell className="text-secondary tabular-nums">{n.agents}</TableCell>
+                <TableCell>
+                  {n.registered
+                    ? <Badge variant="success">Registered</Badge>
+                    : <Badge variant="outline">In use</Badge>}
+                </TableCell>
                 <TableCell className="text-secondary">{n.description || '—'}</TableCell>
                 <TableCell className="text-right">
-                  <Button size="icon-sm" variant="ghost" aria-label={`Delete ${n.namespace}`} onClick={() => remove(n.namespace)}>
-                    <Trash className="h-3.5 w-3.5 text-danger" aria-hidden />
-                  </Button>
+                  {n.registered ? (
+                    <Button size="icon-sm" variant="ghost" aria-label={`Delete ${n.namespace}`} onClick={() => remove(n.namespace)}>
+                      <Trash className="h-3.5 w-3.5 text-danger" aria-hidden />
+                    </Button>
+                  ) : null}
                 </TableCell>
               </TableRow>
             ))}

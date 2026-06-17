@@ -156,6 +156,19 @@ export interface LogEvent {
   details?: Record<string, unknown>;
 }
 
+/** A row from the hash-chained audit trail (`GET /api/audit`). */
+export interface AuditEntry {
+  id?: string;
+  tenant_id?: string;
+  actor?: string;
+  action?: string;
+  resource_type?: string;
+  resource_id?: string;
+  outcome?: string;
+  details?: Record<string, unknown>;
+  created_at?: string;
+}
+
 /** SSE frames emitted by `/api/platform/agents/{id}/chat/stream`. */
 export type ChatStreamEvent =
   | { type: 'session'; session_id: string }
@@ -374,6 +387,10 @@ export const api = {
       query: { agent_id: id, limit: String(limit) },
       signal,
     }),
+
+  // audit trail (platform-wide activity feed)
+  listAudit: (limit = 30, signal?: AbortSignal) =>
+    request<AuditEntry[]>('/api/audit', { query: { limit: String(limit) }, signal }),
 
   // lifecycle
   stopAgent: (id: string) =>

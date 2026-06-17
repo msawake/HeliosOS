@@ -39,7 +39,7 @@ export default function AgentDetailPage() {
   if (error) {
     return (
       <div>
-        <PageHeader title="Agent" back={{ href: '/', label: 'Agents' }} />
+        <PageHeader title="Agent" back={{ href: '/agents', label: 'Agents' }} />
         <ErrorState title="Couldn't load this agent" detail={error} onRetry={load} />
       </div>
     );
@@ -48,7 +48,7 @@ export default function AgentDetailPage() {
   if (!agent) {
     return (
       <div>
-        <PageHeader title={<Skeleton className="h-7 w-56" />} back={{ href: '/', label: 'Agents' }} />
+        <PageHeader title={<Skeleton className="h-7 w-56" />} back={{ href: '/agents', label: 'Agents' }} />
         <Skeleton className="h-9 w-full max-w-md" />
         <div className="mt-6 space-y-3">
           <Skeleton className="h-40 w-full" />
@@ -62,7 +62,7 @@ export default function AgentDetailPage() {
       <PageHeader
         title={agent.name}
         description={agent.description}
-        back={{ href: '/', label: 'Agents' }}
+        back={{ href: '/agents', label: 'Agents' }}
         actions={
           <>
             <StatusBadge status={agent.status} />

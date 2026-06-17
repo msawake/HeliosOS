@@ -70,12 +70,16 @@ export function Topbar() {
     <header className="flex h-(--topbar-height) shrink-0 items-center justify-end gap-3 border-b border-edge bg-page/80 px-8 backdrop-blur-sm">
       <span
         className="inline-flex items-center gap-1.5 text-xs text-tertiary"
-        title={live.connected ? `${live.running}/${live.total} running` : 'Status stream offline'}
+        title={live.connected ? `${live.running} running of ${live.total} agents` : 'Loading agent status…'}
       >
         <span
           className={cn('h-1.5 w-1.5 rounded-full', live.connected ? 'bg-accent' : 'bg-muted')}
         />
-        {live.connected ? `${live.running}/${live.total} running` : 'Offline'}
+        {live.connected
+          ? live.running > 0
+            ? `${live.running}/${live.total} running`
+            : `${live.total} agents`
+          : '…'}
       </span>
 
       <HealthBadge />

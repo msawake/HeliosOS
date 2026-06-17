@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
+  Gauge,
   Robot,
   RocketLaunch,
   CheckCircle,
@@ -27,7 +28,8 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/', label: 'Agents', icon: Robot, exact: true },
+  { href: '/', label: 'Dashboard', icon: Gauge, exact: true },
+  { href: '/agents', label: 'Agents', icon: Robot },
   { href: '/deploy', label: 'Deploy', icon: RocketLaunch },
   { href: '/approvals', label: 'Approvals', icon: CheckCircle },
   { href: '/mcp', label: 'MCP servers', icon: PlugsConnected },
@@ -38,9 +40,10 @@ const NAV_ITEMS: NavItem[] = [
 
 function NavLink({ href, label, icon: IconCmp, exact }: NavItem) {
   const pathname = usePathname();
-  // Agent detail/chat live under /agents/* — keep "Agents" active there too.
+  // Exact items (Dashboard) match only their own path; others (e.g. Agents)
+  // also match nested routes like /agents/<id> and /agents/<id>/chat.
   const active = exact
-    ? pathname === '/' || pathname.startsWith('/agents')
+    ? pathname === href
     : pathname === href || pathname.startsWith(`${href}/`);
   return (
     <Link
