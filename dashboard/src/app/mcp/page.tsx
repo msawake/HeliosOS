@@ -6,7 +6,14 @@ import { api, type McpServer } from '@/lib/api';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input, Textarea, Select } from '@/components/ui/input';
+import { Input, Textarea } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -141,12 +148,16 @@ function RegisterDialog({ onRegistered }: { onRegistered: () => void }) {
             <Field>
               <FieldLabel htmlFor="mcp-scope">Scope</FieldLabel>
               <Select
-                id="mcp-scope"
                 value={scope}
-                onChange={(e) => setScope(e.target.value as 'platform' | 'user')}
+                onValueChange={(v) => setScope(v as 'platform' | 'user')}
               >
-                <option value="platform">Platform</option>
-                <option value="user">Per-user</option>
+                <SelectTrigger id="mcp-scope">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="platform">Platform</SelectItem>
+                  <SelectItem value="user">Per-user</SelectItem>
+                </SelectContent>
               </Select>
             </Field>
             {scope === 'user' ? (

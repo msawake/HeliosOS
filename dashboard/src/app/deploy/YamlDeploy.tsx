@@ -1,13 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import yaml from 'js-yaml';
 import { CheckCircle, RocketLaunch } from '@phosphor-icons/react';
 
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/input';
+import { CodeEditor } from '@/components/ui/code-editor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+
+/** js-yaml attaches a 1-based-friendly `mark` (0-based line) to parse errors. */
+function yamlErrorLine(e: unknown): number | null {
+  const line = (e as { mark?: { line?: number } } | null)?.mark?.line;
+  return typeof line === 'number' ? line + 1 : null;
+}
 
 export const STARTER = `kind: Agent
 metadata:
@@ -56,8 +62,30 @@ export function YamlDeploy({ text, onTextChange }: { text: string; onTextChange:
   const router = useRouter();
   const [preview, setPreview] = useState<Preview | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [errorLine, setErrorLine] = useState<number | null>(null);
   const [deployError, setDeployError] = useState<string | null>(null);
   const [deploying, setDeploying] = useState(false);
+
+  // Validate as you type (debounced): surface the parse error + failing line
+  // without waiting for the Validate button.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      if (!text.trim()) {
+        setParseError(null);
+        setErrorLine(null);
+        return;
+      }
+      try {
+        yaml.load(text);
+        setParseError(null);
+        setErrorLine(null);
+      } catch (e) {
+        setParseError(e instanceof Error ? e.message : 'Invalid YAML');
+        setErrorLine(yamlErrorLine(e));
+      }
+    }, 300);
+    return () => clearTimeout(id);
+  }, [text]);
 
   const validate = () => {
     setDeployError(null);
@@ -65,9 +93,11 @@ export function YamlDeploy({ text, onTextChange }: { text: string; onTextChange:
       const doc = yaml.load(text);
       setPreview(buildPreview(doc));
       setParseError(null);
+      setErrorLine(null);
     } catch (e) {
       setPreview(null);
       setParseError(e instanceof Error ? e.message : 'Invalid YAML');
+      setErrorLine(yamlErrorLine(e));
     }
   };
 
@@ -96,14 +126,14 @@ export function YamlDeploy({ text, onTextChange }: { text: string; onTextChange:
           <CardTitle>Manifest</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Textarea
+          <CodeEditor
             value={text}
-            onChange={(e) => {
-              onTextChange(e.target.value);
+            onChange={(v) => {
+              onTextChange(v);
               setPreview(null);
             }}
-            spellCheck={false}
-            className="min-h-[28rem] font-mono text-xs leading-relaxed"
+            errorLine={errorLine}
+            ariaLabel="Agent manifest YAML"
           />
           {parseError ? (
             <div role="alert" className="rounded-md border border-danger/20 bg-danger-wash px-4 py-3 text-[13px] text-danger">

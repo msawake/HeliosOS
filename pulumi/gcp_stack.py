@@ -68,6 +68,11 @@ dashboard_tag: str = config.get("dashboard_tag") or "latest"
 # rides Secret Manager (vllm-api-key); the URL is plain config.
 vllm_base_url: str = config.get("vllm_base_url") or ""
 
+# Drive scope for per-agent SA impersonation. Default (drive.file) only sees
+# app-created files; set "drive" so agents can read/write folders SHARED with
+# their SA (the treasury demo model). Applied to both the API and worker tiers.
+drive_scopes: str = config.get("drive_scopes") or ""
+
 
 # 1. Network
 network = Network(
@@ -228,6 +233,8 @@ if kernel_mode:
     _pa_extra_env["FORGEOS_KERNEL_MODE"] = kernel_mode
 if vllm_base_url:
     _pa_extra_env["VLLM_BASE_URL"] = vllm_base_url
+if drive_scopes:
+    _pa_extra_env["FORGEOS_DRIVE_SCOPES"] = drive_scopes
 
 platform_api = PlatformApi(
     "forgeos",
@@ -260,6 +267,8 @@ for _env_name, _cfg_key in [
 # vLLM client targets it (agents on provider=vllm resolve their base_url here).
 if vllm_base_url:
     _worker_env_secrets["VLLM_BASE_URL"] = vllm_base_url
+if drive_scopes:
+    _worker_env_secrets["FORGEOS_DRIVE_SCOPES"] = drive_scopes
 
 worker = WorkerTier(
     "forgeos",

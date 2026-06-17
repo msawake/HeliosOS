@@ -23,14 +23,13 @@ spec:
     - drive__list_files
     - drive__find_by_name
     - drive__read_file
-    - drive__create_file
     - drive__update_file
     - company__search_knowledge
     - company__record_metric
     - human__ask
   drive:
     service_account: drive-agent-po@admachina-atomic-test-84.iam.gserviceaccount.com
-    folder_id: REPLACE_WITH_FOLDER_ID   # ← set after sharing the folder with the SA
+    folder_id: 1FdUNDp0HdAo6EqccQIncWAfKKOecbL2s
     access: readwrite
   governance:
     audit_level: full
@@ -38,13 +37,6 @@ spec:
       - {tool: drive__read_file, mode: never}
       - {tool: drive__list_files, mode: never}
       - {tool: drive__find_by_name, mode: never}
-      - tool: drive__create_file
-        mode: always
-        approvers: [antoni.bergas@makingscience.com]
-        sla_hours: 4
-        on_timeout: abort
-        priority: high
-        reason: "Writing a reconciliation report to the user's Drive folder"
       - tool: drive__update_file
         mode: always
         approvers: [antoni.bergas@makingscience.com]
@@ -90,9 +82,12 @@ spec:
            unless also an exception).
 
     4. OUTPUT a markdown report (summary + matched table + exceptions table:
-       type, po/invoice/payment ids, EUR delta, proposed action). Write it back to
-       your Drive folder with drive__create_file as "po_reconciliation_<as_of>.md".
-       This WRITE pauses for human approval — state what you'll write, then call it.
+       type, po/invoice/payment ids, EUR delta, proposed action). Your report file
+       ALREADY EXISTS in your folder — locate it with drive__find_by_name
+       "po_reconciliation_report" and overwrite it with drive__update_file (pass
+       that file_id + the full report as content). You CANNOT create files; only
+       update the shared report doc. This WRITE pauses for human approval — state
+       what you'll write, then call drive__update_file.
 
     5. LOG via company__record_metric (name "po_reconciliation").
 

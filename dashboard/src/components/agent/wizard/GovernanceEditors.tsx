@@ -1,7 +1,14 @@
 import { ArrowDown, ArrowUp, Plus, Trash } from '@phosphor-icons/react';
 
 import { Button } from '@/components/ui/button';
-import { Input, Select, Textarea } from '@/components/ui/input';
+import { Input, Textarea } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   APPROVAL_MODES, APPROVAL_ON_TIMEOUT, APPROVAL_PRIORITIES, WHEN_OPS,
   emptyApprovalRule, emptyPolicyRef,
@@ -58,8 +65,11 @@ export function ApprovalRuleEditor({
                 placeholder="mcp__atlassian__* or notify__email" className="font-mono text-[12px]" />
             </LabeledField>
             <LabeledField label="Mode">
-              <Select value={r.mode} onChange={(e) => patch(i, { mode: e.target.value as ApprovalRuleState['mode'] })}>
-                {APPROVAL_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+              <Select value={r.mode} onValueChange={(v) => patch(i, { mode: v as ApprovalRuleState['mode'] })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {APPROVAL_MODES.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                </SelectContent>
               </Select>
             </LabeledField>
           </div>
@@ -73,8 +83,11 @@ export function ApprovalRuleEditor({
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <LabeledField label="Priority">
                 <Select value={r.priority}
-                  onChange={(e) => patch(i, { priority: e.target.value as ApprovalRuleState['priority'] })}>
-                  {APPROVAL_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+                  onValueChange={(v) => patch(i, { priority: v as ApprovalRuleState['priority'] })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {APPROVAL_PRIORITIES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                  </SelectContent>
                 </Select>
               </LabeledField>
               <LabeledField label="SLA (hours)">
@@ -82,8 +95,11 @@ export function ApprovalRuleEditor({
               </LabeledField>
               <LabeledField label="On timeout">
                 <Select value={r.onTimeout}
-                  onChange={(e) => patch(i, { onTimeout: e.target.value as ApprovalRuleState['onTimeout'] })}>
-                  {APPROVAL_ON_TIMEOUT.map((t) => <option key={t} value={t}>{t}</option>)}
+                  onValueChange={(v) => patch(i, { onTimeout: v as ApprovalRuleState['onTimeout'] })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {APPROVAL_ON_TIMEOUT.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  </SelectContent>
                 </Select>
               </LabeledField>
             </div>
@@ -131,8 +147,11 @@ function WhenBuilder({
             placeholder="tool_input.amount_usd" className="font-mono text-[12px]" />
           {fieldError ? <p className="mt-1 text-xs text-danger">{fieldError}</p> : null}
         </div>
-        <Select value={rule.whenOp} onChange={(e) => onChange({ whenOp: e.target.value as ApprovalRuleState['whenOp'] })}>
-          {WHEN_OPS.map((o) => <option key={o} value={o}>{o}</option>)}
+        <Select value={rule.whenOp} onValueChange={(v) => onChange({ whenOp: v as ApprovalRuleState['whenOp'] })}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {WHEN_OPS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+          </SelectContent>
         </Select>
         <div>
           <Input value={rule.whenValue} onChange={(e) => onChange({ whenValue: e.target.value })} placeholder="500" />
@@ -173,9 +192,12 @@ export function PolicyRefEditor({
               <Input value={p.name} onChange={(e) => patch(i, { name: e.target.value })} placeholder="spend-guard" />
             </LabeledField>
             <LabeledField label="Source">
-              <Select value={p.kind} onChange={(e) => patch(i, { kind: e.target.value as PolicyRefState['kind'] })}>
-                <option value="ref">File ref (.rego / .json)</option>
-                <option value="inline">Inline JSON-logic</option>
+              <Select value={p.kind} onValueChange={(v) => patch(i, { kind: v as PolicyRefState['kind'] })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ref">File ref (.rego / .json)</SelectItem>
+                  <SelectItem value="inline">Inline JSON-logic</SelectItem>
+                </SelectContent>
               </Select>
             </LabeledField>
           </div>

@@ -39,24 +39,39 @@ Regenerate: `python -m src.companies.treasury.mock_data` (deterministic).
 
 ## Run it
 
+Each agent has its **own Google service account** and reads/writes its data in a
+**Google Drive folder shared with that SA** (`drive__*` tools), not the local
+filesystem. The full walkthrough — per-agent SA identity, the kernel-gated Drive
+write approval, and the chat demo script — is in [`docs/treasury-demo.md`](../../../docs/treasury-demo.md).
+
 ```bash
-# 1. (re)generate the synthetic CSVs
+# 1. (re)generate the synthetic CSVs (the data you upload to each agent's folder)
 PYTHONPATH=. .venv/bin/python3 -m src.companies.treasury.mock_data
 
-# 2. boot the platform with this company pack
+# 2. one-time: provision the 5 per-agent SAs (idempotent)
+for s in bank-sap debt po mapping kyriba; do ./scripts/provision_agent_sa.sh "$s"; done
+
+# 3. one-time: in a Shared Drive, create a folder per data agent, share it with
+#    that agent's SA email, and upload its CSVs (see the table in docs/treasury-demo.md),
+#    then write the folder ids into the manifests:
+./scripts/set_treasury_folders.sh bank-sap=<ID> debt=<ID> po=<ID> mapping=<ID>
+
+# 4. boot the platform with this company pack
 PYTHONPATH=. .venv/bin/python3 -m src.bootstrap --company treasury --dashboard --port 5000
 
-# 3. deploy the agents (CLI or MCP forgeos_deploy_yaml)
-forgeos deploy src/companies/treasury/agents/bank-sap-reconciliation.yaml
-forgeos deploy src/companies/treasury/agents/kyriba-chat-orchestrator.yaml   # + the rest
+# 5. deploy the agents (CLI or MCP forgeos_deploy_yaml)
+for a in kyriba-chat-orchestrator bank-sap-reconciliation debt-reconciliation \
+         po-reconciliation mapping-classification; do
+  forgeos deploy src/companies/treasury/agents/$a.yaml
+done
 
-# 4. drive it
-forgeos invoke bank-sap-reconciliation "Run today's reconciliation." --wait
-forgeos invoke kyriba-chat-orchestrator "Any missed debt payments this week?" --wait
+# 6. drive it — chat with the orchestrator (it routes to specialists via A2A)
+forgeos invoke kyriba-chat-orchestrator "Reconcile today's bank inflows against SAP." --wait
 ```
 
-Agents read data with `shell__exec` (`cat src/companies/treasury/data/<table>.csv`)
-and write reports with `fs__write_file` into `reports/`.
+Each specialist reads its input CSVs from its Drive folder with `drive__read_file`
+and writes its report + exceptions back with `drive__create_file` — and every
+Drive **write pauses for human approval** (kernel `ask_human`).
 
 ## Mock → BigQuery transfer
 
@@ -65,7 +80,7 @@ When the finance project + `roles/bigquery.dataViewer` are granted:
 1. Set `mcp_servers.tier1.bigquery.required: true` in `config.yaml` (or keep
    shell `bq`, already allowlisted).
 2. In each manifest, flip `metadata.data_source: bigquery`.
-3. The agents swap each `cat data/<table>.csv` for the equivalent
+3. The agents swap each `drive__read_file` of `<table>.csv` for the equivalent
    `bq query --use_legacy_sql=false '...'`. No prompt or logic change.
 
 ## Not in this prototype (next steps)

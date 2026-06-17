@@ -9,7 +9,14 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input, Select } from '@/components/ui/input';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Field, FieldLabel } from '@/components/ui/field';
 import {
@@ -119,8 +126,13 @@ function UsersTab() {
                   {u.is_federated ? <Badge variant="outline" className="ml-2">SSO</Badge> : null}
                 </TableCell>
                 <TableCell>
-                  <Select value={u.role} onChange={(e) => setRole(u, e.target.value)} className="h-8 w-32 text-[13px]">
-                    {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                  <Select value={u.role} onValueChange={(v) => setRole(u, v)}>
+                    <SelectTrigger className="h-8 w-32 text-[13px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                    </SelectContent>
                   </Select>
                 </TableCell>
                 <TableCell className="text-secondary">{u.name || '—'}</TableCell>
@@ -173,7 +185,12 @@ function CreateUserDialog({
           <Field><FieldLabel>Email</FieldLabel><Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" /></Field>
           <Field><FieldLabel>Password</FieldLabel><Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="min 8 chars" /></Field>
           <Field><FieldLabel>Role</FieldLabel>
-            <Select value={role} onChange={(e) => setRole(e.target.value)}>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</Select>
+            <Select value={role} onValueChange={(v) => setRole(v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </Field>
           <Field><FieldLabel>Name (optional)</FieldLabel><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
           {error ? <p className="text-xs text-danger">{error}</p> : null}
@@ -335,9 +352,13 @@ function NamespaceAdminsTab() {
       <CardContent className="space-y-4 pt-5">
         <Field>
           <FieldLabel>Namespace</FieldLabel>
-          <Select value={ns} onChange={(e) => setNs(e.target.value)} className="w-64">
-            {namespaces.length === 0 ? <option value="">No namespaces</option> : null}
-            {namespaces.map((n) => <option key={n.namespace} value={n.namespace}>{n.namespace}</option>)}
+          <Select value={ns} onValueChange={(v) => setNs(v)} disabled={namespaces.length === 0}>
+            <SelectTrigger className="w-64">
+              <SelectValue placeholder={namespaces.length === 0 ? 'No namespaces' : 'Select namespace…'} />
+            </SelectTrigger>
+            <SelectContent>
+              {namespaces.map((n) => <SelectItem key={n.namespace} value={n.namespace}>{n.namespace}</SelectItem>)}
+            </SelectContent>
           </Select>
         </Field>
         {error ? <p className="text-xs text-danger">{error}</p> : null}

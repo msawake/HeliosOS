@@ -15,9 +15,10 @@ def run_demo():
     print(mock_data.summary())
     print(f"\nWrote CSVs to: {out}")
     print(
-        "\nDeploy the reconciliation agents with:\n"
-        "  forgeos deploy src/companies/treasury/agents/bank-sap-reconciliation.yaml\n"
-        "Agents read these CSVs via shell__exec (`cat src/companies/treasury/data/<table>.csv`)."
+        "\nNext: upload each agent's CSVs to the Google Drive folder shared with its\n"
+        "service account, set the folder ids, and deploy — see docs/treasury-demo.md\n"
+        "(or run ./scripts/set_treasury_folders.sh then `forgeos deploy <manifest>`).\n"
+        "Agents read these CSVs from their Drive folder via drive__read_file."
     )
 
 

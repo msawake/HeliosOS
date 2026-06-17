@@ -15,13 +15,24 @@ import {
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Input, Select } from '@/components/ui/input';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+
+// Radix Select forbids an empty-string item value, so filters use this sentinel
+// for the "All …" option while keeping the underlying filter state as ''.
+const ALL = '__all';
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[] | null>(null);
@@ -119,37 +130,57 @@ export default function AgentsPage() {
             className="w-64 pl-9"
           />
         </div>
-        <Select value={ns} onChange={(e) => setNs(e.target.value)} className="w-auto">
-          <option value="">All namespaces</option>
-          {namespaces.map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
+        <Select value={ns || ALL} onValueChange={(v) => setNs(v === ALL ? '' : v)}>
+          <SelectTrigger className="w-auto">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All namespaces</SelectItem>
+            {namespaces.map((n) => (
+              <SelectItem key={n} value={n}>
+                {n}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
-        <Select value={stack} onChange={(e) => setStack(e.target.value)} className="w-auto">
-          <option value="">All stacks</option>
-          {STACKS.map((s) => (
-            <option key={s} value={s}>
-              {STACK_LABELS[s] ?? s}
-            </option>
-          ))}
+        <Select value={stack || ALL} onValueChange={(v) => setStack(v === ALL ? '' : v)}>
+          <SelectTrigger className="w-auto">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All stacks</SelectItem>
+            {STACKS.map((s) => (
+              <SelectItem key={s} value={s}>
+                {STACK_LABELS[s] ?? s}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
-        <Select value={type} onChange={(e) => setType(e.target.value)} className="w-auto">
-          <option value="">All types</option>
-          {EXEC_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {EXEC_LABELS[t] ?? t}
-            </option>
-          ))}
+        <Select value={type || ALL} onValueChange={(v) => setType(v === ALL ? '' : v)}>
+          <SelectTrigger className="w-auto">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All types</SelectItem>
+            {EXEC_TYPES.map((t) => (
+              <SelectItem key={t} value={t}>
+                {EXEC_LABELS[t] ?? t}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
-        <Select value={ownership} onChange={(e) => setOwnership(e.target.value)} className="w-auto">
-          <option value="">All ownership</option>
-          {OWNERSHIP_TYPES.map((o) => (
-            <option key={o} value={o}>
-              {o[0].toUpperCase() + o.slice(1)}
-            </option>
-          ))}
+        <Select value={ownership || ALL} onValueChange={(v) => setOwnership(v === ALL ? '' : v)}>
+          <SelectTrigger className="w-auto">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All ownership</SelectItem>
+            {OWNERSHIP_TYPES.map((o) => (
+              <SelectItem key={o} value={o}>
+                {o[0].toUpperCase() + o.slice(1)}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
       </div>
 

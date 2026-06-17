@@ -3,7 +3,14 @@ import { Plus } from '@phosphor-icons/react';
 
 import { api, type SecretRef, type SecretScope } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Input, Select } from '@/components/ui/input';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -51,17 +58,17 @@ export function SecretPicker({
   return (
     <div className="space-y-2.5 rounded-lg border border-edge bg-surface p-3">
       <div className="flex items-center gap-2">
-        <Select
-          value={scope}
-          onChange={(e) => setScope(e.target.value as SecretScope)}
-          aria-label="Secret scope"
-          className="h-8 w-36 text-[13px]"
-        >
-          {SCOPES.map((sc) => (
-            <option key={sc} value={sc}>
-              {sc === 'namespace' ? `namespace (${namespace})` : sc}
-            </option>
-          ))}
+        <Select value={scope} onValueChange={(v) => setScope(v as SecretScope)}>
+          <SelectTrigger aria-label="Secret scope" className="h-8 w-36 text-[13px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SCOPES.map((sc) => (
+              <SelectItem key={sc} value={sc}>
+                {sc === 'namespace' ? `namespace (${namespace})` : sc}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
         <span className="flex-1" />
         <Button type="button" size="sm" variant="secondary" onClick={() => setCreating(true)}>
@@ -180,12 +187,15 @@ function CreateSecretDialog({
         </DialogHeader>
         <div className="space-y-3">
           <LabeledField label="Scope">
-            <Select value={scope} onChange={(e) => setScope(e.target.value as SecretScope)}>
-              {SCOPES.map((sc) => (
-                <option key={sc} value={sc}>
-                  {sc === 'namespace' ? `namespace (${namespace})` : sc}
-                </option>
-              ))}
+            <Select value={scope} onValueChange={(v) => setScope(v as SecretScope)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {SCOPES.map((sc) => (
+                  <SelectItem key={sc} value={sc}>
+                    {sc === 'namespace' ? `namespace (${namespace})` : sc}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </LabeledField>
           <LabeledField label="Name" description="[A-Za-z0-9_-], e.g. litellm-gateway-key">

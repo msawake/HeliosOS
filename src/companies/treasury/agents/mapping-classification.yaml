@@ -33,7 +33,7 @@ spec:
   # memory; it never writes files, so no drive write tools (least privilege).
   drive:
     service_account: drive-agent-mapping@admachina-atomic-test-84.iam.gserviceaccount.com
-    folder_id: REPLACE_WITH_FOLDER_ID   # ← set after sharing the folder with the SA
+    folder_id: 1fVck4f0_7t2tvQifOD8hUDVC_AbeNA_0
     access: read
   metadata:
     as_of: "2026-06-09"

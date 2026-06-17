@@ -750,6 +750,31 @@ def create_fastapi_app(
             raise HTTPException(404, "Not found")
         return item
 
+    def _resume_agent_context(cont):
+        """Rebuild the per-agent ``agent_context`` for a resumed continuation.
+
+        Without this, ``engine.resume`` runs with ``agent_context=None`` and an
+        approved tool re-executes stripped of the agent's identity — e.g. a gated
+        ``drive__update_file`` fails with "FORGEOS_DRIVE_AGENT_SA is not set"
+        because its per-agent Drive SA (manifest ``spec.drive`` → metadata._drive)
+        was never bound. We resolve the agent from the registry by the
+        continuation's pid and rebuild the same context the initial invoke used.
+        """
+        try:
+            agent_def = platform_registry.get(cont.pid) if platform_registry else None
+            if agent_def is None and platform_executor:
+                agent_def = platform_executor.registry.get(cont.pid)
+            if agent_def is None:
+                return None
+            from stacks.base import build_agent_context
+            return build_agent_context(
+                agent_def, agent_def.agent_id,
+                context={"user_id": getattr(cont, "user_id", "default")},
+            )
+        except Exception:
+            logger.debug("resume: could not rebuild agent_context for %s", getattr(cont, "pid", "?"))
+            return None
+
     def _resume_v2_continuation(request_id: str, accept: bool, responded_by: str | None) -> bool:
         """Resume a runtime-v2 continuation parked on this approval request.
 
@@ -791,7 +816,11 @@ def create_fastapi_app(
             )
             import asyncio as _asyncio
             _asyncio.create_task(
-                engine.resume(resolution, tool_executor=getattr(adapter, "_tool_executor", None))
+                engine.resume(
+                    resolution,
+                    tool_executor=getattr(adapter, "_tool_executor", None),
+                    agent_context=_resume_agent_context(cont),
+                )
             )
             return True
         return False
@@ -833,6 +862,7 @@ def create_fastapi_app(
             )
             return await engine.resume(
                 resolution, tool_executor=getattr(adapter, "_tool_executor", None),
+                agent_context=_resume_agent_context(cont),
             )
         return None
 

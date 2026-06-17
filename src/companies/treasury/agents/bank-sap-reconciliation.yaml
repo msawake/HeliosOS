@@ -25,15 +25,14 @@ spec:
     - drive__list_files         # discover the CSVs shared in the agent's folder
     - drive__find_by_name       # locate a specific input file
     - drive__read_file          # read input CSV content
-    - drive__create_file        # write the report + exceptions back (gated)
-    - drive__update_file        # overwrite an existing report (gated)
+    - drive__update_file        # overwrite the pre-created report doc (gated)
     - company__search_knowledge # pull matching/exception/GL rules
     - company__record_metric    # log run stats
     - human__ask                # clarify ambiguity + escalate material exceptions
   # Per-agent cloud identity: the user shares the Drive folder with THIS SA email.
   drive:
     service_account: drive-agent-bank-sap@admachina-atomic-test-84.iam.gserviceaccount.com
-    folder_id: REPLACE_WITH_FOLDER_ID   # ← set after sharing the folder with the SA
+    folder_id: 1MbXw-g4NodfHly5f7dDJatJljMwIdNYs
     access: readwrite
   # Two HITL paths: the kernel gates Drive writes (ask_human, below); the agent
   # also uses human__ask to clarify ambiguous instructions before acting.
@@ -43,13 +42,6 @@ spec:
       - {tool: drive__read_file, mode: never}
       - {tool: drive__list_files, mode: never}
       - {tool: drive__find_by_name, mode: never}
-      - tool: drive__create_file
-        mode: always
-        approvers: [antoni.bergas@makingscience.com]
-        sla_hours: 4
-        on_timeout: abort
-        priority: high
-        reason: "Writing a reconciliation report to the user's Drive folder"
       - tool: drive__update_file
         mode: always
         approvers: [antoni.bergas@makingscience.com]
@@ -104,13 +96,15 @@ spec:
          c. Same (reference + amount) already matched this run → DUPLICATE.
        Also list SAP open items with no inflow as OUTSTANDING (informational).
 
-    4. OUTPUT. Build a markdown report: a summary line (matched,
+    4. OUTPUT. Build a markdown report with: a summary line (matched,
        matched-with-fee, exceptions by type, outstanding), a matched table, and
        an exceptions table (type, source ids, EUR delta, proposed GL account,
-       proposed action). Write it back to your Drive folder with drive__create_file
-       as "bank_sap_reconciliation_<as_of>.md", and the exceptions as
-       "bank_sap_exceptions_<as_of>.csv". These WRITES pause for human approval —
-       state what you will write, then call the tool.
+       proposed action). Your report file ALREADY EXISTS in your folder —
+       locate it with drive__find_by_name "bank_sap_reconciliation_report" and
+       overwrite it with drive__update_file (pass that file_id + the full report
+       as content). You CANNOT create files; only update the shared report doc.
+       This WRITE pauses for human approval — state what you will write, then
+       call drive__update_file.
 
     5. LOG. company__record_metric with name "bank_sap_reconciliation" and the
        matched/exception counts.

@@ -32,14 +32,14 @@ export function StatCard({
         <p className="text-[13px] text-tertiary">{label}</p>
         {action}
       </div>
-      <p
+      <div
         className={cn(
           'mt-1.5 text-2xl text-primary',
           display ? 'font-display font-semibold' : 'font-mono font-medium tracking-tight'
         )}
       >
         {value}
-      </p>
+      </div>
       {meta ? <div className="mt-1 text-xs text-tertiary">{meta}</div> : null}
     </div>
   );

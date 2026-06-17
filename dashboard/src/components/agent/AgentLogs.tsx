@@ -5,7 +5,13 @@ import { CaretRight, ListBullets } from '@phosphor-icons/react';
 import { useAgentLogs } from '@/lib/hooks/useAgentLogs';
 import type { LogEvent } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Select } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -90,16 +96,17 @@ export function AgentLogs({ agentId }: { agentId: string }) {
           <span className={cn('h-1.5 w-1.5 rounded-full', follow ? 'bg-paper' : 'bg-muted')} />
           {follow ? 'Following' : 'Follow'}
         </Button>
-        <Select
-          value={String(tail)}
-          onChange={(e) => setTail(Number(e.target.value))}
-          className="w-auto"
-        >
-          {[50, 100, 200, 500].map((n) => (
-            <option key={n} value={n}>
-              Last {n}
-            </option>
-          ))}
+        <Select value={String(tail)} onValueChange={(v) => setTail(Number(v))}>
+          <SelectTrigger className="w-auto">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {[50, 100, 200, 500].map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                Last {n}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
         <Button variant="ghost" size="sm" onClick={refetch}>
           Refresh

@@ -20,12 +20,14 @@ models:
   orchestrator_default: "qwen3.6-27b"
   doer_default: "qwen3.6-27b"
 
-# Data sources. While BigQuery access is pending, the reconciliation agents
-# read synthetic CSVs from src/companies/treasury/data/ (see mock_data.py) via
-# shell__exec; no MCP server is needed for the prototype.
+# Data sources. While BigQuery access is pending, the reconciliation agents read
+# the synthetic CSVs (see mock_data.py) from a Google Drive folder shared with
+# each agent's service account (drive__* tools); no MCP server is needed for the
+# prototype.
 #
 # When BigQuery access lands, add the server below (a real package + required:
-# true) and the agents swap `cat data/*.csv` for `bq query` — no prompt change:
+# true) and the agents swap `drive__read_file` of the CSVs for `bq query` — no
+# prompt change:
 #   mcp_servers:
 #     tier1:
 #       - name: "bigquery"

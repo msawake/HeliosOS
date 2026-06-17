@@ -4,7 +4,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, type Agent, type Env } from '@/lib/api';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Select } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 
 /**
@@ -90,18 +96,17 @@ export function AgentEnvironment({ agent, onChanged }: { agent: Agent; onChanged
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-3">
-            <Select
-              value={selected}
-              onChange={(e) => setSelected(e.target.value)}
-              className="max-w-xs"
-              aria-label="Environment"
-            >
-              <option value="">Select an environment…</option>
-              {(envs ?? []).map((e) => (
-                <option key={e.env_def_id} value={e.env_def_id}>
-                  {e.name} ({e.image})
-                </option>
-              ))}
+            <Select value={selected} onValueChange={(v) => setSelected(v)}>
+              <SelectTrigger className="max-w-xs" aria-label="Environment">
+                <SelectValue placeholder="Select an environment…" />
+              </SelectTrigger>
+              <SelectContent>
+                {(envs ?? []).map((e) => (
+                  <SelectItem key={e.env_def_id} value={e.env_def_id}>
+                    {e.name} ({e.image})
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
             <Button size="sm" onClick={attach} disabled={busy || !selected}>
               {busy ? 'Attaching…' : 'Attach'}

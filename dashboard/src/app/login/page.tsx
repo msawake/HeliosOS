@@ -57,9 +57,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-page px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center text-center">
-          <span className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-ink">
-            <LogoMark className="h-9 w-9 text-paper" />
-          </span>
+          <LogoMark className="mb-4 h-20 w-20" />
           <h1 className="font-display text-3xl font-semibold tracking-[0.04em] text-primary">Helios OS</h1>
           <p className="mt-1 text-sm text-tertiary">The agentic harness.</p>
         </div>

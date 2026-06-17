@@ -2,7 +2,14 @@ import { useState } from 'react';
 
 import { api, type Env, type ToolDef } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Input, Select, Textarea } from '@/components/ui/input';
+import { Input, Textarea } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { CodeBlock } from '@/components/ui/code-block';
 import {
@@ -47,19 +54,28 @@ export function StepBasics({ s, patch, errors }: StepProps) {
       </LabeledField>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <LabeledField label="Framework">
-          <Select value={s.stack} onChange={(e) => patch({ stack: e.target.value as WizardState['stack'] })}>
-            {FRAMEWORKS.map((f) => <option key={f} value={f}>{f}</option>)}
+          <Select value={s.stack} onValueChange={(v) => patch({ stack: v as WizardState['stack'] })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {FRAMEWORKS.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+            </SelectContent>
           </Select>
         </LabeledField>
         <LabeledField label="Execution type">
           <Select value={s.executionType}
-            onChange={(e) => patch({ executionType: e.target.value as WizardState['executionType'] })}>
-            {EXECUTION_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            onValueChange={(v) => patch({ executionType: v as WizardState['executionType'] })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {EXECUTION_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+            </SelectContent>
           </Select>
         </LabeledField>
         <LabeledField label="Ownership">
-          <Select value={s.ownership} onChange={(e) => patch({ ownership: e.target.value as WizardState['ownership'] })}>
-            {OWNERSHIP_TYPES.map((o) => <option key={o} value={o}>{o}</option>)}
+          <Select value={s.ownership} onValueChange={(v) => patch({ ownership: v as WizardState['ownership'] })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {OWNERSHIP_TYPES.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+            </SelectContent>
           </Select>
         </LabeledField>
       </div>
@@ -106,8 +122,11 @@ export function StepLlm({ s, patch, errors }: StepProps) {
             placeholder="claude-sonnet-4-6" />
         </LabeledField>
         <LabeledField label="Provider">
-          <Select value={s.provider} onChange={(e) => patch({ provider: e.target.value as WizardState['provider'] })}>
-            {PROVIDERS.map((p) => <option key={p} value={p}>{p}</option>)}
+          <Select value={s.provider} onValueChange={(v) => patch({ provider: v as WizardState['provider'] })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {PROVIDERS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+            </SelectContent>
           </Select>
         </LabeledField>
       </div>
@@ -121,10 +140,13 @@ export function StepLlm({ s, patch, errors }: StepProps) {
       <LabeledField label="API key reference" error={errors.apiKeyRefName}
         description="How the model's key is resolved at invoke time (never inline).">
         <Select value={s.apiKeyRefKind}
-          onChange={(e) => patch({ apiKeyRefKind: e.target.value as WizardState['apiKeyRefKind'] })}>
-          <option value="none">None (use platform default key)</option>
-          <option value="secret">secret: — a stored scoped secret</option>
-          <option value="env">env: — an environment variable</option>
+          onValueChange={(v) => patch({ apiKeyRefKind: v as WizardState['apiKeyRefKind'] })}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">None (use platform default key)</SelectItem>
+            <SelectItem value="secret">secret: — a stored scoped secret</SelectItem>
+            <SelectItem value="env">env: — an environment variable</SelectItem>
+          </SelectContent>
         </Select>
       </LabeledField>
 
@@ -162,9 +184,12 @@ export function StepTools({ s, patch, tools, loading }: StepProps & { tools: Too
         <LabeledField label="MCP credentials"
           description="Which credentials MCP servers run with for this agent.">
           <Select value={s.mcpCredScope}
-            onChange={(e) => patch({ mcpCredScope: e.target.value as WizardState['mcpCredScope'] })}>
-            <option value="user">Per-user — each invoker's own credentials</option>
-            <option value="namespace">Namespace — shared team credentials (fallback to user)</option>
+            onValueChange={(v) => patch({ mcpCredScope: v as WizardState['mcpCredScope'] })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="user">Per-user — each invoker's own credentials</SelectItem>
+              <SelectItem value="namespace">Namespace — shared team credentials (fallback to user)</SelectItem>
+            </SelectContent>
           </Select>
         </LabeledField>
       ) : null}
@@ -221,11 +246,14 @@ export function StepEnvironment({ s, patch, errors, envs, loading }: StepProps &
     <div className="space-y-4">
       <LabeledField label="Execution environment"
         description="Optionally run this agent's shell/exec inside a dedicated pod.">
-        <Select value={s.envMode} onChange={(e) => patch({ envMode: e.target.value as WizardState['envMode'] })}>
-          <option value="none">None — run on the platform host</option>
-          <option value="embed">Embed an image in the manifest</option>
-          <option value="attach">Attach a reusable env after deploy</option>
-          <option value="new">Create a new environment…</option>
+        <Select value={s.envMode} onValueChange={(v) => patch({ envMode: v as WizardState['envMode'] })}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">None — run on the platform host</SelectItem>
+            <SelectItem value="embed">Embed an image in the manifest</SelectItem>
+            <SelectItem value="attach">Attach a reusable env after deploy</SelectItem>
+            <SelectItem value="new">Create a new environment…</SelectItem>
+          </SelectContent>
         </Select>
       </LabeledField>
 
@@ -237,11 +265,13 @@ export function StepEnvironment({ s, patch, errors, envs, loading }: StepProps &
           ) : envs.length === 0 ? (
             <p className="text-[13px] text-tertiary">No environments defined — choose “Create a new environment”.</p>
           ) : (
-            <Select value={s.envDefId} onChange={(e) => pickEnv(e.target.value)}>
-              <option value="">Select an environment…</option>
-              {envs.map((e) => (
-                <option key={e.env_def_id} value={e.env_def_id}>{e.name} ({e.image})</option>
-              ))}
+            <Select value={s.envDefId} onValueChange={(v) => pickEnv(v)}>
+              <SelectTrigger><SelectValue placeholder="Select an environment…" /></SelectTrigger>
+              <SelectContent>
+                {envs.map((e) => (
+                  <SelectItem key={e.env_def_id} value={e.env_def_id}>{e.name} ({e.image})</SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           )}
         </LabeledField>
@@ -276,13 +306,19 @@ export function StepGovernance({ s, patch, errors }: StepProps) {
     <div className="space-y-5">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <LabeledField label="Audit level">
-          <Select value={s.auditLevel} onChange={(e) => patch({ auditLevel: e.target.value as WizardState['auditLevel'] })}>
-            {AUDIT_LEVELS.map((a) => <option key={a} value={a}>{a}</option>)}
+          <Select value={s.auditLevel} onValueChange={(v) => patch({ auditLevel: v as WizardState['auditLevel'] })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {AUDIT_LEVELS.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+            </SelectContent>
           </Select>
         </LabeledField>
         <LabeledField label="PII policy">
-          <Select value={s.piiPolicy} onChange={(e) => patch({ piiPolicy: e.target.value as WizardState['piiPolicy'] })}>
-            {PII_POLICIES.map((p) => <option key={p} value={p}>{p}</option>)}
+          <Select value={s.piiPolicy} onValueChange={(v) => patch({ piiPolicy: v as WizardState['piiPolicy'] })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {PII_POLICIES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+            </SelectContent>
           </Select>
         </LabeledField>
       </div>

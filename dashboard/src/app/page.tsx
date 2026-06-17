@@ -56,7 +56,7 @@ export default function DashboardPage() {
       const [a, h, au] = await Promise.all([
         api.listAgents().then((x) => (Array.isArray(x) ? x : [])).catch(() => []),
         (api.health() as Promise<HealthInfo>).catch(() => null),
-        api.listAudit(40).then((x) => (Array.isArray(x) ? x : [])).catch(() => []),
+        api.listAudit(10).then((x) => (Array.isArray(x) ? x : [])).catch(() => []),
       ]);
       if (cancelled) return;
       setAgents(a);
@@ -210,7 +210,7 @@ export default function DashboardPage() {
               <p className="text-[13px] text-tertiary">No activity recorded yet.</p>
             ) : (
               <ul className="-my-1 divide-y divide-edge-subtle">
-                {audit.map((e) => {
+                {audit.slice(0, 10).map((e) => {
                   const meta = actionMeta(e.action);
                   return (
                     <li key={e.id} className="flex items-center gap-3 py-2 text-[13px]">

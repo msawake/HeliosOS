@@ -7,13 +7,16 @@ config:
   forgeos-gcp:cloud_sql_tier: db-f1-micro
   # platform-api image (built from main @ 2d012db). Used by platform-api, the
   # MCP server, AND the worker tier.
-  forgeos-gcp:platform_api_tag: f38d42d
+  forgeos-gcp:platform_api_tag: 51d31d3
   # Next.js dashboard image. Built with --build-arg FORGEOS_API_URL=<platform-api>
   # (Next.js serializes the /api rewrite destination into routes-manifest at
   # `next build`, so the runtime env is ignored for the proxy).
   forgeos-gcp:dashboard_tag: c801e74
   # Migrations Cloud Run Job image (applies infrastructure/database/*.sql).
   forgeos-gcp:migrations_tag: f38d42d
+  # Full Drive scope so per-agent SAs (treasury demo) can read/write folders
+  # SHARED with their email; default drive.file only sees app-created files.
+  forgeos-gcp:drive_scopes: drive
   # Redis (Memorystore) backs the durable per-turn worker tier (Redis Streams).
   forgeos-gcp:enable_redis: "true"
   forgeos-gcp:redis_memory_gb: "1"
