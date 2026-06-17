@@ -17,7 +17,10 @@ tests/
 # crashes the gcloud archiver when files disappear under it.
 .codegraph/
 # Local agent state (in-memory at runtime; do not ship to Cloud Build).
-agents/
+# Anchored to repo root — an unanchored `agents/` also matches
+# dashboard/src/app/agents/, which silently dropped the dashboard's agent
+# routes from the Cloud Build context (→ /agents/* 404 in the built image).
+/agents/
 # Seed for the forgeos-lens repo — already pushed upstream; not needed in
 # the platform-api image build context.
 forgeos-lens-seed/

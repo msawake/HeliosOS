@@ -7,13 +7,13 @@ config:
   forgeos-gcp:cloud_sql_tier: db-f1-micro
   # platform-api image (built from main @ 2d012db). Used by platform-api, the
   # MCP server, AND the worker tier.
-  forgeos-gcp:platform_api_tag: 2d012db
+  forgeos-gcp:platform_api_tag: 2d012db-lic2
   # Next.js dashboard image. Built with --build-arg FORGEOS_API_URL=<platform-api>
   # (Next.js serializes the /api rewrite destination into routes-manifest at
   # `next build`, so the runtime env is ignored for the proxy).
-  forgeos-gcp:dashboard_tag: 2d012db
+  forgeos-gcp:dashboard_tag: 2d012db-auth2
   # Migrations Cloud Run Job image (applies infrastructure/database/*.sql).
-  forgeos-gcp:migrations_tag: 2d012db
+  forgeos-gcp:migrations_tag: 2d012db-cont
   # Redis (Memorystore) backs the durable per-turn worker tier (Redis Streams).
   forgeos-gcp:enable_redis: "true"
   forgeos-gcp:redis_memory_gb: "1"
@@ -23,7 +23,7 @@ config:
   # licensing (requires a license row per tenant, else tool calls are denied
   # "Unknown tenant"). Empty = permissive (local-dev) licensing — kernel still
   # enforces ACL/approvals/budgets, just skips the commercial license gate.
-  forgeos-gcp:kernel_mode: ""
+  forgeos-gcp:kernel_mode: "production"
   forgeos-gcp:gemini_api_key:
     secure: v1:td1CQ3NmsjbGKLKT:J2ReVGV6G7WVgHkXAyVrcdWwBkpyuxvBotMl3VTjxFQpN29OcZoMsDhqzQBNxDdgI8ex5XtOXA==
   forgeos-gcp:jira_url:
@@ -36,5 +36,7 @@ config:
     secure: v1:YqAc6AwY6GQEYAuG:bE7VrZhlLDCNzjrF3drNj0sQDncdN5m92967Z5z9dbsz0k7vqOZ7vDl9PLB+vXPPm1/IKi1T4YFFSR/nxfRTIBlpiZ2fPRfegYdsoAAHG1WcwEY+
   forgeos-gcp:vllm_base_url: https://atlas-router.ally-code-dev.makingscience.com/v1
   forgeos-gcp:vllm_api_key:
-    secure: v1:agBZwddpbTs2BeWU:myoKCTI9E6D2pmRneFvuHosBMg5khNgIpbBWwM911OyX42CYm8i5dUqYPzacoHf0tqvGeiaX5BHMP9I=
+    secure: v1:vnHIT0yuKLyoh1B0:M+UUmsVPPkgZpkET7pdjAAK/hnOzRQC32T0uzFfYXL3wd4sAtEfy2Uc=
+  forgeos-gcp:dashboard_password:
+    secure: v1:JCqeqLWoFH6NUYgf:+9PQMl04oMVy5Kj5bp6/qCJMLbDuX9+oUl+0kSiEN51Xs1eKoJAwgA==
 encryptionsalt: v1:aAnZL1A6xrw=:v1:RxasCPnystMWc9sM:V2eUSJQDxw4hFLD8DqUsJmlwHldjog==
