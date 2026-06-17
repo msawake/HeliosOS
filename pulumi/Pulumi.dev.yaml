@@ -11,7 +11,7 @@ config:
   # Next.js dashboard image. Built with --build-arg FORGEOS_API_URL=<platform-api>
   # (Next.js serializes the /api rewrite destination into routes-manifest at
   # `next build`, so the runtime env is ignored for the proxy).
-  forgeos-gcp:dashboard_tag: f38d42d
+  forgeos-gcp:dashboard_tag: c801e74
   # Migrations Cloud Run Job image (applies infrastructure/database/*.sql).
   forgeos-gcp:migrations_tag: f38d42d
   # Redis (Memorystore) backs the durable per-turn worker tier (Redis Streams).
