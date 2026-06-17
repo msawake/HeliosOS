@@ -141,3 +141,30 @@ async def test_worker_tier_plain_run_completes_without_pause():
         assert tx.calls == [("search__files", {"q": "x"})]
     finally:
         await svc.stop()
+
+
+async def test_enqueue_invoke_propagates_per_agent_gateway_routing():
+    """enqueue_invoke must carry the agent's per-agent endpoint + api_key_ref
+    onto the continuation. Without them the worker's LLMConfig has no endpoint
+    or key, so atlas/qwen agents resolve no client and fall back to the
+    [Simulated …] response. Regression for that drop."""
+    agent = _agent_def()
+    agent.tools = []
+    agent.llm_config = LLMConfig(
+        chat_model="qwen", provider="atlas",
+        endpoint="https://gw.example/v1", api_key_ref="secret:litellm-allycode-key",
+    )
+    registry = FakeRegistry(agent)
+    kernel = Kernel(registry=registry)
+    store = MemoryContinuationStore()
+    svc = RuntimeService(
+        kernel=kernel, llm_router=FakeLLM([]), tool_executor=FakeTool(), registry=registry,
+        store=store, ledger=InMemoryLedger(), queue=InMemoryRunnableQueue(), workers=1,
+    )
+    # Don't start() — assert what enqueue_invoke persisted before a worker drives it.
+    run_id = await svc.enqueue_invoke(agent, "ping")
+    cont = store.load(run_id)
+    assert cont.provider == "atlas"
+    assert cont.chat_model == "qwen"
+    assert cont.endpoint == "https://gw.example/v1"
+    assert cont.api_key_ref == "secret:litellm-allycode-key"

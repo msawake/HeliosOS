@@ -169,6 +169,11 @@ class RuntimeService:
             user_prompt=prompt,
             provider=agent_def.llm_config.provider,
             chat_model=agent_def.llm_config.chat_model,
+            # Carry the per-agent gateway routing onto the continuation so the
+            # worker's LLMConfig reaches the right endpoint with the right key
+            # (without these, atlas/qwen agents fall back to [Simulated …]).
+            endpoint=agent_def.llm_config.endpoint,
+            api_key_ref=agent_def.llm_config.api_key_ref,
             tools=tools or None,
             session_id=session_id,
             history=history,
