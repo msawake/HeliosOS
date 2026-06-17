@@ -59,6 +59,16 @@ class Secrets(pulumi.ComponentResource):
         # the atlas-router gateway (VLLM_BASE_URL). Operator-supplied via
         # `pulumi config set --secret forgeos-gcp:vllm_api_key …`.
         self.vllm_api_key = self._secret("vllm-api-key", config.get_secret("vllm_api_key"))
+        # Per-agent atlas/qwen key for `api_key_ref: secret:litellm-allycode-key`.
+        # The credential store resolves that ref at the *platform* scope to the
+        # GSM secret `forgeos-platform-litellm-allycode-key` (scoped_secret_name),
+        # so the secret_id is `platform-litellm-allycode-key`. Operator-supplied via
+        # `pulumi config set --secret forgeos-gcp:litellm_allycode_key …` — same
+        # atlas-router key as vllm_api_key, kept separate so per-agent refs and the
+        # default VLLM_API_KEY env can rotate independently.
+        self.litellm_allycode_key = self._secret(
+            "platform-litellm-allycode-key", config.get_secret("litellm_allycode_key")
+        )
         # Jira credentials — referenced by leadforge config.yaml via the
         # secret:jira-* fallback chain. Stored as forgeos-jira-* in Secret
         # Manager and injected as JIRA_URL/JIRA_USERNAME/JIRA_API_TOKEN env

@@ -39,4 +39,6 @@ config:
     secure: v1:vnHIT0yuKLyoh1B0:M+UUmsVPPkgZpkET7pdjAAK/hnOzRQC32T0uzFfYXL3wd4sAtEfy2Uc=
   forgeos-gcp:dashboard_password:
     secure: v1:JCqeqLWoFH6NUYgf:+9PQMl04oMVy5Kj5bp6/qCJMLbDuX9+oUl+0kSiEN51Xs1eKoJAwgA==
+  forgeos-gcp:litellm_allycode_key:
+    secure: v1:viVWbLK6rbHNKHHU:13E50jKqsYA+IeN2bHLRp4dggC11jKtgJPYYjnaYUvu2tFK2aMcZ7Zo=
 encryptionsalt: v1:aAnZL1A6xrw=:v1:RxasCPnystMWc9sM:V2eUSJQDxw4hFLD8DqUsJmlwHldjog==

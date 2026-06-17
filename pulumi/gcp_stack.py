@@ -121,6 +121,9 @@ _shared_secrets = [
     ("jira-username", secrets.jira_username),
     ("jira-api-token", secrets.jira_api_token),
     ("vllm-api-key", secrets.vllm_api_key),
+    # Per-agent atlas key (secret:litellm-allycode-key) — resolved at runtime by
+    # the credential store, so both the platform-api and agent-runtime GSAs need read.
+    ("platform-litellm-allycode-key", secrets.litellm_allycode_key),
 ]
 if enable_redis:
     _shared_secrets.append(("redis-url", secrets.redis_url))
