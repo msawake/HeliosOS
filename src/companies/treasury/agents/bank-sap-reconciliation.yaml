@@ -2,6 +2,7 @@ apiVersion: forgeos/v1
 kind: Agent
 metadata:
   name: bank-sap-reconciliation
+  namespace: treasury
   description: >-
     Daily reconciliation of bank inflows against SAP open AR items. Reads its
     input data from a Google Drive folder shared with its own service account,

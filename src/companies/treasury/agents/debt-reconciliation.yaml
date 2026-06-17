@@ -2,6 +2,7 @@ apiVersion: forgeos/v1
 kind: Agent
 metadata:
   name: debt-reconciliation
+  namespace: treasury
   description: >-
     Reconciles scheduled debt service (principal + interest) against actual
     payments seen on the bank/Kyriba side. Flags missed payments, overpayments

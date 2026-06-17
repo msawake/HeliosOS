@@ -2,6 +2,7 @@ apiVersion: forgeos/v1
 kind: Agent
 metadata:
   name: po-reconciliation
+  namespace: treasury
   description: >-
     Three-way match of purchase orders ↔ vendor invoices ↔ AP payments. Flags
     over-billing, duplicate invoices, maverick (no-PO) spend and open

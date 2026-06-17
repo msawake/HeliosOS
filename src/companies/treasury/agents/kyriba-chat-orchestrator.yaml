@@ -2,6 +2,7 @@ apiVersion: forgeos/v1
 kind: Agent
 metadata:
   name: kyriba-chat-orchestrator
+  namespace: treasury
   description: >-
     Conversational front door for Treasury. Interprets a natural-language
     request ("reconcile today's bank inflows", "any missed debt payments?",

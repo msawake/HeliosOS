@@ -2,6 +2,7 @@ apiVersion: forgeos/v1
 kind: Agent
 metadata:
   name: mapping-classification
+  namespace: treasury
   description: >-
     Shared classification service for Treasury. Resolves bank counterparties and
     vendor aliases to SAP ids, classifies items to GL accounts, and audits the
