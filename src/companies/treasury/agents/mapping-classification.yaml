@@ -41,7 +41,7 @@ spec:
   capabilities:
     a2a:
       canBeCalledBy:
-        - namespace: default
+        - namespace: treasury
           agents:
             - bank-sap-reconciliation
             - po-reconciliation

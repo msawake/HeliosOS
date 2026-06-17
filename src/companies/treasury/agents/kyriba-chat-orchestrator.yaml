@@ -40,7 +40,7 @@ spec:
   capabilities:
     a2a:
       canCall:
-        - namespace: default
+        - namespace: treasury
           agents:
             - bank-sap-reconciliation
             - debt-reconciliation
@@ -62,7 +62,7 @@ spec:
     1. Parse the request and pick the single best target agent (use
        agent__list_available if unsure who exists). If the request is ambiguous,
        ask the user one clarifying question via human__ask before delegating.
-    2. Call it with agent__call (namespace "default", the chosen name) passing a
+    2. Call it with agent__call (namespace "treasury", the chosen name) passing a
        concise task describing exactly what the user wants. For "run today's
        reconciliation" delegate the full run; for a specific question, ask the
        specialist to answer just that.

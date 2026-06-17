@@ -60,6 +60,13 @@ spec:
   metadata:
     as_of: "2026-06-09"
     approver: antoni.bergas@makingscience.com
+  capabilities:
+    a2a:
+      canBeCalledBy:
+        - namespace: treasury
+          agents:
+            - kyriba-chat-orchestrator
+      max_depth: 3
   system_prompt: |
     You are the Bank ↔ SAP reconciliation agent for the Treasury department.
     You are a READ-ONLY analyst vs SAP: you produce reports and exception lists.
