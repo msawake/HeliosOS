@@ -89,6 +89,23 @@ class Secrets(pulumi.ComponentResource):
                 "forgeos-dashboard-password-gen", length=20, special=False, opts=child
             ).result,
         )
+        # HMAC secret for signed session tokens (FORGEOS_SESSION_SECRET).
+        self.session_secret = self._secret(
+            "session-secret",
+            config.get_secret("session_secret")
+            or random.RandomString(
+                "forgeos-session-secret-gen", length=64, special=False, opts=child
+            ).result,
+        )
+        # Bootstrap admin password — seeds a real admin login on a fresh deploy
+        # (FORGEOS_BOOTSTRAP_ADMIN_PASSWORD; email via config bootstrap_admin_email).
+        self.bootstrap_admin_password = self._secret(
+            "bootstrap-admin-password",
+            config.get_secret("bootstrap_admin_password")
+            or random.RandomPassword(
+                "forgeos-bootstrap-admin-password-gen", length=20, special=False, opts=child
+            ).result,
+        )
 
         self.register_outputs({})
 

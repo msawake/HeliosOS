@@ -1,4 +1,4 @@
-"""ForgeOS durable worker tier — an always-on GKE Deployment.
+"""Helios OS durable worker tier — an always-on GKE Deployment.
 
 The per-turn runtime (FORGEOS_RUNTIME_WORKERS) processes agent runs off a Redis
 Streams queue backed by the Postgres continuation store/ledger: it pulls a

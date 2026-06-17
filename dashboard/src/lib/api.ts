@@ -1,5 +1,5 @@
 /**
- * ForgeOS dashboard API client — one method per `forgeos` CLI capability,
+ * Helios OS dashboard API client — one method per `forgeos` CLI capability,
  * typed to the same backend contract the Rust CLI speaks (see forgeos-cli
  * src/api.rs). The dashboard is a pure HTTP client of the platform API.
  *
@@ -234,6 +234,25 @@ export interface SecretRef {
   kind?: string;
   scope?: SecretScope;
   namespace?: string | null;
+}
+
+/** A local user account (never carries a password). */
+export interface ManagedUser {
+  id?: string;
+  user_id?: string;
+  email: string;
+  role: string;
+  name?: string;
+  is_federated?: boolean;
+  tenant_id?: string;
+}
+
+/** A registered namespace. */
+export interface NamespaceDef {
+  namespace: string;
+  description?: string;
+  created_by?: string;
+  created_at?: string | null;
 }
 
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'error']);
@@ -504,6 +523,33 @@ export const api = {
     request<{ deleted: boolean }>('/api/secrets', {
       method: 'DELETE',
       query: { scope: payload.scope, name: payload.name, ...(payload.namespace ? { namespace: payload.namespace } : {}) },
+    }),
+
+  // auth + users (local accounts)
+  login: (email: string, password: string) =>
+    request<{ token: string; user: ManagedUser }>('/api/auth/login', {
+      method: 'POST',
+      body: { email, password },
+    }),
+  listUsers: () => request<{ users: ManagedUser[] }>('/api/users'),
+  createUser: (payload: { email: string; password: string; role: string; name?: string }) =>
+    request<ManagedUser>('/api/users', { method: 'POST', body: payload }),
+  updateUser: (id: string, payload: { role?: string; password?: string; name?: string }) =>
+    request<{ updated: boolean }>(`/api/users/${encodeURIComponent(id)}`, { method: 'PATCH', body: payload }),
+  deleteUser: (id: string) =>
+    request<{ deleted: boolean }>(`/api/users/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  // namespace registry
+  listNamespaces: () =>
+    request<{ namespaces: NamespaceDef[] }>('/api/platform/namespaces'),
+  createNamespace: (payload: { namespace: string; description?: string; admins?: string[] }) =>
+    request<{ created: boolean; namespace: string; admins: string[] }>('/api/platform/namespaces', {
+      method: 'POST',
+      body: payload,
+    }),
+  deleteNamespace: (namespace: string) =>
+    request<{ deleted: boolean }>(`/api/platform/namespaces/${encodeURIComponent(namespace)}`, {
+      method: 'DELETE',
     }),
 
   // namespace admins (tenant-admin only)

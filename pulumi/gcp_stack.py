@@ -1,4 +1,4 @@
-"""ForgeOS GCP — lean stack.
+"""Helios OS GCP — lean stack.
 
 Provisions only what the platform actually runs today: the backend API, the
 web dashboard, the remote MCP endpoint, the durable worker tier, and the
@@ -137,6 +137,8 @@ secrets.grant_access("mcp-api-key-access", secrets.api_key, identity.mcp.email)
 # Auth secrets — platform-api only (worker/agent SAs don't authenticate users).
 secrets.grant_access("platform-api-admin-key-access", secrets.admin_api_key, identity.platform_api.email)
 secrets.grant_access("platform-api-dev-password-access", secrets.dashboard_password, identity.platform_api.email)
+secrets.grant_access("platform-api-session-secret-access", secrets.session_secret, identity.platform_api.email)
+secrets.grant_access("platform-api-bootstrap-admin-access", secrets.bootstrap_admin_password, identity.platform_api.email)
 
 # 6. GKE
 gke = Gke(
@@ -188,6 +190,8 @@ _pa_secret_specs = [
     #   dashboard password → /api/auth/token login (gated by FORGEOS_ALLOW_DEV_LOGIN).
     ("FORGEOS_ADMIN_API_KEY", "admin-api-key", secrets.admin_api_key),
     ("FORGEOS_DEV_PASSWORD", "dashboard-password", secrets.dashboard_password),
+    ("FORGEOS_SESSION_SECRET", "session-secret", secrets.session_secret),
+    ("FORGEOS_BOOTSTRAP_ADMIN_PASSWORD", "bootstrap-admin-password", secrets.bootstrap_admin_password),
 ]
 if enable_redis:
     _pa_secret_specs.append(("REDIS_URL", "redis-url", secrets.redis_url))
@@ -214,6 +218,8 @@ _pa_extra_env: dict[str, pulumi.Input[str]] = {
     # Auth itself is on by default — the bootstrap CMD does not pass --no-auth.
     "FORGEOS_TENANT_ID": config.get("company") or "leadforge",
     "FORGEOS_ALLOW_DEV_LOGIN": "1",
+    # Seed a real admin login on a fresh deploy (password is secret-backed above).
+    "FORGEOS_BOOTSTRAP_ADMIN_EMAIL": config.get("bootstrap_admin_email") or "admin@forgeos.local",
 }
 if kernel_mode:
     _pa_extra_env["FORGEOS_KERNEL_MODE"] = kernel_mode

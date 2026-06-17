@@ -1,5 +1,5 @@
 """
-Authentication and authorization for ForgeOS SaaS.
+Authentication and authorization for Helios OS SaaS.
 
 Supports:
 - Firebase Auth (JWT tokens) for dashboard users
@@ -9,8 +9,10 @@ Supports:
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
+import json
 import logging
 import os
 import time
@@ -19,6 +21,63 @@ from functools import wraps
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Local password hashing (stdlib pbkdf2 — no bcrypt/argon2 dependency)
+# ---------------------------------------------------------------------------
+
+_PBKDF2_ITERATIONS = 600_000
+
+
+def hash_password(password: str) -> str:
+    """Hash a password as ``pbkdf2_sha256$<iters>$<b64salt>$<b64hash>``."""
+    salt = os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, _PBKDF2_ITERATIONS)
+    return (
+        f"pbkdf2_sha256${_PBKDF2_ITERATIONS}$"
+        f"{base64.b64encode(salt).decode()}${base64.b64encode(dk).decode()}"
+    )
+
+
+def verify_password_hash(password: str, stored: str | None) -> bool:
+    """Constant-time verify against a stored hash. False on NULL/malformed
+    (Firebase-only rows and the env admin-key principal have no password)."""
+    if not stored:
+        return False
+    try:
+        algo, iters, b64salt, b64dk = stored.split("$")
+        if algo != "pbkdf2_sha256":
+            return False
+        salt = base64.b64decode(b64salt)
+        expected = base64.b64decode(b64dk)
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, int(iters))
+        return hmac.compare_digest(dk, expected)
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Session token signing secret
+# ---------------------------------------------------------------------------
+
+_SESSION_SECRET_ENV = "FORGEOS_SESSION_SECRET"
+_SESSION_DEV_SALT = b"forgeos-local-dev-session-secret-v1"
+
+
+def _load_session_secret() -> bytes:
+    """Return the HMAC secret for signed session tokens. Prefers
+    ``FORGEOS_SESSION_SECRET``; falls back to a STABLE derived dev key (loud
+    warning) so local dev works with zero config. Never random-at-boot (that
+    would invalidate live tokens on every restart)."""
+    raw = os.environ.get(_SESSION_SECRET_ENV, "").strip()
+    if raw:
+        return raw.encode("utf-8")
+    logger.warning(
+        "%s not set — using an INSECURE derived dev key for session tokens. "
+        "Set %s to a strong random value in any real deployment.",
+        _SESSION_SECRET_ENV, _SESSION_SECRET_ENV,
+    )
+    return hashlib.sha256(_SESSION_DEV_SALT).digest()
 
 # ---------------------------------------------------------------------------
 # Auth rate limiting -- blocks IPs after too many failed attempts
@@ -124,6 +183,9 @@ class AuthManager:
         # seeding a DB row or wiring Firebase. Stored as a hash; never logged.
         _admin_key = os.environ.get("FORGEOS_ADMIN_API_KEY", "").strip()
         self._admin_key_hash = hashlib.sha256(_admin_key.encode()).hexdigest() if _admin_key else None
+        # Signed session tokens for local email+password login.
+        self._session_secret = _load_session_secret()
+        self._session_ttl = int(os.environ.get("FORGEOS_SESSION_TTL_SECONDS", str(12 * 3600)))
 
         if HAS_FIREBASE:
             try:
@@ -176,6 +238,72 @@ class AuthManager:
         except Exception as e:
             logger.warning("JWT verification failed: %s", e)
             return None
+
+    def mint_token(self, user: AuthUser, ttl_seconds: int | None = None) -> str:
+        """Mint a stateless HMAC-signed session token for ``user``."""
+        ttl = ttl_seconds if ttl_seconds is not None else self._session_ttl
+        payload = {
+            "user_id": user.user_id, "email": user.email, "tenant_id": user.tenant_id,
+            "role": user.role, "name": user.name, "exp": int(time.time()) + ttl,
+        }
+        body = base64.urlsafe_b64encode(
+            json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        ).rstrip(b"=").decode()
+        signed = f"v1.{body}"
+        sig = base64.urlsafe_b64encode(
+            hmac.new(self._session_secret, signed.encode("utf-8"), hashlib.sha256).digest()
+        ).rstrip(b"=").decode()
+        return f"{signed}.{sig}"
+
+    def verify_token(self, token: str) -> AuthUser | None:
+        """Verify a signed session token. None on bad sig / expiry / malformed."""
+        try:
+            parts = token.split(".")
+            if len(parts) != 3 or parts[0] != "v1":
+                return None
+            signed = f"{parts[0]}.{parts[1]}"
+            expected = base64.urlsafe_b64encode(
+                hmac.new(self._session_secret, signed.encode("utf-8"), hashlib.sha256).digest()
+            ).rstrip(b"=").decode()
+            if not hmac.compare_digest(parts[2], expected):
+                return None
+            pad = "=" * (-len(parts[1]) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(parts[1] + pad))
+            if int(payload.get("exp", 0)) < int(time.time()):
+                return None
+            return AuthUser(
+                user_id=payload["user_id"], email=payload.get("email", ""),
+                tenant_id=payload.get("tenant_id", ""),
+                role=payload.get("role", UserRole.VIEWER), name=payload.get("name", ""),
+            )
+        except Exception:
+            return None
+
+    def verify_password(self, email: str, password: str) -> AuthUser | None:
+        """Validate local email+password against tenant_users → AuthUser.
+
+        ``tenant_users`` has no RLS policy, so it's queried via ``db.admin()``
+        (cross-tenant) with an explicit tenant_id filter."""
+        if not self._db or not getattr(self._db, "is_connected", False) or not email or not password:
+            return None
+        try:
+            with self._db.admin() as conn:
+                row = conn.execute_one(
+                    "SELECT id, tenant_id, email, role, name, password_hash FROM tenant_users "
+                    "WHERE tenant_id = %s AND email = %s",
+                    (self._tenant_id, email),
+                )
+        except Exception:
+            logger.warning("verify_password lookup failed", exc_info=True)
+            return None
+        if not row or not row.get("password_hash"):
+            return None
+        if not verify_password_hash(password, row["password_hash"]):
+            return None
+        return AuthUser(
+            user_id=str(row["id"]), email=row["email"], tenant_id=row["tenant_id"],
+            role=row["role"], name=row.get("name") or "",
+        )
 
     def verify_admin_key(self, api_key: str) -> AuthUser | None:
         """Verify the platform admin API key (FORGEOS_ADMIN_API_KEY).
@@ -241,10 +369,10 @@ class AuthManager:
 
         auth_header = request.headers.get("Authorization", "")
 
-        # Bearer token (JWT)
+        # Bearer token — a signed local session token first, then Firebase JWT.
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
-            user = self.verify_jwt(token)
+            user = self.verify_token(token) or self.verify_jwt(token)
             if not user:
                 _record_auth_failure(ip)
             return user

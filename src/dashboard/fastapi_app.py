@@ -1,5 +1,5 @@
 """
-ForgeOS FastAPI Dashboard & API.
+Helios OS FastAPI Dashboard & API.
 
 Drop-in replacement for the Flask app with:
 - Auto-generated OpenAPI docs at /docs
@@ -154,6 +154,21 @@ class ClientMCPConfigRequest(BaseModel):
 class DevTokenRequest(BaseModel):
     password: str = ""
 
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class UserCreateRequest(BaseModel):
+    email: str = Field(..., min_length=3)
+    password: str = Field(..., min_length=8)
+    role: str = Field("viewer", description="admin | operator | viewer")
+    name: str = ""
+
+class UserUpdateRequest(BaseModel):
+    role: str | None = None
+    password: str | None = Field(None, min_length=8)
+    name: str | None = None
+
 class AgentChatRequest(BaseModel):
     message: str
     session_id: str | None = None
@@ -277,10 +292,11 @@ def create_fastapi_app(
     auth_manager=None,  # injectable AuthManager (DI for tests); else built from db_client
     namespace_admin_store=None,  # injectable (DI for tests); else built from db_client
     namespace_store=None,  # injectable (DI for tests); else built from db_client
+    user_store=None,  # injectable (DI for tests); else built from db_client
 ) -> FastAPI:
 
     app = FastAPI(
-        title=f"{company_name} — ForgeOS Platform API",
+        title=f"{company_name} — Helios OS Platform API",
         description="AI-Operated Company Platform + Palantir-Like Intelligence. "
                     "195 agents, 5 verticals, ontology-powered intelligence, multi-stack.",
         version="2.0.0",
@@ -426,7 +442,7 @@ def create_fastapi_app(
     PUBLIC_PATHS = {
         "/api/health", "/api/readiness", "/api/liveness", "/", "/admin", "/intelligence",
         "/docs", "/redoc", "/openapi.json",
-        "/api/auth/token", "/api/me",
+        "/api/auth/token", "/api/auth/login", "/api/me",
     }
 
     # Read-only endpoints that don't require auth (GET only)
@@ -1752,7 +1768,7 @@ def create_fastapi_app(
             raise HTTPException(400, "last message must be a non-empty user message")
         try:
             from src.platform.wizard_agent import run_wizard_turn as wizard_v2
-            # Get tool_executor from the ForgeOS adapter if available
+            # Get tool_executor from the Helios OS adapter if available
             _te = None
             if platform_executor:
                 _fos = platform_executor.get_adapter("forgeos")
@@ -1844,7 +1860,7 @@ def create_fastapi_app(
         # Greetings
         if any(kw == msg_lower for kw in ["hello", "hi", "hey", "good morning", "good afternoon"]):
             launched_count = len(_launched_agents)
-            resp = (f"Hello! ForgeOS Admin here. {41} agents registered, {launched_count} launched this session.\n\n"
+            resp = (f"Hello! Helios OS Admin here. {41} agents registered, {launched_count} launched this session.\n\n"
                     "Try: `list agents`, `system status`, `start exec-ceo`, `show approvals`")
             history.append({"role": "assistant", "content": resp})
             return ChatResponse(response=resp, session_id=sid, turns=len(history) // 2)
@@ -2061,7 +2077,7 @@ def create_fastapi_app(
 
                     messages = [
                         {"role": "system",
-                         "content": "You are the ForgeOS admin assistant. Respond concisely."},
+                         "content": "You are the Helios OS admin assistant. Respond concisely."},
                         {"role": "user", "content": msg},
                     ]
                     async for ev in llm_router.chat_stream(cfg, messages):
@@ -2445,7 +2461,7 @@ def create_fastapi_app(
     async def dashboard_page():
         return f"""<!DOCTYPE html><html><head><title>{company_name}</title></head>
         <body style="background:#0f1419;color:#e7e9ea;font-family:sans-serif;padding:40px;text-align:center">
-        <h1>{company_name} — ForgeOS Platform</h1>
+        <h1>{company_name} — Helios OS Platform</h1>
         <p style="color:#8899a6">API running. Use <a href="/docs" style="color:#60a5fa">/docs</a> for Swagger UI.</p>
         <div style="display:flex;gap:16px;justify-content:center;margin:32px">
         <a href="/docs" style="background:#3b82f6;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none">API Docs (Swagger)</a>
@@ -2493,11 +2509,25 @@ def create_fastapi_app(
 
     from src.platform.client_store import PostgresClientStore, PostgresClientMCPStore
     from src.platform.namespace_admins import NamespaceAdminStore, NamespaceStore
+    from src.platform.user_store import UserStore
 
     client_store = PostgresClientStore(db_client=db_client, tenant_id=tenant_id)
     client_mcp_store = PostgresClientMCPStore(db_client=db_client, tenant_id=tenant_id)
     namespace_admin_store = namespace_admin_store or NamespaceAdminStore(db_client=db_client, tenant_id=tenant_id)
     namespace_store = namespace_store or NamespaceStore(db_client=db_client, tenant_id=tenant_id)
+    user_store = user_store or UserStore(db_client=db_client, tenant_id=tenant_id)
+
+    # Bootstrap admin: seed a real admin from env on a fresh deploy so there's a
+    # usable login without relying on the dev password / admin key. Idempotent —
+    # only fires when no admin exists yet.
+    _boot_admin_email = os.environ.get("FORGEOS_BOOTSTRAP_ADMIN_EMAIL", "").strip()
+    _boot_admin_pw = os.environ.get("FORGEOS_BOOTSTRAP_ADMIN_PASSWORD", "")
+    if _boot_admin_email and _boot_admin_pw and user_store.available and user_store.count_admins() == 0:
+        try:
+            user_store.create_user(_boot_admin_email, _boot_admin_pw, role="admin", name="Bootstrap Admin")
+            logger.info("Seeded bootstrap admin user '%s'", _boot_admin_email)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Bootstrap admin seed skipped: %s", e)
 
     # Optional: reference to the ClientMCPManager so we can refresh its cache
     # after config writes (the adapter-wired manager lives on the executor).
@@ -2747,38 +2777,97 @@ def create_fastapi_app(
             },
         }
 
+    @app.post("/api/auth/login", tags=["auth"])
+    async def auth_login(req: LoginRequest, request: Request):
+        """Local email + password login → signed session token + user."""
+        if _auth_manager is None:
+            raise HTTPException(503, "Authentication is not enabled on this server")
+        user = _auth_manager.verify_password(req.email, req.password)
+        if user is None:
+            from src.api.auth import _record_auth_failure
+            _record_auth_failure(request.client.host if request.client else "unknown")
+            raise HTTPException(401, "Invalid email or password")
+        token = _auth_manager.mint_token(user)
+        _audit("auth.login", actor=user.email, resource_type="session", resource_id=user.user_id)
+        return {"token": token, "user": user.to_dict()}
+
     @app.get("/api/me", tags=["auth"])
     async def get_me(request: Request):
-        """Return the current user based on the Authorization or X-API-Key header.
-
-        In dev mode, any "dev-*" bearer token is accepted and returns a static
-        dev user. In production, replace with real JWT verification.
-        """
+        """Return the current user. Resolves a real signed session token (or
+        Firebase / admin API key) via AuthManager; falls back to the dev-* /
+        X-API-Key principals when FORGEOS_ALLOW_DEV_LOGIN is on (local dev)."""
+        if _auth_manager is not None:
+            user = _auth_manager.authenticate(_AuthReqShim(request))
+            if user is not None:
+                return user.to_dict()
         import os as _os2
         allow_dev = _os2.environ.get("FORGEOS_ALLOW_DEV_LOGIN", "0").lower() in ("1", "true", "yes")
-
         auth_header = request.headers.get("Authorization", "")
         api_key = request.headers.get("X-API-Key", "")
-
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-            if allow_dev and token.startswith("dev-"):
-                return {
-                    "user_id": "dev-user",
-                    "email": "dev@forgeos.local",
-                    "tenant_id": tenant_id,
-                    "role": "admin",
-                    "name": "Dev User",
-                }
-        if api_key and allow_dev:
-            return {
-                "user_id": "api-user",
-                "email": "api@forgeos.local",
-                "tenant_id": tenant_id,
-                "role": "operator",
-                "name": "API User",
-            }
+        if allow_dev and auth_header.startswith("Bearer ") and auth_header[7:].startswith("dev-"):
+            return {"user_id": "dev-user", "email": "dev@forgeos.local",
+                    "tenant_id": tenant_id, "role": "admin", "name": "Dev User"}
+        if allow_dev and api_key:
+            return {"user_id": "api-user", "email": "api@forgeos.local",
+                    "tenant_id": tenant_id, "role": "operator", "name": "API User"}
         raise HTTPException(401, "Not authenticated")
+
+    # ------------------------------------------------------------------
+    # User management (local accounts) — admin-gated
+    # ------------------------------------------------------------------
+
+    _VALID_ROLES = ("admin", "operator", "viewer")
+
+    @app.get("/api/users", tags=["users"])
+    async def list_users(_auth=Depends(require_role("admin"))):
+        """List tenant users (never returns password hashes)."""
+        return {"users": user_store.list_users()}
+
+    @app.post("/api/users", tags=["users"], status_code=201)
+    async def create_user(req: UserCreateRequest, request: Request, _auth=Depends(require_role("admin"))):
+        if req.role not in _VALID_ROLES:
+            raise HTTPException(400, f"role must be one of {_VALID_ROLES}")
+        try:
+            u = user_store.create_user(req.email, req.password, role=req.role, name=req.name)
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+        caller = request.headers.get("x-forgeos-caller") or "api"
+        _audit("user.create", actor=caller, resource_type="user", resource_id=u["id"],
+               details={"email": req.email, "role": req.role})
+        return u
+
+    @app.patch("/api/users/{user_id}", tags=["users"])
+    async def update_user(user_id: str, req: UserUpdateRequest, request: Request,
+                          _auth=Depends(require_role("admin"))):
+        target = user_store.get_by_id(user_id)
+        if not target:
+            raise HTTPException(404, "user not found")
+        if req.role is not None:
+            if req.role not in _VALID_ROLES:
+                raise HTTPException(400, f"role must be one of {_VALID_ROLES}")
+            if target["role"] == "admin" and req.role != "admin" and user_store.count_admins(excluding=user_id) == 0:
+                raise HTTPException(409, "cannot demote the last admin")
+            user_store.set_role(user_id, req.role)
+        if req.password is not None:
+            user_store.set_password(user_id, req.password)
+        if req.name is not None:
+            user_store.set_name(user_id, req.name)
+        caller = request.headers.get("x-forgeos-caller") or "api"
+        _audit("user.update", actor=caller, resource_type="user", resource_id=user_id,
+               details={"role": req.role, "name": req.name, "password_reset": req.password is not None})
+        return {"updated": True, "id": user_id}
+
+    @app.delete("/api/users/{user_id}", tags=["users"])
+    async def delete_user(user_id: str, request: Request, _auth=Depends(require_role("admin"))):
+        target = user_store.get_by_id(user_id)
+        if not target:
+            raise HTTPException(404, "user not found")
+        if target["role"] == "admin" and user_store.count_admins(excluding=user_id) == 0:
+            raise HTTPException(409, "cannot delete the last admin")
+        user_store.delete_user(user_id)
+        caller = request.headers.get("x-forgeos-caller") or "api"
+        _audit("user.delete", actor=caller, resource_type="user", resource_id=user_id, details={})
+        return {"deleted": True, "id": user_id}
 
     # ===================================================================
     # Provider status (read-only)

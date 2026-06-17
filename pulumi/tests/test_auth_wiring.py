@@ -66,3 +66,25 @@ def test_dashboard_password_secret_created():
         assert "dashboard-password" in s.versions
 
     return s.dashboard_password.secret_id.apply(check)
+
+
+@pulumi.runtime.test
+def test_session_secret_created():
+    s = _secrets()
+
+    def check(secret_id):
+        assert secret_id == "forgeos-session-secret", secret_id
+        assert "session-secret" in s.versions
+
+    return s.session_secret.secret_id.apply(check)
+
+
+@pulumi.runtime.test
+def test_bootstrap_admin_password_secret_created():
+    s = _secrets()
+
+    def check(secret_id):
+        assert secret_id == "forgeos-bootstrap-admin-password", secret_id
+        assert "bootstrap-admin-password" in s.versions
+
+    return s.bootstrap_admin_password.secret_id.apply(check)

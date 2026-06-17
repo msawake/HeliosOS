@@ -9,9 +9,11 @@ import {
   PlugsConnected,
   Key,
   HardDrives,
+  ShieldCheck,
   type Icon,
 } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/lib/auth';
 import { Logo } from '@/components/brand/logo';
 
 interface NavItem {
@@ -20,6 +22,8 @@ interface NavItem {
   icon: Icon;
   /** Exact-match only (don't treat as a prefix). */
   exact?: boolean;
+  /** Only shown to admins (server still enforces; nav-hiding is cosmetic). */
+  requiresAdmin?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -29,6 +33,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/mcp', label: 'MCP servers', icon: PlugsConnected },
   { href: '/environments', label: 'Environments', icon: HardDrives },
   { href: '/credentials', label: 'Credentials', icon: Key },
+  { href: '/access', label: 'Access', icon: ShieldCheck, requiresAdmin: true },
 ];
 
 function NavLink({ href, label, icon: IconCmp, exact }: NavItem) {
@@ -54,25 +59,28 @@ function NavLink({ href, label, icon: IconCmp, exact }: NavItem) {
 }
 
 export function Sidebar() {
+  const { user } = useAuth();
+  // When auth is optional/off, user is null → show everything (dev convenience).
+  const isAdmin = user === null || user.role === 'admin';
   return (
     <aside
       className="flex shrink-0 flex-col border-r border-edge bg-surface select-none"
       style={{ width: 'var(--sidebar-width)' }}
     >
       <div className="flex h-(--topbar-height) items-center border-b border-edge px-5">
-        <Link href="/" aria-label="ForgeOS home">
+        <Link href="/" aria-label="Helios OS home">
           <Logo />
         </Link>
       </div>
 
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4 scrollbar-hide">
-        {NAV_ITEMS.map((item) => (
+        {NAV_ITEMS.filter((item) => !item.requiresAdmin || isAdmin).map((item) => (
           <NavLink key={item.href} {...item} />
         ))}
       </nav>
 
       <div className="border-t border-edge px-5 py-3 text-[11px] text-muted">
-        ForgeOS v3.1
+        Helios OS v3.1
       </div>
     </aside>
   );
