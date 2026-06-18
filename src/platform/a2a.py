@@ -306,6 +306,52 @@ class A2AHandler:
                 not isolation.inherit_context,
             )
 
+            # A callee that parked on a human-approval gate (kernel ask_human)
+            # returns PAUSED with a persisted, resumable continuation. Surface
+            # that explicitly as a "pending approval" result rather than an empty
+            # success — otherwise the caller's LLM sees output="" and re-delegates
+            # in a loop until agent__call times out. The callee's continuation is
+            # already in the StepEngine store, so it shows up in /api/approvals and
+            # resumes independently once a human approves; we only need to tell the
+            # caller to stop and report.
+            status_val = (
+                result.status.value if hasattr(result.status, "value")
+                else str(result.status)
+            )
+            meta = getattr(result, "metadata", None) or {}
+            if status_val in ("paused", "suspended") or meta.get("suspend_reason"):
+                pending = meta.get("pending") or []
+                first_ref = pending[0].get("external_ref") if pending else None
+                logger.info(
+                    "A2A call parked on human approval: %s/%s (continuation=%s, request=%s)",
+                    target_namespace, target_name,
+                    meta.get("continuation_id"), first_ref,
+                )
+                return {
+                    "success": False,
+                    "status": "pending_approval",
+                    "agent_id": callee_def.agent_id,
+                    "continuation_id": meta.get("continuation_id"),
+                    "suspend_reason": meta.get("suspend_reason"),
+                    "pending": [
+                        {
+                            "request_id": p.get("external_ref"),
+                            "tool": p.get("name"),
+                            "tool_use_id": p.get("tool_use_id"),
+                            "args": p.get("arguments"),
+                        }
+                        for p in pending
+                    ],
+                    "output": (
+                        f"Delegated to {target_namespace}/{target_name}; it has paused and "
+                        f"is awaiting human approval"
+                        + (f" (request {first_ref})" if first_ref else "")
+                        + ". Tell the user that approval is pending in the Approvals page "
+                        "and STOP — do not retry the delegation."
+                    ),
+                    "delegation_path": child_delegation.call_path,
+                }
+
             # Apply result truncation per isolation policy
             output = result.output or ""
             if isolation.max_result_chars > 0 and len(output) > isolation.max_result_chars:

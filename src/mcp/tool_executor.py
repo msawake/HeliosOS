@@ -879,7 +879,10 @@ class ToolExecutor:
             target_name=input["name"],
             task=input["task"],
             context=input.get("context"),
-            timeout=input.get("timeout", 120),
+            # Specialists that read Drive + reconcile take ~2 min to reach their
+            # write gate; 120s cut the call off before it could park on approval.
+            # Stays under the 300s Cloud Run request timeout.
+            timeout=input.get("timeout", 240),
         )
 
     async def _handle_a2a_async_call(self, input: dict, ctx: dict | None) -> dict:
