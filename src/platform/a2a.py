@@ -272,10 +272,20 @@ class A2AHandler:
             "namespace": caller_namespace,
             "agent_name": caller_agent_name,
         }
-        # Run the callee synchronously even under the runtime-v2 worker tier so
-        # this (synchronous) A2A call returns the callee's real output rather
-        # than a queued/"running" handle.
-        callee_context["_inline"] = True
+        # Execution path. A callee that can pause for human approval (declares
+        # governance.approvals / human_in_loop) MUST run on the Redis worker
+        # tier, which can suspend the run and resume it after approval. Running
+        # such a callee inline in this process would block this synchronous A2A
+        # call until the timeout — the gate can't be satisfied mid-call. Gateless
+        # callees (quick read-only lookups, e.g. mapping-classification) stay
+        # inline so the caller still gets their answer synchronously.
+        _gov = (getattr(callee_def, "metadata", None) or {}).get("_governance") or {}
+        callee_has_gate = bool(_gov.get("approvals") or _gov.get("human_in_loop"))
+        if not callee_has_gate:
+            # Synchronous: the caller needs the callee's real output text.
+            callee_context["_inline"] = True
+        # else: leave _inline unset -> the forgeos adapter enqueues the run to the
+        # worker tier and returns a RUNNING handle immediately (handled below).
         # Carry the caller's acting user so the callee routes the same user's
         # per-user MCP / credentials (unless the task context set one explicitly).
         if "user_id" not in callee_context:
@@ -319,6 +329,33 @@ class A2AHandler:
                 else str(result.status)
             )
             meta = getattr(result, "metadata", None) or {}
+
+            # Dispatched to the worker tier (queued): the run is now in progress
+            # and will pause for human approval before any gated write. Don't
+            # block the caller — report that it's running and approval will be
+            # requested. The worker drives it to the gate (it appears in
+            # /api/approvals) and resumes it after approval, independently.
+            if status_val == "running" or meta.get("queued"):
+                cont = meta.get("continuation_id") or meta.get("run_id")
+                logger.info(
+                    "A2A call dispatched to worker tier: %s/%s (continuation=%s)",
+                    target_namespace, target_name, cont,
+                )
+                return {
+                    "success": True,
+                    "status": "delegated_running",
+                    "agent_id": callee_def.agent_id,
+                    "continuation_id": cont,
+                    "output": (
+                        f"Delegated to {target_namespace}/{target_name}; it is now running "
+                        f"on the worker tier and will pause for your approval before it "
+                        f"writes (see the Approvals page). Tell the user the work is in "
+                        f"progress and that approval will be requested, then STOP — do not "
+                        f"retry or re-delegate."
+                    ),
+                    "delegation_path": child_delegation.call_path,
+                }
+
             if status_val in ("paused", "suspended") or meta.get("suspend_reason"):
                 pending = meta.get("pending") or []
                 first_ref = pending[0].get("external_ref") if pending else None
