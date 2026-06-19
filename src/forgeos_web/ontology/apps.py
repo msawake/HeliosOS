@@ -1,0 +1,7 @@
+from django.apps import AppConfig
+
+
+class OntologyConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "src.forgeos_web.ontology"
+    label = "forgeos_ontology"

@@ -1040,6 +1040,30 @@ class PlatformBootstrap:
         server = uvicorn.Server(config)
         await server.serve()
 
+    # ------------------------------------------------------------------
+    # Django web layer (migration target). Additive: the FastAPI path above
+    # is untouched. At cutover, callers serve ``run_django_server`` instead of
+    # ``run_api_server``. The Django app + Celery workers read the platform
+    # singletons from the process-global ``di.AppContext`` installed here.
+    # ------------------------------------------------------------------
+    def populate_web_context(self, *, auth_enabled: bool = True):
+        """Install the di.AppContext for the Django web layer from this boot."""
+        from src.forgeos_web import di
+        return di.populate_from_bootstrap(self, auth_enabled=auth_enabled)
+
+    async def run_django_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):
+        """Serve the Django ASGI app (the cutover replacement for run_api_server)."""
+        import os
+        self.populate_web_context(auth_enabled=auth_enabled)
+        os.environ.setdefault("DJANGO_SETTINGS_MODULE", "src.forgeos_web.settings")
+        import django
+        django.setup()
+        from src.forgeos_web.asgi import application
+        logger.info("API server starting on http://%s:%d (Django + Uvicorn, async)", host, port)
+        import uvicorn
+        config = uvicorn.Config(application, host=host, port=port, log_level="warning")
+        await uvicorn.Server(config).serve()
+
     def get_platform_summary(self) -> dict:
         return {
             "company_id": self.company_id,
