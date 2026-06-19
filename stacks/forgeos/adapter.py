@@ -293,9 +293,12 @@ class ForgeOSAdapter(AgentStackAdapter):
             status=AgentStatus.COMPLETED,
             output=outcome.output,
             tokens_used=outcome.tokens_used,
-            # Surface the engine's run rollup so the agent_runs row records the
-            # real tool-call count, token split, and model (not 0/0/null).
-            tool_calls=[{}] * (outcome.tool_calls or 0),
+            # Surface the engine's per-call tool events (name/input/result/
+            # tool_use_id) so the SSE chat stream and agent_runs row carry real
+            # data, not empty placeholders. The inline driver accumulates events
+            # across every turn; the per-turn worker path can't, so fall back to
+            # count-sized placeholders there to keep the agent_runs tally right.
+            tool_calls=outcome.tool_events or ([{}] * (outcome.tool_calls or 0)),
             input_tokens=outcome.input_tokens,
             output_tokens=outcome.output_tokens,
             model=outcome.model,

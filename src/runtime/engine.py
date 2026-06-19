@@ -453,6 +453,7 @@ class StepEngine:
                 rec.result = res
             if rec.status == "executed" and tool_events is not None:
                 tool_events.append({
+                    "tool_use_id": rec.tool_use_id,
                     "name": rec.name,
                     "input": rec.arguments,
                     "result": rec.result,
