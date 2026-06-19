@@ -43,6 +43,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
+from django.db import transaction
 from django.http import StreamingHttpResponse
 from rest_framework import serializers
 from rest_framework.response import Response
@@ -166,6 +167,7 @@ async def _resume_v2_continuation_await(request_id: str, accept: bool, responded
 # --------------------------------------------------------------------------- #
 # POST /api/platform/agents/{agent_id}/chat/stream  (SSE)
 # --------------------------------------------------------------------------- #
+@transaction.non_atomic_requests  # async views are incompatible with ATOMIC_REQUESTS
 async def agent_chat_stream(request, agent_id: str):
     """Multi-turn streaming chat with an agent. Ported from fastapi_app.py:1501.
 
@@ -240,6 +242,7 @@ async def agent_chat_stream(request, agent_id: str):
 # --------------------------------------------------------------------------- #
 # POST /api/platform/agents/{agent_id}/chat/resume  (SSE)
 # --------------------------------------------------------------------------- #
+@transaction.non_atomic_requests  # async views are incompatible with ATOMIC_REQUESTS
 async def agent_chat_resume(request, agent_id: str):
     """Approve a parked (ask_human) chat run and stream the continued result.
     Ported from fastapi_app.py:1552. Body: {request_id, session_id}.
@@ -297,6 +300,7 @@ async def agent_chat_resume(request, agent_id: str):
 # --------------------------------------------------------------------------- #
 # POST /api/admin/chat/stream  (SSE)
 # --------------------------------------------------------------------------- #
+@transaction.non_atomic_requests  # async views are incompatible with ATOMIC_REQUESTS
 async def admin_chat_stream(request):
     """Real SSE streaming admin chat. Ported from fastapi_app.py:2020.
 
