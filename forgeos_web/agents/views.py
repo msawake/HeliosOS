@@ -162,7 +162,7 @@ class AgentCreateSerializer(serializers.Serializer):
     namespace = serializers.CharField(default="default")
     description = serializers.CharField(default="", allow_blank=True)
     goal = serializers.CharField(default="", allow_blank=True)
-    schedule = serializers.CharField(default=None, allow_null=True, required=False)
+    schedule = serializers.CharField(default=None, allow_null=True, required=False, allow_blank=True)
     event_triggers = serializers.ListField(child=serializers.CharField(), default=list)
     tools = serializers.ListField(child=serializers.CharField(), default=list)
     metadata = serializers.DictField(default=dict)
@@ -319,7 +319,9 @@ def _apply_agent_update(agent_id: str, req: _Req, principal) -> Response:
     if req.tools:
         agent_def.tools = req.tools
     if req.schedule is not None:
-        agent_def.schedule = req.schedule
+        # A blank schedule (non-scheduled agents render it as "") means "no
+        # schedule" — normalize to None so we don't store an empty cron string.
+        agent_def.schedule = req.schedule or None
     if req.event_triggers:
         agent_def.event_triggers = req.event_triggers
     if req.department:
