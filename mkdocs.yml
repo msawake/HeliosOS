@@ -104,7 +104,6 @@ nav:
   - Operations:
       - Deployment: operations/deployment.md
       - Monitoring: operations/monitoring.md
-      - Mission Control: operations/mission-control.md
       - Runbooks Overview: runbooks/README.md
       - DB Recovery: runbooks/db-recovery.md
       - Incident Response: runbooks/incident-response.md

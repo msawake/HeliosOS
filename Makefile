@@ -42,8 +42,8 @@ help:
 	@echo "  make reset    Stop, delete pg volume, restart fresh"
 	@echo "  make status   Show what's running"
 	@echo ""
-	@echo "Mission Control workflow (no Postgres, in-memory):"
-	@echo "  make mc-platform   Boot platform on $(MC_PLATFORM_PORT) — pair with 'cd mission-control && make dev-local'"
+	@echo "Lightweight platform workflow (no Postgres, in-memory):"
+	@echo "  make mc-platform   Boot platform on $(MC_PLATFORM_PORT) — drive it with 'forgeos mc fleet'"
 	@echo "  make mc-setup      Create $(MC_VENV) and install platform deps (run once)"
 	@echo "  make migrate       Apply pending SQL migrations to local Postgres"
 	@echo "  make free-port PORT=N   Kill whatever is listening on port N"
@@ -151,9 +151,9 @@ status:
 	@echo "── Dashboard ─"; lsof -nP -iTCP:$(DASH_PORT) -sTCP:LISTEN 2>/dev/null | tail -n +2 | awk '{print "  "$$1" PID="$$2}' || echo "  not running"
 
 # ---------------------------------------------------------------------------
-# Mission Control workflow — boots a lightweight platform (in-memory,
-# no Postgres) on $(MC_PLATFORM_PORT). Pair with `cd mission-control &&
-# make dev-local` in another terminal.
+# Lightweight platform workflow — boots a lightweight platform (in-memory,
+# no Postgres) on $(MC_PLATFORM_PORT). Drive it from a second terminal with
+# the `forgeos mc` CLI (e.g. `forgeos mc fleet`).
 # ---------------------------------------------------------------------------
 .PHONY: mc-setup mc-platform migrate
 
@@ -188,5 +188,5 @@ mc-platform: stop-mc-platform
 		DB_URL=""; \
 	fi; \
 	echo "→ booting platform on $(MC_PLATFORM_PORT) (company=$(MC_COMPANY))"; \
-	echo "  pair with: cd mission-control && make dev-local"; \
+	echo "  drive it with: forgeos mc fleet"; \
 	DATABASE_URL="$$DB_URL" PYTHONPATH=.:a2h $(MC_VENV)/bin/python -m src.bootstrap --no-auth --dashboard --port $(MC_PLATFORM_PORT) --company $(MC_COMPANY)

@@ -9,7 +9,6 @@ adk-samples/
 openclaw2/
 dashboard/node_modules/
 dashboard/.next/
-mission-control/frontend/node_modules/
 .bagentpro/
 .bagent/
 tests/
@@ -21,13 +20,9 @@ tests/
 # dashboard/src/app/agents/, which silently dropped the dashboard's agent
 # routes from the Cloud Build context (→ /agents/* 404 in the built image).
 /agents/
-# Seed for the forgeos-lens repo — already pushed upstream; not needed in
-# the platform-api image build context.
-forgeos-lens-seed/
 *.log
-# docs/ and mkdocs.yml are kept in the Cloud Build context: the Mission
-# Control image (infrastructure/docker/Dockerfile.mission-control) runs
-# `mkdocs build` over them. The `!docs/**` re-include below ensures the
+# docs/ and mkdocs.yml are kept in the Cloud Build context so images that run
+# `mkdocs build` can read them. The `!docs/**` re-include below ensures the
 # `*.md` rule doesn't strip the markdown sources inside docs/.
 *.md
 !docs/**

@@ -5,10 +5,9 @@ Key directories:
   src/forgeos_sdk/         — SDK (runtime, kernel accessor, agent builder, manifest, CLI). Runtime is BSL 1.1, rest Apache 2.0.
   src/platform/            — Platform layer (registry, executor, scheduler, event bus, LLM router, audit, A2A).
   stacks/                  — 9 framework adapters (Helios OS, CrewAI, ADK, LangChain, OpenClaw, Sandbox, Anthropic SDK, Anthropic Managed, OpenAI Agents).
-  examples/                — 8 gold-standard agents with raw vs governed comparisons.
-  mission-control/         — Fleet operations dashboard (React + FastAPI).
-  dashboard/               — Next.js 15 frontend (22 pages).
-  tests/                   — 78 test files, 1236 passing.
+  examples/                — example agents; a few include raw vs governed (agent_raw.py vs agent.py) comparisons.
+  dashboard/               — Next.js 15 frontend.
+  tests/                   — ~109 test files.
 
 Commands:
   pip install -e ".[dev]"
