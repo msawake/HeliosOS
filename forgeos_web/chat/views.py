@@ -15,10 +15,10 @@ translate it into a fixed sequence of frames:
 (an ``error`` frame replaces the body on failure, always followed by ``done``).
 
 Here that exact contract is served from a PLAIN Django ``async def`` view via
-``StreamingHttpResponse`` so a long stream does not pin a sync worker. The body
-generators await ``platform_executor.invoke(..., _inline=True)`` directly (no
-``async_to_sync`` needed inside an async view) and replay the result through the
-framework-free translators in src/dashboard/chat_events.py (reused UNCHANGED).
+``StreamingHttpResponse`` so a long stream does not pin a sync worker. Agents
+execute ONLY on the Celery worker tier (broker=Redis): the generator enqueues
+``forgeos.run_agent`` via ``celery.send_task``, polls the task result, then
+replays it as the frame sequence above. The web process never invokes inline.
 
 The JSON endpoints (history, sessions list, sessions delete, wizard/chat) are
 ordinary DRF ``APIView``s and match the FastAPI response shapes byte-for-byte.
@@ -212,29 +212,52 @@ async def agent_chat_stream(request, agent_id: str):
     session["messages"].append({"role": "user", "content": message})
 
     async def generate():
-        # First event: session ID.
-        yield _sse({"type": "session", "session_id": sid})
-        try:
-            from src.dashboard.chat_events import agent_result_to_chat_events
+        import asyncio as _asyncio
 
-            # TODO(step8-enqueue): ideally enqueue via run_agent.delay + poll the
-            # continuation; for now reproduce the FastAPI inline-invoke-then-replay
-            # behavior so the SSE frame contract is byte-identical. `_inline`
-            # forces synchronous execution; `session_id` threads multi-turn
-            # history via the executor's session store.
-            invoke_ctx = {"session_id": sid, "chat_id": sid, "_inline": True, "user_id": user}
-            result = await platform_executor.invoke(
-                agent_id, message, invoke_ctx, session_id=sid,
+        yield _sse({"type": "session", "session_id": sid})
+        # Agents run ONLY on the Celery worker tier (broker=Redis). Enqueue the
+        # run, poll the task result, then replay it as the SSE frame contract
+        # (session -> tool/text -> done). No inline execution in the web process.
+        from forgeos_web.celery_app import celery
+        try:
+            task = celery.send_task(
+                "forgeos.run_agent",
+                kwargs={"agent_id": agent_id, "prompt": message,
+                        "context": {"session_id": sid, "chat_id": sid, "user_id": user},
+                        "session_id": sid, "tenant_id": (ctx.tenant_id or "default")},
+                queue="agents",
             )
-            for ev in agent_result_to_chat_events(result):
-                yield _sse(ev)
-            # Persist the assistant turn for the session list/history view.
-            if getattr(result, "output", None):
-                session["messages"].append({"role": "assistant", "content": result.output})
         except Exception:
-            logger.exception("Agent chat stream error for %s", agent_id)
-            yield _sse({"type": "error", "error": "Internal server error"})
+            logger.exception("Could not enqueue agent run for %s", agent_id)
+            yield _sse({"type": "error", "error": "Could not enqueue agent run (broker down?)"})
             yield _sse({"type": "done", "tokens_used": 0, "text": ""})
+            return
+
+        waited = 0.0
+        while not task.ready() and waited < 300:
+            await _asyncio.sleep(0.5)
+            waited += 0.5
+        if not task.ready():
+            yield _sse({"type": "error", "error": "Timed out waiting for the worker (is the Celery worker running?)"})
+            yield _sse({"type": "done", "tokens_used": 0, "text": ""})
+            return
+
+        if not task.successful():
+            yield _sse({"type": "error", "error": f"Agent run failed: {task.result}"})
+            yield _sse({"type": "done", "tokens_used": 0, "text": ""})
+            return
+
+        d = task.result or {}
+        if d.get("error") and not d.get("output"):
+            yield _sse({"type": "error", "error": d["error"]})
+        for tc in (d.get("tool_calls") or []):
+            yield _sse({"type": "tool_call", "name": tc.get("name"), "input": tc.get("input") or {}})
+            yield _sse({"type": "tool_result", "name": tc.get("name"), "result": tc.get("result")})
+        if d.get("output"):
+            yield _sse({"type": "text_delta", "content": d["output"]})
+            session["messages"].append({"role": "assistant", "content": d["output"]})
+        yield _sse({"type": "done", "tokens_used": d.get("tokens_used", 0),
+                    "text": d.get("output", ""), "status": d.get("status")})
 
     return _sse_response(generate())
 

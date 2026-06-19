@@ -33,31 +33,73 @@ except Exception:
     pass
 
 
-def _enqueue(agent_id: str, prompt: str, context: dict | None, run_id, tenant_id, trigger: str):
-    from forgeos_web.celery_runtime import get_runtime_service, run_async
+def _json_safe(obj):
+    """Coerce a result payload to JSON-serializable (Celery's serializer needs it)."""
+    import json
+    return json.loads(json.dumps(obj, default=str))
 
-    rt = get_runtime_service()
-    agent_def = rt._registry.get(agent_id)
-    if agent_def is None:
-        raise ValueError(f"unknown agent_id: {agent_id}")
-    ctx = dict(context or {})
-    ctx.update(run_id=run_id, tenant_id=tenant_id, _trigger=trigger)
-    cont_id = run_async(rt.enqueue_invoke(agent_def, prompt, ctx))
-    return {"run_id": run_id, "continuation_id": cont_id, "status": "enqueued"}
+
+def _serialize_result(agent_id: str, r) -> dict:
+    """Flatten an AgentResult into a JSON-safe dict the API/chat views replay."""
+    status = r.status.value if hasattr(getattr(r, "status", None), "value") else str(getattr(r, "status", "completed"))
+    tcs = []
+    for tc in (getattr(r, "tool_calls", None) or []):
+        if isinstance(tc, dict):
+            tcs.append({"name": tc.get("name"),
+                        "input": tc.get("input") or tc.get("arguments") or {},
+                        "result": tc.get("result")})
+        else:
+            tcs.append({"name": getattr(tc, "name", None),
+                        "input": getattr(tc, "input", None) or getattr(tc, "arguments", None) or {},
+                        "result": getattr(tc, "result", None)})
+    meta = getattr(r, "metadata", None) or {}
+    return _json_safe({
+        "agent_id": agent_id,
+        "status": status,
+        "output": getattr(r, "output", "") or "",
+        "error": getattr(r, "error", None),
+        "tokens_used": getattr(r, "tokens_used", 0),
+        "tool_calls": tcs,
+        "continuation_id": meta.get("continuation_id"),
+        "suspend_reason": meta.get("suspend_reason"),
+        "pending": meta.get("pending"),
+    })
+
+
+def _execute(agent_id, prompt, context, session_id, tenant_id, trigger):
+    """Run the agent IN THE WORKER via platform_executor.invoke and return its
+    serialized result. This is the only place agents execute — the web process
+    never invokes inline; it enqueues this task."""
+    from forgeos_web import di
+    from forgeos_web.celery_runtime import run_async
+
+    ctx = di.get_context()
+    ex = ctx.platform_executor
+    if ex is None:
+        raise RuntimeError("platform executor unavailable in worker (FORGEOS_CELERY_BOOT=0?)")
+    invoke_ctx = dict(context or {})
+    invoke_ctx.setdefault("user_id", "default")
+    invoke_ctx["tenant_id"] = tenant_id or invoke_ctx.get("tenant_id", "default")
+    invoke_ctx["_trigger"] = trigger
+    invoke_ctx.setdefault("_inline", True)  # execute here, don't re-enqueue
+    result = run_async(ex.invoke(agent_id, prompt, invoke_ctx, session_id=session_id))
+    return _serialize_result(agent_id, result)
 
 
 @shared_task(name="forgeos.run_agent", base=TenantTask, bind=True,
              autoretry_for=_INFRA_ERRORS, retry_backoff=True, max_retries=3)
-def run_agent(self, *, agent_id, prompt, context=None, run_id=None, tenant_id=None, trigger="manual"):
-    return _enqueue(agent_id, prompt, context, run_id, tenant_id, trigger)
+def run_agent(self, *, agent_id, prompt="", context=None, session_id=None,
+              tenant_id=None, trigger="manual", run_id=None):
+    return _execute(agent_id, prompt, context, session_id, tenant_id, trigger)
 
 
 @shared_task(name="forgeos.run_agent_longrun", base=TenantTask, bind=True,
              autoretry_for=_INFRA_ERRORS, retry_backoff=True, max_retries=3)
-def run_agent_longrun(self, *, agent_id, prompt, context=None, run_id=None, tenant_id=None, trigger="manual"):
-    # Non-suspendable stacks (CrewAI/ADK/OpenClaw): whole loop runs in one worker
-    # turn. Routed to the agents_longrun queue (large visibility_timeout).
-    return _enqueue(agent_id, prompt, context, run_id, tenant_id, trigger)
+def run_agent_longrun(self, *, agent_id, prompt="", context=None, session_id=None,
+                      tenant_id=None, trigger="manual", run_id=None):
+    # Non-suspendable stacks (CrewAI/ADK/OpenClaw) routed to the agents_longrun
+    # queue (large visibility_timeout); same execution path.
+    return _execute(agent_id, prompt, context, session_id, tenant_id, trigger)
 
 
 @shared_task(name="forgeos.resume_agent", base=TenantTask, bind=True,
@@ -74,8 +116,8 @@ def resume_agent(self, *, external_ref, responded_by=None, tenant_id=None):
 @shared_task(name="forgeos.scheduled_tick", base=TenantTask, bind=True,
              autoretry_for=_INFRA_ERRORS, retry_backoff=True, max_retries=3)
 def scheduled_tick(self, *, agent_id, tenant_id=None):
-    """Beat-fired periodic run for a SCHEDULED agent (durable invoke path)."""
-    return _enqueue(agent_id, "", None, None, tenant_id, trigger="cron")
+    """Beat-fired periodic run for a SCHEDULED agent."""
+    return _execute(agent_id, "", None, None, tenant_id, "cron")
 
 
 @shared_task(name="forgeos.evict_stale_sessions")

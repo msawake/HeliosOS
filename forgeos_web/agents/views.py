@@ -574,110 +574,62 @@ class InvokeSerializer(serializers.Serializer):
 
 class AgentInvokeView(APIView):
     def post(self, request, agent_id):
-        ctx = di.get_context()
-        platform_executor = ctx.platform_executor
-        admin_invoker = ctx.admin_invoker
+        """Enqueue an agent run on the Celery worker tier (broker=Redis).
 
+        Agents execute ONLY in the worker — never inline in the web process.
+        Returns 202 + task_id; pass ?wait=true to block for the result.
+        """
+        ctx = di.get_context()
         ser = InvokeSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         prompt = ser.validated_data["prompt"]
         context = dict(ser.validated_data["context"])
-        async_mode = request.query_params.get("async_mode", "false").lower() in ("1", "true", "yes")
-        user = acting_user(request)
-
-        if not context:
-            context = {}
-        context.setdefault("user_id", user)
+        context.setdefault("user_id", acting_user(request))
         sid = context.get("session_id") or context.get("chat_id")
 
-        # Path 1: Platform executor (new multi-stack agents)
-        if platform_executor:
-            agent_def = platform_executor.registry.get(agent_id)
-            if not agent_def and not admin_invoker:
-                return Response({"detail": f"Agent '{agent_id}' not found"}, status=404)
-            if agent_def:
-                if async_mode:
-                    import asyncio as _asyncio
-                    from datetime import datetime as _dt, timezone as _tz
-                    # TODO(step7-enqueue): replace fire-and-forget task with a
-                    # Celery enqueue; behavior kept identical for now.
-                    _asyncio.ensure_future(
-                        platform_executor.invoke(agent_id, prompt, context, session_id=sid)
-                    )
-                    return Response({
-                        "agent_id": agent_id,
-                        "status": "accepted",
-                        "accepted": True,
-                        "queued_at": _dt.now(_tz.utc).isoformat(),
-                    })
-                try:
-                    # TODO(step7-enqueue): this synchronous await is the seam that
-                    # will become a Celery enqueue; ported faithfully via
-                    # async_to_sync to keep behavior identical for now.
-                    result = async_to_sync(platform_executor.invoke)(
-                        agent_id, prompt, context, session_id=sid
-                    )
-                    warnings = []
-                    output = result.output or ""
-                    if "[SIMULATED" in output:
-                        warnings.append("Agent is running in SIMULATED mode — no LLM API key configured.")
-                    if result.error and "No LLM provider" in (result.error or ""):
-                        warnings.append(result.error)
-                    missing_tools = (agent_def.metadata or {}).get("_missing_tools_at_deploy")
-                    if missing_tools:
-                        warnings.append(f"Tools unavailable at deploy time: {missing_tools}")
-                    resp = {
-                        "agent_id": agent_id,
-                        "status": result.status.value if hasattr(result.status, "value") else str(result.status),
-                        "result": output[:2000],
-                        "error": result.error,
-                        "warnings": warnings or None,
-                        "cost_usd": 0,
-                        "duration": getattr(result, "elapsed_ms", 0) / 1000,
-                        "tool_calls": len(result.tool_calls) if result.tool_calls else 0,
-                        "tokens_used": result.tokens_used,
-                    }
-                    meta = getattr(result, "metadata", None) or {}
-                    cont_id = meta.get("continuation_id")
-                    if cont_id:
-                        resp["run_id"] = cont_id
-                        resp["continuation_id"] = cont_id
-                    if meta.get("suspend_reason"):
-                        resp["suspend_reason"] = meta["suspend_reason"]
-                    if meta.get("pending"):
-                        resp["pending"] = [
-                            {
-                                "request_id": p.get("external_ref"),
-                                "tool": p.get("name"),
-                                "tool_use_id": p.get("tool_use_id"),
-                                "suspend_reason": p.get("suspend_reason"),
-                                "args": p.get("arguments"),
-                            }
-                            for p in meta["pending"]
-                        ]
-                    return Response(resp)
-                except Exception:
-                    logger.exception("Agent invocation failed for %s", agent_id)
-                    return Response({"detail": "Agent invocation failed"}, status=500)
+        reg = ctx.platform_registry
+        if reg is not None and reg.get(agent_id) is None and not ctx.admin_invoker:
+            return Response({"detail": f"Agent '{agent_id}' not found"}, status=404)
 
-        # Path 2: Legacy admin invoker (company agents from config.yaml)
-        if admin_invoker:
+        # Enqueue on the CONFIGURED Celery app (Redis broker). send_task by name
+        # avoids importing the task object (and binding to Celery's default app).
+        from forgeos_web.celery_app import celery
+        task = celery.send_task(
+            "forgeos.run_agent",
+            kwargs={"agent_id": agent_id, "prompt": prompt, "context": context,
+                    "session_id": sid, "tenant_id": ctx.tenant_id or "default"},
+            queue="agents",
+        )
+
+        if request.query_params.get("wait", "").lower() in ("1", "true", "yes"):
             try:
-                result = async_to_sync(admin_invoker.invoke)(agent_id, prompt)
-                return Response({
-                    "agent_id": agent_id,
-                    "status": result.status.value if hasattr(result.status, "value") else str(result.status),
-                    "result": result.result[:2000] if result.result else "",
-                    "error": result.error,
-                    "cost_usd": getattr(result, "cost_usd", 0),
-                    "duration": getattr(result, "duration_seconds", 0),
-                    "tool_calls": getattr(result, "tool_calls", 0),
-                })
-            except Exception:
-                logger.exception("Legacy invoker failed for %s", agent_id)
-                return Response({"detail": "Agent invocation failed"}, status=500)
+                timeout = int(request.query_params.get("timeout", "180"))
+                result = task.get(timeout=timeout)
+            except Exception as e:
+                logger.exception("Agent run failed for %s", agent_id)
+                return Response({"detail": f"Agent run failed: {e}"}, status=500)
+            out = (result or {}).get("output", "") if isinstance(result, dict) else ""
+            warnings = ["Agent is running in SIMULATED mode — no LLM API key configured."] if "[SIMULATED" in out else []
+            resp = {
+                "agent_id": agent_id,
+                "status": (result or {}).get("status"),
+                "result": out[:2000],
+                "error": (result or {}).get("error"),
+                "warnings": warnings or None,
+                "tool_calls": len((result or {}).get("tool_calls") or []),
+                "tokens_used": (result or {}).get("tokens_used", 0),
+                "task_id": task.id,
+            }
+            if (result or {}).get("continuation_id"):
+                resp["run_id"] = resp["continuation_id"] = result["continuation_id"]
+            if (result or {}).get("pending"):
+                resp["pending"] = result["pending"]
+            return Response(resp)
 
-        return Response({"detail": "No invoker available"}, status=503)
+        return Response(
+            {"agent_id": agent_id, "task_id": task.id, "status": "accepted", "accepted": True},
+            status=202,
+        )
 
 
 # --------------------------------------------------------------------------- #

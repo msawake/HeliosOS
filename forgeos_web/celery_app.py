@@ -18,7 +18,14 @@ from __future__ import annotations
 
 import os
 
-from celery import Celery
+# Configure Django before importing tasks / db helpers (the worker entrypoint
+# `celery -A forgeos_web.celery_app` imports this module first).
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "forgeos_web.settings")
+import django  # noqa: E402
+
+django.setup()
+
+from celery import Celery  # noqa: E402
 
 REDIS_URL = os.environ.get("REDIS_URL", "memory://")
 
@@ -68,10 +75,24 @@ from celery.signals import worker_process_init, worker_process_shutdown  # noqa:
 
 @worker_process_init.connect
 def _init_worker(**_):
-    # Lazily build the loop; RuntimeService is built on first task (get_runtime_service).
-    from forgeos_web.celery_runtime import worker_loop
+    # The Celery worker IS the agent execution engine: boot the platform once
+    # per worker process and install di.AppContext, so run_agent can drive
+    # platform_executor.invoke off the request thread. Set FORGEOS_CELERY_BOOT=0
+    # to skip (e.g. a worker that only does maintenance tasks).
+    from forgeos_web.celery_runtime import run_async, worker_loop
 
     worker_loop()
+    if os.environ.get("FORGEOS_CELERY_BOOT", "1").lower() in ("0", "false", "no"):
+        return
+    try:
+        from src.bootstrap import PlatformBootstrap
+
+        boot = PlatformBootstrap(company_id=os.environ.get("FORGEOS_COMPANY", "leadforge"))
+        run_async(boot.boot())
+        boot.populate_web_context(auth_enabled=False)
+    except Exception:
+        import logging
+        logging.getLogger("forgeos.celery").exception("worker platform boot failed")
 
 
 @worker_process_shutdown.connect
