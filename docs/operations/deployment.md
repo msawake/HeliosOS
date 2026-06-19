@@ -7,7 +7,9 @@ The simplest setup -- everything runs on your machine:
 ```bash
 # Install
 pip install -e ".[dev]"
-cd dashboard && npm install && cd ..
+# Dashboard lives in its own repo (github.com/antonibergas-hue/forgeos-dashboard)
+git clone git@github.com:antonibergas-hue/forgeos-dashboard.git ../forgeos-dashboard
+( cd ../forgeos-dashboard && npm install )
 
 # Configure
 echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env
@@ -16,7 +18,7 @@ echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env
 PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
 
 # Boot dashboard (separate terminal)
-cd dashboard && npm run dev
+cd ../forgeos-dashboard && npm run dev
 ```
 
 Data is in-memory. Add `DATABASE_URL` for persistence (see below).

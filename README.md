@@ -54,11 +54,13 @@ echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env
 # Boot the platform
 PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
 
-# Start the dashboard (separate terminal)
-cd dashboard && npm install && npm run dev
+# Start the dashboard — maintained in its own repo (separate terminal)
+git clone git@github.com:antonibergas-hue/forgeos-dashboard.git ../forgeos-dashboard
+cd ../forgeos-dashboard && npm install && npm run dev
 ```
 
 Dashboard at http://localhost:3000. API docs at http://localhost:5000/docs.
+The dashboard is a standalone Next.js app: [antonibergas-hue/forgeos-dashboard](https://github.com/antonibergas-hue/forgeos-dashboard).
 
 ### Install the CLI
 
@@ -476,7 +478,6 @@ See [Agent Manifest Reference](docs/reference/agent-manifest.md) for the full sc
 |   |                               #   A2A, A2H, capabilities, checkpoints, audit, metrics
 |   +-- forgeos_sdk/                # Python SDK: Agent, Runtime, Kernel, Manifest, CLI
 |   +-- core/                       # Database, session store, model clients
-|   +-- mcp/                        # MCP server manager, tool executor, providers
 |   +-- dashboard/                  # FastAPI app (~78 endpoints)
 |   +-- billing/                    # Stripe billing, usage enforcement
 |   +-- api/                        # Auth (Firebase JWT + API keys), tenants
@@ -500,7 +501,6 @@ See [Agent Manifest Reference](docs/reference/agent-manifest.md) for the full sc
 |   +-- a2h/                        # Gateway, models, store, channels, registry
 |   +-- tests/                      # Protocol conformance tests
 |
-+-- dashboard/                      # Next.js 15 + React 19 + Tailwind frontend
 +-- examples/                       # Example agents per stack (Helios OS, CrewAI, ADK, etc.)
 +-- agents/                         # Deployed agent configurations (gitignored)
 +-- tests/                          # ~1249 tests across 67 files
@@ -509,6 +509,8 @@ See [Agent Manifest Reference](docs/reference/agent-manifest.md) for the full sc
 +-- deploy/                         # Kubernetes manifests (dev/staging/prod)
 +-- observability/                  # Prometheus + Grafana dashboards
 ```
+
+**Extracted into their own repos:** the Rust CLI ([forgeos-cli](https://github.com/antonibergas-hue/forgeos-cli)), the MCP server + tool-execution layer ([forgeos-mcp](https://github.com/antonibergas-hue/forgeos-mcp)), and the Next.js dashboard ([forgeos-dashboard](https://github.com/antonibergas-hue/forgeos-dashboard)).
 
 ---
 

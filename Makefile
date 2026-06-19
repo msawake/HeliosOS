@@ -26,6 +26,9 @@ PG_IMAGE          ?= pgvector/pgvector:pg16
 COMPANY           ?= leadforge
 BACKEND_LOG       ?= /tmp/forgeos-backend.log
 DASH_LOG          ?= /tmp/forgeos-dashboard.log
+# The Next.js dashboard now lives in its own repo (github.com/antonibergas-hue/
+# forgeos-dashboard). `make dash` expects it checked out as a sibling of helios.
+DASH_DIR          ?= $(CURDIR)/../forgeos-dashboard
 
 DATABASE_URL := postgresql://$(PG_USER):$(PG_PASSWORD)@localhost:$(PG_PORT)/$(PG_DB)
 
@@ -112,8 +115,13 @@ backend: stop-backend stop-mc-platform
 	echo "✗ backend did not become ready — see $(BACKEND_LOG)"; tail -20 $(BACKEND_LOG); exit 1
 
 dash: stop-dash
+	@if [ ! -d "$(DASH_DIR)" ]; then \
+		echo "⚠ dashboard repo not found at $(DASH_DIR) — skipping."; \
+		echo "  Clone it as a sibling: git clone git@github.com:antonibergas-hue/forgeos-dashboard.git $(DASH_DIR)"; \
+		exit 0; \
+	fi
 	@echo "→ starting dashboard on $(DASH_PORT) (proxying to http://localhost:$(BACKEND_PORT))"
-	@cd "$(CURDIR)/dashboard" && FORGEOS_API_URL=http://localhost:$(BACKEND_PORT) \
+	@cd "$(DASH_DIR)" && FORGEOS_API_URL=http://localhost:$(BACKEND_PORT) \
 		nohup npm run dev > $(DASH_LOG) 2>&1 &
 	@for i in $$(seq 1 30); do \
 		curl -sf --max-time 2 http://localhost:$(DASH_PORT) >/dev/null 2>&1 && { echo "✓ dashboard ready"; exit 0; }; \

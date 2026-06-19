@@ -9,8 +9,9 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Dashboard
-cd dashboard && npm install && cd ..
+# Dashboard — separate repo (github.com/antonibergas-hue/forgeos-dashboard)
+git clone git@github.com:antonibergas-hue/forgeos-dashboard.git ../forgeos-dashboard
+( cd ../forgeos-dashboard && npm install )
 
 # Configure
 cp .env.example .env

@@ -154,25 +154,16 @@ images:
   - '${REGION}-docker.pkg.dev/${PROJECT_ID}/forgeos/forgeos-api:latest'
 EOF
 
-# Build Dashboard image
-gcloud builds submit \
+# Build Dashboard image — the dashboard lives in its own repo, which ships a
+# cloudbuild.yaml that builds from its root context (not -f dashboard/Dockerfile).
+git clone git@github.com:antonibergas-hue/forgeos-dashboard.git ../forgeos-dashboard
+gcloud builds submit ../forgeos-dashboard \
   --project=$PROJECT_ID \
   --timeout=900s \
-  --config=/dev/stdin . <<EOF
-steps:
-  - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'build'
-      - '-f'
-      - 'dashboard/Dockerfile'
-      - '--build-arg'
-      - 'NEXT_PUBLIC_REQUIRE_AUTH=1'
-      - '-t'
-      - '${REGION}-docker.pkg.dev/${PROJECT_ID}/forgeos/forgeos-dashboard:latest'
-      - '.'
-images:
-  - '${REGION}-docker.pkg.dev/${PROJECT_ID}/forgeos/forgeos-dashboard:latest'
-EOF
+  --config=../forgeos-dashboard/cloudbuild.yaml \
+  --substitutions=_REGION=$REGION,_REQUIRE_AUTH=1
+# Pushes ${REGION}-docker.pkg.dev/${PROJECT_ID}/forgeos/forgeos-dashboard:latest,
+# which the Pulumi stack consumes and deploys to Cloud Run.
 
 # Build Mission Control image
 gcloud builds submit \

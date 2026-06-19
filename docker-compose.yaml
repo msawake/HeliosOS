@@ -75,13 +75,15 @@ services:
         condition: service_healthy
     command: ["python", "-m", "src.bootstrap", "--dashboard", "--loop"]
 
-  # Next.js dashboard UI. Next's rewrites proxy /api/* to the `app` service, so
-  # the browser only ever talks to http://localhost:3000 (same origin). The
-  # live-status WebSocket connects straight to the API on :5000 (exposed below).
+  # Next.js dashboard UI. Lives in its own repo now
+  # (github.com/antonibergas-hue/forgeos-dashboard); this service builds it from
+  # a sibling checkout (../forgeos-dashboard). Next's rewrites proxy /api/* to
+  # the `app` service, so the browser only ever talks to http://localhost:3000
+  # (same origin). The live-status WebSocket connects straight to the API on :5000.
   dashboard:
     build:
-      context: .
-      dockerfile: dashboard/Dockerfile
+      context: ../forgeos-dashboard
+      dockerfile: Dockerfile
       args:
         FORGEOS_API_URL: http://app:5000
         NEXT_PUBLIC_REQUIRE_AUTH: "0"
