@@ -788,9 +788,12 @@ class PlatformBootstrap:
         tick_count = 0
         while self._running:
             tick_count += 1
-            # Update liveness timestamp (used by /api/liveness probe)
-            if app and hasattr(app, "state"):
-                app.state.last_tick_at = datetime.now(timezone.utc)
+            # Update liveness timestamp (used by /api/liveness probe), stored on
+            # the di.AppContext the Django app reads.
+            from src.forgeos_web import di
+            _ctx = di.try_get_context()
+            if _ctx is not None:
+                _ctx.extras["last_tick_at"] = datetime.now(timezone.utc)
             try:
                 dispatches = await self.workflow_engine.tick()
                 if dispatches:
@@ -984,84 +987,43 @@ class PlatformBootstrap:
             logger.exception("runtime workers: build failed — falling back to inline execution")
             return None
 
-    def create_api_app(self, auth_enabled: bool = True):
-        """Create the FastAPI app."""
-        from src.dashboard.fastapi_app import create_fastapi_app
-        company_name = self.config.get("company", {}).get("name", "AI Company")
-        runtime_service = self._maybe_build_runtime_service()
-        return create_fastapi_app(
-            runtime_service=runtime_service,
-            company_system=self.system,
-            workflow_engine=self.workflow_engine,
-            company_name=company_name,
-            db_client=self._db,
-            auth_enabled=auth_enabled,
-            platform_executor=self.executor,
-            platform_registry=self.platform_registry,
-            llm_router=self.llm_router,
-            _boot_complete=self._running,
-            admin_tools=getattr(self, 'admin_tools', None),
-            admin_invoker=self.legacy_invoker,
-            admin_registry=self.legacy_registry,
-            ontology=getattr(self, 'ontology', None),
-            tenant_id=self.tenant_id,
-            kernel=getattr(self, '_kernel', None),
-            credential_store=getattr(self, 'credentials', None),
-            environment_manager=getattr(self, '_environment_manager', None),
-            env_def_store=getattr(self, '_env_def_store', None),
-            env_service=getattr(self, '_env_service', None),
-            mcp_manager=getattr(self, '_mcp_manager', None),
-            tool_executor=getattr(self, '_tool_executor', None),
-        )
-
-    def start_api_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):
-        """Start the FastAPI server via uvicorn in a background thread."""
-        app = self.create_api_app(auth_enabled=auth_enabled)
-        if not app:
-            logger.warning("API server not available")
-            return
-        logger.info("API server starting on http://%s:%d (FastAPI + Uvicorn)", host, port)
-        import threading
-        import uvicorn
-        config = uvicorn.Config(app, host=host, port=port, log_level="warning")
-        server = uvicorn.Server(config)
-        thread = threading.Thread(target=server.run, daemon=True)
-        thread.start()
-
-    async def run_api_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):
-        """Run uvicorn in the main asyncio loop (for Cloud Run / containers)."""
-        app = self.create_api_app(auth_enabled=auth_enabled)
-        if not app:
-            logger.warning("API server not available")
-            return
-        logger.info("API server starting on http://%s:%d (FastAPI + Uvicorn, async)", host, port)
-        import uvicorn
-        config = uvicorn.Config(app, host=host, port=port, log_level="warning")
-        server = uvicorn.Server(config)
-        await server.serve()
-
     # ------------------------------------------------------------------
-    # Django web layer (migration target). Additive: the FastAPI path above
-    # is untouched. At cutover, callers serve ``run_django_server`` instead of
-    # ``run_api_server``. The Django app + Celery workers read the platform
-    # singletons from the process-global ``di.AppContext`` installed here.
+    # Web layer (Django + DRF). The platform singletons are injected into the
+    # process-global ``di.AppContext``; the Django app + Celery workers read
+    # them from there. Served by uvicorn (ASGI), threaded for the --loop case
+    # and in the main loop for the foreground/container case.
     # ------------------------------------------------------------------
     def populate_web_context(self, *, auth_enabled: bool = True):
         """Install the di.AppContext for the Django web layer from this boot."""
         from src.forgeos_web import di
         return di.populate_from_bootstrap(self, auth_enabled=auth_enabled)
 
-    async def run_django_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):
-        """Serve the Django ASGI app (the cutover replacement for run_api_server)."""
+    def _build_django_asgi(self, *, auth_enabled: bool = True):
+        """Populate the di context from this boot and return the Django ASGI app."""
         import os
         self.populate_web_context(auth_enabled=auth_enabled)
         os.environ.setdefault("DJANGO_SETTINGS_MODULE", "src.forgeos_web.settings")
         import django
         django.setup()
         from src.forgeos_web.asgi import application
+        return application
+
+    def start_django_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):
+        """Start the Django ASGI app via uvicorn in a background thread."""
+        app = self._build_django_asgi(auth_enabled=auth_enabled)
+        logger.info("API server starting on http://%s:%d (Django + Uvicorn)", host, port)
+        import threading
+        import uvicorn
+        config = uvicorn.Config(app, host=host, port=port, log_level="warning")
+        server = uvicorn.Server(config)
+        threading.Thread(target=server.run, daemon=True).start()
+
+    async def run_django_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):
+        """Run the Django ASGI app via uvicorn in the main asyncio loop."""
+        app = self._build_django_asgi(auth_enabled=auth_enabled)
         logger.info("API server starting on http://%s:%d (Django + Uvicorn, async)", host, port)
         import uvicorn
-        config = uvicorn.Config(application, host=host, port=port, log_level="warning")
+        config = uvicorn.Config(app, host=host, port=port, log_level="warning")
         await uvicorn.Server(config).serve()
 
     def get_platform_summary(self) -> dict:
@@ -1148,12 +1110,12 @@ async def main():
     if args.demo:
         run_demo(company_id=args.company)
 
-    # Store app reference for liveness tick tracking
-    _api_app = None
     auth_on = not args.no_auth and not os.environ.get("FORGEOS_AUTH_DISABLED") if args.dashboard else True
     if args.dashboard and args.loop:
-        _api_app = bootstrap.create_api_app(auth_enabled=auth_on)
-        bootstrap.start_api_server(port=api_port, auth_enabled=auth_on)
+        # Serve the Django ASGI app in a background thread; the main loop runs
+        # below. Liveness ticks are written to the di.AppContext (read by
+        # /api/liveness).
+        bootstrap.start_django_server(port=api_port, auth_enabled=auth_on)
 
     # Register SIGTERM/SIGINT for graceful shutdown
     loop = asyncio.get_running_loop()
@@ -1163,7 +1125,7 @@ async def main():
 
     if args.loop:
         try:
-            await bootstrap.run_main_loop(app=_api_app)
+            await bootstrap.run_main_loop()
         except asyncio.CancelledError:
             pass
         finally:
@@ -1171,7 +1133,7 @@ async def main():
     elif args.dashboard:
         logger.info("API server running on http://0.0.0.0:%d — Ctrl+C to stop.", api_port)
         try:
-            await bootstrap.run_api_server(port=api_port, auth_enabled=auth_on)
+            await bootstrap.run_django_server(port=api_port, auth_enabled=auth_on)
         except (KeyboardInterrupt, asyncio.CancelledError):
             pass
         finally:

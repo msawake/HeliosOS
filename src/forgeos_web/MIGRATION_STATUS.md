@@ -2,11 +2,18 @@
 
 Full plan: `~/.claude/plans/backend-must-be-migrated-vectorized-meadow.md`.
 
-**Additive, strangler-style.** The legacy FastAPI app (`src/dashboard/fastapi_app.py`)
-is untouched and still runs. The Django app lives under `src/forgeos_web/`; platform
-singletons are injected via the process-global `di.AppContext` (mirrors the old
-factory kwargs). The cutover is a *switch* (serve Django instead of FastAPI), not a
-rewrite-in-place.
+**Replace-in-place (cutover executed).** The legacy FastAPI app
+(`src/dashboard/fastapi_app.py`), the LLM streaming methods
+(`chat_stream`/`_stream_*`), `run_agentic_loop_with_events`, and the orphaned
+FastAPI integration tests have been **deleted**. `src/bootstrap.py` now serves the
+**Django ASGI app** (`run_django_server`/`start_django_server`); platform singletons
+are injected via the process-global `di.AppContext`. The Dockerfile installs the
+`[django]` extra and docker-compose adds `worker` + `beat` services.
+
+What remains before this is fully production-live: the **schema-ownership flip**
+(models are still `managed=False`, which works at runtime against the existing
+tables — flip to `managed=True` + `migrate --fake-initial` only when Django should
+own migrations), and `/ws/agents` (Channels). See below.
 
 ## Status: all 11 steps code-complete & verified (Python 3.11 venv)
 
@@ -64,15 +71,14 @@ the contract suite green.
    celery -A src.celery_app beat --scheduler django_celery_beat.schedulers:DatabaseScheduler
    ```
 
-4. **Delete dead streaming code** (only after the Django path is live — the legacy app
-   uses these, so deleting earlier breaks it):
-   - `LLMRouter.chat_stream`, `_stream_anthropic`, `_stream_openai` in `src/platform/llm_router.py`
-   - `run_agentic_loop_with_events` in `src/platform/agentic_loop.py` (already has no callers)
-   - `src/dashboard/fastapi_app.py` (the whole legacy app) — delete LAST, after the
-     contract suite is green against Django.
+4. **Dead code deletion — DONE in this PR.** `LLMRouter.chat_stream`/`_stream_*`,
+   `run_agentic_loop_with_events`, `src/dashboard/fastapi_app.py`, and the orphaned
+   FastAPI tests are removed. `bootstrap.py` serves Django.
 
-5. **Update deploy** (`infrastructure/docker/Dockerfile`, `docker-compose.yaml`,
-   `pulumi/`): entrypoint → Django ASGI; add celery worker + beat services/deployments.
+5. **Deploy — DONE for docker.** Dockerfile installs `.[production,scheduler,django]`;
+   docker-compose runs `app` (Django ASGI) + `worker` + `beat`. Still TODO for
+   `pulumi/` (Cloud Run/GKE): add worker + beat deployments and ensure the image
+   ships the django extra (it now does).
 
 ## Known remaining gaps (tracked)
 - **`/ws/agents`** WebSocket — needs Django Channels (ASGI consumer + routing + channel
