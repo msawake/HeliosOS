@@ -194,6 +194,17 @@ export interface Approval {
   request_id?: string;
   run_id?: string;
   continuation_id?: string;
+  /** Origin store: 'runtime' (kernel gate), 'a2h' (agent question), or legacy. */
+  source?: string;
+  /** The gated tool (runtime gates) and the requesting agent. */
+  tool?: string;
+  agent?: string;
+  agent_id?: string;
+  status?: string;
+  risk?: string;
+  created_at?: string | null;
+  timestamp?: string | null;
+  response_type?: string;
   from_agent?: string;
   /** Legacy company HITL fields (company__request_approval / hitl.get_pending()). */
   requesting_agent?: string;
@@ -416,6 +427,27 @@ export const api = {
       method: 'POST',
       body: reason ? { reason } : {},
     }),
+  /** Remove an entry from the queue regardless of source. Rejects the run
+   *  (runtime gate / legacy HITL); for A2H `human__ask` requests — which aren't
+   *  in the approvals store and 404 the reject above — falls back to the A2H
+   *  gateway reject so stale questions can be cleared too. */
+  dismiss: async (requestId: string) => {
+    const id = encodeURIComponent(requestId);
+    try {
+      return await request<unknown>(`/api/approvals/${id}/reject`, {
+        method: 'POST',
+        body: { reason: 'dismissed' },
+      });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        return await request<unknown>(`/api/a2h/requests/${id}/reject`, {
+          method: 'POST',
+          query: { reason: 'dismissed', responded_by: 'dashboard' },
+        });
+      }
+      throw e;
+    }
+  },
   answer: (
     requestId: string,
     opts: { text?: string; value?: string; respondedBy?: string }

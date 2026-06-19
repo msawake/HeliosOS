@@ -1,0 +1,17 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - dashboard/Dockerfile
+      - --build-arg
+      # Baked into the Next.js /api/* rewrite at build time (next.config.js).
+      - FORGEOS_API_URL=${_API_URL}
+      - -t
+      - europe-west1-docker.pkg.dev/admachina-atomic-test-84/forgeos/forgeos-dashboard:${_TAG}
+      - .
+images:
+  - europe-west1-docker.pkg.dev/admachina-atomic-test-84/forgeos/forgeos-dashboard:${_TAG}
+options:
+  machineType: E2_HIGHCPU_8
+timeout: 1800s
