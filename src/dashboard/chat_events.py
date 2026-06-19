@@ -56,10 +56,12 @@ def agent_result_to_chat_events(result) -> list[dict]:
     # Executed (non-gated) tool calls — surface the function calls, not just the
     # final text. Gated calls awaiting approval become approval cards below.
     for te in meta.get("tool_events") or []:
+        tuid = te.get("tool_use_id")
         events.append({"type": "tool_call", "name": te.get("name", "tool"),
-                       "input": te.get("input") or {}})
+                       "input": te.get("input") or {}, "tool_use_id": tuid})
         events.append({"type": "tool_result", "name": te.get("name", "tool"),
-                       "result": te.get("result")})
+                       "result": te.get("result"), "tool_use_id": tuid,
+                       "is_error": te.get("is_error", False)})
     if status == "paused":
         for p in meta.get("pending") or []:
             events.append(_gated_approval_event(p))
@@ -90,10 +92,12 @@ def run_outcome_to_chat_events(outcome) -> list[dict]:
             {"type": "done", "tokens_used": 0, "text": ""},
         ]
     for te in getattr(outcome, "tool_events", None) or []:
+        tuid = te.get("tool_use_id")
         events.append({"type": "tool_call", "name": te.get("name", "tool"),
-                       "input": te.get("input") or {}})
+                       "input": te.get("input") or {}, "tool_use_id": tuid})
         events.append({"type": "tool_result", "name": te.get("name", "tool"),
-                       "result": te.get("result")})
+                       "result": te.get("result"), "tool_use_id": tuid,
+                       "is_error": te.get("is_error", False)})
     # A PARTIAL multi-approval resume parks again on the SAME sibling tool calls
     # the human was already asked about — re-emitting approval cards for them
     # would re-prompt for approvals already on screen (the escalating-prompts

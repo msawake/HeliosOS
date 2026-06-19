@@ -47,11 +47,15 @@ def _serialize_result(agent_id: str, r) -> dict:
         if isinstance(tc, dict):
             tcs.append({"name": tc.get("name"),
                         "input": tc.get("input") or tc.get("arguments") or {},
-                        "result": tc.get("result")})
+                        "result": tc.get("result"),
+                        "tool_use_id": tc.get("tool_use_id"),
+                        "is_error": tc.get("is_error", False)})
         else:
             tcs.append({"name": getattr(tc, "name", None),
                         "input": getattr(tc, "input", None) or getattr(tc, "arguments", None) or {},
-                        "result": getattr(tc, "result", None)})
+                        "result": getattr(tc, "result", None),
+                        "tool_use_id": getattr(tc, "tool_use_id", None),
+                        "is_error": getattr(tc, "result_is_error", False)})
     meta = getattr(r, "metadata", None) or {}
     return _json_safe({
         "agent_id": agent_id,

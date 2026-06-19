@@ -251,8 +251,12 @@ async def agent_chat_stream(request, agent_id: str):
         if d.get("error") and not d.get("output"):
             yield _sse({"type": "error", "error": d["error"]})
         for tc in (d.get("tool_calls") or []):
-            yield _sse({"type": "tool_call", "name": tc.get("name"), "input": tc.get("input") or {}})
-            yield _sse({"type": "tool_result", "name": tc.get("name"), "result": tc.get("result")})
+            tuid = tc.get("tool_use_id")
+            yield _sse({"type": "tool_call", "name": tc.get("name"),
+                        "input": tc.get("input") or {}, "tool_use_id": tuid})
+            yield _sse({"type": "tool_result", "name": tc.get("name"),
+                        "result": tc.get("result"), "tool_use_id": tuid,
+                        "is_error": tc.get("is_error", False)})
         if d.get("output"):
             yield _sse({"type": "text_delta", "content": d["output"]})
             session["messages"].append({"role": "assistant", "content": d["output"]})

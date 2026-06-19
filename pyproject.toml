@@ -90,14 +90,9 @@ docs = [
 [project.scripts]
 forgeos = "src.forgeos_sdk.cli:main"
 forgeos-migrate = "src.core.migrations:main"
-# The MCP surface (standalone server + `forgeos_mcp.integration` tool-execution
-# layer, formerly src/mcp/ + src/forgeos_mcp/) now lives in its own repo:
-#     https://github.com/antonibergas-hue/forgeos-mcp   (the `forgeos-mcp` console script ships there)
-# It imports src.platform.* from this package, and this package imports
-# forgeos_mcp.integration. To avoid a circular dependency it is NOT declared as a
-# hard requirement here — install it alongside helios (editable in dev):
-#     pip install -e ../forgeos-mcp
-# Without it, MCP/company tool execution is unavailable (the platform degrades).
+# The MCP tool-execution layer lives in-repo under src/mcp/ (custom_tools,
+# server_manager, tool_executor, client_mcp_manager, platform_tools). It is
+# imported directly as src.mcp.* — no external forgeos_mcp package is required.
 
 [tool.setuptools.packages.find]
 # `src` is the platform library; `forgeos_web` is the Django/DRF project (its
