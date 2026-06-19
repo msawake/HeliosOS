@@ -19,13 +19,11 @@ src/forgeos_sdk/           SDK: runtime.py (BSL), kernel.py (BSL), agent.py, cli
 src/platform/              Registry, executor, scheduler, event bus, LLM router, audit, A2A, process table
 src/dashboard/             FastAPI backend (~2500 lines, 70+ endpoints)
 stacks/                    9 framework adapters (each wraps tools with kernel gate)
-dashboard/                 Next.js 15 frontend (22 pages)
-mission-control/           Fleet ops dashboard (React + FastAPI)
-examples/                  8 gold-standard agents with raw vs governed comparisons
-docs/                      44 markdown files — architecture, guides, reference
-tests/                     78 test files, 1236 passing
-deploy/k8s/                Kubernetes manifests with Kustomize overlays
-infrastructure/docker/     Dockerfiles for API, dashboard, Mission Control
+dashboard/                 Next.js 15 frontend
+examples/                  example agents; some include raw vs governed (agent_raw.py vs agent.py) comparisons
+docs/                      MkDocs site — architecture, guides, reference
+tests/                     ~109 test files
+infrastructure/docker/     Dockerfiles for API + dashboard
 ```
 
 ## Architecture (3 layers)
@@ -63,9 +61,10 @@ PYTHONPATH=. python3 examples/content-ops/agent.py
 PYTHONPATH=. python3 examples/sre-command-center/agent.py
 ```
 
-### Run Mission Control
+### Terminal Mission Control
 ```bash
-cd mission-control && make dev
+make mc-platform        # boot an in-memory platform on :5099
+forgeos mc fleet        # drive it from the terminal CLI
 ```
 
 ### Run tests
