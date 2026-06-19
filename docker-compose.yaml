@@ -73,7 +73,43 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Boots the platform and serves the Django ASGI app (run_django_server).
     command: ["python", "-m", "src.bootstrap", "--dashboard", "--loop"]
+
+  # Celery worker tier — drives enqueued agent turns / resumes off Redis.
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile
+      target: api
+    environment:
+      - DATABASE_URL=postgresql://leadforge_admin:${DB_PASSWORD:-forgeoslocal}@postgres:5432/leadforge
+      - REDIS_URL=redis://redis:6379
+      - FORGEOS_RUNTIME_WORKERS=1
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["celery", "-A", "forgeos_web.celery_app", "worker", "-Q", "agents,agents_resume,scheduled,agents_longrun", "--loglevel=info"]
+
+  # Celery Beat — fires SCHEDULED agents (PeriodicTask) + maintenance.
+  beat:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile
+      target: api
+    environment:
+      - DATABASE_URL=postgresql://leadforge_admin:${DB_PASSWORD:-forgeoslocal}@postgres:5432/leadforge
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["celery", "-A", "forgeos_web.celery_app", "beat", "--scheduler", "django_celery_beat.schedulers:DatabaseScheduler", "--loglevel=info"]
 
   # Next.js dashboard UI. Lives in its own repo now
   # (github.com/antonibergas-hue/forgeos-dashboard); this service builds it from

@@ -1,0 +1,791 @@
+[
+  {
+    "path": "/",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/admin",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/_debug/a2h",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/a2h/humans",
+    "methods": [
+      "GET",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/a2h/notifications",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/a2h/pending",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/a2h/requests",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/a2h/requests/{request_id}",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/a2h/requests/{request_id}/approve",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/a2h/requests/{request_id}/reject",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/a2h/requests/{request_id}/respond",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/a2h/v1/chats",
+    "methods": [
+      "GET",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/a2h/v1/chats/{chat_id}",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/a2h/v1/chats/{chat_id}/close",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/a2h/v1/chats/{chat_id}/messages",
+    "methods": [
+      "GET",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/admin/chat",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/admin/chat/stream",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/admin/events",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/admin/health",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/admin/knowledge",
+    "methods": [
+      "GET",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/admin/metrics",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/admin/providers",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/approvals",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/approvals/{request_id}",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/approvals/{request_id}/approve",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/approvals/{request_id}/reject",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/audit",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/auth/login",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/auth/token",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/billing/metering",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/billing/usage",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/billing/usage/{company_id}",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/clients",
+    "methods": [
+      "GET",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/clients/{client_id}",
+    "methods": [
+      "DELETE",
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/clients/{client_id}/agents",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/clients/{client_id}/mcp-servers",
+    "methods": [
+      "GET",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/clients/{client_id}/mcp-servers/{server_name}",
+    "methods": [
+      "DELETE",
+      "PUT"
+    ]
+  },
+  {
+    "path": "/api/credentials/github",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/credentials/jira",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/credentials/secret",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/events",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/health",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/hitl/pending",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/intelligence/ask",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/intelligence/connectors/sync",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/intelligence/ontology/objects",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/intelligence/ontology/schema",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/liveness",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/mcps/categories",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/mcps/search",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/mcps/{name:path}",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/me",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/namespaces/{ns}/mcp/{server_name}",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/a2a/fail",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/a2a/jobs/{job_id}",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/a2a/result",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/a2a/submit",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/a2a/tasks/pending",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/agent-logs",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/agents",
+    "methods": [
+      "GET",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/agents/from-yaml",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/agents/{agent_id}",
+    "methods": [
+      "DELETE",
+      "GET",
+      "PUT"
+    ]
+  },
+  {
+    "path": "/api/platform/agents/{agent_id}/chat/history",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/agents/{agent_id}/chat/resume",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/agents/{agent_id}/chat/sessions",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/agents/{agent_id}/chat/sessions/{session_id}",
+    "methods": [
+      "DELETE"
+    ]
+  },
+  {
+    "path": "/api/platform/agents/{agent_id}/chat/stream",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/agents/{agent_id}/environment",
+    "methods": [
+      "DELETE",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/agents/{agent_id}/from-yaml",
+    "methods": [
+      "PUT"
+    ]
+  },
+  {
+    "path": "/api/platform/agents/{agent_id}/heartbeat",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/agents/{agent_id}/invoke",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/agents/{agent_id}/runs",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/agents/{agent_id}/shell",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/agents/{agent_id}/stop",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/audit/recent",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/budgets",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/environments",
+    "methods": [
+      "GET",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/environments/{env_def_id}",
+    "methods": [
+      "DELETE",
+      "GET",
+      "PATCH"
+    ]
+  },
+  {
+    "path": "/api/platform/events",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/fleet",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/kernel/admit",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/kernel/audit",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/kernel/check-a2a",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/kernel/check-data",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/kernel/check-license",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/kernel/check-tool",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/kernel/contract/{agent_id}",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/kernel/effective-policy/{agent_id}",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/kernel/global-policy",
+    "methods": [
+      "GET",
+      "PUT"
+    ]
+  },
+  {
+    "path": "/api/platform/kernel/namespace-policies",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/kernel/namespace-policy/{namespace}",
+    "methods": [
+      "DELETE",
+      "GET",
+      "PUT"
+    ]
+  },
+  {
+    "path": "/api/platform/kernel/usage",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/mcp/servers",
+    "methods": [
+      "GET",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/mcp/servers/{server_name}",
+    "methods": [
+      "DELETE",
+      "PUT"
+    ]
+  },
+  {
+    "path": "/api/platform/messages",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/messages/{agent_id}",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/namespaces",
+    "methods": [
+      "GET",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/namespaces/{ns}",
+    "methods": [
+      "DELETE"
+    ]
+  },
+  {
+    "path": "/api/platform/namespaces/{ns}/admins",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/namespaces/{ns}/admins/{admin_user_id}",
+    "methods": [
+      "DELETE",
+      "PUT"
+    ]
+  },
+  {
+    "path": "/api/platform/overview",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/process/{pid}",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/ps",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/runs/{run_id}",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/scheduler",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/signals/{pid}",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/teams",
+    "methods": [
+      "GET",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/platform/teams/{namespace}/{name}",
+    "methods": [
+      "DELETE"
+    ]
+  },
+  {
+    "path": "/api/platform/tools",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/platform/wizard/chat",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/readiness",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/sandbox/register",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/sandbox/result",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/sandbox/tool",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/secrets",
+    "methods": [
+      "DELETE",
+      "GET",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/skills/domains",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/skills/search",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/skills/{name}",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/users",
+    "methods": [
+      "GET",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/users/{user_id}",
+    "methods": [
+      "DELETE",
+      "PATCH"
+    ]
+  },
+  {
+    "path": "/api/users/{user_id}/mcp/jira",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/users/{user_id}/mcp/{server_name}",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/workflows",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/workflows/{workflow_id}",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/intelligence",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/metrics",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/ws/agents",
+    "methods": [
+      "WEBSOCKET"
+    ]
+  }
+]

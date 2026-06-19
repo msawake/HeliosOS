@@ -28,6 +28,19 @@ database = [
     "redis>=5.0",
     "cryptography>=42.0",
 ]
+# Django web layer (rewrite of the FastAPI app). 5.2+ is required for native
+# CompositePrimaryKey support (several runtime/governance tables use composite
+# PKs). Celery is the outer broker/scheduler; the inner src/runtime/ engine
+# (RedisRunnableQueue + PostgresLedger) is retained per the migration design.
+django = [
+    "django>=5.2,<6.0",
+    "djangorestframework>=3.15",
+    "django-cors-headers>=4.4",
+    "dj-database-url>=2.2",
+    "pgvector>=0.3",
+    "celery[redis]>=5.4",
+    "django-celery-beat>=2.7",
+]
 gcp = [
     "google-cloud-sql-connector[pg8000]>=1.4",
     "google-cloud-secret-manager>=2.16",
@@ -87,11 +100,9 @@ forgeos-migrate = "src.core.migrations:main"
 # Without it, MCP/company tool execution is unavailable (the platform degrades).
 
 [tool.setuptools.packages.find]
-# The codebase (and the console scripts above) imports everything as `src.*`,
-# so `src` itself is the top-level package. Without this, setuptools
-# auto-discovery treats src/ as a src-layout root and editable installs map
-# packages without the prefix, breaking every console script.
-include = ["src", "src.*"]
+# `src` is the platform library; `forgeos_web` is the Django/DRF project (its
+# apps import the platform as `src.*`). Both are top-level packages.
+include = ["src", "src.*", "forgeos_web", "forgeos_web.*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

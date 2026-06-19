@@ -29,7 +29,7 @@ COPY pyproject.toml .
 # `[production,scheduler]` pulls openai + mcp + apscheduler + psycopg[binary,pool]
 # + redis + GCP libs + stripe + otel. Fallback keeps a minimal install for
 # environments that can't read the optional extras.
-RUN pip install --no-cache-dir --prefix=/install ".[production,scheduler]" \
+RUN pip install --no-cache-dir --prefix=/install ".[production,scheduler,django]" \
     || pip install --no-cache-dir --prefix=/install \
         "pyyaml>=6.0" \
         "fastapi>=0.115" \
@@ -43,7 +43,14 @@ RUN pip install --no-cache-dir --prefix=/install ".[production,scheduler]" \
         "mcp>=1.0" \
         "apscheduler>=3.10" \
         "google-auth>=2.0" \
-        "requests>=2.31"
+        "requests>=2.31" \
+        "django>=5.2,<6.0" \
+        "djangorestframework>=3.15" \
+        "django-cors-headers>=4.4" \
+        "dj-database-url>=2.2" \
+        "pgvector>=0.3" \
+        "celery[redis]>=5.4" \
+        "django-celery-beat>=2.7"
 
 # Belt-and-braces: ensure the GCP libs the platform reaches for at runtime
 # (Secret Manager for per-user PATs, Storage / Logging for ops) are present
