@@ -84,7 +84,7 @@ def test_tool_executor_human_handlers_register_after_a2h_wiring():
     """ToolExecutor.__init__ runs before A2H is built; bootstrap rebuilds
     the handler map. Re-creating that flow here ensures the human__* tools
     actually land in `_custom_handlers`."""
-    from src.mcp.tool_executor import ToolExecutor
+    from forgeos_mcp.integration.tool_executor import ToolExecutor
 
     te = ToolExecutor()
     assert "human__ask" not in te._custom_handlers, (

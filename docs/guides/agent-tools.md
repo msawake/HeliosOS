@@ -12,7 +12,7 @@ Agents gain capabilities through **tools**. When an agent runs, the LLM can requ
 | **Custom Tools** | `company__` | In-process Python handlers | `company__request_approval` |
 | **Platform Tools** | varies | Registered via `register_platform_tools()` | CRM, HTTP, messaging tools |
 
-All tool calls route through a single `ToolExecutor` (`src/mcp/tool_executor.py`), which enforces per-agent whitelists and provides a unified audit trail.
+All tool calls route through a single `ToolExecutor` (`forgeos_mcp.integration.tool_executor`, in the standalone [`forgeos-mcp`](https://github.com/antonibergas-hue/forgeos-mcp) repo), which enforces per-agent whitelists and provides a unified audit trail.
 
 ---
 

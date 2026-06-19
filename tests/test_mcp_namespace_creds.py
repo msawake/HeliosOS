@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 
 from src.core.secrets import SecretsManager
-from src.mcp.client_mcp_manager import ClientMCPManager
+from forgeos_mcp.integration.client_mcp_manager import ClientMCPManager
 from src.platform.credentials import CredentialStore
 from stacks.base import AgentDefinition, ExecutionType, OwnershipType, build_agent_context
 

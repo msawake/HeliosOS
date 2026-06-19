@@ -419,7 +419,7 @@ When agents run OUTSIDE Helios OS (separate Cloud Run service), they call these 
 | `src/forgeos_sdk/runtime.py` | Agent-side kernel proxy | bind(), unbind(), check_tool(), is_registered, is_bound |
 | `src/forgeos_sdk/kernel.py` | Kernel backend selection | 204-230 (_InProcessBackend), 232-330 (_HTTPBackend) |
 | `src/platform/a2a.py` | Agent-to-agent calls | 165-320 (call with ACL, delegation, cycle detection) |
-| `src/mcp/tool_executor.py` | Tool routing | 49-82 (handler registration), 265+ (execute) |
+| `forgeos_mcp/integration/tool_executor.py` (forgeos-mcp repo) | Tool routing | 49-82 (handler registration), 265+ (execute) |
 | `src/dashboard/fastapi_app.py` | API endpoints | 774 (chat/stream), 2084-2130 (kernel), 2164-2235 (remote governance) |
 | `src/platform/namespace_policy.py` | Namespace-level governance | validate_agent(), is_tool_allowed() |
 | `src/platform/fleet_monitor.py` | Auto-quarantine, alerts | check_fleet(), _check_error_rate() |

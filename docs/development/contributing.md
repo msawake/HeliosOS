@@ -9,8 +9,9 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Dashboard
-cd dashboard && npm install && cd ..
+# Dashboard — separate repo (github.com/antonibergas-hue/forgeos-dashboard)
+git clone git@github.com:antonibergas-hue/forgeos-dashboard.git ../forgeos-dashboard
+( cd ../forgeos-dashboard && npm install )
 
 # Configure
 cp .env.example .env
@@ -49,7 +50,7 @@ PYTHONPATH=. python3 -m pytest -x
 
 ## Project Structure Rules
 
-1. **Framework code** goes in `src/platform/`, `src/core/`, or `src/mcp/`.
+1. **Framework code** goes in `src/platform/` or `src/core/`. (The MCP tool-execution layer lives in the standalone [`forgeos-mcp`](https://github.com/antonibergas-hue/forgeos-mcp) repo.)
 2. **Stack adapters** go in `stacks/{name}/adapter.py` and implement `AgentStackAdapter`.
 3. **Company packages** go in `src/companies/{id}/` with `agent_configs.py`, `workflows.py`, `knowledge.py`, `config.yaml`, `demo.py`.
 4. **Tests** mirror source structure: `test_platform_executor.py` for `src/platform/executor.py`.

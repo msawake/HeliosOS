@@ -43,9 +43,9 @@ try:
 except ImportError:
     ClaudeClient = None
     create_hook_chain = None
-from src.mcp.custom_tools import CompanySystem
-from src.mcp.server_manager import MCPServerManager
-from src.mcp.tool_executor import ToolExecutor
+from forgeos_mcp.integration.custom_tools import CompanySystem
+from forgeos_mcp.integration.server_manager import MCPServerManager
+from forgeos_mcp.integration.tool_executor import ToolExecutor
 from src.workflows.definitions import WorkflowEngine, WorkflowStatus
 
 logging.basicConfig(
@@ -659,7 +659,7 @@ class PlatformBootstrap:
             logger.warning("MCP connect_all() timed out after 30s — continuing with partial MCP")
             mcp_clients = self._mcp_manager.get_clients()
 
-        from src.mcp.client_mcp_manager import ClientMCPManager
+        from forgeos_mcp.integration.client_mcp_manager import ClientMCPManager
         self._client_mcp_manager = ClientMCPManager(
             db_client=self._db,
             tenant_id=self.tenant_id,
@@ -714,11 +714,11 @@ class PlatformBootstrap:
 
         # Register platform-level tool stubs (CRM, HTTP, ads, MLS, etc.)
         try:
-            from src.mcp.platform_tools import register_platform_tools
+            from forgeos_mcp.integration.platform_tools import register_platform_tools
             register_platform_tools(tool_executor)
             logger.info("  Platform tools: registered")
         except ImportError:
-            logger.debug("  Platform tools: not available (src.mcp.platform_tools missing)")
+            logger.debug("  Platform tools: not available (forgeos_mcp.integration.platform_tools missing)")
 
         default_model = self.config.get("models", {}).get("orchestrator_default", "claude-opus-4-6")
         try:

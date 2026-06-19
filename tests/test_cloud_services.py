@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.mcp.pubsub_bus import PubSubEventBus
+from forgeos_mcp.integration.pubsub_bus import PubSubEventBus
 from src.workflows.cloud_tasks import CloudTasksDispatcher
 
 

@@ -2,8 +2,8 @@
 
 import pytest
 
-from src.mcp.server_manager import MCPServerConfig, MCPServerManager
-from src.mcp.tool_executor import ToolExecutor
+from forgeos_mcp.integration.server_manager import MCPServerConfig, MCPServerManager
+from forgeos_mcp.integration.tool_executor import ToolExecutor
 
 
 # ── Config Parsing ───────────────────────────────────────────────────────

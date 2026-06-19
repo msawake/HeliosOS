@@ -24,8 +24,9 @@ source .venv/bin/activate
 # Install Python dependencies
 pip install -e ".[dev]"
 
-# Install dashboard dependencies
-cd dashboard && npm install && cd ..
+# Install dashboard dependencies — the dashboard is a separate repo
+git clone git@github.com:antonibergas-hue/forgeos-dashboard.git ../forgeos-dashboard
+( cd ../forgeos-dashboard && npm install )
 ```
 
 ## 2. Configure
@@ -77,7 +78,8 @@ API: http://localhost:5000 (FastAPI)
 In a separate terminal:
 
 ```bash
-cd forgeos//dashboard
+# The dashboard is a standalone repo: github.com/antonibergas-hue/forgeos-dashboard
+cd ../forgeos-dashboard
 npm run dev
 ```
 
