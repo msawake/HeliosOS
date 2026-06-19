@@ -34,10 +34,6 @@ tests
 examples
 notebooks
 playground
-# Note: docs/ and mkdocs.yml are intentionally kept in the build context so the
-# Mission Control image (infrastructure/docker/Dockerfile.mission-control) can
-# build the mkdocs site. Other Dockerfiles do not COPY them, so they only pay a
-# small build-context cost.
 
 # Dashboard build artifacts
 dashboard/node_modules
