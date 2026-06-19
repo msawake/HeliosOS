@@ -2,7 +2,7 @@
   "mcpServers": {
     "forgeos": {
       "command": "python3",
-      "args": ["tools/forgeos-mcp-server.py"],
+      "args": ["-m", "forgeos_mcp"],
       "env": {
         "FORGEOS_URL": "http://localhost:5000",
         "FORGEOS_API_KEY": "",

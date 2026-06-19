@@ -249,7 +249,7 @@ class TestMCPToolResilience:
     @pytest.mark.asyncio
     async def test_whitelist_blocks_unauthorized_tool(self):
         """An agent's `allowed_tools` should prevent dispatch."""
-        from src.mcp.tool_executor import ToolExecutor
+        from forgeos_mcp.integration.tool_executor import ToolExecutor
 
         te = ToolExecutor(company_system=None)
         ctx = {"agent_id": "a1", "allowed_tools": ["company__query_events"]}

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.mcp.custom_tools import (
+from forgeos_mcp.integration.custom_tools import (
     ApprovalRequest,
     ApprovalStatus,
     CompanySystem,

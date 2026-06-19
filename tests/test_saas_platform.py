@@ -394,14 +394,14 @@ class TestClaudeClientRetry:
 
 class TestCompanySystemPersistence:
     def test_no_db_uses_in_memory(self):
-        from src.mcp.custom_tools import CompanySystem, EventBus, KnowledgeBase, MetricsStore
+        from forgeos_mcp.integration.custom_tools import CompanySystem, EventBus, KnowledgeBase, MetricsStore
         system = CompanySystem()
         assert isinstance(system.event_bus, EventBus)
         assert isinstance(system.knowledge, KnowledgeBase)
         assert isinstance(system.metrics, MetricsStore)
 
     def test_disconnected_db_uses_in_memory(self):
-        from src.mcp.custom_tools import CompanySystem, EventBus
+        from forgeos_mcp.integration.custom_tools import CompanySystem, EventBus
         mock_db = MagicMock()
         mock_db.is_connected = False
         system = CompanySystem(db_client=mock_db)

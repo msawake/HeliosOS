@@ -1,7 +1,7 @@
 """Tests for custom MCP tools (event bus, HITL, knowledge base, metrics)."""
 
 import pytest
-from src.mcp.custom_tools import (
+from forgeos_mcp.integration.custom_tools import (
     CompanySystem,
     EventBus,
     HITLGateway,

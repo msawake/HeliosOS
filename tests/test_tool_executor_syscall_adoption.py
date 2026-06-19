@@ -8,7 +8,7 @@ from typing import Any
 pytestmark = pytest.mark.kernel
 
 
-from src.mcp.tool_executor import ToolExecutor
+from forgeos_mcp.integration.tool_executor import ToolExecutor
 from src.platform.kernel import Kernel
 from src.platform.registry import AgentRegistry
 from stacks.base import AgentDefinition, ExecutionType, OwnershipType

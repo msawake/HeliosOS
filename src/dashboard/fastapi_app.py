@@ -3824,7 +3824,7 @@ def create_fastapi_app(
         te = _resolve_tool_executor()
         defs: list = []
         try:
-            from src.mcp.platform_tools import PLATFORM_TOOL_DEFINITIONS
+            from forgeos_mcp.integration.platform_tools import PLATFORM_TOOL_DEFINITIONS
             defs.extend(PLATFORM_TOOL_DEFINITIONS)
         except Exception:
             pass

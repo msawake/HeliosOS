@@ -138,7 +138,7 @@ class TenantManager:
     def seed_tenant(self, tenant_id: str, company_type: str = "leadforge") -> None:
         """Seed a tenant's knowledge base with company-specific policies."""
         import importlib
-        from src.mcp.custom_tools import CompanySystem
+        from forgeos_mcp.integration.custom_tools import CompanySystem
 
         system = CompanySystem(company_id=company_type, db_client=self._db)
         knowledge_mod = importlib.import_module(f"src.companies.{company_type}.knowledge")
