@@ -526,7 +526,7 @@ class PlatformBootstrap:
             logger.info("Legacy agents: %d", len(self.legacy_registry.all_agents()))
         logger.info("Mode: %s", self.mode)
         logger.info("Dashboard: http://localhost:3000 (Next.js)")
-        logger.info("API: http://localhost:%d (FastAPI)", api_listen_port)
+        logger.info("API: http://localhost:%d (Django + DRF)", api_listen_port)
         logger.info("=" * 60)
 
         self._running = True
@@ -790,7 +790,7 @@ class PlatformBootstrap:
             tick_count += 1
             # Update liveness timestamp (used by /api/liveness probe), stored on
             # the di.AppContext the Django app reads.
-            from src.forgeos_web import di
+            from forgeos_web import di
             _ctx = di.try_get_context()
             if _ctx is not None:
                 _ctx.extras["last_tick_at"] = datetime.now(timezone.utc)
@@ -995,17 +995,17 @@ class PlatformBootstrap:
     # ------------------------------------------------------------------
     def populate_web_context(self, *, auth_enabled: bool = True):
         """Install the di.AppContext for the Django web layer from this boot."""
-        from src.forgeos_web import di
+        from forgeos_web import di
         return di.populate_from_bootstrap(self, auth_enabled=auth_enabled)
 
     def _build_django_asgi(self, *, auth_enabled: bool = True):
         """Populate the di context from this boot and return the Django ASGI app."""
         import os
         self.populate_web_context(auth_enabled=auth_enabled)
-        os.environ.setdefault("DJANGO_SETTINGS_MODULE", "src.forgeos_web.settings")
+        os.environ.setdefault("DJANGO_SETTINGS_MODULE", "forgeos_web.settings")
         import django
         django.setup()
-        from src.forgeos_web.asgi import application
+        from forgeos_web.asgi import application
         return application
 
     def start_django_server(self, host: str = "0.0.0.0", port: int = 5000, auth_enabled: bool = True):

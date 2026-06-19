@@ -13,7 +13,7 @@ import pytest
 
 
 def pytest_configure():
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "src.forgeos_web.settings")
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "forgeos_web.settings")
     os.environ.setdefault("FORGEOS_SESSION_SECRET", "test-secret-not-for-prod-only")
     import django
 

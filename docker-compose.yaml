@@ -93,7 +93,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: ["celery", "-A", "src.celery_app", "worker", "-Q", "agents,agents_resume,scheduled,agents_longrun", "--loglevel=info"]
+    command: ["celery", "-A", "forgeos_web.celery_app", "worker", "-Q", "agents,agents_resume,scheduled,agents_longrun", "--loglevel=info"]
 
   # Celery Beat — fires SCHEDULED agents (PeriodicTask) + maintenance.
   beat:
@@ -109,7 +109,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: ["celery", "-A", "src.celery_app", "beat", "--scheduler", "django_celery_beat.schedulers:DatabaseScheduler", "--loglevel=info"]
+    command: ["celery", "-A", "forgeos_web.celery_app", "beat", "--scheduler", "django_celery_beat.schedulers:DatabaseScheduler", "--loglevel=info"]
 
   # Next.js dashboard UI. Next's rewrites proxy /api/* to the `app` service, so
   # the browser only ever talks to http://localhost:3000 (same origin). The

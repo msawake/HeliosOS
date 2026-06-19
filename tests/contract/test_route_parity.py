@@ -43,7 +43,7 @@ def _normalize(path: str) -> str:
 
 
 def _django_routes() -> list[dict]:
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "src.forgeos_web.settings")
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "forgeos_web.settings")
     import django
     from django.urls import get_resolver
     from django.urls.resolvers import URLPattern, URLResolver
@@ -73,7 +73,7 @@ def _django_routes() -> list[dict]:
     walk(get_resolver().url_patterns, "")
     # Compare the ForgeOS surface; skip Django's own admin/static/internal mounts
     # (not part of the FastAPI contract).
-    _SKIP = ("/django-admin", "/static", "/media", "/__debug__")
+    _SKIP = ("/admin", "/static", "/media", "/__debug__")
     return [
         {"path": k, "methods": sorted(v)}
         for k, v in found.items()

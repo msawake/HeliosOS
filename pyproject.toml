@@ -93,11 +93,9 @@ forgeos-migrate = "src.core.migrations:main"
 forgeos-mcp = "src.forgeos_mcp.__main__:main"
 
 [tool.setuptools.packages.find]
-# The codebase (and the console scripts above) imports everything as `src.*`,
-# so `src` itself is the top-level package. Without this, setuptools
-# auto-discovery treats src/ as a src-layout root and editable installs map
-# packages without the prefix, breaking every console script.
-include = ["src", "src.*"]
+# `src` is the platform library; `forgeos_web` is the Django/DRF project (its
+# apps import the platform as `src.*`). Both are top-level packages.
+include = ["src", "src.*", "forgeos_web", "forgeos_web.*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

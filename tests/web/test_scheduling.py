@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.forgeos_web.scheduling import parse_cron
+from forgeos_web.scheduling import parse_cron
 
 
 def test_every_n_units():

@@ -11,9 +11,9 @@ from rest_framework.test import APIRequestFactory
 from rest_framework.views import APIView
 
 from src.api.auth import AuthUser, UserRole
-from src.forgeos_web.authn.authentication import ForgeOSAuthentication
-from src.forgeos_web.authn.permissions import has_capability
-from src.forgeos_web.rbac.capabilities import role_has
+from forgeos_web.authn.authentication import ForgeOSAuthentication
+from forgeos_web.authn.permissions import has_capability
+from forgeos_web.rbac.capabilities import role_has
 
 rf = APIRequestFactory()
 
