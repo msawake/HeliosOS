@@ -36,7 +36,7 @@ Helios OS is built in three layers. Each layer has a clear responsibility, and t
 ```
 stacks/            <-- Layer 1: Stack Adapters (the runtimes)
 src/platform/      <-- Layer 2: Platform Layer (the orchestration)
-src/core/ + src/companies/ + src/mcp/   <-- Layer 3: Core + Companies (the foundation)
+src/core/ + src/companies/   <-- Layer 3: Core + Companies (the foundation)
 ```
 
 ### Layer 1: Stack Adapters (`stacks/`)
@@ -77,7 +77,7 @@ Every adapter implements this interface. The platform layer calls these methods 
 | **AlertDispatcher** | `alerts.py` | Fires alerts to Slack, PagerDuty, or logs when critical events occur (failover, crash loop, cost exceeded). |
 | **Metrics** | `metrics.py` | Prometheus metrics: 14 families covering agents, LLM calls, tool execution, scheduling, approvals, and cost. |
 
-### Layer 3: Core + Companies (`src/core/`, `src/companies/`, `src/mcp/`)
+### Layer 3: Core + Companies (`src/core/`, `src/companies/`)
 
 **What it does:** Provides the foundational infrastructure (database, hooks, sessions) and the business logic for each company package.
 
@@ -87,7 +87,7 @@ Every adapter implements this interface. The platform layer calls these methods 
 - `session_store.py` -- Conversation persistence across agent invocations.
 - `migrations.py` -- SQL migration runner that scans `infrastructure/database/`.
 
-**MCP Tools** (`src/mcp/`):
+**MCP Tools** — the tool-execution layer is now a standalone package, [`forgeos-mcp`](https://github.com/antonibergas-hue/forgeos-mcp) (`forgeos_mcp.integration`, formerly `src/mcp/`), co-installed with the platform:
 - `tool_executor.py` -- Routes tool calls: `mcp__*` to MCP servers, `company__*` to in-process handlers. Enforces per-agent tool whitelists.
 - `server_manager.py` -- MCP server lifecycle: read config, spawn stdio processes, discover tools via `list_tools()`, disconnect.
 - `client_mcp_manager.py` -- Per-client MCP connections with LRU eviction and TTL. Enables multi-tenant tool isolation.
