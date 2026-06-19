@@ -396,12 +396,22 @@ class ApprovalApproveView(APIView):
                 ))
             except Exception:
                 logger.debug("legacy hitl.approve did not handle %s", request_id)
-        if runtime_service is not None:
-            resumed = bool(async_to_sync(runtime_service.resume.approve)(
-                request_id, responded_by=body["approved_by"] or "api"))
-        else:
-            resumed = _resume_v2_continuation(request_id, accept=True,
-                                              responded_by=body["approved_by"] or "api")
+        # Runtime-v2 (durable) approvals resume on the Celery worker tier, where
+        # the suspended continuation's engine + MCP live. Validate the request
+        # exists (durable store) before enqueuing so we still 404 cleanly.
+        resumed = False
+        # runtime-v2 suspensions persist as a suspended continuation + a
+        # continuation_ref (external_ref -> continuation_id) in Postgres.
+        from forgeos_web.runtime.models import ContinuationRef
+        exists = ContinuationRef.all_objects.filter(external_ref=request_id).exists()
+        if exists:
+            from forgeos_web.celery_app import celery
+            celery.send_task(
+                "forgeos.resume_agent",
+                kwargs={"external_ref": request_id, "responded_by": body["approved_by"] or "api"},
+                queue="agents_resume",
+            )
+            resumed = True
         if not handled and not resumed:
             return Response({"detail": f"No pending approval '{request_id}'"}, status=404)
         _audit("approval.approve", actor=body["approved_by"] or "api",
