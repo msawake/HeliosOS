@@ -178,19 +178,7 @@
     ]
   },
   {
-    "path": "/api/billing/metering",
-    "methods": [
-      "GET"
-    ]
-  },
-  {
     "path": "/api/billing/usage",
-    "methods": [
-      "GET"
-    ]
-  },
-  {
-    "path": "/api/billing/usage/{company_id}",
     "methods": [
       "GET"
     ]
