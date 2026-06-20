@@ -18,6 +18,7 @@ PUBLIC_PATHS = {
     "/api/health", "/api/readiness", "/api/liveness", "/", "/admin", "/intelligence",
     "/docs", "/redoc", "/openapi.json",
     "/api/auth/token", "/api/auth/login", "/api/me",
+    "/api/billing/webhook", "/api/billing/checkout", "/api/billing/plans",
 }
 PUBLIC_READ_PREFIXES = ("/api/approvals",)  # GET only
 

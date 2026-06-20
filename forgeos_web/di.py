@@ -51,6 +51,7 @@ class AppContext:
     env_service: Any = None
     mcp_manager: Any = None
     tool_executor: Any = None
+    stripe_billing: Any = None
     # Populated marker so callers can assert boot ordering.
     extras: dict[str, Any] = field(default_factory=dict)
 
@@ -114,6 +115,7 @@ def populate_from_bootstrap(boot: Any, *, auth_enabled: bool = True) -> AppConte
         env_service=getattr(boot, "_env_service", None),
         mcp_manager=getattr(boot, "_mcp_manager", None),
         tool_executor=getattr(boot, "_tool_executor", None),
+        stripe_billing=getattr(boot, "_stripe_billing", None),
     )
     # Boot-completion flag for the /api/readiness probe (was _boot_complete kwarg).
     ctx.extras["boot_complete"] = bool(getattr(boot, "_running", False))

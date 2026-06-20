@@ -1,12 +1,8 @@
 """
-Helios OS pricing plans and usage enforcement.
+Helios OS plan definitions and usage enforcement.
 
 Defines plan tiers with token limits, agent counts, and workflow quotas.
 Enforces limits before agent invocations.
-
-Per-token pricing (USD) is computed via `TOKEN_PRICING`, keyed by model
-name prefix. Token costs are recorded in `usage_records.metric='cost_usd'`
-alongside raw token counts so dashboards can aggregate by tenant/period.
 """
 
 from __future__ import annotations
@@ -19,14 +15,10 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Per-token pricing (USD per 1M tokens)
+# Per-token pricing (USD per 1M tokens) — public LLM provider rates
 # ---------------------------------------------------------------------------
-# Sources (approximate, as of April 2026):
-#   Anthropic: https://www.anthropic.com/pricing
-#   OpenAI:    https://openai.com/pricing
 
 TOKEN_PRICING = {
-    # Anthropic Claude
     "claude-opus-4": {"input": 15.00, "output": 75.00},
     "claude-opus-4-6": {"input": 15.00, "output": 75.00},
     "claude-sonnet-4": {"input": 3.00, "output": 15.00},
@@ -37,13 +29,11 @@ TOKEN_PRICING = {
     "claude-3-5-sonnet": {"input": 3.00, "output": 15.00},
     "claude-3-5-haiku": {"input": 0.80, "output": 4.00},
     "claude-3-opus": {"input": 15.00, "output": 75.00},
-    # OpenAI
     "gpt-4o": {"input": 2.50, "output": 10.00},
     "gpt-4o-mini": {"input": 0.15, "output": 0.60},
     "gpt-4.1": {"input": 2.50, "output": 10.00},
     "o3": {"input": 15.00, "output": 60.00},
     "o3-mini": {"input": 1.10, "output": 4.40},
-    # Google Gemini (Vertex AI / AI Studio)
     "gemini-2.5-pro": {"input": 1.25, "output": 10.00},
     "gemini-2.5-flash": {"input": 0.075, "output": 0.30},
     "gemini-2.5-flash-lite": {"input": 0.0375, "output": 0.15},
@@ -51,7 +41,6 @@ TOKEN_PRICING = {
     "gemini-2.0-flash-lite": {"input": 0.075, "output": 0.30},
     "gemini-1.5-pro": {"input": 1.25, "output": 5.00},
     "gemini-1.5-flash": {"input": 0.075, "output": 0.30},
-    # Default fallback
     "default": {"input": 3.00, "output": 15.00},
 }
 
@@ -59,15 +48,13 @@ TOKEN_PRICING = {
 def estimate_cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
     """Estimate USD cost for a given (model, input, output) tuple.
 
-    Uses longest-prefix match against `TOKEN_PRICING` so specific version
-    suffixes (e.g., `claude-3-5-sonnet-20241022`) fall back to the family
-    price. Tokens are assumed billable per million.
+    Uses longest-prefix match against TOKEN_PRICING so version suffixes
+    fall back to the family price.
     """
     if not model:
         return 0.0
     model_lower = model.lower()
     pricing = None
-    # Longest-prefix match
     for key in sorted(TOKEN_PRICING.keys(), key=len, reverse=True):
         if key == "default":
             continue
@@ -90,6 +77,10 @@ class PlanLimits:
     max_mcp_servers: int
     hitl_sla_hours: float  # Minimum SLA for HITL approvals
     support_level: str     # "community" | "email" | "priority" | "dedicated"
+    features: frozenset[str] = frozenset()
+    included_agents: int = 5
+    overage_per_agent_usd: float = 0.0
+    hard_agent_cap: bool = True
 
 
 # Plan definitions
@@ -126,20 +117,6 @@ PLANS: dict[str, PlanLimits] = {
         hitl_sla_hours=4.0,
         support_level="dedicated",
     ),
-}
-
-# Pricing (USD/month)
-PLAN_PRICING = {
-    "trial": 0,
-    "starter": 299,
-    "growth": 999,
-    "enterprise": None,  # Custom pricing
-}
-
-# Overage rates (per unit over limit)
-OVERAGE_RATES = {
-    "tokens_per_1k": 0.05,  # $0.05 per 1K tokens over daily limit
-    "workflows_per_unit": 5.00,  # $5 per workflow over daily limit
 }
 
 

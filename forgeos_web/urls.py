@@ -32,3 +32,10 @@ urlpatterns = [
     path("", include("forgeos_web.chat.urls")),
     # Remaining: /ws/agents (WebSocket — needs Django Channels; tracked separately).
 ]
+
+# Commercial billing routes (private forgeos-billing package)
+try:
+    from forgeos_billing.django.urls import urlpatterns as _billing_urls
+    urlpatterns += [path("", include("forgeos_billing.django.urls"))]
+except ImportError:
+    pass

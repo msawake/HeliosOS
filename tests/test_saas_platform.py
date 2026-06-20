@@ -16,12 +16,10 @@ from src.api.auth import (
 from src.api.tenants import TenantManager
 from src.billing.plans import (
     PLANS,
-    PLAN_PRICING,
     PlanLimits,
     UsageEnforcer,
     get_plan_limits,
 )
-from src.billing.stripe_billing import StripeBilling
 from src.core.database import DatabaseClient, DatabaseConfig, InMemoryDatabaseClient
 from src.core.secrets import SecretsManager
 from src.core.hooks import CostTracker, HookDecision, RateLimiter
@@ -141,13 +139,6 @@ class TestBillingPlans:
         limits = get_plan_limits("nonexistent")
         assert limits.daily_tokens == PLANS["starter"].daily_tokens
 
-    def test_plan_pricing(self):
-        assert PLAN_PRICING["trial"] == 0
-        assert PLAN_PRICING["starter"] == 299
-        assert PLAN_PRICING["growth"] == 999
-        assert PLAN_PRICING["enterprise"] is None  # Custom
-
-
 class TestUsageEnforcer:
     def test_check_tokens_no_db(self):
         enforcer = UsageEnforcer(db_client=None)
@@ -166,27 +157,6 @@ class TestUsageEnforcer:
         summary = enforcer.get_usage_summary("t1")
         assert summary["tokens"] == 0
         assert summary["workflows"] == 0
-
-
-# ── Stripe Billing ───────────────────────────────────────────────────────
-
-
-class TestStripeBilling:
-    def test_not_enabled_without_key(self):
-        billing = StripeBilling(api_key=None)
-        assert not billing.is_enabled
-
-    def test_create_customer_disabled(self):
-        billing = StripeBilling(api_key=None)
-        assert billing.create_customer("t1", "Test", "a@b.com") is None
-
-    def test_create_subscription_disabled(self):
-        billing = StripeBilling(api_key=None)
-        assert billing.create_subscription("cus_123", "starter", "t1") is None
-
-    def test_create_portal_disabled(self):
-        billing = StripeBilling(api_key=None)
-        assert billing.create_portal_session("cus_123", "http://localhost") is None
 
 
 # ── Database ─────────────────────────────────────────────────────────────

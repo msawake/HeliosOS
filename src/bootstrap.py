@@ -334,6 +334,17 @@ class PlatformBootstrap:
             except Exception as e:
                 logger.debug("  License manager initialization skipped: %s", e)
 
+            # Commercial billing plugin (private package, not open-source)
+            self._stripe_billing = None
+            try:
+                import forgeos_billing
+                forgeos_billing.install(self)
+                logger.info("  Commercial billing: installed")
+            except ImportError:
+                logger.debug("  Commercial billing: forgeos-billing not installed (open-source mode)")
+            except Exception as e:
+                logger.debug("  Commercial billing: initialization failed: %s", e)
+
             # AgentOS: construct the Kernel facade + publish for in-process SDK use
             from src.platform.kernel import Kernel as PlatformKernel
             # Shared capability-token store. Capability tokens are minted on
