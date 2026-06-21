@@ -1,4 +1,8 @@
-# CLAUDE.md — ForgeOS / Helios OS
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+# ForgeOS / Helios OS
 
 Agentic governance platform: run AI agents on any framework (ForgeOS-native, CrewAI,
 ADK, OpenClaw, sandbox) under a policy kernel, with multi-tenant isolation, HITL
@@ -35,8 +39,14 @@ platform itself remains a library under `src/` that the Django views call into.
 /stacks/                    agent stack adapters (forgeos, crewai, adk, openclaw, sandbox)
 /a2h/                       agent-to-human protocol
 /dashboard/                 Next.js frontend (talks to the API over the /api contract)
+/src/dashboard/             SSE chat backend + embedded Vite/React frontend
+    app.py                  chat SSE server (mounted by bootstrap)
+    chat_events.py          SSE frame replay for non-streaming LLM results
+    frontend/               Vite + React 19 open-source dashboard (5 basic pages)
 /infrastructure/database/   *.sql schema (the source of truth for the ORM models — frozen)
-/tests/web/ /tests/contract/  Django-layer tests + route-parity gate
+/tests/                     ~100 test files (platform, runtime, adapters, governance, ...)
+    web/                    Django-layer tests (auth, rbac, scheduling)
+    contract/               route-parity gate (fastapi_routes.json baseline)
 ```
 
 ## Running the backend
@@ -90,6 +100,23 @@ PYTHONPATH=.:a2h python -m src.bootstrap --no-auth --dashboard --port 5000
   one. `tests/contract/fastapi_routes.json` is the frozen baseline;
   `tests/contract/test_route_parity.py::test_no_path_drift` is the gate (run after any
   routing change). 126/127 routes ported; `/ws/agents` (WebSocket) needs Django Channels.
+
+## Commercial plugin (private repo)
+
+The platform has a plugin hook in `src/bootstrap.py` and `forgeos_web/urls.py` for
+commercial capabilities (billing, observability, compliance). When the private
+`heliosos` / `forgeos_billing` package is installed:
+
+- `bootstrap.py` calls `forgeos_billing.install(boot)` — wires billing, treasury,
+  Langfuse integration into the boot sequence.
+- `forgeos_web/urls.py` conditionally includes `forgeos_billing.django.urls` — adds
+  50 commercial API endpoints under `/api/observability/`, `/api/compliance/`,
+  `/api/billing/`, `/api/integrations/langfuse/`.
+- When NOT installed, both fail silently (`ImportError` → open-source mode).
+
+**Do NOT add commercial code (Stripe, pricing, license keys, revenue metering) to
+this public repo.** All commercial features belong in the private `heliosos-enterprise`
+repository.
 
 ## ORM / models
 
