@@ -287,6 +287,11 @@ for _env_name, _cfg_key in [
     ("JIRA_URL", "jira_url"),
     ("JIRA_USERNAME", "jira_username"),
     ("JIRA_API_TOKEN", "jira_api_token"),
+    # Per-agent LLM key: every seeded agent's api_key_ref=secret:litellm-allycode-key
+    # resolves via the env fallback (litellm-allycode-key -> LITELLM_ALLYCODE_KEY).
+    # Unwired here, it resolved empty in the worker → atlas gateway 401 → agent
+    # runs failed. (The IAM grant alone doesn't put it in the worker's env.)
+    ("LITELLM_ALLYCODE_KEY", "litellm_allycode_key"),
 ]:
     _val = config.get_secret(_cfg_key)
     if _val is not None:
