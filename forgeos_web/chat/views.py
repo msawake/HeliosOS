@@ -260,6 +260,27 @@ async def agent_chat_stream(request, agent_id: str):
         if d.get("output"):
             yield _sse({"type": "text_delta", "content": d["output"]})
             session["messages"].append({"role": "assistant", "content": d["output"]})
+        # Gated tools: when the run SUSPENDED for human approval, surface each
+        # pending call as a `hitl_request` frame so the chat renders an approval
+        # card (the dashboard contract — see the module docstring's frame list —
+        # and chat/page.tsx `case 'hitl_request'`). Without this the run looks
+        # like it silently "didn't respond". external_ref is the approvals
+        # request_id the card POSTs to /api/approvals/<id>/approve.
+        for p in (d.get("pending") or []):
+            ref = p.get("external_ref")
+            if not ref:
+                continue
+            tool = p.get("name")
+            yield _sse({
+                "type": "hitl_request",
+                "request_id": ref,
+                "tool": tool,
+                "args": p.get("arguments") or {},
+                "title": f"Approve tool '{tool}'?",
+                "description": "This action is gated by your governance policy "
+                               "and needs human approval before it runs.",
+                "risk": "high",
+            })
         yield _sse({"type": "done", "tokens_used": d.get("tokens_used", 0),
                     "text": d.get("output", ""), "status": d.get("status")})
 

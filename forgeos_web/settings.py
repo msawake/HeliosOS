@@ -13,6 +13,20 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# Repo root = the directory that holds the forgeos_web/ package.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Load .env from the repo root so `manage.py` (and any Django entrypoint)
+# resolves DATABASE_URL / REDIS_URL / etc. the same way src.bootstrap and
+# forgeos_web.celery_app do. Without this, DATABASE_URL is unset and the DB
+# silently falls back to in-memory SQLite (no auth_user, etc.).
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(_REPO_ROOT / ".env")
+except Exception:  # pragma: no cover - dotenv optional; env may already be set
+    pass
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent  # repo root
 
 
