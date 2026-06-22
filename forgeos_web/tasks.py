@@ -106,15 +106,93 @@ def run_agent_longrun(self, *, agent_id, prompt="", context=None, session_id=Non
     return _execute(agent_id, prompt, context, session_id, tenant_id, trigger)
 
 
+def _resume_agent_context(cont):
+    """Rebuild the per-agent agent_context for a resumed continuation, worker-side.
+    Mirror of chat/views.py:_resume_agent_context (kept here to avoid importing the
+    web views into the worker — that would be a circular import via celery_app)."""
+    from forgeos_web import di
+
+    ctx = di.get_context()
+    reg = getattr(ctx, "platform_registry", None)
+    ex = getattr(ctx, "platform_executor", None)
+    try:
+        agent_def = (reg.get(cont.pid) if reg else None)
+        if agent_def is None and ex is not None:
+            agent_def = ex.registry.get(cont.pid)
+        if agent_def is None:
+            return None
+        from stacks.base import build_agent_context
+
+        return build_agent_context(
+            agent_def, agent_def.agent_id,
+            context={"user_id": getattr(cont, "user_id", "default")},
+        )
+    except Exception:
+        logger.debug("resume: could not rebuild agent_context for %s", getattr(cont, "pid", "?"))
+        return None
+
+
 @shared_task(name="forgeos.resume_agent", base=TenantTask, bind=True,
              autoretry_for=_INFRA_ERRORS, retry_backoff=True, max_retries=3)
-def resume_agent(self, *, external_ref, responded_by=None, tenant_id=None):
-    """HITL approval / long-tool completion -> re-enqueue the parked continuation."""
-    from forgeos_web.celery_runtime import get_runtime_service, run_async
+def resume_agent(self, *, external_ref, responded_by=None, tenant_id=None, accept=True):
+    """HITL approval/rejection (or long-tool completion) -> DRIVE the parked
+    continuation to completion IN THE WORKER and return the continued turn as
+    chat events. This is the only place a resume executes — the web process
+    enqueues this and replays ``events`` (it never runs ``engine.resume`` inline).
 
-    rt = get_runtime_service()
-    cont_id = run_async(rt.resume.approve(external_ref, responded_by=responded_by))
-    return {"resumed": external_ref, "continuation_id": cont_id}
+    Mints the approval capability token (so the kernel gate flips ask_human->allow),
+    resumes via the suspended continuation's own engine + MCP, then maps the
+    RunOutcome to the chat-event contract the dashboard already renders.
+    """
+    from forgeos_web import di
+    from forgeos_web.celery_runtime import run_async
+    from src.runtime import Resolution, ResolutionOutcome
+    from src.dashboard.chat_events import run_outcome_to_chat_events
+
+    ctx = di.get_context()
+    ex = ctx.platform_executor
+    if ex is None:
+        raise RuntimeError("platform executor unavailable in worker (FORGEOS_CELERY_BOOT=0?)")
+
+    for adapter in getattr(ex, "_adapters", {}).values():
+        engine = getattr(adapter, "step_engine", None)
+        store = getattr(engine, "_store", None)
+        if store is None:
+            continue
+        cont = store.find_by_external_ref(external_ref)
+        if cont is None:
+            continue
+        rec = next((r for r in cont.pending_calls if r.external_ref == external_ref), None)
+        if rec is None:
+            continue
+        token_id = None
+        kernel = getattr(engine, "_kernel", None)
+        if accept and kernel is not None and hasattr(kernel, "issue_capability"):
+            tok = kernel.issue_capability(
+                subject=cont.pid, target=f"tool:{rec.name}", verb="tool.call",
+                ttl_seconds=3600,
+                metadata={"external_ref": external_ref, "continuation_id": cont.continuation_id},
+            )
+            token_id = tok.id
+        resolution = Resolution(
+            continuation_id=cont.continuation_id, tool_use_id=rec.tool_use_id,
+            outcome=ResolutionOutcome.ACCEPT if accept else ResolutionOutcome.REJECT,
+            capability_token=token_id, responded_by=responded_by,
+        )
+        outcome = run_async(engine.resume(
+            resolution,
+            tool_executor=getattr(adapter, "_tool_executor", None),
+            agent_context=_resume_agent_context(cont),
+        ))
+        return _json_safe({
+            "resumed": external_ref,
+            "continuation_id": cont.continuation_id,
+            "events": run_outcome_to_chat_events(outcome),
+            "output": getattr(outcome, "output", None),
+            "tokens_used": getattr(outcome, "tokens_used", 0) or 0,
+        })
+    return {"resumed": None, "continuation_id": None, "events": [],
+            "error": f"no suspended continuation for ref {external_ref}"}
 
 
 @shared_task(name="forgeos.scheduled_tick", base=TenantTask, bind=True,
