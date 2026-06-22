@@ -29,6 +29,7 @@ from .views import (
     ProcessDetailView,
     PsView,
     RunDetailView,
+    RunsListView,
     SchedulerView,
     SignalsView,
     TeamDetailView,
@@ -50,6 +51,7 @@ urlpatterns = [
     path("api/platform/agents/<str:agent_id>/runs", AgentRunsView.as_view()),
     path("api/platform/agents/<str:agent_id>/environment", AgentEnvironmentView.as_view()),
     # Runs / process table / signals
+    path("api/platform/runs", RunsListView.as_view()),
     path("api/platform/runs/<str:run_id>", RunDetailView.as_view()),
     path("api/platform/ps", PsView.as_view()),
     path("api/platform/process/<str:pid>", ProcessDetailView.as_view()),

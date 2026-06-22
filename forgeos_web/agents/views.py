@@ -152,6 +152,122 @@ _CONT_STATUS_TO_RUN = {
 }
 
 
+# --------------------------------------------------------------------------- #
+# Run-history helpers (Django-native; no FastAPI equivalent)
+# --------------------------------------------------------------------------- #
+def _enrich_runs(runs: list[dict]) -> list[dict]:
+    """Attach session_id / source / worker_id to agent_runs summaries.
+
+    `agent_runs` has no session_id (the durable `continuations` row does, linked
+    by `continuations.run_id`). We resolve both in two batched queries so the run
+    history can group by conversation and show which worker executed each run.
+    Never raises — enrichment is best-effort over the durable tier.
+    """
+    if not runs:
+        return runs
+    run_ids = [r.get("id") for r in runs if r.get("id")]
+    if not run_ids:
+        return runs
+    cont_by_run: dict[str, dict] = {}
+    worker_by_cont: dict[str, str] = {}
+    try:
+        from forgeos_web.runtime.models import Continuation, RunnableLedger
+
+        conts = list(
+            Continuation.all_objects.filter(run_id__in=run_ids)
+            .values("id", "run_id", "session_id", "source")
+        )
+        for c in conts:
+            # A run_id maps to one continuation; last writer wins if duplicated.
+            cont_by_run[c["run_id"]] = c
+        cont_ids = [c["id"] for c in conts]
+        if cont_ids:
+            for row in (
+                RunnableLedger.all_objects.filter(cont_id__in=cont_ids)
+                .values("cont_id", "owner_worker")
+            ):
+                if row.get("owner_worker"):
+                    worker_by_cont[row["cont_id"]] = row["owner_worker"]
+    except Exception:
+        logger.debug("run enrichment query failed", exc_info=True)
+    for r in runs:
+        cont = cont_by_run.get(r.get("id"))
+        if cont:
+            r["session_id"] = cont.get("session_id")
+            r["source"] = cont.get("source")
+            r["continuation_id"] = cont.get("id")
+            r["worker_id"] = worker_by_cont.get(cont.get("id"))
+        else:
+            r.setdefault("session_id", None)
+            r.setdefault("source", None)
+            r.setdefault("worker_id", None)
+    return runs
+
+
+def _normalize_steps(message_history: list) -> list[dict]:
+    """Flatten a provider-shaped message history into a UI-friendly timeline.
+
+    Handles both Anthropic-shaped blocks (content is a list of
+    text/tool_use/tool_result blocks) and OpenAI-shaped messages (string content
+    + `tool_calls` + `tool` role results). Emits, in order:
+      {type:"text", role, content}
+      {type:"tool_call", name, input, tool_use_id}
+      {type:"tool_result", tool_use_id, content, is_error}
+    """
+    steps: list[dict] = []
+    for msg in message_history or []:
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role") or ""
+        content = msg.get("content")
+        # OpenAI-shaped assistant tool calls.
+        for tc in msg.get("tool_calls") or []:
+            fn = (tc or {}).get("function") or {}
+            steps.append({
+                "type": "tool_call",
+                "name": fn.get("name") or tc.get("name"),
+                "input": fn.get("arguments") if fn else tc.get("input"),
+                "tool_use_id": tc.get("id"),
+            })
+        # OpenAI-shaped tool result message.
+        if role == "tool":
+            steps.append({
+                "type": "tool_result",
+                "tool_use_id": msg.get("tool_call_id"),
+                "content": content,
+                "is_error": False,
+            })
+            continue
+        if isinstance(content, str):
+            if content.strip():
+                steps.append({"type": "text", "role": role, "content": content})
+            continue
+        if isinstance(content, list):
+            for block in content:
+                if not isinstance(block, dict):
+                    if isinstance(block, str) and block.strip():
+                        steps.append({"type": "text", "role": role, "content": block})
+                    continue
+                btype = block.get("type")
+                if btype == "text" and (block.get("text") or "").strip():
+                    steps.append({"type": "text", "role": role, "content": block.get("text")})
+                elif btype == "tool_use":
+                    steps.append({
+                        "type": "tool_call",
+                        "name": block.get("name"),
+                        "input": block.get("input"),
+                        "tool_use_id": block.get("id"),
+                    })
+                elif btype == "tool_result":
+                    steps.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.get("tool_use_id"),
+                        "content": block.get("content"),
+                        "is_error": bool(block.get("is_error")),
+                    })
+    return steps
+
+
 def _list_v2_pending_approvals(ctx) -> list:
     """Pending human approvals from runtime-v2 suspended continuations.
     Ported from fastapi_app:651."""
@@ -849,34 +965,167 @@ class AgentEnvironmentView(APIView):
 
 
 # --------------------------------------------------------------------------- #
+# /api/platform/runs  (GET)  — Django-native run history (no FastAPI equivalent)
+# --------------------------------------------------------------------------- #
+class RunsListView(APIView):
+    """List recent agent runs across the fleet, enriched for the run-history UI.
+
+    Each run carries its session_id (so the dashboard can group runs from the
+    same conversation), its durable `source`, and the worker that executed it.
+    Optional filters: ``agent_id`` (per-agent history), ``source``/``trigger``.
+    """
+
+    def get(self, request):
+        ctx = di.get_context()
+        platform_executor = ctx.platform_executor
+        limit = int(request.query_params.get("limit", 100))
+        agent_id = request.query_params.get("agent_id")
+        source = request.query_params.get("source")
+        if not platform_executor or not getattr(platform_executor, "agent_runs", None):
+            return Response({"runs": []})
+        if agent_id:
+            runs = async_to_sync(platform_executor.agent_runs.list_for_agent)(agent_id, limit=limit)
+        else:
+            runs = async_to_sync(platform_executor.agent_runs.list_recent)(limit=limit)
+        runs = _enrich_runs(runs)
+        if source:
+            runs = [r for r in runs if r.get("source") == source or r.get("trigger") == source]
+        return Response({"runs": runs})
+
+
+# --------------------------------------------------------------------------- #
 # /api/platform/runs/{run_id}  (GET)
 # --------------------------------------------------------------------------- #
+def _cont_field(cont, name, default=None):
+    """Read a field off a live continuation dataclass OR an ORM Continuation."""
+    if cont is None:
+        return default
+    val = getattr(cont, name, None)
+    if val is None and name == "message_history":
+        # the in-memory dataclass calls it `messages`
+        val = getattr(cont, "messages", None)
+    return default if val is None else val
+
+
+def _pending_from(cont) -> list[dict]:
+    """Normalize pending tool calls from either continuation representation."""
+    out: list[dict] = []
+    for r in _cont_field(cont, "pending_calls", []) or []:
+        get = (lambda k: r.get(k)) if isinstance(r, dict) else (lambda k: getattr(r, k, None))
+        if get("status") != "pending":
+            continue
+        out.append({
+            "request_id": get("external_ref"),
+            "tool": get("name"),
+            "tool_use_id": get("tool_use_id"),
+            "args": get("arguments"),
+        })
+    return out
+
+
 class RunDetailView(APIView):
     def get(self, request, run_id):
         ctx = di.get_context()
-        cont = _find_continuation(ctx, run_id)
-        if cont is None:
+        # Live (in-memory) continuation for actively-running runs; durable ORM
+        # continuation for completed history; agent_runs row for the summary.
+        live = _find_continuation(ctx, run_id)
+        orm_cont = None
+        run_row = None
+        try:
+            from forgeos_web.runtime.models import Continuation, RunnableLedger
+            from forgeos_web.agents.models import AgentRun
+
+            orm_cont = Continuation.all_objects.filter(run_id=run_id).first()
+            if orm_cont is None and live is not None:
+                orm_cont = Continuation.all_objects.filter(
+                    id=live.continuation_id).first()
+            run_row = AgentRun.all_objects.filter(id=run_id).first()
+        except Exception:
+            logger.debug("run detail durable lookup failed", exc_info=True)
+
+        if live is None and orm_cont is None and run_row is None:
             return Response({"detail": f"Run '{run_id}' not found"}, status=404)
-        status = _CONT_STATUS_TO_RUN.get(cont.status, cont.status)
-        out = {
+
+        cont = live or orm_cont
+        cont_id = (
+            getattr(live, "continuation_id", None)
+            or (orm_cont.id if orm_cont else None)
+        )
+        raw_status = _cont_field(cont, "status", run_row.status if run_row else "")
+        status = _CONT_STATUS_TO_RUN.get(raw_status, raw_status)
+
+        out: dict = {
             "run_id": run_id,
-            "continuation_id": cont.continuation_id,
-            "agent_id": cont.pid,
+            "continuation_id": cont_id,
+            "agent_id": _cont_field(cont, "pid", run_row.agent_id if run_row else None),
             "status": status,
-            "suspend_reason": cont.suspend_reason,
+            "suspend_reason": _cont_field(cont, "suspend_reason"),
+            "session_id": _cont_field(cont, "session_id"),
+            "source": _cont_field(cont, "source", run_row.trigger if run_row else None),
+            "step_index": _cont_field(cont, "step_index", 0),
+            "resource_usage": _cont_field(cont, "resource_usage", {}) or {},
+            "steps": _normalize_steps(_cont_field(cont, "message_history", []) or []),
         }
-        pending = [
-            {"request_id": r.external_ref, "tool": r.name, "tool_use_id": r.tool_use_id,
-             "args": r.arguments}
-            for r in cont.pending_calls if r.status == "pending"
-        ]
+
+        pending = _pending_from(cont)
         if pending:
             out["pending"] = pending
+
+        # Worker that executed the run (durable ledger).
+        if cont_id:
+            try:
+                led = RunnableLedger.all_objects.filter(cont_id=cont_id).values(
+                    "owner_worker").first()
+                if led:
+                    out["worker_id"] = led.get("owner_worker")
+            except Exception:
+                logger.debug("run detail worker lookup failed", exc_info=True)
+
+        # agent_runs summary (timing / tokens / cost / model / prompt / output).
+        if run_row is not None:
+            out["trigger"] = run_row.trigger
+            out["started_at"] = _iso(run_row.started_at)
+            out["ended_at"] = _iso(run_row.ended_at)
+            out["duration_ms"] = run_row.duration_ms
+            out["input_tokens"] = run_row.input_tokens
+            out["output_tokens"] = run_row.output_tokens
+            out["tokens_used"] = run_row.tokens_used
+            out["tool_calls"] = run_row.tool_calls
+            out["model"] = run_row.model
+            out["prompt"] = run_row.prompt
+            out["cost_usd"] = _cost_usd(run_row.model, run_row.input_tokens, run_row.output_tokens)
+            if not out.get("agent_id"):
+                out["agent_id"] = run_row.agent_id
+
+        result = _cont_field(cont, "final_output", "") or (run_row.output if run_row else "")
         if status == "completed":
-            out["result"] = cont.final_output
+            out["result"] = result
+        elif run_row is not None and run_row.output:
+            out["result"] = run_row.output
         if status == "failed":
-            out["error"] = cont.last_error
+            out["error"] = _cont_field(cont, "last_error") or (run_row.error if run_row else None)
         return Response(out)
+
+
+def _iso(dt):
+    """ISO-8601 (UTC) for a datetime, else None."""
+    if dt is None:
+        return None
+    try:
+        from datetime import timezone as _tz
+        return dt.astimezone(_tz.utc).isoformat()
+    except Exception:
+        return str(dt)
+
+
+def _cost_usd(model, in_tok, out_tok) -> float:
+    try:
+        from src.billing.plans import estimate_cost_usd
+        if model and ((in_tok or 0) or (out_tok or 0)):
+            return estimate_cost_usd(model, in_tok or 0, out_tok or 0)
+    except Exception:
+        pass
+    return 0.0
 
 
 # --------------------------------------------------------------------------- #

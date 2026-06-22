@@ -97,6 +97,8 @@ _DJANGO_NATIVE_ADDITIONS = {
     "/api/platform/namespaces/mine",
     "/api/platform/namespaces/{ns}/members",
     "/api/platform/namespaces/{ns}/members/{member_user_id}",
+    # Run history: list runs across the fleet, grouped client-side by conversation.
+    "/api/platform/runs",
 }
 
 

@@ -41,6 +41,61 @@ def _audit(action: str, **fields) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Agent ownership level (user / namespace / tenant) for the approvals UI.
+# --------------------------------------------------------------------------- #
+def _resolve_agent_def(ctx, ref: str | None):
+    """Find an agent definition by id or name in the platform registry."""
+    pe = getattr(ctx, "platform_executor", None)
+    reg = getattr(pe, "registry", None) if pe else None
+    if reg is None or not ref:
+        return None
+    try:
+        a = reg.get(ref)
+        if a is not None:
+            return a
+    except Exception:
+        pass
+    try:
+        for cand in reg.list_all():
+            if getattr(cand, "name", "") == ref or getattr(cand, "agent_id", "") == ref:
+                return cand
+    except Exception:
+        pass
+    return None
+
+
+def _enrich_level(ctx, items: list[dict]) -> list[dict]:
+    """Tag each approval with the requesting agent's ownership level.
+
+    Maps PlatformAgent.ownership → a UI level: personal→user, shared→namespace,
+    client→tenant. So operators can filter approvals by who owns the agent and
+    review the originating run before deciding. Best-effort; never raises.
+    """
+    cache: dict[str, tuple[str, str | None, str | None]] = {}
+    for it in items:
+        ref = it.get("agent_id") or it.get("agent")
+        if not ref:
+            it.setdefault("agent_level", "unknown")
+            continue
+        if ref not in cache:
+            agent_def = _resolve_agent_def(ctx, ref)
+            own = getattr(getattr(agent_def, "ownership", None), "value", None) \
+                or getattr(agent_def, "ownership", None)
+            level = {"personal": "user", "shared": "namespace",
+                     "client": "tenant"}.get(own, "unknown")
+            cache[ref] = (
+                level,
+                getattr(agent_def, "namespace", None) if agent_def else None,
+                getattr(agent_def, "owner_id", None) if agent_def else None,
+            )
+        level, ns, owner = cache[ref]
+        it["agent_level"] = level
+        it["agent_namespace"] = ns
+        it["agent_owner"] = owner
+    return items
+
+
+# --------------------------------------------------------------------------- #
 # A2H gateway resolution (ported from fastapi_app.py:330-342, 4085-4089)
 # --------------------------------------------------------------------------- #
 def _resolve_a2h_gateway(ctx):
@@ -287,6 +342,10 @@ class ApprovalsView(APIView):
             pending.extend(_list_v2_pending_approvals())
         except Exception:
             pass
+        try:
+            _enrich_level(ctx, pending)
+        except Exception:
+            logger.debug("approval level enrichment failed", exc_info=True)
         return Response(pending)
 
 
@@ -294,12 +353,27 @@ class ApprovalDetailView(APIView):
     """GET /api/approvals/{request_id}."""
 
     def get(self, request, request_id):
-        company_system = getattr(di.try_get_context(), "company_system", None)
-        if not company_system:
-            return Response({"detail": "System not initialized"}, status=404)
-        item = company_system.hitl.check_status(request_id)
+        ctx = di.try_get_context()
+        company_system = getattr(ctx, "company_system", None)
+        item = None
+        if company_system:
+            item = company_system.hitl.check_status(request_id)
+        # Fall back to the runtime-v2 pending list (durable continuations) so the
+        # approval detail page resolves for kernel-gate approvals too.
+        if not item:
+            try:
+                for cand in _list_v2_pending_approvals():
+                    if cand.get("id") == request_id or cand.get("request_id") == request_id:
+                        item = cand
+                        break
+            except Exception:
+                logger.debug("v2 approval detail lookup failed", exc_info=True)
         if not item:
             return Response({"detail": "Not found"}, status=404)
+        try:
+            _enrich_level(ctx, [item])
+        except Exception:
+            logger.debug("approval level enrichment failed", exc_info=True)
         return Response(item)
 
 
