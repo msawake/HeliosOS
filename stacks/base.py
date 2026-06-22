@@ -96,6 +96,18 @@ class AgentDefinition:
         # Hydrate namespace from metadata if set there via v2 manifest
         if self.namespace == "default" and self.metadata and "_namespace" in self.metadata:
             self.namespace = self.metadata["_namespace"]
+        # Mirror the resolved namespace back into metadata so it survives
+        # persistence + reload. platform_agents has no namespace column —
+        # _row_to_definition rebuilds the agent without the top-level field,
+        # so metadata._namespace is the *only* place the value persists. It is
+        # also what the dashboard groups agents by, so without this mirror
+        # API-created agents (which set the top-level namespace but no
+        # metadata._namespace) reload as namespace="default" and show up
+        # orphaned/invisible, while v2-manifest/company-seeded agents (which
+        # set metadata._namespace) display correctly.
+        if self.metadata is None:
+            self.metadata = {}
+        self.metadata["_namespace"] = self.namespace
 
     def to_dict(self) -> dict:
         return {

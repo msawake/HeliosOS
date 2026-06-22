@@ -41,3 +41,8 @@ infrastructure/docker/.env
 .venv-mc-test/
 .venv-platform/
 .qwen/
+
+# Local dev launcher logs (run-local-server.sh worker/beat/flower)
+.local-worker.log
+.local-beat.log
+.local-flower.log

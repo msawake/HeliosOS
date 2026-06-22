@@ -81,6 +81,9 @@ dev = [
     # dev install (`pip install -e ".[dev]"`) can't send email / audit Drive,
     # even with valid secrets + ADC. (Also in the gcp/production extras.)
     "google-cloud-secret-manager>=2.16",
+    # Flower — web UI for monitoring the Celery worker tier (the `celery flower`
+    # subcommand). Local-only; not needed in production images.
+    "flower>=2.0",
 ]
 docs = [
     "mkdocs-material>=9.5",
