@@ -33,6 +33,15 @@ class Data(pulumi.ComponentResource):
                 availability_type="ZONAL",
                 disk_size=20,
                 disk_autoresize=True,
+                # f1-micro defaults to ~25 max_connections, which the multi-process
+                # topology (platform-api pool + Celery worker pool + beat, each
+                # boots the platform) exhausts → "remaining connection slots are
+                # reserved for non-replication superuser" 500s. Raise the ceiling.
+                database_flags=[
+                    gcp.sql.DatabaseInstanceSettingsDatabaseFlagArgs(
+                        name="max_connections", value="100",
+                    ),
+                ],
                 ip_configuration=gcp.sql.DatabaseInstanceSettingsIpConfigurationArgs(
                     ipv4_enabled=False,
                     private_network=network_id,
