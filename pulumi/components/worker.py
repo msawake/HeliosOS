@@ -1,18 +1,19 @@
-"""Helios OS durable worker tier — an always-on GKE Deployment.
+"""Helios OS worker tier — always-on GKE Deployments: Celery worker + beat.
 
-The per-turn runtime (FORGEOS_RUNTIME_WORKERS) processes agent runs off a Redis
-Streams queue backed by the Postgres continuation store/ledger: it pulls a
-runnable, drives ONE LLM turn, and re-enqueues the next turn (or parks on a
-human approval and resumes later). That requires a worker that is ALWAYS
-running — Cloud Run scale-to-zero can't guarantee a suspended HITL run ever
-resumes — so the worker tier runs here as a GKE Deployment (replicas >= 1)
-separate from the scale-to-zero platform-api Cloud Run service.
+Post-cutover the Django web layer (platform-api) does NOT execute agents inline;
+it enqueues `forgeos.run_agent` / `forgeos.resume_agent` on the Redis broker and
+polls. This tier runs the Celery workers that consume those queues
+(`agents,agents_resume,scheduled,agents_longrun`). Each worker process boots the
+platform once (worker_process_init) — so it holds the executor + MCP + the
+runtime engine the inline turn and HITL resume use — which is why it must be
+ALWAYS running (Cloud Run scale-to-zero can't guarantee a parked HITL run ever
+resumes), hence a GKE Deployment (replicas >= 1) rather than the scale-to-zero
+platform-api Cloud Run service.
 
-It runs the platform-api image with the worker flags; the worker pool starts via
-the FastAPI lifespan (`--dashboard`), draining the shared Redis queue. Multiple
-worker sources (this Deployment + any warm platform-api instance) coexist
-safely: each process uses a unique Redis consumer name (host+pid, set in
-src/runtime/service.py) and exactly-once is enforced by the ledger CAS.
+`FORGEOS_RUNTIME_WORKERS=1` is still set so `_maybe_build_runtime_service` wires
+the durable engine/ledger that `resume_agent` drives. A second **beat**
+Deployment (single replica) fires SCHEDULED agents via the django_celery_beat
+DatabaseScheduler.
 
 Secrets: the app reads DATABASE_URL / REDIS_URL / the LLM provider key from the
 ENVIRONMENT (bootstrap does not fetch Secret Manager itself), so we materialize
@@ -137,18 +138,18 @@ class WorkerTier(pulumi.ComponentResource):
                             k8s.core.v1.ContainerArgs(
                                 name="worker",
                                 image=image,
-                                # --dashboard starts the FastAPI lifespan, which
-                                # builds + starts the RuntimeService worker pool
-                                # (FORGEOS_RUNTIME_WORKERS). No --loop: the
-                                # company scheduler is platform-api's job, not the
-                                # worker's. The served API has no Service/ingress.
-                                # --no-auth is intentional: the worker drains the
-                                # Redis queue and has NO Service/ingress, so its
-                                # API is never reached by external role-gated
-                                # calls. Do not "fix" this — it would demand a key
-                                # the worker's internal callers don't send.
-                                command=["python", "-m", "src.bootstrap"],
-                                args=["--no-auth", "--dashboard", "--port", "8080"],
+                                # Celery worker tier: the Django web process
+                                # enqueues forgeos.run_agent / resume_agent on the
+                                # Redis broker; this drains the queues. Each worker
+                                # process boots the platform once (worker_process_init)
+                                # so FORGEOS_RUNTIME_WORKERS=1 wires the engine/MCP
+                                # the inline run + HITL resume use. No HTTP port /
+                                # Service — it only consumes the broker.
+                                command=["celery", "-A", "forgeos_web.celery_app", "worker"],
+                                args=[
+                                    "-Q", "agents,agents_resume,scheduled,agents_longrun",
+                                    "--concurrency=4", "--loglevel=info",
+                                ],
                                 env_from=[
                                     k8s.core.v1.EnvFromSourceArgs(
                                         secret_ref=k8s.core.v1.SecretEnvSourceArgs(
@@ -157,9 +158,6 @@ class WorkerTier(pulumi.ComponentResource):
                                     )
                                 ],
                                 env=plain_env,
-                                ports=[
-                                    k8s.core.v1.ContainerPortArgs(name="http", container_port=8080),
-                                ],
                                 resources=k8s.core.v1.ResourceRequirementsArgs(
                                     requests={"cpu": cpu, "memory": memory},
                                     limits={"cpu": cpu, "memory": memory},
@@ -172,6 +170,57 @@ class WorkerTier(pulumi.ComponentResource):
             opts=pulumi.ResourceOptions(
                 parent=self, provider=k8s_provider, depends_on=[ksa, env_secret],
                 delete_before_replace=True,  # fixed name — delete before recreating on replace
+            ),
+        )
+
+        # Celery Beat — fires SCHEDULED agents (django_celery_beat PeriodicTask)
+        # + maintenance ticks. Single replica (do NOT scale >1, or schedules
+        # double-fire). Reuses the same image/secret/KSA as the worker.
+        beat_labels = {"app": "forgeos-beat", "forgeos.io/system": "beat"}
+        self.beat = k8s.apps.v1.Deployment(
+            f"{name}-beat",
+            metadata=k8s.meta.v1.ObjectMetaArgs(
+                name="forgeos-beat",
+                namespace=ns.metadata.name,
+                labels=beat_labels,
+            ),
+            spec=k8s.apps.v1.DeploymentSpecArgs(
+                replicas=1,
+                selector=k8s.meta.v1.LabelSelectorArgs(match_labels=beat_labels),
+                template=k8s.core.v1.PodTemplateSpecArgs(
+                    metadata=k8s.meta.v1.ObjectMetaArgs(labels=beat_labels),
+                    spec=k8s.core.v1.PodSpecArgs(
+                        service_account_name=ksa_name,
+                        containers=[
+                            k8s.core.v1.ContainerArgs(
+                                name="beat",
+                                image=image,
+                                command=["celery", "-A", "forgeos_web.celery_app", "beat"],
+                                args=[
+                                    "--scheduler",
+                                    "django_celery_beat.schedulers:DatabaseScheduler",
+                                    "--loglevel=info",
+                                ],
+                                env_from=[
+                                    k8s.core.v1.EnvFromSourceArgs(
+                                        secret_ref=k8s.core.v1.SecretEnvSourceArgs(
+                                            name=env_secret.metadata.name,
+                                        ),
+                                    )
+                                ],
+                                env=plain_env,
+                                resources=k8s.core.v1.ResourceRequirementsArgs(
+                                    requests={"cpu": "100m", "memory": "256Mi"},
+                                    limits={"cpu": "250m", "memory": "256Mi"},
+                                ),
+                            )
+                        ],
+                    ),
+                ),
+            ),
+            opts=pulumi.ResourceOptions(
+                parent=self, provider=k8s_provider, depends_on=[ksa, env_secret],
+                delete_before_replace=True,
             ),
         )
 

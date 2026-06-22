@@ -27,6 +27,7 @@ import pulumi
 
 from components.dashboard import Dashboard
 from components.data import Data
+from components.django_migrate import DjangoMigrate
 from components.exec_environments import ExecEnvironments
 from components.gke import Gke
 from components.identity import Identity
@@ -179,6 +180,21 @@ migrations = Migrations(
     opts=pulumi.ResourceOptions(depends_on=[secrets.versions["database-url"]]),
 )
 
+# Django migrate job (platform-api image) — applies the Django migration graph
+# the raw-SQL job doesn't: auth/admin/sessions, django_celery_beat (Beat needs
+# these), and the RunPython migrations (forgeos_rbac/rls/secrets/namespaces).
+# Run once per deploy, BEFORE the worker + beat pods start.
+django_migrate = DjangoMigrate(
+    "forgeos",
+    region=region,
+    image=_img("platform-api", platform_api_tag),
+    gsa_email=identity.platform_api.email,
+    database_url_secret=secrets.database_url.id,
+    vpc_network=network.network.id,
+    vpc_subnet=network.subnet.id,
+    opts=pulumi.ResourceOptions(depends_on=[secrets.versions["database-url"]]),
+)
+
 # 9. Platform API — only wire secrets that have an actual version. Cloud Run
 # validates secret_key_ref :latest at revision deploy, so a versionless secret
 # would fail Service creation. Users add versions later with
@@ -323,3 +339,4 @@ pulumi.export("platform_api_url", platform_api.url)
 pulumi.export("mcp_server_url", mcp_server.url)
 pulumi.export("dashboard_url", dashboard.url)
 pulumi.export("migrations_job", migrations.job.name)
+pulumi.export("django_migrate_job", django_migrate.job.name)

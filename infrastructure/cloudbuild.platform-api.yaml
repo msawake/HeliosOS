@@ -1,0 +1,31 @@
+# Build + push the platform-api image (Django web + Celery worker + beat + the
+# migrate/mcp jobs all run this one image, differing only by command).
+#
+# Usage (from the repo root):
+#   gcloud builds submit --config infrastructure/cloudbuild.platform-api.yaml \
+#     --substitutions=_TAG=$(git rev-parse --short HEAD)
+#
+# Then set that tag in pulumi/Pulumi.dev.yaml:
+#   forgeos-gcp:platform_api_tag: "<tag>"
+#
+# NOTE: add a .gcloudignore (mirror .dockerignore + .venv*/node_modules/.git/
+# pulumi/venv) so the uploaded build context stays small.
+substitutions:
+  _TAG: latest
+  _REGION: europe-west1
+options:
+  machineType: E2_HIGHCPU_8
+timeout: 1800s
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/forgeos/platform-api:${_TAG}
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - infrastructure/docker/Dockerfile
+      - --target
+      - api
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/forgeos/platform-api:${_TAG}
+      - .
