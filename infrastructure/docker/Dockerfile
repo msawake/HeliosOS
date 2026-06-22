@@ -110,6 +110,11 @@ COPY --from=builder /install /usr/local
 COPY --chown=forgeos:forgeos src/ src/
 COPY --chown=forgeos:forgeos stacks/ stacks/
 COPY --chown=forgeos:forgeos a2h/ a2h/
+# The Django web layer + management entrypoint live at the repo root since the
+# restructure (bfc7ad09). Required by `--dashboard` (Django ASGI), the Celery
+# worker/beat (`celery -A forgeos_web.celery_app`), and `manage.py migrate`.
+COPY --chown=forgeos:forgeos forgeos_web/ forgeos_web/
+COPY --chown=forgeos:forgeos manage.py .
 COPY --chown=forgeos:forgeos infrastructure/database/ infrastructure/database/
 COPY --chown=forgeos:forgeos resources/ resources/
 COPY --chown=forgeos:forgeos pyproject.toml .
