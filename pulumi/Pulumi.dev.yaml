@@ -5,9 +5,10 @@ config:
   forgeos-gcp:pods_cidr: 10.40.0.0/14
   forgeos-gcp:services_cidr: 10.44.0.0/20
   forgeos-gcp:cloud_sql_tier: db-f1-micro
-  # platform-api image (built from main @ 2d012db). Used by platform-api, the
-  # MCP server, AND the worker tier.
-  forgeos-gcp:platform_api_tag: "9e1f1c3c"
+  # platform-api image (built from main @ 68dd6cc5: Django + forgeos_web.celery_app,
+  # pod --limits fix, Dockerfile config/ fix). Used by platform-api, the MCP
+  # server, the Celery worker+beat tier, and the django-migrate job.
+  forgeos-gcp:platform_api_tag: "68dd6cc5"
   # Next.js dashboard image. Built with --build-arg FORGEOS_API_URL=<platform-api>
   # (Next.js serializes the /api rewrite destination into routes-manifest at
   # `next build`, so the runtime env is ignored for the proxy).
