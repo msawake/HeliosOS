@@ -110,7 +110,6 @@ COPY --from=builder /install /usr/local
 COPY --chown=forgeos:forgeos src/ src/
 COPY --chown=forgeos:forgeos stacks/ stacks/
 COPY --chown=forgeos:forgeos a2h/ a2h/
-COPY --chown=forgeos:forgeos config/ config/
 COPY --chown=forgeos:forgeos infrastructure/database/ infrastructure/database/
 COPY --chown=forgeos:forgeos resources/ resources/
 COPY --chown=forgeos:forgeos pyproject.toml .
