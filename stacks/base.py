@@ -303,7 +303,10 @@ def build_agent_context(
         client_id = agent_def.owner_id
     if not client_id and metadata.get("namespace_mcp") and agent_def.namespace:
         client_id = f"ns:{agent_def.namespace}"
-    if not client_id:
+    # Per-user (user:) MCP routing is a PERSONAL-agent concept only. A SHARED /
+    # namespace agent must never route to a user's connection (it would then
+    # resolve that user's user-scoped secrets) — it uses ns:/platform instead.
+    if not client_id and agent_def.ownership == OwnershipType.PERSONAL:
         tools = agent_def.tools or []
         wants_per_user = bool(metadata.get("per_user_mcp")) or any(
             isinstance(t, str) and t.startswith("mcp__atlassian__") for t in tools

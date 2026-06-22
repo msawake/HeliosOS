@@ -21,10 +21,59 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from forgeos_web import di
-from forgeos_web.authn.context import acting_user
+from forgeos_web.authn.context import acting_principal, acting_user
 from forgeos_web.authn.permissions import require_role
 
 logger = logging.getLogger(__name__)
+
+
+# --------------------------------------------------------------------------- #
+# Agent access control (ownership-based)
+# --------------------------------------------------------------------------- #
+def _access_stores():
+    """``(member_store, admin_store)`` for the current tenant."""
+    ctx = di.get_context()
+    from src.platform.namespace_admins import NamespaceAdminStore, NamespaceMemberStore
+
+    return (
+        NamespaceMemberStore(db_client=ctx.db_client, tenant_id=ctx.tenant_id),
+        NamespaceAdminStore(db_client=ctx.db_client, tenant_id=ctx.tenant_id),
+    )
+
+
+def _visible_namespaces(uid: str) -> set[str]:
+    """Namespaces the user belongs to (member ∪ admin) — for list filtering."""
+    member_store, admin_store = _access_stores()
+    return set(member_store.namespaces_for_user(uid)) | set(admin_store.namespaces_for_user(uid))
+
+
+def _can_access_agent(uid: str, role: str, agent_def, *, my_namespaces: set[str] | None = None) -> bool:
+    """Whether ``(uid, role)`` may see/run/edit ``agent_def``.
+
+    - tenant admin → always
+    - PERSONAL → only the ``owner_id``
+    - SHARED → any effective member of the agent's namespace
+    - CLIENT/unknown → admin/operator only (unchanged from the pre-RBAC default)
+
+    ``my_namespaces`` (precomputed member∪admin set) lets the list view avoid a
+    per-agent DB hit; when omitted, membership is checked directly.
+    """
+    if role == "admin":
+        return True
+    own = getattr(getattr(agent_def, "ownership", None), "value", None)
+    if own == "personal":
+        owner = getattr(agent_def, "owner_id", None)
+        return bool(owner) and owner == uid
+    if own == "shared":
+        ns = getattr(agent_def, "namespace", None) or "default"
+        if my_namespaces is not None:
+            return ns in my_namespaces
+        from src.platform.namespace_admins import is_effective_member
+
+        member_store, admin_store = _access_stores()
+        return is_effective_member(uid, ns, member_store=member_store, admin_store=admin_store)
+    # CLIENT or unrecognized ownership: operator/admin only.
+    return role == "operator"
 
 
 # --------------------------------------------------------------------------- #
@@ -292,12 +341,13 @@ def _create_agent(req: _Req) -> Response:
         return Response({"detail": f"Agent deployment failed: {e}"}, status=400)
 
 
-def _apply_agent_update(agent_id: str, req: _Req, principal) -> Response:
+def _apply_agent_update(agent_id: str, req: _Req, request) -> Response:
     """Port of fastapi_app:1411 _apply_agent_update. Returns a DRF Response."""
     ctx = di.get_context()
     platform_registry = ctx.platform_registry
     platform_executor = ctx.platform_executor
     auth_enabled = ctx.auth_enabled
+    principal = getattr(request, "auth", None)
     if not platform_registry:
         return Response({"detail": "Platform registry not available"}, status=500)
     if not principal and auth_enabled:
@@ -305,6 +355,11 @@ def _apply_agent_update(agent_id: str, req: _Req, principal) -> Response:
     agent_def = platform_registry.get(agent_id)
     if not agent_def:
         return Response({"detail": f"Agent {agent_id} not found"}, status=404)
+    # Ownership-based edit gate: PERSONAL owner, namespace member (SHARED), or
+    # tenant admin. 403 (not 404) — a PUT to a known id by a non-owner.
+    uid, role = acting_principal(request, ctx)
+    if auth_enabled and not _can_access_agent(uid, role, agent_def):
+        return Response({"detail": "Not authorized to modify this agent"}, status=403)
 
     logger.info("Agent update: %s by auth=%s", agent_id, str(principal)[:20] if principal else "none")
 
@@ -443,6 +498,17 @@ class AgentsView(APIView):
             filters["department"] = department
 
         all_agents = platform_registry.query(**filters) if filters else platform_registry.list_all()
+
+        # Ownership-based visibility: non-admins see only their own PERSONAL
+        # agents + SHARED agents in namespaces they belong to. Tenant admins
+        # (and auth-off local dev) see everything. Filter BEFORE paginating.
+        uid, role = acting_principal(request, ctx)
+        if ctx.auth_enabled and role != "admin":
+            my_ns = _visible_namespaces(uid)
+            all_agents = [
+                a for a in all_agents
+                if _can_access_agent(uid, role, a, my_namespaces=my_ns)
+            ]
         agents = all_agents[offset:offset + limit]
 
         out = []
@@ -501,10 +567,8 @@ class AgentsFromYamlView(APIView):
 # /api/platform/agents/{agent_id}  (GET, PUT, DELETE)
 # --------------------------------------------------------------------------- #
 class AgentDetailView(APIView):
-    def get_permissions(self):
-        if self.request.method == "DELETE":
-            return [require_role("admin", "operator")()]
-        return super().get_permissions()
+    # DELETE authorization is done inline (a PERSONAL owner may delete their own
+    # agent even without the operator role); SHARED/CLIENT stay operator+.
 
     def get(self, request, agent_id):
         ctx = di.get_context()
@@ -512,6 +576,10 @@ class AgentDetailView(APIView):
         if platform_registry:
             agent = platform_registry.get(agent_id)
             if agent:
+                # Don't leak existence of agents the caller can't access → 404.
+                uid, role = acting_principal(request, ctx)
+                if ctx.auth_enabled and not _can_access_agent(uid, role, agent):
+                    return Response({"detail": f"Agent {agent_id} not found"}, status=404)
                 d = agent.to_dict() if hasattr(agent, "to_dict") else {"agent_id": agent_id}
                 try:
                     status = platform_registry.get_status(agent_id)
@@ -523,14 +591,24 @@ class AgentDetailView(APIView):
 
     def put(self, request, agent_id):
         req = _coerce_agent_update(request)
-        return _apply_agent_update(agent_id, req, getattr(request, "auth", None))
+        return _apply_agent_update(agent_id, req, request)
 
     def delete(self, request, agent_id):
         ctx = di.get_context()
         platform_executor = ctx.platform_executor
         removed = False
         if platform_executor:
-            existed = platform_executor.registry.get(agent_id) is not None
+            agent_def = platform_executor.registry.get(agent_id)
+            existed = agent_def is not None
+            if ctx.auth_enabled and existed:
+                uid, role = acting_principal(request, ctx)
+                own = getattr(getattr(agent_def, "ownership", None), "value", None)
+                owner = getattr(agent_def, "owner_id", None)
+                # Operator/admin can delete anything; a PERSONAL owner may delete
+                # their own. SHARED/CLIENT require operator+ (members can't delete).
+                allowed = role in ("admin", "operator") or (own == "personal" and owner == uid)
+                if not allowed:
+                    return Response({"detail": "Not authorized to delete this agent"}, status=403)
             removed = bool(async_to_sync(platform_executor.undeploy)(agent_id)) and existed
         _audit("agent.undeploy", resource_type="agent", resource_id=agent_id,
                details={"removed": removed})
@@ -563,7 +641,7 @@ class AgentFromYamlUpdateView(APIView):
             req = _validated_agent_request(deploy_body)
         except serializers.ValidationError as e:
             return Response({"detail": f"Manifest did not match deploy schema: {e}"}, status=400)
-        return _apply_agent_update(agent_id, req, getattr(request, "auth", None))
+        return _apply_agent_update(agent_id, req, request)
 
 
 # --------------------------------------------------------------------------- #
@@ -590,8 +668,15 @@ class AgentInvokeView(APIView):
         sid = context.get("session_id") or context.get("chat_id")
 
         reg = ctx.platform_registry
-        if reg is not None and reg.get(agent_id) is None and not ctx.admin_invoker:
+        agent_def = reg.get(agent_id) if reg is not None else None
+        if reg is not None and agent_def is None and not ctx.admin_invoker:
             return Response({"detail": f"Agent '{agent_id}' not found"}, status=404)
+        # Ownership-based run gate: a user can only invoke agents they can access.
+        # 404 (not 403) so a non-owner can't probe for others' personal agents.
+        if ctx.auth_enabled and agent_def is not None:
+            uid, role = acting_principal(request, ctx)
+            if not _can_access_agent(uid, role, agent_def):
+                return Response({"detail": f"Agent '{agent_id}' not found"}, status=404)
 
         # Enqueue on the CONFIGURED Celery app (Redis broker). send_task by name
         # avoids importing the task object (and binding to Celery's default app).
