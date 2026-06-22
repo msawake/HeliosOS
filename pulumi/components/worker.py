@@ -46,7 +46,7 @@ class WorkerTier(pulumi.ComponentResource):
         replicas: int = 1,
         namespace: str = "forgeos-system",
         cpu: str = "500m",
-        memory: str = "1Gi",
+        memory: str = "2Gi",  # platform boot + MCP uvx install needs headroom
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
         super().__init__("forgeos:worker:WorkerTier", name, None, opts)
@@ -148,7 +148,13 @@ class WorkerTier(pulumi.ComponentResource):
                                 command=["celery", "-A", "forgeos_web.celery_app", "worker"],
                                 args=[
                                     "-Q", "agents,agents_resume,scheduled,agents_longrun",
-                                    "--concurrency=4", "--loglevel=info",
+                                    # --concurrency=1: each prefork child boots the
+                                    # whole platform + uvx-installs the MCP servers
+                                    # in worker_process_init, so N children = N full
+                                    # boots → OOM at 1Gi. One child fits (matches the
+                                    # prior single-process worker). Scale out with
+                                    # replicas, not concurrency.
+                                    "--concurrency=1", "--loglevel=info",
                                 ],
                                 env_from=[
                                     k8s.core.v1.EnvFromSourceArgs(
