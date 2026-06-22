@@ -64,6 +64,11 @@ worker_replicas: int = config.get_int("worker_replicas") or 1
 platform_api_tag: str = config.get("platform_api_tag") or "latest"
 migrations_tag: str = config.get("migrations_tag") or "latest"
 dashboard_tag: str = config.get("dashboard_tag") or "latest"
+# The remote MCP server (src/forgeos_mcp) was removed from the repo, so the
+# current platform-api image can't run `python -m src.forgeos_mcp`. Pin the
+# forgeos-mcp service to its own tag (its last image that still had that code)
+# so platform-api bumps don't break it. Defaults to platform_api_tag.
+mcp_tag: str = config.get("mcp_tag") or platform_api_tag
 
 # Qwen (vLLM) gateway — when set, agents on provider=vllm route here. The key
 # rides Secret Manager (vllm-api-key); the URL is plain config.
@@ -275,10 +280,20 @@ for _env_name, _cfg_key in [
     ("OPENAI_API_KEY", "openai_api_key"),
     ("GEMINI_API_KEY", "gemini_api_key"),
     ("VLLM_API_KEY", "vllm_api_key"),
+    # Agents run on the worker now, so it needs the same MCP creds platform-api
+    # had: the atlassian MCP resolves secret:jira-* via the env fallback
+    # (jira-url -> JIRA_URL). Without these the MCP server starts with empty
+    # creds and crashes (anyio "cancel scope" teardown) — see worker logs.
+    ("JIRA_URL", "jira_url"),
+    ("JIRA_USERNAME", "jira_username"),
+    ("JIRA_API_TOKEN", "jira_api_token"),
 ]:
     _val = config.get_secret(_cfg_key)
     if _val is not None:
         _worker_env_secrets[_env_name] = _val
+# Non-secret MCP toggle (atlassian read-only mode); silences the secret lookup
+# warning and matches the local/.env default.
+_worker_env_secrets["JIRA_READ_ONLY_MODE"] = "false"
 # The gateway URL isn't secret, but ride the same env Secret so the worker's
 # vLLM client targets it (agents on provider=vllm resolve their base_url here).
 if vllm_base_url:
@@ -308,7 +323,7 @@ _mcp_deps = [secrets.versions["api-key"]] if "api-key" in secrets.versions else 
 mcp_server = McpServer(
     "forgeos",
     region=region,
-    image=_img("platform-api", platform_api_tag),
+    image=_img("platform-api", mcp_tag),
     gsa_email=identity.mcp.email,
     platform_api_url=platform_api.url,
     api_key_secret=_mcp_api_key_secret,

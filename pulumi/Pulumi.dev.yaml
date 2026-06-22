@@ -10,6 +10,10 @@ config:
   # Used by platform-api, the MCP server, the Celery worker+beat tier, and the
   # django-migrate job.
   forgeos-gcp:platform_api_tag: "ce42d395"
+  # forgeos-mcp stays on the last image that still shipped src/forgeos_mcp (the
+  # remote MCP server was later removed from the repo). Un-pin once that server
+  # is rebuilt/relocated, or drop the McpServer component to retire it.
+  forgeos-gcp:mcp_tag: "9e1f1c3c"
   # Next.js dashboard image. Built with --build-arg FORGEOS_API_URL=<platform-api>
   # (Next.js serializes the /api rewrite destination into routes-manifest at
   # `next build`, so the runtime env is ignored for the proxy).
