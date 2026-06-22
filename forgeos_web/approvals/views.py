@@ -10,10 +10,11 @@ AppContext fields — they are resolved at request time by walking
 ``ctx.kernel`` → admission → tool_executor → ``_a2h_gateway`` (and ``.chat`` for
 the chat store), exactly as the FastAPI factory did via ``_resolve_a2h_gateway``.
 
-Async platform methods (``gw.ask``, ``platform_executor.invoke``,
-``engine.resume``, ``runtime_service.resume.*``) are dispatched from these sync
-DRF views via ``asgiref.async_to_sync`` so behavior matches the FastAPI handlers.
-The /invoke enqueue refactor is a later step; these are ported faithfully for now.
+Async platform methods (``gw.ask``, ``platform_executor.invoke``) are dispatched
+from these sync DRF views via ``asgiref.async_to_sync``. HITL approve/reject of
+runtime-v2 continuations is NOT run inline here — it is enqueued as
+``forgeos.resume_agent`` so the resume (capability token + ``engine.resume`` +
+the continued turn) executes on the Celery worker tier where the engine + MCP live.
 """
 
 from __future__ import annotations
@@ -118,80 +119,6 @@ def _list_v2_pending_approvals() -> list:
                     "content": {"question": q},
                 })
     return out
-
-
-def _resume_agent_context(cont):
-    """Rebuild the per-agent ``agent_context`` for a resumed continuation.
-    (fastapi_app.py:753-776)"""
-    ctx = di.try_get_context()
-    platform_registry = getattr(ctx, "platform_registry", None)
-    platform_executor = getattr(ctx, "platform_executor", None)
-    try:
-        agent_def = platform_registry.get(cont.pid) if platform_registry else None
-        if agent_def is None and platform_executor:
-            agent_def = platform_executor.registry.get(cont.pid)
-        if agent_def is None:
-            return None
-        from stacks.base import build_agent_context
-        return build_agent_context(
-            agent_def, agent_def.agent_id,
-            context={"user_id": getattr(cont, "user_id", "default")},
-        )
-    except Exception:
-        logger.debug("resume: could not rebuild agent_context for %s", getattr(cont, "pid", "?"))
-        return None
-
-
-def _resume_v2_continuation(request_id: str, accept: bool, responded_by: str | None) -> bool:
-    """Resume a runtime-v2 continuation parked on this approval request.
-    (fastapi_app.py:778-826)
-
-    The FastAPI version schedules ``engine.resume`` via ``asyncio.create_task`` so
-    the HTTP request returns immediately. In a sync DRF view there is no running
-    loop to attach a background task to, so we dispatch the resume synchronously
-    via ``async_to_sync`` before returning. Behavior (which continuation resumes,
-    capability token minting) is identical; the resume is awaited rather than
-    fire-and-forget. TODO: move resume onto the worker tier (enqueue) like
-    runtime_service does, to restore the return-immediately behavior."""
-    platform_executor = getattr(di.try_get_context(), "platform_executor", None)
-    if not platform_executor:
-        return False
-    from src.runtime import Resolution, ResolutionOutcome
-    for adapter in getattr(platform_executor, "_adapters", {}).values():
-        engine = getattr(adapter, "step_engine", None)
-        store = getattr(engine, "_store", None)
-        if store is None:
-            continue
-        try:
-            cont = store.find_by_external_ref(request_id)
-        except Exception:
-            cont = None
-        if cont is None:
-            continue
-        rec = next((r for r in cont.pending_calls if r.external_ref == request_id), None)
-        if rec is None:
-            continue
-        token_id = None
-        kernel = getattr(engine, "_kernel", None)
-        if accept and kernel is not None and hasattr(kernel, "issue_capability"):
-            tok = kernel.issue_capability(
-                subject=cont.pid, target=f"tool:{rec.name}", verb="tool.call",
-                ttl_seconds=3600,
-                metadata={"external_ref": request_id, "continuation_id": cont.continuation_id},
-            )
-            token_id = tok.id
-        resolution = Resolution(
-            continuation_id=cont.continuation_id, tool_use_id=rec.tool_use_id,
-            outcome=ResolutionOutcome.ACCEPT if accept else ResolutionOutcome.REJECT,
-            capability_token=token_id, responded_by=responded_by,
-        )
-        async_to_sync(engine.resume)(
-            resolution,
-            tool_executor=getattr(adapter, "_tool_executor", None),
-            agent_context=_resume_agent_context(cont),
-        )
-        return True
-    return False
 
 
 def _resume_after_human_response(ctx, request_id: str) -> None:
@@ -440,12 +367,20 @@ class ApprovalRejectView(APIView):
                 ))
             except Exception:
                 logger.debug("legacy hitl.reject did not handle %s", request_id)
-        if runtime_service is not None:
-            resumed = bool(async_to_sync(runtime_service.resume.reject)(
-                request_id, responded_by=body["rejected_by"] or "api"))
-        else:
-            resumed = _resume_v2_continuation(request_id, accept=False,
-                                              responded_by=body["rejected_by"] or "api")
+        # Runtime-v2 (durable) rejections resume on the Celery worker tier too
+        # (symmetric with approve) — never inline in the web process. Validate
+        # the request exists in the durable store before enqueuing so we 404.
+        resumed = False
+        from forgeos_web.runtime.models import ContinuationRef
+        if ContinuationRef.all_objects.filter(external_ref=request_id).exists():
+            from forgeos_web.celery_app import celery
+            celery.send_task(
+                "forgeos.resume_agent",
+                kwargs={"external_ref": request_id,
+                        "responded_by": body["rejected_by"] or "api", "accept": False},
+                queue="agents_resume",
+            )
+            resumed = True
         if not handled and not resumed:
             return Response({"detail": f"No pending approval '{request_id}'"}, status=404)
         _audit("approval.reject", actor=body["rejected_by"] or "api",
