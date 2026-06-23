@@ -1,0 +1,274 @@
+name: "Pulumi Infrastructure"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Prerequisites (GitHub repository secrets / variables):
+#
+#   PULUMI_ACCESS_TOKEN  — Pulumi Cloud access token used to authenticate the
+#                          CLI and store/retrieve stack state.
+#                          Create at: https://app.pulumi.com/account/tokens
+#
+# GCP authentication is keyless (Workload Identity Federation / OIDC).
+# No long-lived service-account JSON key is stored in GitHub.
+# The WIF provider + SA addresses are hard-coded per environment below.
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    branches: [dev, pre, main]
+    paths:
+      - "pulumi/**"
+  push:
+    branches: [dev, pre, main]
+    paths:
+      - "pulumi/**"
+
+env:
+  PULUMI_VERSION: "3.130.0"
+  PYTHON_VERSION: "3.12"
+
+permissions:
+  contents: read
+  pull-requests: write   # needed to post/update PR comments
+  id-token: write        # required for OIDC / Workload Identity Federation
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────────
+  # Determine which Pulumi stack and GCP project to target based on the branch.
+  # Outputs are consumed by both the preview and deploy jobs.
+  # ────────────────────────────────────────────────────────────────────────────
+  resolve-stack:
+    runs-on: ubuntu-latest
+    outputs:
+      stack:        ${{ steps.map.outputs.stack }}
+      gcp_project:  ${{ steps.map.outputs.gcp_project }}
+      wif_provider: ${{ steps.map.outputs.wif_provider }}
+      wif_sa:       ${{ steps.map.outputs.wif_sa }}
+    steps:
+      - id: map
+        run: |
+          # For PRs use the base branch; for pushes use the pushed ref.
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BRANCH="${{ github.base_ref }}"
+          else
+            BRANCH="${{ github.ref_name }}"
+          fi
+
+          case "$BRANCH" in
+            dev)
+              echo "stack=dev"                                                                                                                >> "$GITHUB_OUTPUT"
+              echo "gcp_project=ms-awake-dev"                                                                                                >> "$GITHUB_OUTPUT"
+              echo "wif_provider=projects/980612545569/locations/global/workloadIdentityPools/github-actions/providers/github-oidc"          >> "$GITHUB_OUTPUT"
+              echo "wif_sa=helios-pulumi-deploy@ms-awake-dev.iam.gserviceaccount.com"                                                        >> "$GITHUB_OUTPUT"
+              ;;
+            pre)
+              echo "stack=pre"                                                                                                                >> "$GITHUB_OUTPUT"
+              echo "gcp_project=ms-awake-pre"                                                                                                >> "$GITHUB_OUTPUT"
+              echo "wif_provider=projects/276870250956/locations/global/workloadIdentityPools/github-actions/providers/github-oidc"          >> "$GITHUB_OUTPUT"
+              echo "wif_sa=helios-pulumi-deploy@ms-awake-pre.iam.gserviceaccount.com"                                                        >> "$GITHUB_OUTPUT"
+              ;;
+            main)
+              echo "stack=pro"                                                                                                                >> "$GITHUB_OUTPUT"
+              echo "gcp_project=ms-awake-pro"                                                                                                >> "$GITHUB_OUTPUT"
+              echo "wif_provider=projects/179734091472/locations/global/workloadIdentityPools/github-actions/providers/github-oidc"          >> "$GITHUB_OUTPUT"
+              echo "wif_sa=helios-pulumi-deploy@ms-awake-pro.iam.gserviceaccount.com"                                                        >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Unsupported branch: $BRANCH"
+              exit 1
+              ;;
+          esac
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Preview — runs on every PR, posts/updates a comment with the plan output.
+  # ────────────────────────────────────────────────────────────────────────────
+  preview:
+    if: github.event_name == 'pull_request'
+    needs: resolve-stack
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pulumi-preview-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      # Authenticate to GCP via Workload Identity Federation (keyless).
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ needs.resolve-stack.outputs.wif_provider }}
+          service_account:            ${{ needs.resolve-stack.outputs.wif_sa }}
+
+      # Install gcloud SDK.  install_components handles gke-gcloud-auth-plugin
+      # correctly on hosted runners — gcloud components install is disabled on
+      # GitHub-hosted runners and will fail; this action uses apt under the hood.
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # Install the Pulumi CLI at the pinned version (install-only mode:
+      # omitting `command` causes the action to exit after installation).
+      - name: Install Pulumi CLI
+        uses: pulumi/actions@v6
+        with:
+          pulumi-version: ${{ env.PULUMI_VERSION }}
+
+      - name: Install Python dependencies
+        working-directory: pulumi
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install --quiet -r requirements.txt
+
+      - name: Pulumi preview
+        id: preview
+        working-directory: pulumi
+        env:
+          PULUMI_ACCESS_TOKEN:      ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          CLOUDSDK_COMPUTE_REGION:  europe-west1
+          # Required by kubectl / pulumi-kubernetes when talking to GKE clusters.
+          USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
+        run: |
+          # Ensure output file exists even if preview fails early
+          echo "Preview did not produce output" > /tmp/preview-output.txt
+          source venv/bin/activate
+
+          set +e
+          # Select the target stack
+          pulumi stack select ${{ needs.resolve-stack.outputs.stack }} 2>&1 | tee -a /tmp/preview-output.txt
+          if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          # Run preview and capture output
+          OUTPUT=$(pulumi preview --diff --color never 2>&1)
+          EXIT_CODE=$?
+          set -e
+
+          echo "$OUTPUT" > /tmp/preview-output.txt
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "status=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+          fi
+
+          exit $EXIT_CODE
+
+      # Always post (or update) a PR comment, even when the preview step fails.
+      - name: Post PR comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.readFileSync('/tmp/preview-output.txt', 'utf8');
+            const stack   = '${{ needs.resolve-stack.outputs.stack }}';
+            const project = '${{ needs.resolve-stack.outputs.gcp_project }}';
+            const ok      = '${{ steps.preview.outputs.status }}' === 'success';
+            const icon    = ok ? '✅' : '❌';
+
+            // GitHub comment body limit is 65 536 characters.
+            const MAX_LEN = 60_000;
+            const body_content = output.length > MAX_LEN
+              ? output.substring(0, MAX_LEN) + '\n\n… (truncated — see workflow logs for full output)'
+              : output;
+
+            const body = [
+              `## ${icon} Pulumi Preview — \`${stack}\` (${project})`,
+              '',
+              '<details>',
+              '<summary>Click to expand preview output</summary>',
+              '',
+              '```',
+              body_content,
+              '```',
+              '',
+              '</details>',
+              '',
+              `*Workflow: ${context.workflow} | Run: [#${context.runNumber}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})*`,
+            ].join('\n');
+
+            // Find an existing bot comment for this stack so we update rather
+            // than accumulate a new comment on every push to the PR branch.
+            const MARKER = `Pulumi Preview — \`${stack}\``;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner:        context.repo.owner,
+              repo:         context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(
+              c => c.user.type === 'Bot' && c.body.includes(MARKER)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner:      context.repo.owner,
+                repo:       context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner:        context.repo.owner,
+                repo:         context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Deploy — runs on merge/push to a protected branch.
+  # The `environment` field enables GitHub environment protection rules
+  # (required reviewers, deployment gates, etc.) per stack.
+  # ────────────────────────────────────────────────────────────────────────────
+  deploy:
+    if: github.event_name == 'push'
+    needs: resolve-stack
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pulumi-deploy-${{ github.ref }}
+      cancel-in-progress: false
+    environment: ${{ needs.resolve-stack.outputs.stack }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ needs.resolve-stack.outputs.wif_provider }}
+          service_account:            ${{ needs.resolve-stack.outputs.wif_sa }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Pulumi CLI
+        uses: pulumi/actions@v6
+        with:
+          pulumi-version: ${{ env.PULUMI_VERSION }}
+
+      - name: Install Python dependencies
+        working-directory: pulumi
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install --quiet -r requirements.txt
+
+      - name: Pulumi up
+        working-directory: pulumi
+        env:
+          PULUMI_ACCESS_TOKEN:      ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          CLOUDSDK_COMPUTE_REGION:  europe-west1
+          USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
+        run: |
+          source venv/bin/activate
+          pulumi stack select ${{ needs.resolve-stack.outputs.stack }}
+          pulumi up --yes --color never

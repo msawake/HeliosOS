@@ -59,6 +59,14 @@ redis_memory_gb: int = config.get_int("redis_memory_gb") or 1
 kernel_mode: str = config.get("kernel_mode") or ""
 worker_replicas: int = config.get_int("worker_replicas") or 1
 
+# Deletion protection for stateful resources (Cloud SQL). Set True for prod to
+# prevent accidental `pulumi destroy` from dropping the database.
+deletion_protection: bool = config.get_bool("deletion_protection") or False
+
+# Environment label — used to tag Cloud Run services so dev/pre/pro are
+# distinguishable in the GCP console and in billing exports.
+environment: str = config.get("environment") or "dev"
+
 # Image tags — set per deploy. Defaults assume `:latest` for first-boot bootstrap.
 platform_api_tag: str = config.get("platform_api_tag") or "latest"
 migrations_tag: str = config.get("migrations_tag") or "latest"
@@ -100,6 +108,7 @@ data = Data(
     cloud_sql_tier=cloud_sql_tier,
     enable_redis=enable_redis,
     redis_memory_gb=redis_memory_gb,
+    deletion_protection=deletion_protection,
 )
 
 # 4. Identity
@@ -154,6 +163,7 @@ gke = Gke(
     region=region,
     network_id=network.network.id,
     subnet_id=network.subnet.id,
+    deletion_protection=deletion_protection,
 )
 
 # 7. Exec-environment sandbox — the forgeos-envs namespace + RBAC that lets the
@@ -176,6 +186,7 @@ migrations = Migrations(
     database_url_secret=secrets.database_url.id,
     vpc_network=network.network.id,
     vpc_subnet=network.subnet.id,
+    environment=environment,
     opts=pulumi.ResourceOptions(depends_on=[secrets.versions["database-url"]]),
 )
 
@@ -246,6 +257,7 @@ platform_api = PlatformApi(
     secret_refs=_pa_secret_refs,
     pubsub_topic=data.agent_triggers.name,
     extra_env=_pa_extra_env,
+    environment=environment,
     opts=pulumi.ResourceOptions(depends_on=_pa_deps),
 )
 
@@ -281,6 +293,7 @@ worker = WorkerTier(
     env_secrets=_worker_env_secrets,
     kernel_mode=kernel_mode,
     replicas=worker_replicas,
+    environment=environment,
 )
 
 # 11. MCP Server — remote MCP endpoint (FastMCP streamable-http) on the
@@ -296,6 +309,7 @@ mcp_server = McpServer(
     gsa_email=identity.mcp.email,
     platform_api_url=platform_api.url,
     api_key_secret=_mcp_api_key_secret,
+    environment=environment,
     opts=pulumi.ResourceOptions(depends_on=_mcp_deps),
 )
 
@@ -307,6 +321,7 @@ dashboard = Dashboard(
     image=_img("forgeos-dashboard", dashboard_tag),
     gsa_email=identity.dashboard.email,
     platform_api_url=platform_api.url,
+    environment=environment,
 )
 
 

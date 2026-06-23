@@ -25,6 +25,7 @@ class Migrations(pulumi.ComponentResource):
         database_url_secret: pulumi.Input[str],
         vpc_network: pulumi.Input[str],
         vpc_subnet: pulumi.Input[str],
+        environment: str = "dev",
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
         super().__init__("forgeos:migrations:Migrations", name, None, opts)
@@ -34,6 +35,7 @@ class Migrations(pulumi.ComponentResource):
             f"{name}-job",
             name="forgeos-migrations",
             location=region,
+            labels={"environment": environment, "component": "migrations"},
             template=gcp.cloudrunv2.JobTemplateArgs(
                 template=gcp.cloudrunv2.JobTemplateTemplateArgs(
                     service_account=gsa_email,

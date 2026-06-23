@@ -27,6 +27,7 @@ class McpServer(pulumi.ComponentResource):
         gsa_email: pulumi.Input[str],
         platform_api_url: pulumi.Input[str],
         api_key_secret: pulumi.Input[str] | None = None,
+        environment: str = "dev",
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
         super().__init__("forgeos:mcp_server:McpServer", name, None, opts)
@@ -56,7 +57,10 @@ class McpServer(pulumi.ComponentResource):
             name="forgeos-mcp",
             location=region,
             ingress="INGRESS_TRAFFIC_ALL",
+            deletion_protection=False,
+            labels={"environment": environment, "component": "mcp-server"},
             template=gcp.cloudrunv2.ServiceTemplateArgs(
+                labels={"environment": environment, "component": "mcp-server"},
                 service_account=gsa_email,
                 timeout="300s",
                 scaling=gcp.cloudrunv2.ServiceTemplateScalingArgs(

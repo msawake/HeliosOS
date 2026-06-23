@@ -46,6 +46,7 @@ class WorkerTier(pulumi.ComponentResource):
         namespace: str = "forgeos-system",
         cpu: str = "500m",
         memory: str = "1Gi",
+        environment: str = "dev",
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
         super().__init__("forgeos:worker:WorkerTier", name, None, opts)
@@ -108,7 +109,7 @@ class WorkerTier(pulumi.ComponentResource):
             opts=pulumi.ResourceOptions(parent=self, provider=k8s_provider, delete_before_replace=True),
         )
 
-        labels = {"app": "forgeos-worker", "forgeos.io/system": "worker"}
+        labels = {"app": "forgeos-worker", "forgeos.io/system": "worker", "environment": environment}
 
         plain_env = [
             k8s.core.v1.EnvVarArgs(name="FORGEOS_RUNTIME_V2", value="1"),

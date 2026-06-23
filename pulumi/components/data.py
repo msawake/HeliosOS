@@ -17,6 +17,7 @@ class Data(pulumi.ComponentResource):
         cloud_sql_tier: str,
         enable_redis: bool = False,
         redis_memory_gb: int = 1,
+        deletion_protection: bool = False,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
         super().__init__("forgeos:data:Data", name, None, opts)
@@ -27,7 +28,7 @@ class Data(pulumi.ComponentResource):
             f"{name}-pg",
             database_version="POSTGRES_15",
             region=region,
-            deletion_protection=False,  # test project — flip to True for prod
+            deletion_protection=deletion_protection,
             settings=gcp.sql.DatabaseInstanceSettingsArgs(
                 tier=cloud_sql_tier,
                 availability_type="ZONAL",

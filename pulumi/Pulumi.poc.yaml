@@ -1,0 +1,49 @@
+config:
+  gcp:project: admachina-atomic-test-84
+  gcp:region: europe-west1
+  forgeos-gcp:network_cidr: 10.0.0.0/20
+  forgeos-gcp:pods_cidr: 10.40.0.0/14
+  forgeos-gcp:services_cidr: 10.44.0.0/20
+  forgeos-gcp:cloud_sql_tier: db-f1-micro
+  # platform-api image (built from main @ 2d012db). Used by platform-api, the
+  # MCP server, AND the worker tier.
+  forgeos-gcp:platform_api_tag: "9e1f1c3c"
+  # Next.js dashboard image. Built with --build-arg FORGEOS_API_URL=<platform-api>
+  # (Next.js serializes the /api rewrite destination into routes-manifest at
+  # `next build`, so the runtime env is ignored for the proxy).
+  forgeos-gcp:dashboard_tag: "000360e0"
+  # Migrations Cloud Run Job image (applies infrastructure/database/*.sql).
+  forgeos-gcp:migrations_tag: f38d42d
+  # Full Drive scope so per-agent SAs (treasury demo) can read/write folders
+  # SHARED with their email; default drive.file only sees app-created files.
+  forgeos-gcp:drive_scopes: drive
+  # Redis (Memorystore) backs the durable per-turn worker tier (Redis Streams).
+  forgeos-gcp:enable_redis: "true"
+  forgeos-gcp:redis_memory_gb: "1"
+  # Always-on GKE worker that drains the queue / resumes HITL runs.
+  forgeos-gcp:worker_replicas: "1"
+  # Kernel enforcement mode. "production" enforces real kernel checks INCLUDING
+  # licensing (requires a license row per tenant, else tool calls are denied
+  # "Unknown tenant"). Empty = permissive (local-dev) licensing — kernel still
+  # enforces ACL/approvals/budgets, just skips the commercial license gate.
+  forgeos-gcp:kernel_mode: "production"
+  forgeos-gcp:gemini_api_key:
+    secure: v1:td1CQ3NmsjbGKLKT:J2ReVGV6G7WVgHkXAyVrcdWwBkpyuxvBotMl3VTjxFQpN29OcZoMsDhqzQBNxDdgI8ex5XtOXA==
+  forgeos-gcp:jira_url:
+    secure: v1:ashQC6K3U856yhJW:wlC0uNWNJ+cE5uvzsSZKmKX7AXmpuPTdUeFeQVgaLIesCawKiKpQ/9cK2Idf9fPNHwsg
+  forgeos-gcp:jira_username:
+    secure: v1:iZbGddonajeV4s9u:wWi9vTXIbZWoa2U52sRuB3fWyR/MqugrJdZMNhq0LGziy/yC2eE0dIHJdBFpj9c=
+  forgeos-gcp:jira_api_token:
+    secure: v1:JdaRHGIxV616d8fL:glFId52TRSKKuyHrVCtpM7CBVQirRSlyVE0TNCApFNmvrwJdXAyTaHN0FFxrUYbryBsG55ybmSQ0/k2q2fhD0CjoWUXQEmF/EPQTCKvNs4ce/6dN+ssBjFygAzbMov/P4ZYhEWDSRyqKCRLzBQuli0RIO0GwJEZNktg4cTTjHFGbYg2Ob47RGCshIcDPqNpMFJSBUVqSHkA+22a54OQonGfe9OGb2DDcprrOG4zyMG62adOS5bXuZ8wbbSKdct8PuOoqEiddQ0pjqunZA/VyoA==
+  forgeos-gcp:mcp_api_key:
+    secure: v1:YqAc6AwY6GQEYAuG:bE7VrZhlLDCNzjrF3drNj0sQDncdN5m92967Z5z9dbsz0k7vqOZ7vDl9PLB+vXPPm1/IKi1T4YFFSR/nxfRTIBlpiZ2fPRfegYdsoAAHG1WcwEY+
+  forgeos-gcp:vllm_base_url: https://atlas-router.ally-code-dev.makingscience.com/v1
+  forgeos-gcp:vllm_api_key:
+    secure: v1:vnHIT0yuKLyoh1B0:M+UUmsVPPkgZpkET7pdjAAK/hnOzRQC32T0uzFfYXL3wd4sAtEfy2Uc=
+  forgeos-gcp:dashboard_password:
+    secure: v1:JCqeqLWoFH6NUYgf:+9PQMl04oMVy5Kj5bp6/qCJMLbDuX9+oUl+0kSiEN51Xs1eKoJAwgA==
+  forgeos-gcp:litellm_allycode_key:
+    secure: v1:viVWbLK6rbHNKHHU:13E50jKqsYA+IeN2bHLRp4dggC11jKtgJPYYjnaYUvu2tFK2aMcZ7Zo=
+  forgeos-gcp:deletion_protection: "false"
+  forgeos-gcp:environment: "poc"
+encryptionsalt: v1:aAnZL1A6xrw=:v1:RxasCPnystMWc9sM:V2eUSJQDxw4hFLD8DqUsJmlwHldjog==
