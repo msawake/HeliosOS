@@ -22,6 +22,7 @@ class PlatformApi(pulumi.ComponentResource):
         secret_refs: dict[str, pulumi.Input[str]],
         pubsub_topic: pulumi.Input[str],
         extra_env: dict[str, pulumi.Input[str]] | None = None,
+        environment: str = "dev",
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
         super().__init__("forgeos:platform_api:PlatformApi", name, None, opts)
@@ -63,7 +64,10 @@ class PlatformApi(pulumi.ComponentResource):
             name="forgeos-platform-api",
             location=region,
             ingress="INGRESS_TRAFFIC_ALL",
+            deletion_protection=False,
+            labels={"environment": environment, "component": "platform-api"},
             template=gcp.cloudrunv2.ServiceTemplateArgs(
+                labels={"environment": environment, "component": "platform-api"},
                 service_account=gsa_email,
                 timeout="300s",
                 scaling=gcp.cloudrunv2.ServiceTemplateScalingArgs(

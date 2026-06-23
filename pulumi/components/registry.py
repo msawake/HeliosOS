@@ -1,9 +1,8 @@
-"""Artifact Registry — references an existing Docker repo.
+"""Artifact Registry — creates and manages the Docker repo for Helios OS images.
 
-The `forgeos` repo is provisioned out-of-band (via `gcloud artifacts
-repositories create`) so that container images can be built and pushed
-before the first `pulumi up`. Pulumi reads its URL via .get() and never
-manages the repo lifecycle.
+Pulumi owns the repo lifecycle so the full stack is self-contained: a fresh
+`pulumi up` on a new project creates the repo, builds can push immediately,
+and `pulumi destroy` tears it down cleanly.
 """
 
 from __future__ import annotations
@@ -23,13 +22,17 @@ class Registry(pulumi.ComponentResource):
     ) -> None:
         super().__init__("forgeos:registry:Registry", name, None, opts)
 
-        # Reference an already-existing repository — Pulumi does not own it.
-        self.repo = gcp.artifactregistry.Repository.get(
+        self.repo = gcp.artifactregistry.Repository(
             f"{name}-repo",
-            id=f"projects/{project}/locations/{region}/repositories/{repo_id}",
+            repository_id=repo_id,
+            location=region,
+            format="DOCKER",
+            description="Helios OS container images",
             opts=pulumi.ResourceOptions(parent=self),
         )
 
-        self.url = f"{region}-docker.pkg.dev/{project}/{repo_id}"
+        self.url = pulumi.Output.concat(
+            region, "-docker.pkg.dev/", project, "/", repo_id
+        )
 
         self.register_outputs({"repo_url": self.url})
