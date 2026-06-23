@@ -21,7 +21,7 @@ from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from forgeos_web.authn.context import acting_caller
+from forgeos_web.authn.context import acting_caller, acting_principal
 from forgeos_web.authn.permissions import require_role
 
 logger = logging.getLogger(__name__)
@@ -50,6 +50,28 @@ def _stores():
     namespace_store = NamespaceStore(db_client=ctx.db_client, tenant_id=ctx.tenant_id)
     namespace_admin_store = NamespaceAdminStore(db_client=ctx.db_client, tenant_id=ctx.tenant_id)
     return namespace_store, namespace_admin_store
+
+
+def _member_store():
+    """The ``NamespaceMemberStore`` for the current tenant (membership = who may
+    see/run/edit namespace-owned agents and use namespace/tenant secrets)."""
+    from forgeos_web import di
+    from src.platform.namespace_admins import NamespaceMemberStore
+
+    ctx = di.get_context()
+    return NamespaceMemberStore(db_client=ctx.db_client, tenant_id=ctx.tenant_id)
+
+
+def _is_ns_admin_or_tenant_admin(request, ns: str) -> bool:
+    """True if the caller is a tenant admin or an explicit admin of ``ns``."""
+    from forgeos_web import di
+
+    ctx = di.get_context()
+    uid, role = acting_principal(request, ctx)
+    if not ctx.auth_enabled or role == "admin":
+        return True
+    _, admin_store = _stores()
+    return bool(ns) and admin_store.is_admin(uid, ns)
 
 
 # --------------------------------------------------------------------------- #
@@ -90,6 +112,12 @@ class NamespacesView(APIView):
         for uid in body.get("admins", []):
             if namespace_admin_store.grant(ns, uid):
                 granted.append(uid)
+        # The creator becomes a member so they can see/run the namespace's agents.
+        # Admins are members implicitly (is_effective_member), so only the
+        # acting user is auto-added here.
+        from forgeos_web import di
+        creator_uid, _ = acting_principal(request, di.get_context())
+        _member_store().add(ns, creator_uid)
         _audit("namespace.create", actor=caller, resource_type="namespace",
                resource_id=ns, details={"admins": granted, "created": bool(created)})
         return Response(
@@ -166,3 +194,66 @@ class NamespaceAdminDetailView(APIView):
         _audit("namespace_admin.revoke", actor=caller, resource_type="namespace",
                resource_id=ns, details={"user_id": admin_user_id})
         return Response({"revoked": bool(ok), "namespace": ns, "user_id": admin_user_id})
+
+
+# --------------------------------------------------------------------------- #
+# /api/platform/namespaces/{ns}/members  +  /members/{user_id}
+# --------------------------------------------------------------------------- #
+class NamespaceMembersView(APIView):
+    """GET the members of a namespace. Visible to any member (or ns/tenant admin)."""
+
+    def get(self, request, ns: str):
+        from forgeos_web import di
+        from src.platform.namespace_admins import is_effective_member
+
+        ctx = di.get_context()
+        uid, role = acting_principal(request, ctx)
+        member_store = _member_store()
+        _, admin_store = _stores()
+        if ctx.auth_enabled and role != "admin" and not is_effective_member(
+            uid, ns, member_store=member_store, admin_store=admin_store
+        ):
+            return Response({"detail": "not a member of this namespace"}, status=403)
+        return Response({"namespace": ns, "members": member_store.list_for_namespace(ns)})
+
+
+class NamespaceMemberDetailView(APIView):
+    """PUT (add, 201) + DELETE (remove) a namespace member. Tenant- or ns-admin only."""
+
+    def put(self, request, ns: str, member_user_id: str):
+        if not _is_ns_admin_or_tenant_admin(request, ns):
+            return Response({"detail": "not authorized to manage members of this namespace"}, status=403)
+        ok = _member_store().add(ns, member_user_id)
+        caller = acting_caller(request)
+        _audit("namespace_member.add", actor=caller, resource_type="namespace",
+               resource_id=ns, details={"user_id": member_user_id})
+        return Response({"added": bool(ok), "namespace": ns, "user_id": member_user_id}, status=201)
+
+    def delete(self, request, ns: str, member_user_id: str):
+        if not _is_ns_admin_or_tenant_admin(request, ns):
+            return Response({"detail": "not authorized to manage members of this namespace"}, status=403)
+        ok = _member_store().remove(ns, member_user_id)
+        caller = acting_caller(request)
+        _audit("namespace_member.remove", actor=caller, resource_type="namespace",
+               resource_id=ns, details={"user_id": member_user_id})
+        return Response({"removed": bool(ok), "namespace": ns, "user_id": member_user_id})
+
+
+# --------------------------------------------------------------------------- #
+# /api/platform/namespaces/mine
+# --------------------------------------------------------------------------- #
+class MyNamespacesView(APIView):
+    """GET the namespaces the caller belongs to (member ∪ admin)."""
+
+    def get(self, request):
+        from forgeos_web import di
+
+        ctx = di.get_context()
+        uid, _ = acting_principal(request, ctx)
+        member_store = _member_store()
+        _, admin_store = _stores()
+        names = sorted(
+            set(member_store.namespaces_for_user(uid))
+            | set(admin_store.namespaces_for_user(uid))
+        )
+        return Response({"namespaces": names})

@@ -21,10 +21,59 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from forgeos_web import di
-from forgeos_web.authn.context import acting_user
+from forgeos_web.authn.context import acting_principal, acting_user
 from forgeos_web.authn.permissions import require_role
 
 logger = logging.getLogger(__name__)
+
+
+# --------------------------------------------------------------------------- #
+# Agent access control (ownership-based)
+# --------------------------------------------------------------------------- #
+def _access_stores():
+    """``(member_store, admin_store)`` for the current tenant."""
+    ctx = di.get_context()
+    from src.platform.namespace_admins import NamespaceAdminStore, NamespaceMemberStore
+
+    return (
+        NamespaceMemberStore(db_client=ctx.db_client, tenant_id=ctx.tenant_id),
+        NamespaceAdminStore(db_client=ctx.db_client, tenant_id=ctx.tenant_id),
+    )
+
+
+def _visible_namespaces(uid: str) -> set[str]:
+    """Namespaces the user belongs to (member ∪ admin) — for list filtering."""
+    member_store, admin_store = _access_stores()
+    return set(member_store.namespaces_for_user(uid)) | set(admin_store.namespaces_for_user(uid))
+
+
+def _can_access_agent(uid: str, role: str, agent_def, *, my_namespaces: set[str] | None = None) -> bool:
+    """Whether ``(uid, role)`` may see/run/edit ``agent_def``.
+
+    - tenant admin → always
+    - PERSONAL → only the ``owner_id``
+    - SHARED → any effective member of the agent's namespace
+    - CLIENT/unknown → admin/operator only (unchanged from the pre-RBAC default)
+
+    ``my_namespaces`` (precomputed member∪admin set) lets the list view avoid a
+    per-agent DB hit; when omitted, membership is checked directly.
+    """
+    if role == "admin":
+        return True
+    own = getattr(getattr(agent_def, "ownership", None), "value", None)
+    if own == "personal":
+        owner = getattr(agent_def, "owner_id", None)
+        return bool(owner) and owner == uid
+    if own == "shared":
+        ns = getattr(agent_def, "namespace", None) or "default"
+        if my_namespaces is not None:
+            return ns in my_namespaces
+        from src.platform.namespace_admins import is_effective_member
+
+        member_store, admin_store = _access_stores()
+        return is_effective_member(uid, ns, member_store=member_store, admin_store=admin_store)
+    # CLIENT or unrecognized ownership: operator/admin only.
+    return role == "operator"
 
 
 # --------------------------------------------------------------------------- #
@@ -101,6 +150,122 @@ _CONT_STATUS_TO_RUN = {
     "running": "running", "resuming": "running", "suspended": "paused",
     "done": "completed", "failed": "failed",
 }
+
+
+# --------------------------------------------------------------------------- #
+# Run-history helpers (Django-native; no FastAPI equivalent)
+# --------------------------------------------------------------------------- #
+def _enrich_runs(runs: list[dict]) -> list[dict]:
+    """Attach session_id / source / worker_id to agent_runs summaries.
+
+    `agent_runs` has no session_id (the durable `continuations` row does, linked
+    by `continuations.run_id`). We resolve both in two batched queries so the run
+    history can group by conversation and show which worker executed each run.
+    Never raises — enrichment is best-effort over the durable tier.
+    """
+    if not runs:
+        return runs
+    run_ids = [r.get("id") for r in runs if r.get("id")]
+    if not run_ids:
+        return runs
+    cont_by_run: dict[str, dict] = {}
+    worker_by_cont: dict[str, str] = {}
+    try:
+        from forgeos_web.runtime.models import Continuation, RunnableLedger
+
+        conts = list(
+            Continuation.all_objects.filter(run_id__in=run_ids)
+            .values("id", "run_id", "session_id", "source")
+        )
+        for c in conts:
+            # A run_id maps to one continuation; last writer wins if duplicated.
+            cont_by_run[c["run_id"]] = c
+        cont_ids = [c["id"] for c in conts]
+        if cont_ids:
+            for row in (
+                RunnableLedger.all_objects.filter(cont_id__in=cont_ids)
+                .values("cont_id", "owner_worker")
+            ):
+                if row.get("owner_worker"):
+                    worker_by_cont[row["cont_id"]] = row["owner_worker"]
+    except Exception:
+        logger.debug("run enrichment query failed", exc_info=True)
+    for r in runs:
+        cont = cont_by_run.get(r.get("id"))
+        if cont:
+            r["session_id"] = cont.get("session_id")
+            r["source"] = cont.get("source")
+            r["continuation_id"] = cont.get("id")
+            r["worker_id"] = worker_by_cont.get(cont.get("id"))
+        else:
+            r.setdefault("session_id", None)
+            r.setdefault("source", None)
+            r.setdefault("worker_id", None)
+    return runs
+
+
+def _normalize_steps(message_history: list) -> list[dict]:
+    """Flatten a provider-shaped message history into a UI-friendly timeline.
+
+    Handles both Anthropic-shaped blocks (content is a list of
+    text/tool_use/tool_result blocks) and OpenAI-shaped messages (string content
+    + `tool_calls` + `tool` role results). Emits, in order:
+      {type:"text", role, content}
+      {type:"tool_call", name, input, tool_use_id}
+      {type:"tool_result", tool_use_id, content, is_error}
+    """
+    steps: list[dict] = []
+    for msg in message_history or []:
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role") or ""
+        content = msg.get("content")
+        # OpenAI-shaped assistant tool calls.
+        for tc in msg.get("tool_calls") or []:
+            fn = (tc or {}).get("function") or {}
+            steps.append({
+                "type": "tool_call",
+                "name": fn.get("name") or tc.get("name"),
+                "input": fn.get("arguments") if fn else tc.get("input"),
+                "tool_use_id": tc.get("id"),
+            })
+        # OpenAI-shaped tool result message.
+        if role == "tool":
+            steps.append({
+                "type": "tool_result",
+                "tool_use_id": msg.get("tool_call_id"),
+                "content": content,
+                "is_error": False,
+            })
+            continue
+        if isinstance(content, str):
+            if content.strip():
+                steps.append({"type": "text", "role": role, "content": content})
+            continue
+        if isinstance(content, list):
+            for block in content:
+                if not isinstance(block, dict):
+                    if isinstance(block, str) and block.strip():
+                        steps.append({"type": "text", "role": role, "content": block})
+                    continue
+                btype = block.get("type")
+                if btype == "text" and (block.get("text") or "").strip():
+                    steps.append({"type": "text", "role": role, "content": block.get("text")})
+                elif btype == "tool_use":
+                    steps.append({
+                        "type": "tool_call",
+                        "name": block.get("name"),
+                        "input": block.get("input"),
+                        "tool_use_id": block.get("id"),
+                    })
+                elif btype == "tool_result":
+                    steps.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.get("tool_use_id"),
+                        "content": block.get("content"),
+                        "is_error": bool(block.get("is_error")),
+                    })
+    return steps
 
 
 def _list_v2_pending_approvals(ctx) -> list:
@@ -292,12 +457,13 @@ def _create_agent(req: _Req) -> Response:
         return Response({"detail": f"Agent deployment failed: {e}"}, status=400)
 
 
-def _apply_agent_update(agent_id: str, req: _Req, principal) -> Response:
+def _apply_agent_update(agent_id: str, req: _Req, request) -> Response:
     """Port of fastapi_app:1411 _apply_agent_update. Returns a DRF Response."""
     ctx = di.get_context()
     platform_registry = ctx.platform_registry
     platform_executor = ctx.platform_executor
     auth_enabled = ctx.auth_enabled
+    principal = getattr(request, "auth", None)
     if not platform_registry:
         return Response({"detail": "Platform registry not available"}, status=500)
     if not principal and auth_enabled:
@@ -305,6 +471,11 @@ def _apply_agent_update(agent_id: str, req: _Req, principal) -> Response:
     agent_def = platform_registry.get(agent_id)
     if not agent_def:
         return Response({"detail": f"Agent {agent_id} not found"}, status=404)
+    # Ownership-based edit gate: PERSONAL owner, namespace member (SHARED), or
+    # tenant admin. 403 (not 404) — a PUT to a known id by a non-owner.
+    uid, role = acting_principal(request, ctx)
+    if auth_enabled and not _can_access_agent(uid, role, agent_def):
+        return Response({"detail": "Not authorized to modify this agent"}, status=403)
 
     logger.info("Agent update: %s by auth=%s", agent_id, str(principal)[:20] if principal else "none")
 
@@ -443,6 +614,17 @@ class AgentsView(APIView):
             filters["department"] = department
 
         all_agents = platform_registry.query(**filters) if filters else platform_registry.list_all()
+
+        # Ownership-based visibility: non-admins see only their own PERSONAL
+        # agents + SHARED agents in namespaces they belong to. Tenant admins
+        # (and auth-off local dev) see everything. Filter BEFORE paginating.
+        uid, role = acting_principal(request, ctx)
+        if ctx.auth_enabled and role != "admin":
+            my_ns = _visible_namespaces(uid)
+            all_agents = [
+                a for a in all_agents
+                if _can_access_agent(uid, role, a, my_namespaces=my_ns)
+            ]
         agents = all_agents[offset:offset + limit]
 
         out = []
@@ -501,10 +683,8 @@ class AgentsFromYamlView(APIView):
 # /api/platform/agents/{agent_id}  (GET, PUT, DELETE)
 # --------------------------------------------------------------------------- #
 class AgentDetailView(APIView):
-    def get_permissions(self):
-        if self.request.method == "DELETE":
-            return [require_role("admin", "operator")()]
-        return super().get_permissions()
+    # DELETE authorization is done inline (a PERSONAL owner may delete their own
+    # agent even without the operator role); SHARED/CLIENT stay operator+.
 
     def get(self, request, agent_id):
         ctx = di.get_context()
@@ -512,6 +692,10 @@ class AgentDetailView(APIView):
         if platform_registry:
             agent = platform_registry.get(agent_id)
             if agent:
+                # Don't leak existence of agents the caller can't access → 404.
+                uid, role = acting_principal(request, ctx)
+                if ctx.auth_enabled and not _can_access_agent(uid, role, agent):
+                    return Response({"detail": f"Agent {agent_id} not found"}, status=404)
                 d = agent.to_dict() if hasattr(agent, "to_dict") else {"agent_id": agent_id}
                 try:
                     status = platform_registry.get_status(agent_id)
@@ -523,14 +707,24 @@ class AgentDetailView(APIView):
 
     def put(self, request, agent_id):
         req = _coerce_agent_update(request)
-        return _apply_agent_update(agent_id, req, getattr(request, "auth", None))
+        return _apply_agent_update(agent_id, req, request)
 
     def delete(self, request, agent_id):
         ctx = di.get_context()
         platform_executor = ctx.platform_executor
         removed = False
         if platform_executor:
-            existed = platform_executor.registry.get(agent_id) is not None
+            agent_def = platform_executor.registry.get(agent_id)
+            existed = agent_def is not None
+            if ctx.auth_enabled and existed:
+                uid, role = acting_principal(request, ctx)
+                own = getattr(getattr(agent_def, "ownership", None), "value", None)
+                owner = getattr(agent_def, "owner_id", None)
+                # Operator/admin can delete anything; a PERSONAL owner may delete
+                # their own. SHARED/CLIENT require operator+ (members can't delete).
+                allowed = role in ("admin", "operator") or (own == "personal" and owner == uid)
+                if not allowed:
+                    return Response({"detail": "Not authorized to delete this agent"}, status=403)
             removed = bool(async_to_sync(platform_executor.undeploy)(agent_id)) and existed
         _audit("agent.undeploy", resource_type="agent", resource_id=agent_id,
                details={"removed": removed})
@@ -563,7 +757,7 @@ class AgentFromYamlUpdateView(APIView):
             req = _validated_agent_request(deploy_body)
         except serializers.ValidationError as e:
             return Response({"detail": f"Manifest did not match deploy schema: {e}"}, status=400)
-        return _apply_agent_update(agent_id, req, getattr(request, "auth", None))
+        return _apply_agent_update(agent_id, req, request)
 
 
 # --------------------------------------------------------------------------- #
@@ -590,8 +784,15 @@ class AgentInvokeView(APIView):
         sid = context.get("session_id") or context.get("chat_id")
 
         reg = ctx.platform_registry
-        if reg is not None and reg.get(agent_id) is None and not ctx.admin_invoker:
+        agent_def = reg.get(agent_id) if reg is not None else None
+        if reg is not None and agent_def is None and not ctx.admin_invoker:
             return Response({"detail": f"Agent '{agent_id}' not found"}, status=404)
+        # Ownership-based run gate: a user can only invoke agents they can access.
+        # 404 (not 403) so a non-owner can't probe for others' personal agents.
+        if ctx.auth_enabled and agent_def is not None:
+            uid, role = acting_principal(request, ctx)
+            if not _can_access_agent(uid, role, agent_def):
+                return Response({"detail": f"Agent '{agent_id}' not found"}, status=404)
 
         # Enqueue on the CONFIGURED Celery app (Redis broker). send_task by name
         # avoids importing the task object (and binding to Celery's default app).
@@ -764,34 +965,167 @@ class AgentEnvironmentView(APIView):
 
 
 # --------------------------------------------------------------------------- #
+# /api/platform/runs  (GET)  — Django-native run history (no FastAPI equivalent)
+# --------------------------------------------------------------------------- #
+class RunsListView(APIView):
+    """List recent agent runs across the fleet, enriched for the run-history UI.
+
+    Each run carries its session_id (so the dashboard can group runs from the
+    same conversation), its durable `source`, and the worker that executed it.
+    Optional filters: ``agent_id`` (per-agent history), ``source``/``trigger``.
+    """
+
+    def get(self, request):
+        ctx = di.get_context()
+        platform_executor = ctx.platform_executor
+        limit = int(request.query_params.get("limit", 100))
+        agent_id = request.query_params.get("agent_id")
+        source = request.query_params.get("source")
+        if not platform_executor or not getattr(platform_executor, "agent_runs", None):
+            return Response({"runs": []})
+        if agent_id:
+            runs = async_to_sync(platform_executor.agent_runs.list_for_agent)(agent_id, limit=limit)
+        else:
+            runs = async_to_sync(platform_executor.agent_runs.list_recent)(limit=limit)
+        runs = _enrich_runs(runs)
+        if source:
+            runs = [r for r in runs if r.get("source") == source or r.get("trigger") == source]
+        return Response({"runs": runs})
+
+
+# --------------------------------------------------------------------------- #
 # /api/platform/runs/{run_id}  (GET)
 # --------------------------------------------------------------------------- #
+def _cont_field(cont, name, default=None):
+    """Read a field off a live continuation dataclass OR an ORM Continuation."""
+    if cont is None:
+        return default
+    val = getattr(cont, name, None)
+    if val is None and name == "message_history":
+        # the in-memory dataclass calls it `messages`
+        val = getattr(cont, "messages", None)
+    return default if val is None else val
+
+
+def _pending_from(cont) -> list[dict]:
+    """Normalize pending tool calls from either continuation representation."""
+    out: list[dict] = []
+    for r in _cont_field(cont, "pending_calls", []) or []:
+        get = (lambda k: r.get(k)) if isinstance(r, dict) else (lambda k: getattr(r, k, None))
+        if get("status") != "pending":
+            continue
+        out.append({
+            "request_id": get("external_ref"),
+            "tool": get("name"),
+            "tool_use_id": get("tool_use_id"),
+            "args": get("arguments"),
+        })
+    return out
+
+
 class RunDetailView(APIView):
     def get(self, request, run_id):
         ctx = di.get_context()
-        cont = _find_continuation(ctx, run_id)
-        if cont is None:
+        # Live (in-memory) continuation for actively-running runs; durable ORM
+        # continuation for completed history; agent_runs row for the summary.
+        live = _find_continuation(ctx, run_id)
+        orm_cont = None
+        run_row = None
+        try:
+            from forgeos_web.runtime.models import Continuation, RunnableLedger
+            from forgeos_web.agents.models import AgentRun
+
+            orm_cont = Continuation.all_objects.filter(run_id=run_id).first()
+            if orm_cont is None and live is not None:
+                orm_cont = Continuation.all_objects.filter(
+                    id=live.continuation_id).first()
+            run_row = AgentRun.all_objects.filter(id=run_id).first()
+        except Exception:
+            logger.debug("run detail durable lookup failed", exc_info=True)
+
+        if live is None and orm_cont is None and run_row is None:
             return Response({"detail": f"Run '{run_id}' not found"}, status=404)
-        status = _CONT_STATUS_TO_RUN.get(cont.status, cont.status)
-        out = {
+
+        cont = live or orm_cont
+        cont_id = (
+            getattr(live, "continuation_id", None)
+            or (orm_cont.id if orm_cont else None)
+        )
+        raw_status = _cont_field(cont, "status", run_row.status if run_row else "")
+        status = _CONT_STATUS_TO_RUN.get(raw_status, raw_status)
+
+        out: dict = {
             "run_id": run_id,
-            "continuation_id": cont.continuation_id,
-            "agent_id": cont.pid,
+            "continuation_id": cont_id,
+            "agent_id": _cont_field(cont, "pid", run_row.agent_id if run_row else None),
             "status": status,
-            "suspend_reason": cont.suspend_reason,
+            "suspend_reason": _cont_field(cont, "suspend_reason"),
+            "session_id": _cont_field(cont, "session_id"),
+            "source": _cont_field(cont, "source", run_row.trigger if run_row else None),
+            "step_index": _cont_field(cont, "step_index", 0),
+            "resource_usage": _cont_field(cont, "resource_usage", {}) or {},
+            "steps": _normalize_steps(_cont_field(cont, "message_history", []) or []),
         }
-        pending = [
-            {"request_id": r.external_ref, "tool": r.name, "tool_use_id": r.tool_use_id,
-             "args": r.arguments}
-            for r in cont.pending_calls if r.status == "pending"
-        ]
+
+        pending = _pending_from(cont)
         if pending:
             out["pending"] = pending
+
+        # Worker that executed the run (durable ledger).
+        if cont_id:
+            try:
+                led = RunnableLedger.all_objects.filter(cont_id=cont_id).values(
+                    "owner_worker").first()
+                if led:
+                    out["worker_id"] = led.get("owner_worker")
+            except Exception:
+                logger.debug("run detail worker lookup failed", exc_info=True)
+
+        # agent_runs summary (timing / tokens / cost / model / prompt / output).
+        if run_row is not None:
+            out["trigger"] = run_row.trigger
+            out["started_at"] = _iso(run_row.started_at)
+            out["ended_at"] = _iso(run_row.ended_at)
+            out["duration_ms"] = run_row.duration_ms
+            out["input_tokens"] = run_row.input_tokens
+            out["output_tokens"] = run_row.output_tokens
+            out["tokens_used"] = run_row.tokens_used
+            out["tool_calls"] = run_row.tool_calls
+            out["model"] = run_row.model
+            out["prompt"] = run_row.prompt
+            out["cost_usd"] = _cost_usd(run_row.model, run_row.input_tokens, run_row.output_tokens)
+            if not out.get("agent_id"):
+                out["agent_id"] = run_row.agent_id
+
+        result = _cont_field(cont, "final_output", "") or (run_row.output if run_row else "")
         if status == "completed":
-            out["result"] = cont.final_output
+            out["result"] = result
+        elif run_row is not None and run_row.output:
+            out["result"] = run_row.output
         if status == "failed":
-            out["error"] = cont.last_error
+            out["error"] = _cont_field(cont, "last_error") or (run_row.error if run_row else None)
         return Response(out)
+
+
+def _iso(dt):
+    """ISO-8601 (UTC) for a datetime, else None."""
+    if dt is None:
+        return None
+    try:
+        from datetime import timezone as _tz
+        return dt.astimezone(_tz.utc).isoformat()
+    except Exception:
+        return str(dt)
+
+
+def _cost_usd(model, in_tok, out_tok) -> float:
+    try:
+        from src.billing.plans import estimate_cost_usd
+        if model and ((in_tok or 0) or (out_tok or 0)):
+            return estimate_cost_usd(model, in_tok or 0, out_tok or 0)
+    except Exception:
+        pass
+    return 0.0
 
 
 # --------------------------------------------------------------------------- #

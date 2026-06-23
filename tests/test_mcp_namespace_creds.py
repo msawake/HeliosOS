@@ -12,11 +12,18 @@ from __future__ import annotations
 import pytest
 
 from src.core.secrets import SecretsManager
-from forgeos_mcp.integration.client_mcp_manager import ClientMCPManager
+from src.mcp.client_mcp_manager import ClientMCPManager
 from src.platform.credentials import CredentialStore
 from stacks.base import AgentDefinition, ExecutionType, OwnershipType, build_agent_context
 
 pytestmark = pytest.mark.kernel
+
+
+@pytest.fixture(autouse=True)
+def _no_gcp(monkeypatch):
+    # Keep the in-memory backend authoritative (settings.py may load .env →
+    # GCP_PROJECT_ID in the same process when another test runs django.setup()).
+    monkeypatch.delenv("GCP_PROJECT_ID", raising=False)
 
 
 class _FakeBackend:
@@ -71,14 +78,26 @@ class TestResolveEnv:
         )
         assert env["JIRA_API_TOKEN"] == "user-tok"
 
-    def test_falls_back_to_platform(self):
+    def test_falls_back_to_tenant(self):
         mgr, cs = _mgr_with_secrets()
-        cs.put_scoped_secret("jira-token", "plat-tok", scope="platform")
+        cs.put_scoped_secret("jira-token", "tnt-tok", scope="tenant")
         env = mgr._resolve_env(
             {"JIRA_API_TOKEN": "secret:jira-token"},
             namespace="sales", client_id="user:alice", server_name="atlassian",
         )
-        assert env["JIRA_API_TOKEN"] == "plat-tok"
+        assert env["JIRA_API_TOKEN"] == "tnt-tok"
+
+    def test_shared_ns_client_cannot_read_user_secret(self):
+        # The runtime boundary: a namespace (ns:) connection must NOT resolve a
+        # user-scoped secret even when one exists (allowed_scopes excludes user).
+        mgr, cs = _mgr_with_secrets()
+        cs.put_scoped_secret("jira-token", "user-tok", scope="user", user_id="alice")
+        env = mgr._resolve_env(
+            {"JIRA_API_TOKEN": "secret:jira-token"},
+            namespace="sales", client_id="ns:sales", server_name="atlassian",
+        )
+        # A namespace connection must never surface the user-scoped value.
+        assert env.get("JIRA_API_TOKEN") != "user-tok"
 
     def test_legacy_literal_secret_name_still_resolves(self):
         mgr, cs = _mgr_with_secrets()
@@ -124,10 +143,11 @@ class TestCacheKeyNamespace:
 
 
 class TestAgentContextRouting:
-    def _agent(self, **kw):
+    def _agent(self, ownership=OwnershipType.SHARED, **kw):
         return AgentDefinition(
             name="a", stack="forgeos", namespace=kw.get("namespace", "sales"),
-            execution_type=ExecutionType.REFLEX, ownership=OwnershipType.SHARED,
+            execution_type=ExecutionType.REFLEX, ownership=ownership,
+            owner_id=kw.get("owner_id"),
             metadata=kw.get("metadata", {}),
         )
 
@@ -136,11 +156,23 @@ class TestAgentContextRouting:
         assert ctx["client_id"] == "ns:sales"
         assert ctx["namespace"] == "sales"
 
-    def test_per_user_mcp_routes_to_user_client(self):
+    def test_per_user_mcp_routes_to_user_client_for_personal(self):
+        # Per-user MCP routing applies to PERSONAL agents (the owner == invoker).
         ctx = build_agent_context(
-            self._agent(metadata={"per_user_mcp": True}), "aid", context={"user_id": "alice"},
+            self._agent(ownership=OwnershipType.PERSONAL, owner_id="alice",
+                        metadata={"per_user_mcp": True}),
+            "aid", context={"user_id": "alice"},
         )
         assert ctx["client_id"] == "user:alice"
+
+    def test_shared_agent_never_routes_to_user_client(self):
+        # A SHARED agent must NOT route to a user: connection even with
+        # per_user_mcp / atlassian tools — that would expose user-scoped secrets.
+        ctx = build_agent_context(
+            self._agent(ownership=OwnershipType.SHARED, metadata={"per_user_mcp": True}),
+            "aid", context={"user_id": "alice"},
+        )
+        assert ctx["client_id"] != "user:alice"
 
     def test_namespace_carried_for_resolution(self):
         ctx = build_agent_context(self._agent(namespace="legal"), "aid")

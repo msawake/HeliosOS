@@ -18,6 +18,7 @@ when no DB is wired.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -224,9 +225,17 @@ class EnvironmentManager:
             ]
             for k, v in env_vars.items():
                 run_args += ["--env", f"{k}={v}"]
-            limits = ",".join(f"{k}={v}" for k, v in resources.items() if v)
-            if limits:
-                run_args += ["--limits", limits]
+            # `kubectl run --limits` was removed (~k8s 1.21). Inject CPU/memory
+            # via a strategic-merge override on the run-created container (named
+            # after the pod) so it merges with the image/command instead of
+            # replacing them. The forgeos-envs ResourceQuota requires both
+            # requests and limits, so set both to the requested values.
+            res = {k: v for k, v in resources.items() if v}
+            if res:
+                overrides = {"spec": {"containers": [
+                    {"name": pod, "resources": {"requests": dict(res), "limits": dict(res)}}
+                ]}}
+                run_args += ["--overrides", json.dumps(overrides), "--override-type=strategic"]
             run_args += ["--command", "--", "sh", "-c", "sleep infinity"]
             rc, _, err = self._run(self._kc(*run_args), timeout=60)
             if rc != 0:

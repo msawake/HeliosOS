@@ -140,6 +140,11 @@ class ScopedSecretPutSerializer(serializers.Serializer):
     value = serializers.CharField(min_length=1)
     kind = serializers.CharField(required=False, default="generic")
 
+    def validate_scope(self, v):
+        # Back-compat: the top tier was renamed platform→tenant. Accept the old
+        # value for one release so existing dashboard clients keep working.
+        return "tenant" if v == "platform" else v
+
 
 # ---------------------------------------------------------------------------
 # Views — one APIView per FastAPI path; methods = handler verbs.
@@ -263,6 +268,8 @@ class SecretsView(APIView):
         from src.platform.credentials import SCOPES as _SECRET_SCOPES
 
         scope = request.query_params.get("scope", "user")
+        if scope == "platform":  # legacy alias → tenant
+            scope = "tenant"
         namespace = request.query_params.get("namespace")
         if scope not in _SECRET_SCOPES:
             return Response({"detail": f"unknown scope '{scope}'"}, status=400)
@@ -343,6 +350,8 @@ class SecretsView(APIView):
         if name is None:
             return Response({"detail": "name is required"}, status=400)
         scope = request.query_params.get("scope", "user")
+        if scope == "platform":  # legacy alias → tenant
+            scope = "tenant"
         namespace = request.query_params.get("namespace")
         if scope not in _SECRET_SCOPES:
             return Response({"detail": f"unknown scope '{scope}'"}, status=400)

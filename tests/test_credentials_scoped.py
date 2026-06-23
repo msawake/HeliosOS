@@ -1,8 +1,9 @@
-"""Tests for three-tier scoped secrets (platform / namespace / user).
+"""Tests for three-tier scoped secrets (tenant / namespace / user).
 
 Covers `src/platform/credentials.py` scope naming + CredentialStore.{put_scoped_secret,
 list_secrets, resolve, delete_scoped_secret} on top of a fake in-memory backend wired
-into the real SecretsManager (so the get/put/list/delete plumbing is exercised end-to-end).
+into the real SecretsManager (so the get/put/list/delete plumbing is exercised end-to-end),
+plus the ownership-based `allowed_scopes` boundary used at runtime.
 """
 
 from __future__ import annotations
@@ -11,16 +12,25 @@ import pytest
 
 from src.core.secrets import SecretsManager
 from src.platform.credentials import (
-    CredentialStore,
     SCOPE_NAMESPACE,
-    SCOPE_PLATFORM,
+    SCOPE_TENANT,
     SCOPE_USER,
+    CredentialStore,
+    allowed_scopes_for_agent,
     logical_secret_name,
     scoped_secret_name,
     validate_secret_name,
 )
 
 pytestmark = pytest.mark.kernel
+
+
+@pytest.fixture(autouse=True)
+def _no_gcp(monkeypatch):
+    # settings.py loads .env (which sets GCP_PROJECT_ID) when another test runs
+    # django.setup() in the same process. Clear it so SecretsManager never builds
+    # a live GCP client — keeps these unit tests hermetic AND fast.
+    monkeypatch.delenv("GCP_PROJECT_ID", raising=False)
 
 
 class _FakeBackend:
@@ -64,20 +74,33 @@ class _FakeBackend:
 
 def _store():
     sm = SecretsManager(db_backend=_FakeBackend())
+    # Hermetic: never touch a real GCP Secret Manager. settings.py loads .env
+    # (which may set GCP_PROJECT_ID) when another test runs django.setup() in the
+    # same process, which would otherwise make put()/get() prefer live GCP.
+    sm._client = None
+    sm._project_id = ""
     return CredentialStore(sm), sm
+
+
+def _agent(ownership: str, *, owner_id=None, namespace="default"):
+    """Minimal AgentDefinition stand-in for allowed_scopes_for_agent."""
+    return type(
+        "A", (),
+        {"ownership": type("O", (), {"value": ownership})(), "owner_id": owner_id, "namespace": namespace},
+    )()
 
 
 # --- naming -----------------------------------------------------------------
 
 class TestNaming:
     def test_scoped_names(self):
-        assert scoped_secret_name("k", scope=SCOPE_PLATFORM) == "forgeos-platform-k"
+        assert scoped_secret_name("k", scope=SCOPE_TENANT) == "forgeos-tenant-k"
         assert scoped_secret_name("k", scope=SCOPE_NAMESPACE, namespace="sales") == "forgeos-ns-sales-k"
         assert scoped_secret_name("k", scope=SCOPE_USER, user_id="alice") == "forgeos-user-alice-k"
 
     def test_logical_roundtrip(self):
         for scope, kw in [
-            (SCOPE_PLATFORM, {}),
+            (SCOPE_TENANT, {}),
             (SCOPE_NAMESPACE, {"namespace": "sales"}),
             (SCOPE_USER, {"user_id": "alice"}),
         ]:
@@ -85,7 +108,6 @@ class TestNaming:
             assert logical_secret_name(stored, scope=scope, **kw) == "gw-key"
 
     def test_legacy_name_passthrough(self):
-        # An unprefixed legacy name survives delogification unchanged.
         assert logical_secret_name(
             "forgeos-jira-token-alice", scope=SCOPE_USER, user_id="bob"
         ) == "forgeos-jira-token-alice"
@@ -111,7 +133,7 @@ class TestResolve:
         cs, _ = _store()
         cs.put_scoped_secret("gw", "ns-val", scope=SCOPE_NAMESPACE, namespace="sales")
         cs.put_scoped_secret("gw", "u-val", scope=SCOPE_USER, user_id="alice")
-        # default order is user → namespace → platform
+        # default order is user → namespace → tenant
         assert cs.resolve("gw", namespace="sales", user_id="alice") == "u-val"
 
     def test_precedence_namespace_first_for_mcp(self):
@@ -120,33 +142,34 @@ class TestResolve:
         cs.put_scoped_secret("gw", "u-val", scope=SCOPE_USER, user_id="alice")
         got = cs.resolve(
             "gw", namespace="sales", user_id="alice",
-            order=(SCOPE_NAMESPACE, SCOPE_USER, SCOPE_PLATFORM),
+            order=(SCOPE_NAMESPACE, SCOPE_USER, SCOPE_TENANT),
         )
         assert got == "ns-val"
 
     def test_namespace_fallback_to_user(self):
         cs, _ = _store()
         cs.put_scoped_secret("gw", "u-val", scope=SCOPE_USER, user_id="alice")
-        # No namespace cred → namespace-first walk falls through to user.
         got = cs.resolve(
             "gw", namespace="sales", user_id="alice",
-            order=(SCOPE_NAMESPACE, SCOPE_USER, SCOPE_PLATFORM),
+            order=(SCOPE_NAMESPACE, SCOPE_USER, SCOPE_TENANT),
         )
         assert got == "u-val"
 
-    def test_platform_last_resort(self):
+    def test_tenant_last_resort(self):
         cs, _ = _store()
-        cs.put_scoped_secret("gw", "p-val", scope=SCOPE_PLATFORM)
-        assert cs.resolve("gw", namespace="sales", user_id="alice") == "p-val"
+        cs.put_scoped_secret("gw", "t-val", scope=SCOPE_TENANT)
+        assert cs.resolve("gw", namespace="sales", user_id="alice") == "t-val"
 
     def test_explicit_pins(self):
         cs, _ = _store()
         cs.put_scoped_secret("gw", "ns-val", scope=SCOPE_NAMESPACE, namespace="sales")
         cs.put_scoped_secret("gw", "u-val", scope=SCOPE_USER, user_id="alice")
-        cs.put_scoped_secret("gw", "p-val", scope=SCOPE_PLATFORM)
+        cs.put_scoped_secret("gw", "t-val", scope=SCOPE_TENANT)
         assert cs.resolve("ns/gw", namespace="sales", user_id="alice") == "ns-val"
         assert cs.resolve("user/gw", namespace="sales", user_id="alice") == "u-val"
-        assert cs.resolve("platform/gw", namespace="sales", user_id="alice") == "p-val"
+        assert cs.resolve("tenant/gw", namespace="sales", user_id="alice") == "t-val"
+        # legacy alias pin still resolves to the tenant tier
+        assert cs.resolve("platform/gw", namespace="sales", user_id="alice") == "t-val"
 
     def test_unresolved_returns_none(self):
         cs, _ = _store()
@@ -154,14 +177,11 @@ class TestResolve:
 
     def test_literal_legacy_fallback(self):
         cs, _ = _store()
-        # Legacy literal name (per-user JIRA style) stored verbatim.
         cs.put_secret("forgeos-jira-token-alice", "tok", user_id="alice", kind="jira")
         assert cs.resolve("forgeos-jira-token-alice", user_id="alice") == "tok"
 
     def test_env_not_shadowing_scope_walk(self, monkeypatch):
         cs, _ = _store()
-        # An env var matching a scoped candidate must NOT satisfy the walk
-        # (allow_env=False while probing); only the literal fallback may use env.
         monkeypatch.setenv("FORGEOS_USER_ALICE_GW", "env-val")
         assert cs.resolve("gw", namespace="sales", user_id="alice") is None
 
@@ -169,6 +189,61 @@ class TestResolve:
         cs, _ = _store()
         with pytest.raises(ValueError):
             cs.put_scoped_secret("gw", "v", scope=SCOPE_NAMESPACE)
+
+
+# --- ownership boundary (allowed_scopes) ------------------------------------
+
+class TestOwnershipBoundary:
+    def test_shared_cannot_resolve_user_secret_via_walk(self):
+        cs, _ = _store()
+        cs.put_scoped_secret("gw", "u-val", scope=SCOPE_USER, user_id="alice")
+        # SHARED agent allow-set excludes user scope → walk skips it → None.
+        got = cs.resolve(
+            "gw", namespace="sales", user_id="alice",
+            allowed_scopes=(SCOPE_NAMESPACE, SCOPE_TENANT),
+        )
+        assert got is None
+
+    def test_shared_cannot_resolve_user_secret_via_pin(self):
+        cs, _ = _store()
+        cs.put_scoped_secret("gw", "u-val", scope=SCOPE_USER, user_id="alice")
+        # An explicit user/<name> pin is refused, not honored, when out of scope.
+        got = cs.resolve(
+            "user/gw", namespace="sales", user_id="alice",
+            allowed_scopes=(SCOPE_NAMESPACE, SCOPE_TENANT),
+        )
+        assert got is None
+
+    def test_shared_still_resolves_namespace_and_tenant(self):
+        cs, _ = _store()
+        cs.put_scoped_secret("gw", "ns-val", scope=SCOPE_NAMESPACE, namespace="sales")
+        assert cs.resolve(
+            "gw", namespace="sales", user_id="alice",
+            allowed_scopes=(SCOPE_NAMESPACE, SCOPE_TENANT),
+        ) == "ns-val"
+
+    def test_personal_resolves_owner_user_secret(self):
+        cs, _ = _store()
+        cs.put_scoped_secret("gw", "u-val", scope=SCOPE_USER, user_id="alice")
+        assert cs.resolve(
+            "gw", namespace="sales", user_id="alice",
+            allowed_scopes=(SCOPE_USER, SCOPE_NAMESPACE, SCOPE_TENANT),
+        ) == "u-val"
+
+    def test_allowed_scopes_none_is_all(self):
+        cs, _ = _store()
+        cs.put_scoped_secret("gw", "u-val", scope=SCOPE_USER, user_id="alice")
+        assert cs.resolve("gw", namespace="sales", user_id="alice", allowed_scopes=None) == "u-val"
+
+    def test_allowed_scopes_for_agent_personal(self):
+        scopes, uid = allowed_scopes_for_agent(_agent("personal", owner_id="alice"))
+        assert set(scopes) == {SCOPE_USER, SCOPE_NAMESPACE, SCOPE_TENANT}
+        assert uid == "alice"
+
+    def test_allowed_scopes_for_agent_shared(self):
+        scopes, uid = allowed_scopes_for_agent(_agent("shared", namespace="sales"))
+        assert set(scopes) == {SCOPE_NAMESPACE, SCOPE_TENANT}
+        assert uid is None
 
 
 # --- list / delete ----------------------------------------------------------
@@ -186,10 +261,10 @@ class TestListAndDelete:
         cs.put_scoped_secret("a", "1", scope=SCOPE_USER, user_id="alice")
         cs.put_scoped_secret("b", "2", scope=SCOPE_NAMESPACE, namespace="sales")
         cs.put_scoped_secret("c", "3", scope=SCOPE_NAMESPACE, namespace="legal")
-        cs.put_scoped_secret("d", "4", scope=SCOPE_PLATFORM)
+        cs.put_scoped_secret("d", "4", scope=SCOPE_TENANT)
         assert {r["name"] for r in cs.list_secrets(scope=SCOPE_USER, user_id="alice")} == {"a"}
         assert {r["name"] for r in cs.list_secrets(scope=SCOPE_NAMESPACE, namespace="sales")} == {"b"}
-        assert {r["name"] for r in cs.list_secrets(scope=SCOPE_PLATFORM)} == {"d"}
+        assert {r["name"] for r in cs.list_secrets(scope=SCOPE_TENANT)} == {"d"}
 
     def test_delete(self):
         cs, _ = _store()
@@ -199,8 +274,6 @@ class TestListAndDelete:
         assert cs.resolve("user/gw", user_id="alice") is None
 
     def test_list_merges_postgres_and_gcp(self):
-        # When a GCP project is configured, writes prefer Secret Manager — so
-        # list_names must scan GCP (by scope prefix) AND merge Postgres rows.
         from src.platform.credentials import scoped_secret_name
 
         class _GcpSecret:
@@ -214,7 +287,6 @@ class TestListAndDelete:
                 return [_GcpSecret(f"projects/p/secrets/{i}") for i in self._ids]
 
         backend = _FakeBackend()
-        # A legacy/local row that lives only in Postgres.
         backend.put(
             scoped_secret_name("pg-only", scope=SCOPE_NAMESPACE, namespace="sales"),
             "v", scope="namespace", namespace="sales",
@@ -224,5 +296,5 @@ class TestListAndDelete:
         sm._project_id = "p"
         cs = CredentialStore(sm)
         names = {r["name"] for r in cs.list_secrets(scope=SCOPE_NAMESPACE, namespace="sales")}
-        assert {"pg-only", "gw", "other"} <= names  # Postgres + GCP merged
-        assert "x" not in names  # different namespace filtered out by prefix
+        assert {"pg-only", "gw", "other"} <= names
+        assert "x" not in names

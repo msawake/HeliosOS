@@ -13,5 +13,8 @@ config:
   forgeos-gcp:platform_api_tag: "latest"
   forgeos-gcp:migrations_tag: "latest"
   forgeos-gcp:dashboard_tag: "latest"
+  # Full Drive scope so per-agent SAs (treasury demo) can read/write folders
+  # SHARED with their email; default drive.file only sees app-created files.
+  forgeos-gcp:drive_scopes: drive
   forgeos-gcp:deletion_protection: "false"
   forgeos-gcp:environment: "dev"

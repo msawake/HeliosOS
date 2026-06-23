@@ -87,83 +87,6 @@ def _sse_response(generator) -> StreamingHttpResponse:
     return resp
 
 
-def _resume_agent_context(cont):
-    """Rebuild the per-agent ``agent_context`` for a resumed continuation.
-
-    Ported from fastapi_app.py:753. Without this, ``engine.resume`` runs with
-    ``agent_context=None`` and an approved tool re-executes stripped of the
-    agent's identity (e.g. a per-agent Drive SA never bound). Resolve the agent
-    from the registry by the continuation's pid and rebuild the same context the
-    initial invoke used.
-    """
-    ctx = di.try_get_context() or di.AppContext()
-    platform_registry = ctx.platform_registry
-    platform_executor = ctx.platform_executor
-    try:
-        agent_def = platform_registry.get(cont.pid) if platform_registry else None
-        if agent_def is None and platform_executor:
-            agent_def = platform_executor.registry.get(cont.pid)
-        if agent_def is None:
-            return None
-        from stacks.base import build_agent_context
-
-        return build_agent_context(
-            agent_def, agent_def.agent_id,
-            context={"user_id": getattr(cont, "user_id", "default")},
-        )
-    except Exception:
-        logger.debug("resume: could not rebuild agent_context for %s", getattr(cont, "pid", "?"))
-        return None
-
-
-async def _resume_v2_continuation_await(request_id: str, accept: bool, responded_by):
-    """AWAIT the resume of a runtime-v2 continuation parked on ``request_id`` and
-    return the resulting ``RunOutcome`` (None if no matching continuation).
-
-    Ported from fastapi_app.py:828. Used by the chat resume stream so it can show
-    the continued result inline.
-    """
-    ctx = di.try_get_context() or di.AppContext()
-    platform_executor = ctx.platform_executor
-    if not platform_executor:
-        return None
-    from src.runtime import Resolution, ResolutionOutcome
-
-    for adapter in getattr(platform_executor, "_adapters", {}).values():
-        engine = getattr(adapter, "step_engine", None)
-        store = getattr(engine, "_store", None)
-        if store is None:
-            continue
-        try:
-            cont = store.find_by_external_ref(request_id)
-        except Exception:
-            cont = None
-        if cont is None:
-            continue
-        rec = next((r for r in cont.pending_calls if r.external_ref == request_id), None)
-        if rec is None:
-            continue
-        token_id = None
-        kernel = getattr(engine, "_kernel", None)
-        if accept and kernel is not None and hasattr(kernel, "issue_capability"):
-            tok = kernel.issue_capability(
-                subject=cont.pid, target=f"tool:{rec.name}", verb="tool.call",
-                ttl_seconds=3600,
-                metadata={"external_ref": request_id, "continuation_id": cont.continuation_id},
-            )
-            token_id = tok.id
-        resolution = Resolution(
-            continuation_id=cont.continuation_id, tool_use_id=rec.tool_use_id,
-            outcome=ResolutionOutcome.ACCEPT if accept else ResolutionOutcome.REJECT,
-            capability_token=token_id, responded_by=responded_by,
-        )
-        return await engine.resume(
-            resolution, tool_executor=getattr(adapter, "_tool_executor", None),
-            agent_context=_resume_agent_context(cont),
-        )
-    return None
-
-
 # --------------------------------------------------------------------------- #
 # POST /api/platform/agents/{agent_id}/chat/stream  (SSE)
 # --------------------------------------------------------------------------- #
@@ -260,6 +183,27 @@ async def agent_chat_stream(request, agent_id: str):
         if d.get("output"):
             yield _sse({"type": "text_delta", "content": d["output"]})
             session["messages"].append({"role": "assistant", "content": d["output"]})
+        # Gated tools: when the run SUSPENDED for human approval, surface each
+        # pending call as a `hitl_request` frame so the chat renders an approval
+        # card (the dashboard contract — see the module docstring's frame list —
+        # and chat/page.tsx `case 'hitl_request'`). Without this the run looks
+        # like it silently "didn't respond". external_ref is the approvals
+        # request_id the card POSTs to /api/approvals/<id>/approve.
+        for p in (d.get("pending") or []):
+            ref = p.get("external_ref")
+            if not ref:
+                continue
+            tool = p.get("name")
+            yield _sse({
+                "type": "hitl_request",
+                "request_id": ref,
+                "tool": tool,
+                "args": p.get("arguments") or {},
+                "title": f"Approve tool '{tool}'?",
+                "description": "This action is gated by your governance policy "
+                               "and needs human approval before it runs.",
+                "risk": "high",
+            })
         yield _sse({"type": "done", "tokens_used": d.get("tokens_used", 0),
                     "text": d.get("output", ""), "status": d.get("status")})
 
@@ -290,16 +234,40 @@ async def agent_chat_resume(request, agent_id: str):
         return JsonResponse({"detail": "request_id required"}, status=400)
 
     async def generate():
+        import asyncio as _asyncio
+
         yield _sse({"type": "session", "session_id": sid})
         try:
-            from src.dashboard.chat_events import run_outcome_to_chat_events
+            # Resume executes ONLY on the Celery worker tier (where the suspended
+            # continuation's engine + MCP live) — never inline in the web process.
+            # Enqueue forgeos.resume_agent, poll for the driven turn, then replay
+            # the chat events it returns.
+            from forgeos_web.celery_app import celery
 
-            outcome = await _resume_v2_continuation_await(
-                request_id, accept=True, responded_by=user,
+            task = celery.send_task(
+                "forgeos.resume_agent",
+                kwargs={"external_ref": request_id, "responded_by": user, "accept": True},
+                queue="agents_resume",
             )
-            for ev in run_outcome_to_chat_events(outcome):
+            waited = 0.0
+            while not task.ready() and waited < 300:
+                await _asyncio.sleep(0.5)
+                waited += 0.5
+            if not task.ready():
+                yield _sse({"type": "error", "error": "Timed out waiting for the worker (is the Celery worker running?)"})
+                yield _sse({"type": "done", "tokens_used": 0, "text": ""})
+                return
+            if not task.successful():
+                yield _sse({"type": "error", "error": f"Resume failed: {task.result}"})
+                yield _sse({"type": "done", "tokens_used": 0, "text": ""})
+                return
+
+            res = task.result or {}
+            for ev in res.get("events", []):
                 yield _sse(ev)
-            resumed_output = getattr(outcome, "output", None) if outcome is not None else None
+            # run_outcome_to_chat_events already terminates with a `done` frame.
+
+            resumed_output = res.get("output")
             if resumed_output and sid:
                 if sid in _chat_sessions:
                     _chat_sessions[sid]["messages"].append(
@@ -312,7 +280,7 @@ async def agent_chat_resume(request, agent_id: str):
                     try:
                         platform_executor.record_resumed_turn(
                             sid, resumed_output,
-                            tokens_used=getattr(outcome, "tokens_used", 0) or 0,
+                            tokens_used=res.get("tokens_used", 0) or 0,
                         )
                     except Exception:
                         logger.debug("record_resumed_turn failed", exc_info=True)

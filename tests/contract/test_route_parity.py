@@ -89,11 +89,27 @@ def contract() -> dict[str, set[str]]:
     return {_normalize(r["path"]): set(r["methods"]) for r in data}
 
 
+# Routes added in Django AFTER the FastAPI cutover (no FastAPI equivalent). The
+# parity gate guards against accidental drift in the *port*; intentional new
+# Django-native endpoints are recorded here so they don't trip the hard
+# assertion. Keep `fastapi_routes.json` a pure FastAPI snapshot.
+_DJANGO_NATIVE_ADDITIONS = {
+    "/api/platform/namespaces/mine",
+    "/api/platform/namespaces/{ns}/members",
+    "/api/platform/namespaces/{ns}/members/{member_user_id}",
+    # Run history: list runs across the fleet, grouped client-side by conversation.
+    "/api/platform/runs",
+}
+
+
 def test_no_path_drift(contract):
-    """Every Django API path must exist in the FastAPI contract (same methods)."""
+    """Every Django API path must exist in the FastAPI contract (same methods),
+    except explicitly-recorded Django-native additions."""
     drift: list[str] = []
     for route in _django_routes():
         path, methods = route["path"], set(route["methods"])
+        if path in _DJANGO_NATIVE_ADDITIONS:
+            continue
         if path not in contract:
             drift.append(f"{path} {sorted(methods)} — not in FastAPI contract")
             continue

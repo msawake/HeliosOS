@@ -44,6 +44,24 @@ PLATFORM_CLIENT_ID = "_platform"
 ADMIN_ROLE = "admin"
 
 
+def _scope_owner(client_id: str) -> tuple[str, str]:
+    """Map a client_id to its ownership level + owner for the MCP UI.
+
+    Ownership is persisted on every config row via client_mcp_configs.client_id
+    (UNIQUE(tenant_id, client_id, server_name)); this only surfaces it.
+      "_platform"  -> tenant-wide
+      "user:<id>"  -> a single user
+      "ns:<name>"  -> a namespace (team)
+    """
+    if client_id == PLATFORM_CLIENT_ID:
+        return "tenant", PLATFORM_CLIENT_ID
+    if client_id.startswith("user:"):
+        return "user", client_id[len("user:"):]
+    if client_id.startswith("ns:"):
+        return "namespace", client_id[len("ns:"):]
+    return "tenant", client_id
+
+
 # ---------------------------------------------------------------------------
 # Factory-local helpers ported in (fastapi_app.py).
 # ---------------------------------------------------------------------------
@@ -214,10 +232,40 @@ class PlatformMcpServersView(APIView):
     """GET/POST /api/platform/mcp/servers."""
 
     def get(self, request):
-        """List platform-scoped MCP server configs (secrets redacted)."""
+        """List MCP server configs (secrets redacted).
+
+        Default (no ``scope``) preserves the original contract: a bare list of
+        platform-scoped servers. ``?scope=all|user|namespace|tenant`` returns
+        configs across client scopes, each tagged with its ``scope`` + ``owner``
+        so the dashboard can show + filter by ownership level.
+        """
         ctx = di.get_context()
-        _, client_mcp_store = _client_stores(ctx)
-        return Response(client_mcp_store.list_for_client(PLATFORM_CLIENT_ID, redact_secrets=True))
+        client_store, client_mcp_store = _client_stores(ctx)
+        scope = (request.query_params.get("scope") or "").lower()
+        if not scope or scope == "platform":
+            return Response(
+                client_mcp_store.list_for_client(PLATFORM_CLIENT_ID, redact_secrets=True))
+
+        client_ids: list[str] = [PLATFORM_CLIENT_ID]
+        try:
+            client_ids += [c["id"] for c in client_store.list_all()]
+        except Exception as e:
+            logger.warning("MCP scope listing: client_store.list_all failed: %s", e)
+        seen: set[str] = set()
+        out: list[dict] = []
+        for cid in client_ids:
+            if cid in seen:
+                continue
+            seen.add(cid)
+            s, owner = _scope_owner(cid)
+            if scope != "all" and s != scope:
+                continue
+            try:
+                for row in client_mcp_store.list_for_client(cid, redact_secrets=True):
+                    out.append({**row, "scope": s, "owner": owner, "client_id": cid})
+            except Exception as e:
+                logger.warning("MCP scope listing: list_for_client(%s) failed: %s", cid, e)
+        return Response(out)
 
     def post(self, request):
         """Add a platform-scoped MCP server and connect it live."""

@@ -29,7 +29,7 @@ class UserCredential(TenantModel):
         choices=[
             ("user", "user"),
             ("namespace", "namespace"),
-            ("platform", "platform"),
+            ("tenant", "tenant"),
         ],
     )
     namespace = models.TextField(null=True, blank=True)

@@ -18,6 +18,20 @@ from __future__ import annotations
 
 import os
 
+# Load .env from the repo root the same way src.bootstrap does, so running
+# `celery -A forgeos_web.celery_app ...` resolves REDIS_URL / DATABASE_URL /
+# VLLM_* without anyone having to `source .env` first. This MUST run before
+# django.setup() (settings read DATABASE_URL) and before REDIS_URL is read
+# below at import time — otherwise the broker silently falls back to memory://.
+try:
+    from pathlib import Path
+
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except Exception:  # pragma: no cover - dotenv optional; env may already be set
+    pass
+
 # Configure Django before importing tasks / db helpers (the worker entrypoint
 # `celery -A forgeos_web.celery_app` imports this module first).
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "forgeos_web.settings")
@@ -37,6 +51,15 @@ celery.conf.update(
     task_reject_on_worker_lost=True,
     worker_prefetch_multiplier=1,
     task_track_started=True,
+    # Keep the worker's real sys.stdout/sys.stderr. Celery defaults to
+    # redirecting them to a LoggingProxy, which has no .fileno() — and the MCP
+    # stdio client needs a real fd to spawn each server subprocess. With the
+    # redirect on, every stdio MCP server (atlassian, bigquery, ...) fails with
+    # "'LoggingProxy' object has no attribute 'fileno'", so agents in the worker
+    # run with zero tools and the model narrates tool calls instead of making
+    # them. Disabling the redirect lets MCP connect in the worker exactly like
+    # it does in the web process.
+    worker_redirect_stdouts=False,
     task_default_queue="agents",
     task_routes={
         "forgeos.run_agent": {"queue": "agents"},

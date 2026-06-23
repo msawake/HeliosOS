@@ -30,11 +30,15 @@ JIRA_KIND = "jira"
 
 # Three secret tiers. Stored names are scope-qualified so one flat key space
 # (works on both the encrypted-Postgres and GCP Secret Manager backends) holds
-# all three. See ``scoped_secret_name``.
-SCOPE_PLATFORM = "platform"
+# all three. See ``scoped_secret_name``. The top tier is ``tenant`` (the table
+# is RLS-isolated by tenant_id, so a tenant-scoped secret is the tenant-wide
+# default). ``SCOPE_PLATFORM`` is kept as a back-compat alias for one release so
+# existing imports and stored ``platform/`` pins keep working.
+SCOPE_TENANT = "tenant"
 SCOPE_NAMESPACE = "namespace"
 SCOPE_USER = "user"
-SCOPES = (SCOPE_PLATFORM, SCOPE_NAMESPACE, SCOPE_USER)
+SCOPE_PLATFORM = SCOPE_TENANT  # deprecated alias → "tenant"
+SCOPES = (SCOPE_TENANT, SCOPE_NAMESPACE, SCOPE_USER)
 
 # Logical secret names are kept GCP-safe (Secret Manager ids allow only
 # ``[A-Za-z0-9_-]``) so the same name works on either backend.
@@ -51,18 +55,24 @@ def validate_secret_name(name: str) -> str:
     return name
 
 
+def _canonical_scope(scope: str) -> str:
+    """Map the legacy ``platform`` token to ``tenant`` (alias window)."""
+    return SCOPE_TENANT if scope == "platform" else scope
+
+
 def scoped_secret_name(
     name: str, *, scope: str, namespace: str | None = None, user_id: str | None = None
 ) -> str:
     """Construct the scope-qualified storage key for a logical secret name.
 
-    platform  → ``forgeos-platform-<name>``
+    tenant    → ``forgeos-tenant-<name>``
     namespace → ``forgeos-ns-<namespace>-<name>``
     user      → ``forgeos-user-<user_id>-<name>``
     """
     name = (name or "").strip()
-    if scope == SCOPE_PLATFORM:
-        return f"forgeos-platform-{name}"
+    scope = _canonical_scope(scope)
+    if scope == SCOPE_TENANT:
+        return f"forgeos-tenant-{name}"
     if scope == SCOPE_NAMESPACE:
         return f"forgeos-ns-{namespace or DEFAULT_USER_ID}-{name}"
     if scope == SCOPE_USER:
@@ -108,6 +118,25 @@ def jira_secret_names(user_id: str) -> dict[str, str]:
         "email": _field_secret_name(JIRA_KIND, "email", user_id),
         "token": _field_secret_name(JIRA_KIND, "token", user_id),
     }
+
+
+def allowed_scopes_for_agent(agent_def: Any) -> tuple[tuple[str, ...], str | None]:
+    """Map an agent's ownership to the secret scopes it may read at runtime.
+
+    * PERSONAL → ``(user, namespace, tenant)`` resolved for the **owner**
+      (``owner_id``), not the invoker.
+    * SHARED / CLIENT (namespace-owned) → ``(namespace, tenant)`` only — no user
+      scope, so a shared agent can never reach a user-scoped secret.
+
+    Returns ``(allowed_scopes, secret_user_id)`` to pass into
+    :meth:`CredentialStore.resolve`. Ownership is read by value to avoid a
+    circular import of ``OwnershipType`` from ``stacks.base``.
+    """
+    own = getattr(agent_def, "ownership", None)
+    val = getattr(own, "value", own)  # OwnershipType enum or raw str
+    if val == "personal":
+        return (SCOPE_USER, SCOPE_NAMESPACE, SCOPE_TENANT), (getattr(agent_def, "owner_id", None) or None)
+    return (SCOPE_NAMESPACE, SCOPE_TENANT), None
 
 
 class CredentialStore:
@@ -241,6 +270,7 @@ class CredentialStore:
         manifest/MCP config references it as the **logical** name and the
         resolver expands it. Authorization is the API layer's job, not here.
         """
+        scope = _canonical_scope(scope)
         if scope not in SCOPES:
             raise ValueError(f"unknown secret scope: {scope!r}")
         if scope == SCOPE_NAMESPACE and not namespace:
@@ -270,6 +300,7 @@ class CredentialStore:
         caller: str = "",
     ) -> bool:
         """Delete a scoped logical secret. Idempotent."""
+        scope = _canonical_scope(scope)
         if scope not in SCOPES:
             raise ValueError(f"unknown secret scope: {scope!r}")
         name = validate_secret_name(name)
@@ -284,6 +315,7 @@ class CredentialStore:
         user_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """List logical secret names at a tier (names + metadata, never values)."""
+        scope = _canonical_scope(scope)
         if scope not in SCOPES:
             raise ValueError(f"unknown secret scope: {scope!r}")
         rows = self._secrets.list_names(
@@ -311,24 +343,38 @@ class CredentialStore:
         *,
         namespace: str | None = None,
         user_id: str = DEFAULT_USER_ID,
-        order: tuple[str, ...] = (SCOPE_USER, SCOPE_NAMESPACE, SCOPE_PLATFORM),
+        order: tuple[str, ...] = (SCOPE_USER, SCOPE_NAMESPACE, SCOPE_TENANT),
+        allowed_scopes: tuple[str, ...] | None = None,
         caller: str = "",
     ) -> str | None:
         """Resolve a logical secret reference to its value across the tiers.
 
         ``ref`` forms:
-          * ``platform/<name>`` / ``ns/<name>`` / ``user/<name>`` — explicit pin.
-          * ``<name>`` — walk ``order`` (default user→namespace→platform),
+          * ``tenant/<name>`` (or legacy ``platform/<name>``) / ``ns/<name>`` /
+            ``user/<name>`` — explicit pin.
+          * ``<name>`` — walk ``order`` (default user→namespace→tenant),
             first hit wins; then a final literal/legacy lookup (covers
             ``forgeos-jira-token-<user>`` and env fallback).
+
+        ``allowed_scopes`` restricts which tiers may be read (``None`` = all).
+        It is the runtime authorization boundary: a SHARED/namespace agent is
+        resolved with ``(SCOPE_NAMESPACE, SCOPE_TENANT)`` so it can never read a
+        user-scoped secret — not via the walk, and not via an explicit
+        ``user/<name>`` pin. See :func:`allowed_scopes_for_agent`.
         Returns ``None`` when nothing resolves.
         """
         ref = (ref or "").strip()
         if not ref:
             return None
-        pins = {"platform/": SCOPE_PLATFORM, "ns/": SCOPE_NAMESPACE, "user/": SCOPE_USER}
+        allowed = set(allowed_scopes) if allowed_scopes is not None else None
+        pins = {
+            "tenant/": SCOPE_TENANT, "platform/": SCOPE_TENANT,  # legacy alias
+            "ns/": SCOPE_NAMESPACE, "user/": SCOPE_USER,
+        }
         for prefix, scope in pins.items():
             if ref.startswith(prefix):
+                if allowed is not None and scope not in allowed:
+                    return None  # out-of-scope pin is refused, not honored
                 stored = scoped_secret_name(
                     ref[len(prefix):], scope=scope, namespace=namespace, user_id=user_id
                 )
@@ -337,6 +383,8 @@ class CredentialStore:
                     allow_env=False,
                 ) or None
         for scope in order:
+            if allowed is not None and scope not in allowed:
+                continue
             if scope == SCOPE_NAMESPACE and not namespace:
                 continue
             if scope == SCOPE_USER and not user_id:

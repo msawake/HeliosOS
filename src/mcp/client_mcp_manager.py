@@ -255,21 +255,37 @@ class ClientMCPManager:
         resolved_env = _os.environ.copy()
         if not env_vars:
             return resolved_env
-        cred_user = client_id[len("user:"):] if client_id.startswith("user:") else "default"
         cred_store = None
+        order: tuple[str, ...] = ()
+        allowed: tuple[str, ...] = ()
+        cred_user = "default"
         if self._secrets_manager:
             from src.platform.credentials import (
-                CredentialStore, SCOPE_NAMESPACE, SCOPE_PLATFORM, SCOPE_USER,
+                CredentialStore, SCOPE_NAMESPACE, SCOPE_TENANT, SCOPE_USER,
             )
             cred_store = CredentialStore(self._secrets_manager)
-            order = (SCOPE_NAMESPACE, SCOPE_USER, SCOPE_PLATFORM)
+            # The routing key IS the authorization boundary: only an explicit
+            # per-user (user:) connection may read user-scoped secrets, and only
+            # that user's. A namespace (ns:) or platform/shared connection is
+            # limited to namespace + tenant — so a SHARED/namespace agent can
+            # never reach a user secret.
+            if isinstance(client_id, str) and client_id.startswith("user:"):
+                cred_user = client_id[len("user:"):] or "default"
+                # "namespace creds if available, otherwise this user's" — keep
+                # namespace-first preference; allow user as a fallback tier.
+                order = (SCOPE_NAMESPACE, SCOPE_USER, SCOPE_TENANT)
+                allowed = (SCOPE_USER, SCOPE_NAMESPACE, SCOPE_TENANT)
+            else:
+                order = (SCOPE_NAMESPACE, SCOPE_TENANT)
+                allowed = (SCOPE_NAMESPACE, SCOPE_TENANT)
         for k, v in env_vars.items():
             if isinstance(v, str) and v.startswith("secret:"):
                 secret_name = v[len("secret:"):]
                 if cred_store is not None:
                     resolved_val = cred_store.resolve(
                         secret_name, namespace=namespace, user_id=cred_user,
-                        order=order, caller=f"client_mcp_{client_id}_{server_name}",
+                        order=order, allowed_scopes=allowed,
+                        caller=f"client_mcp_{client_id}_{server_name}",
                     )
                     if resolved_val:
                         resolved_env[k] = resolved_val

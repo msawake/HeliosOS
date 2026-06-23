@@ -353,14 +353,17 @@ class PlatformExecutor:
                     or "default"
                 )
                 invoke_ctx["user_id"] = user_id
-                # Per-user credentials (GH PAT, etc.) — injected into the
-                # invocation context only, never on os.environ, so concurrent
-                # invocations for different users don't race.
-                if self.credential_store is not None:
+                # Per-user credentials (GH PAT, etc.) are a PERSONAL-agent
+                # concept: inject only for PERSONAL agents, and only the OWNER's
+                # credentials (never the invoker's). A SHARED/namespace agent
+                # must not pull whoever-ran-it's personal PAT — it relies on
+                # namespace/tenant creds via the MCP layer instead.
+                _own = getattr(getattr(agent_def, "ownership", None), "value", None)
+                if self.credential_store is not None and _own == "personal":
                     try:
                         self.credential_store.inject_for_invocation(
                             invoke_ctx,
-                            user_id=user_id,
+                            user_id=getattr(agent_def, "owner_id", None) or user_id,
                             caller=f"executor.invoke:{agent_id}",
                             invocation_id=run_id or "",
                         )
