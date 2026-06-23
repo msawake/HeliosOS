@@ -22,7 +22,7 @@ on:
 env:
   PULUMI_VERSION: "3.130.0"
   PYTHON_VERSION: "3.12"
-  PULUMI_BACKEND_URL: "gs://helios-pulumi-state"
+  PULUMI_BACKEND_URL: "gs://hub-helios-dev-pulumi-state"
 
 permissions:
   contents: read
