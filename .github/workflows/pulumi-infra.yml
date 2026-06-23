@@ -1,11 +1,8 @@
 name: "Pulumi Infrastructure"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Prerequisites (GitHub repository secrets / variables):
-#
-#   PULUMI_ACCESS_TOKEN  — Pulumi Cloud access token used to authenticate the
-#                          CLI and store/retrieve stack state.
-#                          Create at: https://app.pulumi.com/account/tokens
+# State backend: GCS bucket gs://helios-pulumi-state (in ms-tool-sys).
+# No PULUMI_ACCESS_TOKEN needed — the WIF service account authenticates to GCS.
 #
 # GCP authentication is keyless (Workload Identity Federation / OIDC).
 # No long-lived service-account JSON key is stored in GitHub.
@@ -25,6 +22,7 @@ on:
 env:
   PULUMI_VERSION: "3.130.0"
   PYTHON_VERSION: "3.12"
+  PULUMI_BACKEND_URL: "gs://helios-pulumi-state"
 
 permissions:
   contents: read
@@ -126,7 +124,6 @@ jobs:
         id: preview
         working-directory: pulumi
         env:
-          PULUMI_ACCESS_TOKEN:      ${{ secrets.PULUMI_ACCESS_TOKEN }}
           CLOUDSDK_COMPUTE_REGION:  europe-west1
           # Required by kubectl / pulumi-kubernetes when talking to GKE clusters.
           USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
@@ -134,6 +131,9 @@ jobs:
           # Ensure output file exists even if preview fails early
           echo "Preview did not produce output" > /tmp/preview-output.txt
           source venv/bin/activate
+          
+          # Login to GCS state backend
+          pulumi login "$PULUMI_BACKEND_URL"
 
           set +e
           # Select the target stack
@@ -265,10 +265,10 @@ jobs:
       - name: Pulumi up
         working-directory: pulumi
         env:
-          PULUMI_ACCESS_TOKEN:      ${{ secrets.PULUMI_ACCESS_TOKEN }}
           CLOUDSDK_COMPUTE_REGION:  europe-west1
           USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
         run: |
           source venv/bin/activate
+          pulumi login "$PULUMI_BACKEND_URL"
           pulumi stack select ${{ needs.resolve-stack.outputs.stack }}
           pulumi up --yes --color never
