@@ -1,32 +1,17 @@
+encryptionsalt: v1:NEEDS_INIT:v1  # Will be set on first `pulumi stack init pro`
 config:
-  # --- Required by gcp_stack.py (.require → hard-fail if absent) ---
-  gcp:project: ms-awake-pro          # from .github/workflows/pulumi-infra.yml (main → pro)
+  gcp:project: ms-awake-pro
   gcp:region: europe-west1
-  forgeos-gcp:network_cidr: 10.20.0.0/16     # mirrors dev — CHANGE if it must not overlap dev/pre VPCs
-  forgeos-gcp:pods_cidr: 10.40.0.0/14
-  forgeos-gcp:services_cidr: 10.44.0.0/20
-  forgeos-gcp:cloud_sql_tier: db-f1-micro    # dev tier — bump for production (e.g. db-custom-2-7680)
-
-  # --- Operational (optional, have defaults; mirrored from Pulumi.dev.yaml) ---
-  forgeos-gcp:platform_api_tag: "ce42d395"
-  forgeos-gcp:mcp_tag: "9e1f1c3c"
-  forgeos-gcp:dashboard_tag: "000360e0"
-  forgeos-gcp:migrations_tag: f38d42d
-  forgeos-gcp:drive_scopes: drive
+  forgeos-gcp:network_cidr: "10.30.0.0/20"
+  forgeos-gcp:pods_cidr: "10.60.0.0/14"
+  forgeos-gcp:services_cidr: "10.64.0.0/20"
+  forgeos-gcp:cloud_sql_tier: "db-custom-1-3840"
   forgeos-gcp:enable_redis: "true"
-  forgeos-gcp:redis_memory_gb: "1"
-  forgeos-gcp:worker_replicas: "1"
+  forgeos-gcp:redis_memory_gb: "2"
   forgeos-gcp:kernel_mode: "production"
-  forgeos-gcp:vllm_base_url: https://atlas-router.ally-code-dev.makingscience.com/v1
-
-  # --- Secrets (optional in code, but the app needs them at runtime) ---
-  # DO NOT paste plaintext here. After `pulumi stack init pro`, set each with:
-  #   pulumi config set --secret forgeos-gcp:gemini_api_key      <value>
-  #   pulumi config set --secret forgeos-gcp:vllm_api_key        <value>
-  #   pulumi config set --secret forgeos-gcp:dashboard_password  <value>
-  #   pulumi config set --secret forgeos-gcp:mcp_api_key         <value>
-  #   pulumi config set --secret forgeos-gcp:jira_url            <value>
-  #   pulumi config set --secret forgeos-gcp:jira_username       <value>
-  #   pulumi config set --secret forgeos-gcp:jira_api_token      <value>
-  #   pulumi config set --secret forgeos-gcp:litellm_allycode_key <value>
-  # (pulumi writes them back here, encrypted with this stack's secrets provider)
+  forgeos-gcp:worker_replicas: "2"
+  forgeos-gcp:platform_api_tag: "latest"
+  forgeos-gcp:migrations_tag: "latest"
+  forgeos-gcp:dashboard_tag: "latest"
+  forgeos-gcp:deletion_protection: "true"
+  forgeos-gcp:environment: "pro"

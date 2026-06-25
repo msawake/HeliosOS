@@ -14,6 +14,7 @@ class Gke(pulumi.ComponentResource):
         region: str,
         network_id: pulumi.Input[str],
         subnet_id: pulumi.Input[str],
+        deletion_protection: bool = False,
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
         super().__init__("forgeos:gke:Gke", name, None, opts)
@@ -35,7 +36,7 @@ class Gke(pulumi.ComponentResource):
                 master_ipv4_cidr_block="172.16.0.0/28",
             ),
             release_channel=gcp.container.ClusterReleaseChannelArgs(channel="REGULAR"),
-            deletion_protection=False,
+            deletion_protection=deletion_protection,
             opts=child,
         )
 

@@ -24,6 +24,7 @@ class Dashboard(pulumi.ComponentResource):
         image: pulumi.Input[str],
         gsa_email: pulumi.Input[str],
         platform_api_url: pulumi.Input[str],
+        environment: str = "dev",
         opts: pulumi.ResourceOptions | None = None,
     ) -> None:
         super().__init__("forgeos:dashboard:Dashboard", name, None, opts)
@@ -35,7 +36,9 @@ class Dashboard(pulumi.ComponentResource):
             location=region,
             ingress="INGRESS_TRAFFIC_ALL",
             deletion_protection=False,
+            labels={"environment": environment, "component": "dashboard"},
             template=gcp.cloudrunv2.ServiceTemplateArgs(
+                labels={"environment": environment, "component": "dashboard"},
                 service_account=gsa_email,
                 timeout="300s",
                 scaling=gcp.cloudrunv2.ServiceTemplateScalingArgs(
