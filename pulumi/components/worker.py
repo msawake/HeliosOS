@@ -123,7 +123,7 @@ class WorkerTier(pulumi.ComponentResource):
         # pods may fail to start if the image is a placeholder or the DB isn't
         # reachable yet. The Deployment object is still created; pods will
         # retry per k8s backoff. Remove this once images are stable.
-        skip_await_annotations = {"pulumi.com/skip-await": "true"}
+        skip_await_annotations = {"pulumi.com/skipAwait": "true"}
 
         plain_env = [
             k8s.core.v1.EnvVarArgs(name="FORGEOS_RUNTIME_V2", value="1"),
