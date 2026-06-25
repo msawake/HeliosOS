@@ -180,6 +180,57 @@ def _enrich_runs(runs: list[dict]) -> list[dict]:
         for c in conts:
             # A run_id maps to one continuation; last writer wins if duplicated.
             cont_by_run[c["run_id"]] = c
+        # Correlation fallback when Continuation.run_id is NULL (the runtime
+        # engine doesn't set it for non-top-level continuations). Match by
+        # (pid, created_at within the run's start/end window). started_at /
+        # ended_at arrive as ISO strings here (see agent_runs_store._serialize)
+        # — parse them back to datetimes for the comparison.
+        from datetime import datetime as _dt, timedelta as _td
+
+        def _parse_iso(v):
+            if v is None or isinstance(v, _dt):
+                return v
+            if not isinstance(v, str):
+                return None
+            try:
+                return _dt.fromisoformat(v.replace("Z", "+00:00"))
+            except Exception:
+                return None
+
+        missing = [r for r in runs if r.get("id") not in cont_by_run and r.get("agent_id")]
+        if missing:
+            from django.db.models import Q as _Q
+            q = _Q()
+            buckets: list[tuple] = []  # (run_id, agent_id, started_dt, ended_dt)
+            for r in missing:
+                started_dt = _parse_iso(r.get("started_at"))
+                ended_dt = _parse_iso(r.get("ended_at"))
+                if not started_dt:
+                    continue
+                buckets.append((r["id"], r["agent_id"], started_dt, ended_dt))
+                sub = _Q(pid=r["agent_id"], created_at__gte=started_dt - _td(seconds=2))
+                if ended_dt:
+                    sub &= _Q(created_at__lte=ended_dt + _td(seconds=5))
+                q |= sub
+            if buckets:
+                try:
+                    fallback = list(
+                        Continuation.all_objects.filter(q)
+                        .order_by("-created_at")
+                        .values("id", "pid", "created_at", "session_id", "source")
+                    )
+                except Exception:
+                    fallback = []
+                for run_id_v, agent_id_v, started_dt, ended_dt in buckets:
+                    for c in fallback:
+                        if c["pid"] != agent_id_v:
+                            continue
+                        if c["created_at"] < started_dt - _td(seconds=2):
+                            continue
+                        if ended_dt and c["created_at"] > ended_dt + _td(seconds=5):
+                            continue
+                        cont_by_run[run_id_v] = c
+                        break
         cont_ids = [c["id"] for c in conts]
         if cont_ids:
             for row in (
@@ -1034,6 +1085,10 @@ class RunDetailView(APIView):
         ctx = di.get_context()
         # Live (in-memory) continuation for actively-running runs; durable ORM
         # continuation for completed history; agent_runs row for the summary.
+        # The {run_id} path param may carry EITHER an AgentRun.id (the canonical
+        # run_id) OR a Continuation.id (cont_xxx). A2A child runs are linked
+        # only by their continuation_id from the parent's tool_result, so the
+        # frontend deep-links by cont_xxx — accept both.
         live = _find_continuation(ctx, run_id)
         orm_cont = None
         run_row = None
@@ -1042,10 +1097,33 @@ class RunDetailView(APIView):
             from forgeos_web.agents.models import AgentRun
 
             orm_cont = Continuation.all_objects.filter(run_id=run_id).first()
+            if orm_cont is None:
+                # Fallback: maybe the caller passed a continuation_id directly.
+                orm_cont = Continuation.all_objects.filter(id=run_id).first()
             if orm_cont is None and live is not None:
                 orm_cont = Continuation.all_objects.filter(
                     id=live.continuation_id).first()
+            # Try run_id first; if the caller used a cont_id, derive run_id
+            # from the continuation we just found.
             run_row = AgentRun.all_objects.filter(id=run_id).first()
+            if run_row is None and orm_cont is not None and orm_cont.run_id:
+                run_row = AgentRun.all_objects.filter(id=orm_cont.run_id).first()
+            # Correlation fallback: Continuation.run_id isn't always populated
+            # by the runtime engine today (TOP-level runs come from invoke; A2A
+            # children + intermediate continuations leave it NULL). When the
+            # caller passed an AgentRun.id but we couldn't find a continuation
+            # via the FK, find the latest continuation whose `pid` matches the
+            # run's `agent_id` and whose `created_at` falls inside the run's
+            # window. This is heuristic but reliable in practice — one agent
+            # has at most one active continuation at a time per invocation.
+            if orm_cont is None and run_row is not None:
+                from datetime import timedelta
+                qs = Continuation.all_objects.filter(pid=run_row.agent_id)
+                if run_row.started_at is not None:
+                    qs = qs.filter(created_at__gte=run_row.started_at - timedelta(seconds=2))
+                if run_row.ended_at is not None:
+                    qs = qs.filter(created_at__lte=run_row.ended_at + timedelta(seconds=2))
+                orm_cont = qs.order_by("-created_at").first()
         except Exception:
             logger.debug("run detail durable lookup failed", exc_info=True)
 
@@ -1060,6 +1138,65 @@ class RunDetailView(APIView):
         raw_status = _cont_field(cont, "status", run_row.status if run_row else "")
         status = _CONT_STATUS_TO_RUN.get(raw_status, raw_status)
 
+        # If this run was delegated by another agent (A2A), surface the parent
+        # so the dashboard can render a "Called by" link back up the chain.
+        # The A2A code path stores the linkage in TWO places:
+        #   - Continuation.parent_continuation_id (the dedicated column), and
+        #   - the first user message's literal "Context: {...}" JSON block
+        #     containing `_delegation` (which is what the inline A2A path
+        #     actually populates today).
+        # Try the column first; fall back to parsing the user message context.
+        parent_cont_id = _cont_field(cont, "parent_continuation_id")
+        parent_run_id = None
+        parent_agent_id = None
+        if parent_cont_id:
+            try:
+                from forgeos_web.runtime.models import Continuation
+                parent = Continuation.all_objects.filter(id=parent_cont_id).only(
+                    "run_id", "pid").first()
+                if parent is not None:
+                    parent_run_id = parent.run_id
+                    parent_agent_id = parent.pid
+            except Exception:
+                logger.debug("parent continuation lookup failed", exc_info=True)
+        # call_path / parent_agent_id come from the inline-A2A path which only
+        # records `_delegation` in the user message context; the dedicated
+        # continuation column isn't populated for inline delegations. The
+        # `parent_run_id` inside _delegation is a synthetic 12-char trace id
+        # (a2a.py:246) — NOT a real AgentRun.id — so we deliberately DON'T
+        # surface it as a link target; we expose `parent_agent_id` instead so
+        # the dashboard can link to the parent agent's detail page.
+        parent_caller_name = None
+        if not parent_agent_id:
+            try:
+                mh = _cont_field(cont, "message_history", []) or []
+                for m in mh:
+                    if not isinstance(m, dict) or m.get("role") != "user":
+                        continue
+                    body = m.get("content")
+                    if not isinstance(body, str):
+                        continue
+                    marker = "Context: {"
+                    idx = body.find(marker)
+                    if idx < 0:
+                        continue
+                    import json as _json
+                    try:
+                        ctx_json = _json.loads(body[idx + len("Context: "):])
+                    except Exception:
+                        continue
+                    deleg = ctx_json.get("_delegation") or {}
+                    caller = ctx_json.get("_caller") or {}
+                    if deleg:
+                        cp = deleg.get("call_path") or []
+                        if len(cp) >= 2:
+                            parent_agent_id = cp[-2]
+                    if caller:
+                        parent_caller_name = caller.get("agent_name")
+                    break
+            except Exception:
+                logger.debug("delegation parse failed", exc_info=True)
+
         out: dict = {
             "run_id": run_id,
             "continuation_id": cont_id,
@@ -1071,6 +1208,10 @@ class RunDetailView(APIView):
             "step_index": _cont_field(cont, "step_index", 0),
             "resource_usage": _cont_field(cont, "resource_usage", {}) or {},
             "steps": _normalize_steps(_cont_field(cont, "message_history", []) or []),
+            "parent_continuation_id": parent_cont_id,
+            "parent_run_id": parent_run_id,
+            "parent_agent_id": parent_agent_id,
+            "parent_agent_name": parent_caller_name,
         }
 
         pending = _pending_from(cont)

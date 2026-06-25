@@ -164,6 +164,7 @@ class A2AHandler:
         context: dict | None = None,
         timeout: float = DEFAULT_CALL_TIMEOUT_SECONDS,
         isolated: bool | None = None,
+        force_inline: bool = False,
     ) -> dict:
         """Synchronous agent-to-agent call. Returns the callee's AgentResult as dict."""
         if not self._executor:
@@ -281,8 +282,14 @@ class A2AHandler:
         # inline so the caller still gets their answer synchronously.
         _gov = (getattr(callee_def, "metadata", None) or {}).get("_governance") or {}
         callee_has_gate = bool(_gov.get("approvals") or _gov.get("human_in_loop"))
-        if not callee_has_gate:
+        if not callee_has_gate or force_inline:
             # Synchronous: the caller needs the callee's real output text.
+            # force_inline lets a caller override the gated-async default when
+            # the SPECIFIC task is known to be gate-free (e.g. mapping-classif
+            # mode A — a read-only BQ lookup that never touches notify__email).
+            # If the callee unexpectedly hits a gate inline, the run will park
+            # and this call will time out — caller should size `timeout`
+            # accordingly OR set force_inline=False for risky tasks.
             callee_context["_inline"] = True
         # else: leave _inline unset -> the forgeos adapter enqueues the run to the
         # worker tier and returns a RUNNING handle immediately (handled below).
@@ -394,11 +401,17 @@ class A2AHandler:
             if isolation.max_result_chars > 0 and len(output) > isolation.max_result_chars:
                 output = output[:isolation.max_result_chars] + "\n... [truncated]"
 
+            # Also surface continuation_id on the SUCCESS path (it's set on the
+            # async/queued path above already). The dashboard uses this to
+            # render a "View child run" link from the parent's tool_result.
+            _result_meta = getattr(result, "metadata", None) or {}
+            _child_cont = _result_meta.get("continuation_id") or _result_meta.get("run_id")
             return {
                 "success": True,
                 "agent_id": callee_def.agent_id,
                 "status": result.status.value if hasattr(result.status, "value") else str(result.status),
                 "output": output,
+                "continuation_id": _child_cont,
                 "tokens_used": result.tokens_used,
                 "tool_calls": [
                     {"name": tc.get("name"), "input": tc.get("input")}
@@ -539,6 +552,7 @@ A2A_TOOL_SCHEMAS = [
                 "task": {"type": "string", "description": "Task/prompt for the callee"},
                 "context": {"type": "object", "description": "Additional context to pass"},
                 "timeout": {"type": "number", "description": "Seconds to wait. Pass a higher value (e.g. 1200) when the callee runs long pipelines (qwen-code + pnpm install + build).", "default": 900},
+                "inline": {"type": "boolean", "description": "Force inline (synchronous) execution even when the callee has approval gates declared. Set to true ONLY when you know this specific task will NOT trigger any of the callee's gates (e.g. a read-only lookup against a gated agent). Default: false — let the platform auto-dispatch gated callees to the worker tier.", "default": False},
             },
             "required": ["name", "task"],
         },
