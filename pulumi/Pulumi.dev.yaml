@@ -1,4 +1,3 @@
-encryptionsalt: v1:NEEDS_INIT:v1  # Will be set on first `pulumi stack init dev`
 config:
   gcp:project: ms-awake-dev
   gcp:region: europe-west1
@@ -18,3 +17,5 @@ config:
   forgeos-gcp:drive_scopes: drive
   forgeos-gcp:deletion_protection: "false"
   forgeos-gcp:environment: "dev"
+secretsprovider: gcpkms://projects/ms-tool-sys/locations/europe-west1/keyRings/helios-pulumi/cryptoKeys/pulumi-secrets
+encryptedkey: CiQAQBwV5yMV5ugrCU9rimjcdlVdT+qa6NeEhsbrxokJRhuqZcESSQD1UoIGJBn5f0smO8/am6X//C/uTh+J15X9JbdsZpkE/pO7J+885AO4d8JD50nk5QzfGtdH4qUax8y92qRVoRnpk8GEeuI+oYY=

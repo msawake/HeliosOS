@@ -1,4 +1,3 @@
-encryptionsalt: v1:NEEDS_INIT:v1  # Will be set on first `pulumi stack init pro`
 config:
   gcp:project: ms-awake-pro
   gcp:region: europe-west1
@@ -15,3 +14,5 @@ config:
   forgeos-gcp:dashboard_tag: "latest"
   forgeos-gcp:deletion_protection: "true"
   forgeos-gcp:environment: "pro"
+secretsprovider: gcpkms://projects/ms-tool-sys/locations/europe-west1/keyRings/helios-pulumi/cryptoKeys/pulumi-secrets
+encryptedkey: CiQAQBwV5zcHQKRQ1fTdW93bN7WqYKIanLGrseZQiG4wvsaKgXASSQD1UoIGYLe88bhEbGHm/kincLHI3g00iIyyBnyYwAM+2lxr8gVwleK0rOtVwSMh5564kNgabskx75Gk8Ck5SQ1ySwAduL6N8cA=
