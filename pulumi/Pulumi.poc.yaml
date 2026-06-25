@@ -27,23 +27,12 @@ config:
   # "Unknown tenant"). Empty = permissive (local-dev) licensing — kernel still
   # enforces ACL/approvals/budgets, just skips the commercial license gate.
   forgeos-gcp:kernel_mode: "production"
-  forgeos-gcp:gemini_api_key:
-    secure: v1:td1CQ3NmsjbGKLKT:J2ReVGV6G7WVgHkXAyVrcdWwBkpyuxvBotMl3VTjxFQpN29OcZoMsDhqzQBNxDdgI8ex5XtOXA==
-  forgeos-gcp:jira_url:
-    secure: v1:ashQC6K3U856yhJW:wlC0uNWNJ+cE5uvzsSZKmKX7AXmpuPTdUeFeQVgaLIesCawKiKpQ/9cK2Idf9fPNHwsg
-  forgeos-gcp:jira_username:
-    secure: v1:iZbGddonajeV4s9u:wWi9vTXIbZWoa2U52sRuB3fWyR/MqugrJdZMNhq0LGziy/yC2eE0dIHJdBFpj9c=
-  forgeos-gcp:jira_api_token:
-    secure: v1:JdaRHGIxV616d8fL:glFId52TRSKKuyHrVCtpM7CBVQirRSlyVE0TNCApFNmvrwJdXAyTaHN0FFxrUYbryBsG55ybmSQ0/k2q2fhD0CjoWUXQEmF/EPQTCKvNs4ce/6dN+ssBjFygAzbMov/P4ZYhEWDSRyqKCRLzBQuli0RIO0GwJEZNktg4cTTjHFGbYg2Ob47RGCshIcDPqNpMFJSBUVqSHkA+22a54OQonGfe9OGb2DDcprrOG4zyMG62adOS5bXuZ8wbbSKdct8PuOoqEiddQ0pjqunZA/VyoA==
-  forgeos-gcp:mcp_api_key:
-    secure: v1:YqAc6AwY6GQEYAuG:bE7VrZhlLDCNzjrF3drNj0sQDncdN5m92967Z5z9dbsz0k7vqOZ7vDl9PLB+vXPPm1/IKi1T4YFFSR/nxfRTIBlpiZ2fPRfegYdsoAAHG1WcwEY+
+  # Secrets intentionally omitted from this stack. The Secrets component
+  # creates empty placeholders in Secret Manager when these config keys are
+  # missing (see components/secrets.py:_secret) — the deploy still succeeds.
+  # Populate later, if/when needed, via `gcloud secrets versions add` or by
+  # `pulumi config set --secret forgeos-gcp:<key>` after re-encrypting under
+  # the new KMS-backed stack.
   forgeos-gcp:vllm_base_url: https://atlas-router.ally-code-dev.makingscience.com/v1
-  forgeos-gcp:vllm_api_key:
-    secure: v1:vnHIT0yuKLyoh1B0:M+UUmsVPPkgZpkET7pdjAAK/hnOzRQC32T0uzFfYXL3wd4sAtEfy2Uc=
-  forgeos-gcp:dashboard_password:
-    secure: v1:JCqeqLWoFH6NUYgf:+9PQMl04oMVy5Kj5bp6/qCJMLbDuX9+oUl+0kSiEN51Xs1eKoJAwgA==
-  forgeos-gcp:litellm_allycode_key:
-    secure: v1:viVWbLK6rbHNKHHU:13E50jKqsYA+IeN2bHLRp4dggC11jKtgJPYYjnaYUvu2tFK2aMcZ7Zo=
   forgeos-gcp:deletion_protection: "false"
   forgeos-gcp:environment: "poc"
-encryptionsalt: v1:aAnZL1A6xrw=:v1:RxasCPnystMWc9sM:V2eUSJQDxw4hFLD8DqUsJmlwHldjog==
