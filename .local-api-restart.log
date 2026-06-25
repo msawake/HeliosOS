@@ -1,0 +1,1279 @@
+09:51:11 | bootstrap            | WARNING | No LLM API key configured — agents will run in SIMULATED mode
+09:51:11 | bootstrap            | INFO    | ============================================================
+09:51:11 | bootstrap            | INFO    | BOOTING HELIOS OS MULTI-STACK PLATFORM
+09:51:11 | bootstrap            | INFO    | Company: leadforge | Mode: supervised
+09:51:11 | bootstrap            | INFO    | Time: 2026-06-23T07:51:11.337489+00:00
+09:51:11 | bootstrap            | INFO    | ============================================================
+09:51:11 | bootstrap            | INFO    | [Phase 1] Initializing platform subsystems...
+09:51:11 | src.platform.llm_router | INFO    | Initialized vLLM client (https://atlas-router.ally-code-dev.makingscience.com/v1, timeout=600.0s)
+09:51:11 | src.platform.llm_router | INFO    | Initialized Vertex AI client (project=admachina-atomic-test-84, region=us-central1)
+09:51:11 | src.platform.llm_router | INFO    | Initialized Google AI Studio (Gemini) client
+09:51:11 | bootstrap            | INFO    |   LLM Router: providers=['vllm', 'vertex', 'google']
+09:51:11 | bootstrap            | INFO    | [Phase 2] Initializing legacy company subsystems...
+09:51:11 | src.core.database    | INFO    | Database pool created (min=2, max=10)
+09:51:11 | bootstrap            | INFO    |   Database: CONNECTED (PostgreSQL)
+09:51:11 | src.core.migrations  | INFO    | Migrations complete: 0 applied, 22 skipped (of 22 total)
+09:51:11 | bootstrap            | INFO    |   Migrations: 0 applied, 22 skipped (of 22 total)
+09:51:11 | src.mcp.custom_tools | INFO    | CompanySystem: using PostgreSQL persistence
+09:51:11 | src.core.redis_rate_limiter | INFO    | Redis rate limiter connected: redis://localhost:6379
+/Users/antoniobergas/.cache/uv/archive-v0/eF7lKrRA94e2GEQE-qRMZ/lib/python3.14/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
+It will be compatible before version 2.0.0.
+  from authlib.jose import JsonWebKey, JsonWebToken
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+│                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                FastMCP 2.14.7                                │
+│                            https://gofastmcp.com                             │
+│                                                                              │
+│                    🖥  Server:      Atlassian MCP                             │
+│                    🚀 Deploy free: https://fastmcp.cloud                     │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                          ✨ FastMCP 3.0 is coming!                           │
+│       Pin `fastmcp < 3` in production, then upgrade when you're ready.       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                          🎉 Update available: 3.4.2                          │
+│                      Run: pip install --upgrade fastmcp                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+WARNING - mcp_atlassian.utils.toolsets - TOOLSETS is not set — currently defaults to all toolsets. In v0.22.0, the default will change to 6 core toolsets only. Set TOOLSETS=all explicitly to preserve current behavior.
+[06/23/26 09:51:13] INFO     Starting MCP server 'Atlassian MCP'  server.py:2506
+                             with transport 'stdio'                             
+09:51:13 | src.mcp.server_manager | INFO    | MCP connected: atlassian (49 tools discovered)
+09:51:13 | src.mcp.server_manager | INFO    | MCP servers: 1/1 connected
+09:51:13 | bootstrap            | INFO    |   Usage enforcer: wired to tool executor
+09:51:13 | src.mcp.tool_executor | INFO    | Registered 49 MCP tools from server 'atlassian'
+Initializing BigQuery with project ID: admachina-atomic-test-84 and location: europe-west4
+No --config-file flag provided — protection mode: off
+BigQuery MCP server running on stdio
+09:51:16 | src.mcp.server_manager | INFO    | MCP connected on demand: bigquery (1 tools discovered)
+09:51:16 | src.mcp.tool_executor | INFO    | Registered 1 MCP tools from server 'bigquery'
+09:51:16 | bootstrap            | INFO    |   Persisted platform MCP: reconnected 1 server(s) from Postgres
+09:51:16 | src.mcp.platform_tools | INFO    | Registered 16 platform tools
+09:51:16 | bootstrap            | INFO    |   Platform tools: registered
+09:51:16 | src.core.model_client | WARNING | Unknown model provider for 'gemini-2.0-flash', trying Anthropic
+09:51:16 | bootstrap            | WARNING |   Legacy invoker skipped: build_registry() got an unexpected keyword argument 'company_name'
+09:51:16 | bootstrap            | INFO    |   Platform persistence: PostgreSQL
+09:51:16 | src.platform.scheduler | INFO    | SchedulerEngine using APScheduler (AsyncIOScheduler)
+09:51:16 | src.core.secret_backends | WARNING | FORGEOS_CRED_ENC_KEY not set (or invalid) — using an INSECURE derived dev key for credential encryption. Set FORGEOS_CRED_ENC_KEY=$(python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())") in any real deployment.
+09:51:16 | bootstrap            | INFO    |   Secret backend: POSTGRES (encrypted)
+09:51:16 | src.core.secrets     | INFO    | Secret Manager initialized (project: admachina-atomic-test-84)
+09:51:16 | bootstrap            | INFO    | [Phase 3] Registering stack adapters...
+09:51:16 | bootstrap            | INFO    |   Stack registered: forgeos
+09:51:16 | bootstrap            | INFO    |   Stack registered: crewai
+09:51:16 | bootstrap            | INFO    |   Stack registered: adk
+09:51:16 | bootstrap            | INFO    |   Stack registered: openclaw
+09:51:16 | bootstrap            | INFO    |   Stack registered: sandbox
+09:51:16 | bootstrap            | INFO    | [Phase 4] Building platform executor...
+09:51:16 | bootstrap            | INFO    |   Session store: IN-MEMORY
+09:51:16 | bootstrap            | INFO    |   Process table: POSTGRESQL (durable)
+09:51:16 | bootstrap            | INFO    |   Agent run history: POSTGRESQL
+09:51:16 | src.platform.postgres_process_table | INFO    | Loaded 12 processes from PostgreSQL
+09:51:16 | bootstrap            | INFO    |   Restored 12 agent processes from PostgreSQL
+09:51:16 | bootstrap            | INFO    |   A2A handler: bound to platform executor
+09:51:16 | bootstrap            | INFO    |   License manager: wired (cache_ttl=300s)
+09:51:16 | bootstrap            | INFO    |   Capability store: Postgres (shared across processes)
+09:51:16 | bootstrap            | INFO    |   Policy stores: Postgres (namespace + global, durable)
+09:51:16 | bootstrap            | INFO    |   Kernel: wired into ToolExecutor (policy enforcement active)
+09:51:16 | bootstrap            | INFO    |   A2H Gateway: initialized
+09:51:16 | src.platform.a2h     | INFO    | Registered human: operations/approver (operator-default)
+09:51:16 | bootstrap            | INFO    |   A2H: seeded default human operations/approver
+09:51:16 | bootstrap            | INFO    |   A2H: wired into ToolExecutor (human__ask/notify/check available)
+09:51:16 | bootstrap            | INFO    |   Kernel: registered for in-process SDK access
+09:51:16 | src.forgeos_sdk.runtime | INFO    | Runtime: platform registered (kernel=Kernel)
+09:51:16 | bootstrap            | INFO    |   Runtime: registered for in-process SDK access
+09:51:16 | src.platform.executor | INFO    | Registered stack adapter: forgeos
+09:51:16 | src.platform.executor | INFO    | Registered stack adapter: crewai
+09:51:16 | src.platform.executor | INFO    | Registered stack adapter: adk
+09:51:16 | src.platform.executor | INFO    | Registered stack adapter: openclaw
+09:51:16 | src.platform.executor | INFO    | Registered stack adapter: sandbox
+09:51:16 | src.platform.registry | INFO    | Loaded 7 agents from persistent store
+09:51:16 | src.platform.kernel._process | WARNING | SECURITY: forced phase transition pid=9c6b7c65-4b5 running -> admitted (reason=)
+09:51:16 | stacks.forgeos.adapter | INFO    | Helios OS agent created: jira-helper (9c6b7c65-4b5)
+09:51:16 | src.platform.kernel._process | WARNING | SECURITY: forced phase transition pid=eb1d77bd-450 running -> admitted (reason=)
+09:51:16 | stacks.forgeos.adapter | INFO    | Helios OS agent created: bank-sap-reconciliation (eb1d77bd-450)
+09:51:16 | src.platform.kernel._process | WARNING | SECURITY: forced phase transition pid=66245bca-95a running -> admitted (reason=)
+09:51:16 | stacks.forgeos.adapter | INFO    | Helios OS agent created: debt-reconciliation (66245bca-95a)
+09:51:16 | src.platform.kernel._process | WARNING | SECURITY: forced phase transition pid=4c8f11ed-eb5 running -> admitted (reason=)
+09:51:16 | stacks.forgeos.adapter | INFO    | Helios OS agent created: po-reconciliation (4c8f11ed-eb5)
+09:51:16 | src.platform.kernel._process | WARNING | SECURITY: forced phase transition pid=260ddb2a-dd6 running -> admitted (reason=)
+09:51:16 | stacks.forgeos.adapter | INFO    | Helios OS agent created: mapping-classification (260ddb2a-dd6)
+09:51:16 | src.platform.kernel._process | WARNING | SECURITY: forced phase transition pid=c55b82b2-eaa running -> admitted (reason=)
+09:51:16 | stacks.forgeos.adapter | INFO    | Helios OS agent created: kyriba-chat-orchestrator (c55b82b2-eaa)
+09:51:16 | src.platform.kernel._process | WARNING | SECURITY: forced phase transition pid=df8b06e8-775 running -> admitted (reason=)
+09:51:16 | stacks.forgeos.adapter | INFO    | Helios OS agent created: bigquery-analyst (df8b06e8-775)
+09:51:16 | src.platform.executor | INFO    | Recovered 7 agents, skipped 0 (terminal), stranded 0 (no adapter) from persistent store
+09:51:16 | bootstrap            | INFO    |   Tenant leadforge already exists
+09:51:16 | bootstrap            | INFO    | [Phase 5] Seeding knowledge base...
+09:51:16 | bootstrap            | INFO    | [Phase 6] Creating workflow engine...
+09:51:16 | bootstrap            | INFO    | [Phase 7] Starting scheduler...
+09:51:16 | apscheduler.scheduler | INFO    | Scheduler started
+09:51:16 | src.platform.scheduler | INFO    | Scheduler started with 0 jobs (APScheduler)
+09:51:16 | bootstrap            | INFO    | ============================================================
+09:51:16 | bootstrap            | INFO    | HELIOS OS PLATFORM ONLINE
+09:51:16 | bootstrap            | INFO    | Stacks: ['forgeos', 'crewai', 'adk', 'openclaw', 'sandbox']
+09:51:16 | bootstrap            | INFO    | Platform agents: 7
+09:51:16 | bootstrap            | INFO    | Mode: supervised
+09:51:16 | bootstrap            | INFO    | Dashboard: http://localhost:3000 (Next.js)
+09:51:16 | bootstrap            | INFO    | API: http://localhost:5055 (Django + DRF)
+09:51:16 | bootstrap            | INFO    | ============================================================
+09:51:16 | bootstrap            | INFO    | API server running on http://0.0.0.0:5055 — Ctrl+C to stop.
+09:51:16 | src.runtime.service  | INFO    | runtime workers: using Postgres runnable_ledger
+09:51:16 | src.runtime.service  | INFO    | runtime workers: using Redis Streams queue (redis://localhost:6379) consumer=w-MSACC-03H95N-24896
+09:51:16 | bootstrap            | INFO    | runtime workers: wired (queue + worker pool + resume service)
+09:51:16 | forgeos_web.di       | INFO    | AppContext installed (executor=True, runtime=True, db=True)
+07:51:17 | bootstrap            | INFO    | API server starting on http://0.0.0.0:5055 (Django + Uvicorn, async)
+07:51:26 | src.api.auth         | WARNING | FORGEOS_SESSION_SECRET not set — using an INSECURE derived dev key for session tokens. Set FORGEOS_SESSION_SECRET to a strong random value in any real deployment.
+07:51:42 | django.request       | WARNING | Unauthorized: /api/platform/agents
+07:54:24 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+07:54:24 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:08:43 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:08:43 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:10:10 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:10:10 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:10:14 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:10:14 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:31:09 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:31:09 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:31:13 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:31:13 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:31:43 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:31:43 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:31:45 | src.platform.audit   | INFO    | Audit chain rehydrated from DB, tip=94e184568e54
+08:31:45 | src.platform.audit   | INFO    | Audit chain rehydrated from DB, tip=94e184568e54
+08:34:02 | src.platform.audit   | INFO    | Audit chain rehydrated from DB, tip=94e184568e54
+08:34:08 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:34:08 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:36:53 | src.platform.audit   | INFO    | Audit chain rehydrated from DB, tip=94e184568e54
+08:36:53 | src.platform.audit   | INFO    | Audit chain rehydrated from DB, tip=94e184568e54
+08:36:55 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:36:55 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:37:47 | src.platform.audit   | INFO    | Audit chain rehydrated from DB, tip=94e184568e54
+08:37:51 | django.request       | WARNING | Not Found: /admin
+08:37:51 | django.request       | WARNING | Not Found: /favicon.ico
+08:37:59 | django.request       | WARNING | Not Found: /favicon.ico
+08:40:22 | src.platform.audit   | INFO    | Audit chain rehydrated from DB, tip=94e184568e54
+08:40:22 | src.platform.audit   | INFO    | Audit chain rehydrated from DB, tip=94e184568e54
+08:42:04 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+08:42:04 | django.request       | ERROR   | Internal Server Error: /api/platform/environments
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/exception.py", line 42, in inner
+    response = await get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 557, in thread_handler
+    raise exc_info[1]
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/core/handlers/base.py", line 253, in _get_response_async
+    response = await wrapped_callback(
+               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 506, in __call__
+    ret = await asyncio.shield(exec_coro)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/current_thread_executor.py", line 40, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/asgiref/sync.py", line 561, in thread_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 81, in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/django/views/generic/base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/rest_framework/views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in get
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 72, in <listcomp>
+    return Response([_env_def_view(ctx, d) for d in ctx.env_def_store.list()])
+                     ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/forgeos_web/environments/views.py", line 54, in _env_def_view
+    out["attached_agents"] = ctx.env_service.agents_using(out["env_def_id"])
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/src/platform/env_service.py", line 84, in agents_using
+    a.agent_id for a in self._registry.list_all()
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'list_all'
+09:32:42 | bootstrap            | INFO    | Received signal SIGTERM — initiating graceful shutdown...
+09:32:42 | bootstrap            | INFO    | Shutting down Helios OS Platform (graceful)...
+09:32:42 | src.platform.scheduler | INFO    | Scheduler stopped
+09:32:42 | bootstrap            | INFO    |   Scheduler stopped
+09:32:42 | apscheduler.scheduler | INFO    | Scheduler has been shut down
+09:32:42 | bootstrap            | INFO    | Shutting down Helios OS Platform (graceful)...
+09:32:42 | src.platform.scheduler | INFO    | Scheduler stopped
+09:32:42 | bootstrap            | INFO    |   Scheduler stopped
+09:32:42 | src.mcp.server_manager | WARNING | Error disconnecting MCP server: 'TaskGroup' object has no attribute '_exceptions'
+09:32:42 | src.mcp.server_manager | INFO    | All MCP servers disconnected
+09:32:42 | bootstrap            | INFO    |   MCP servers disconnected
+09:32:42 | src.mcp.client_mcp_manager | INFO    | All client MCP connections closed
+09:32:42 | src.core.database    | INFO    | Database pool closed
+09:32:42 | bootstrap            | INFO    |   Database closed
+09:32:42 | bootstrap            | INFO    | Shutdown complete.
+09:32:42 | src.mcp.server_manager | WARNING | Error disconnecting MCP server: 'TaskGroup' object has no attribute '_exceptions'
+09:32:42 | src.mcp.server_manager | INFO    | All MCP servers disconnected
+09:32:42 | bootstrap            | INFO    |   MCP servers disconnected
+09:32:42 | src.mcp.client_mcp_manager | INFO    | All client MCP connections closed
+09:32:42 | src.core.database    | INFO    | Database pool closed
+09:32:42 | bootstrap            | INFO    |   Database closed
+09:32:42 | bootstrap            | INFO    | Shutdown complete.
+09:32:42 | bootstrap            | INFO    | All tasks cancelled. Exiting.
+09:32:42 | asyncio              | ERROR   | unhandled exception during asyncio.run() shutdown
+task: <Task finished name='Task-9214' coro=<<async_generator_athrow without __name__>()> exception=RuntimeError('Attempted to exit cancel scope in a different task than it was entered in')>
+  + Exception Group Traceback (most recent call last):
+  |   File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 811, in __aexit__
+  |     raise BaseExceptionGroup(
+  | BaseExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/mcp/client/stdio/__init__.py", line 189, in stdio_client
+    |     yield read_stream, write_stream
+    | asyncio.exceptions.CancelledError
+    | 
+    | During handling of the above exception, another exception occurred:
+    | 
+    | Traceback (most recent call last):
+    |   File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/mcp/client/stdio/__init__.py", line 197, in stdio_client
+    |     await process.stdin.aclose()
+    | asyncio.exceptions.CancelledError
+    | 
+    | During handling of the above exception, another exception occurred:
+    | 
+    | Traceback (most recent call last):
+    |   File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/mcp/client/stdio/__init__.py", line 182, in stdio_client
+    |     async with (
+    |   File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 1123, in aclose
+    |     await self._stdin.aclose()
+    |   File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 1110, in aclose
+    |     await AsyncIOBackend.checkpoint()
+    |   File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 2448, in checkpoint
+    |     await sleep(0)
+    |   File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py", line 640, in sleep
+    |     await __sleep0()
+    |   File "/opt/homebrew/Cellar/python@3.11/3.11.15/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/tasks.py", line 634, in __sleep0
+    |     yield
+    | GeneratorExit
+    +------------------------------------
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/mcp/client/stdio/__init__.py", line 182, in stdio_client
+    async with (
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 817, in __aexit__
+    if self.cancel_scope.__exit__(type(exc), exc, exc.__traceback__):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/antoniobergas/helios/helios/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 464, in __exit__
+    raise RuntimeError(
+RuntimeError: Attempted to exit cancel scope in a different task than it was entered in

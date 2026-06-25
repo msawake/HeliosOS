@@ -141,7 +141,9 @@ class UsersView(APIView):
     permission_classes = [require_role("admin")]
 
     def get(self, request):
-        return Response({"users": get_user_store().list_users()})
+        from forgeos_web.common.pagination import paginate
+        users = get_user_store().list_users()
+        return Response(paginate(users, request, default=50))
 
     def post(self, request):
         ser = UserCreateSerializer(data=request.data)

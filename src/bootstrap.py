@@ -257,6 +257,11 @@ class PlatformBootstrap:
             # creds (e.g. mcp-atlassian connects but discovers 0 tools). Now that
             # secrets resolve, reconnect those servers and re-register their tools.
             await self._reconnect_secret_ref_mcp_servers()
+            # Persisted (dashboard-added) platform MCPs hit the same ordering
+            # issue — they're connected in _init_legacy_subsystems() before the
+            # SecretsManager exists. Reconnect any that reference `secret:` env
+            # vars now that resolution works.
+            await self._reconnect_secret_ref_persisted_mcp_servers()
 
             logger.info("[Phase 3] Registering stack adapters...")
             self._register_adapters()
@@ -864,6 +869,50 @@ class PlatformBootstrap:
                     logger.warning("  MCP '%s' still 0 tools after secret resolution (check credentials)", cfg.name)
             except Exception as e:
                 logger.warning("  Reconnect of MCP '%s' failed: %s", cfg.name, e)
+
+    async def _reconnect_secret_ref_persisted_mcp_servers(self) -> None:
+        """Reconnect dashboard-persisted platform MCPs whose env uses ``secret:``.
+
+        Counterpart to :meth:`_reconnect_secret_ref_mcp_servers` for persisted
+        platform MCPs (stored under the ``_platform`` client in Postgres). Those
+        were first connected in :meth:`_init_legacy_subsystems` BEFORE the
+        SecretsManager existed, so any ``secret:<name>`` env ref resolved to ""
+        and the MCP came up with empty creds (e.g. workspace-mcp can't
+        authenticate Drive/Gmail without GOOGLE_OAUTH_CLIENT_ID). Now that the
+        SecretsManager is bound, reconnect each one so the resolved values
+        actually reach the MCP subprocess.
+        Best-effort: a failure on one server is logged and skipped.
+        """
+        if not self._db:
+            return
+        mgr = getattr(self, "_mcp_manager", None)
+        te = getattr(self, "_tool_executor", None)
+        if mgr is None or te is None:
+            return
+        try:
+            from src.platform.client_store import PostgresClientMCPStore
+            store = PostgresClientMCPStore(db_client=self._db, tenant_id=self.tenant_id)
+            persisted = store.list_for_client("_platform")
+        except Exception as e:
+            logger.warning("  Persisted-secret-ref MCP reconnect: could not read store: %s", e)
+            return
+        declared = {c.name for c in mgr.get_server_configs()}
+        for cfg in persisted:
+            name = cfg.get("server_name")
+            if not name or not cfg.get("enabled", True) or name in declared:
+                continue
+            env = cfg.get("env_vars") or {}
+            if not any(isinstance(v, str) and v.startswith("secret:") for v in env.values()):
+                continue
+            try:
+                schemas = await mgr.connect_one(name, cfg.get("package", ""), env, cfg.get("args", []))
+                te.register_mcp_tools(name, schemas)
+                client = mgr.get_clients().get(name)
+                if client is not None:
+                    te._mcp_clients[name] = client
+                logger.info("  Reconnected persisted MCP '%s' with resolved secrets (%d tools)", name, len(schemas))
+            except Exception as e:
+                logger.warning("  Reconnect of persisted MCP '%s' failed: %s", name, e)
 
     async def _connect_persisted_platform_mcp(self, tool_executor) -> None:
         """Connect platform MCP servers persisted in Postgres at boot.

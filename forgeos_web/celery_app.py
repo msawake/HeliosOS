@@ -113,6 +113,17 @@ def _init_worker(**_):
         boot = PlatformBootstrap(company_id=os.environ.get("FORGEOS_COMPANY", "leadforge"))
         run_async(boot.boot())
         boot.populate_web_context(auth_enabled=False)
+        # Kick the RuntimeService consumer loop. Without this, A2A-dispatched
+        # runs enqueued onto Redis Streams via `enqueue_invoke` sit unconsumed
+        # forever (the bootstrap only WIRES the worker pool; nothing else calls
+        # .start()). Idempotent — RuntimeService.start() returns early if its
+        # tasks are already running.
+        try:
+            from forgeos_web.celery_runtime import get_runtime_service
+            get_runtime_service()
+        except Exception:
+            import logging
+            logging.getLogger("forgeos.celery").exception("runtime worker pool start failed")
     except Exception:
         import logging
         logging.getLogger("forgeos.celery").exception("worker platform boot failed")

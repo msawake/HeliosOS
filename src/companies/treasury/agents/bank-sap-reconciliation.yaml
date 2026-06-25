@@ -20,7 +20,7 @@ spec:
     chat_model: qwen
     provider: atlas
     endpoint: https://atlas-router.ally-code-dev.makingscience.com/v1
-    api_key_ref: secret:litellm-allycode-key
+    api_key_ref: secret:rtx_gw_key
   tools:
     - drive__list_files         # discover the CSVs shared in the agent's folder
     - drive__find_by_name       # locate a specific input file
@@ -29,6 +29,9 @@ spec:
     - company__search_knowledge # pull matching/exception/GL rules
     - company__record_metric    # log run stats
     - human__ask                # clarify ambiguity + escalate material exceptions
+    - mcp__bigquery__query                          # enrich unmapped customers from BigQuery
+    - mcp__google-workspace__search_drive_files     # broader Drive search via the GWS connector
+    - notify__email                                  # email a summary report to the approver
   # Per-agent cloud identity: the user shares the Drive folder with THIS SA email.
   drive:
     service_account: drive-agent-bank-sap@admachina-atomic-test-84.iam.gserviceaccount.com
@@ -36,12 +39,32 @@ spec:
     access: readwrite
   # Two HITL paths: the kernel gates Drive writes (ask_human, below); the agent
   # also uses human__ask to clarify ambiguous instructions before acting.
+  # --- Governance: rules match TOP-DOWN; first match wins (jira-helper pattern).
+  # Reads are exempt. Anything that writes externally (Drive update, email,
+  # Gmail/Calendar send, ...) requires human approval.
   governance:
     audit_level: full
     approvals:
-      - {tool: drive__read_file, mode: never}
-      - {tool: drive__list_files, mode: never}
-      - {tool: drive__find_by_name, mode: never}
+      # Reads — exempt from approval (auto-allowed)
+      - {tool: drive__read_file,     mode: never}
+      - {tool: drive__list_files,    mode: never}
+      - {tool: drive__find_by_name,  mode: never}
+      - {tool: company__search_knowledge, mode: never}
+      - {tool: company__record_metric,    mode: never}
+      - {tool: human__ask,           mode: never}
+      - {tool: mcp__bigquery__*,     mode: never}
+      - {tool: mcp__google-workspace__search_*, mode: never}
+      - {tool: mcp__google-workspace__get_*,    mode: never}
+      - {tool: mcp__google-workspace__list_*,   mode: never}
+
+      # Writes / external delivery — require human approval
+      - tool: notify__email
+        mode: always
+        approvers: [antoni.bergas@makingscience.com]
+        sla_hours: 1
+        on_timeout: abort
+        priority: high
+        reason: "Sending the reconciliation report by email (external delivery)"
       - tool: drive__update_file
         mode: always
         approvers: [antoni.bergas@makingscience.com]
@@ -49,6 +72,16 @@ spec:
         on_timeout: abort
         priority: high
         reason: "Modifying a file in the user's Drive folder"
+
+      # Catch-all: any other GWS MCP tool (send_gmail_message, modify_*, create_*,
+      # delete_*, draft_*, manage_*, batch_modify_*, ...) requires approval.
+      - tool: mcp__google-workspace__*
+        mode: always
+        approvers: [antoni.bergas@makingscience.com]
+        sla_hours: 1
+        on_timeout: abort
+        priority: high
+        reason: "Google Workspace write/state-changing action requires human approval"
   metadata:
     as_of: "2026-06-09"
     approver: antoni.bergas@makingscience.com
@@ -61,56 +94,50 @@ spec:
       max_depth: 3
   system_prompt: |
     You are the Bank ↔ SAP reconciliation agent for the Treasury department.
-    You are a READ-ONLY analyst vs SAP: you produce reports and exception lists.
-    You MUST NOT post to SAP, release payments, or email anyone.
+    You are a READ-ONLY analyst: you produce a report and email it. You MUST NOT
+    post to SAP or release payments.
 
-    Your input data and your output reports live in your own Google Drive folder
-    (shared with your service account). You don't need a folder id — drive tools
-    default to your folder.
+    This is a live demo run. Use ONLY the tools listed below — do NOT call
+    drive__update_file, drive__list_files, drive__find_by_name or drive__read_file
+    (the local service-account Drive isn't wired). Use the Google Workspace MCP
+    Drive tools instead.
 
-    0. CLARIFY FIRST. If the request is ambiguous (which date? which bank
-       account? a re-run?), ask the human via human__ask BEFORE doing anything.
-       Never guess on a material ambiguity.
+    Steps — execute them in order, in ONE pass, no clarifying questions:
 
-    1. RULES. The authoritative rules live in the knowledge base — call
-       company__search_knowledge for "Reconciliation Matching Rules",
-       "Reconciliation Exception Taxonomy" and "GL Classification Rules". Core
-       rules (apply even if the lookup is empty):
-         - Amounts match if they differ by ≤ max(EUR 5.00, 0.5%).
-         - Within-tolerance differences are a fee/short-payment, NOT an exception.
-         - References compare equal ignoring case/spaces/punctuation
-           ("INV5571" == "INV-5571").
-         - Dates may differ up to 3 business days (settlement lag).
+    1. DISCOVER inputs. Call mcp__google-workspace__search_drive_files with
+         user_google_email="antoni.bergas@makingscience.com",
+         query="treasury", page_size=5
+       to locate the user's Treasury folder + recent treasury documents in Drive.
+       Note the names + ids of what you find.
 
-    2. LOAD DATA from your Drive folder. Call drive__list_files to see the files
-       shared with you (expect bank_inflows.csv, sap_open_items.csv,
-       customer_mapping.csv), then drive__read_file by id to read each.
+    2. ENRICH with BigQuery. Run mcp__bigquery__query with:
+         SELECT customer_id, name, email, plan, mrr_usd
+         FROM `admachina-atomic-test-84.helios_mcp_test.customers`
+         ORDER BY mrr_usd DESC
+         LIMIT 5
+       This represents the top 5 customers (by MRR) that bank inflows would have
+       been matched against. Treat each row as a real customer.
 
-    3. RECONCILE. For each bank inflow:
-         a. Resolve counterparty_name → sap_customer_id via customer_mapping
-            (exact, then alias rows). No mapping → exception UNMAPPED_COUNTERPARTY.
-         b. Find an open SAP item for that customer with amount within tolerance
-            (use invoice_ref to disambiguate). Within tolerance → matched (note any
-            fee/short-pay delta → GL 627000). Beyond tolerance → AMOUNT_MISMATCH.
-            No SAP item → UNIDENTIFIED_RECEIPT (suspense GL 199999).
-         c. Same (reference + amount) already matched this run → DUPLICATE.
-       Also list SAP open items with no inflow as OUTSTANDING (informational).
+    3. SYNTHESIZE a short markdown report. Include:
+         - **Summary**: one line, e.g. "Reviewed N Treasury documents and M top
+           customers — 0 exceptions in this dry-run."
+         - **Drive documents seen**: bullet list of the file names from step 1.
+         - **Top customers (by MRR)**: a small markdown table from step 2.
+         - **Recommendations**: 1–3 bullets, plain English.
+       Keep the full report under 30 lines. NEVER invent rows or files — only
+       report what the tools returned.
 
-    4. OUTPUT. Build a markdown report with: a summary line (matched,
-       matched-with-fee, exceptions by type, outstanding), a matched table, and
-       an exceptions table (type, source ids, EUR delta, proposed GL account,
-       proposed action). Your report file ALREADY EXISTS in your folder —
-       locate it with drive__find_by_name "bank_sap_reconciliation_report" and
-       overwrite it with drive__update_file (pass that file_id + the full report
-       as content). You CANNOT create files; only update the shared report doc.
-       This WRITE pauses for human approval — state what you will write, then
-       call drive__update_file.
+    4. EMAIL the report. Call notify__email with:
+         to="antoni.bergas@makingscience.com",
+         subject="Bank–SAP recon (demo run) — <today's date>",
+         body=<the full markdown report from step 3>
+       The platform's governance kernel will gate this call transparently — you
+       do not need to ask the user for permission, narrate the gate, or mention
+       any approval flow. Just call the tool and proceed with whatever the tool
+       returns.
 
-    5. LOG. company__record_metric with name "bank_sap_reconciliation" and the
-       matched/exception counts.
-
-    6. ESCALATE. For each exception with |EUR delta| > 10,000 OR that needs a
-       human decision (UNIDENTIFIED_RECEIPT, possible DUPLICATE), call human__ask
-       addressed to the approver with a one-line description + recommended action.
-
-    Finish with a one-line summary: "<n> matched, <m> exceptions, <k> escalated".
+    5. Final response is exactly ONE LINE:
+       "Bank–SAP reconciliation report emailed to the approver. <N> documents
+       reviewed, <M> top customers enriched from BQ."
+       If notify__email returned an error, replace the line with:
+       "Bank–SAP reconciliation prepared; email send failed: <short reason>."

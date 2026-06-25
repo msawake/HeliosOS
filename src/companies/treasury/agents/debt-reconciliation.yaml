@@ -18,7 +18,7 @@ spec:
     chat_model: qwen
     provider: atlas
     endpoint: https://atlas-router.ally-code-dev.makingscience.com/v1
-    api_key_ref: secret:litellm-allycode-key
+    api_key_ref: secret:rtx_gw_key
   tools:
     - drive__list_files
     - drive__find_by_name
@@ -27,16 +27,38 @@ spec:
     - company__search_knowledge
     - company__record_metric
     - human__ask
+    - mcp__bigquery__query                          # enrich creditor/customer lookups from BigQuery
+    - mcp__google-workspace__search_drive_files     # broader Drive search via the GWS connector
+    - notify__email                                  # email a summary report to the approver
   drive:
     service_account: drive-agent-debt@admachina-atomic-test-84.iam.gserviceaccount.com
     folder_id: 1F6K7TAmW-RhSsH-lQTHEMmQfbS7GiMBD
     access: readwrite
+  # --- Governance: rules match TOP-DOWN; first match wins (jira-helper pattern).
+  # Reads are exempt. External delivery / writes require human approval.
   governance:
     audit_level: full
     approvals:
-      - {tool: drive__read_file, mode: never}
-      - {tool: drive__list_files, mode: never}
-      - {tool: drive__find_by_name, mode: never}
+      # Reads — exempt from approval (auto-allowed)
+      - {tool: drive__read_file,     mode: never}
+      - {tool: drive__list_files,    mode: never}
+      - {tool: drive__find_by_name,  mode: never}
+      - {tool: company__search_knowledge, mode: never}
+      - {tool: company__record_metric,    mode: never}
+      - {tool: human__ask,           mode: never}
+      - {tool: mcp__bigquery__*,     mode: never}
+      - {tool: mcp__google-workspace__search_*, mode: never}
+      - {tool: mcp__google-workspace__get_*,    mode: never}
+      - {tool: mcp__google-workspace__list_*,   mode: never}
+
+      # Writes / external delivery — require human approval
+      - tool: notify__email
+        mode: always
+        approvers: [antoni.bergas@makingscience.com]
+        sla_hours: 1
+        on_timeout: abort
+        priority: high
+        reason: "Sending the debt reconciliation report by email (external delivery)"
       - tool: drive__update_file
         mode: always
         approvers: [antoni.bergas@makingscience.com]
@@ -44,6 +66,16 @@ spec:
         on_timeout: abort
         priority: high
         reason: "Modifying a file in the user's Drive folder"
+
+      # Catch-all: any other GWS MCP tool (send_gmail_message, modify_*, create_*,
+      # delete_*, draft_*, manage_*, batch_modify_*, ...) requires approval.
+      - tool: mcp__google-workspace__*
+        mode: always
+        approvers: [antoni.bergas@makingscience.com]
+        sla_hours: 1
+        on_timeout: abort
+        priority: high
+        reason: "Google Workspace write/state-changing action requires human approval"
   metadata:
     as_of: "2026-06-09"
     approver: antoni.bergas@makingscience.com
@@ -85,12 +117,23 @@ spec:
        folder — locate it with drive__find_by_name "debt_reconciliation_report"
        and overwrite it with drive__update_file (pass that file_id + the full
        report as content). You CANNOT create files; only update the shared report
-       doc. This WRITE pauses for human approval — state what you'll write, then
-       call drive__update_file.
+       doc. The governance kernel will gate this call transparently — do not
+       narrate the pause, just call the tool.
 
     5. LOG via company__record_metric (name "debt_reconciliation").
 
     6. ESCALATE every MISSED_PAYMENT and any exception with |delta| > 10,000 to
        the approver via human__ask with your recommendation.
+
+    7. ENRICH. For an unknown loan/creditor, optionally cross-check via BigQuery
+       (mcp__bigquery__query):
+         SELECT customer_id, name, email, plan, mrr_usd
+         FROM `admachina-atomic-test-84.helios_mcp_test.customers`
+         WHERE LOWER(name) LIKE LOWER('%<creditor>%')
+       Use only to enrich the escalation; never invent rows.
+
+    8. NOTIFY. Once the report is approved, email a one-paragraph summary via
+       notify__email (subject: "Debt recon <as_of>") with MISSED_PAYMENT,
+       OVERPAYMENT and unknown-loan counts and the link to the report file.
 
     Finish with a one-line summary.

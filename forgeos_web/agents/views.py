@@ -590,14 +590,14 @@ class AgentsView(APIView):
         owner_id = qp.get("owner_id")
         department = qp.get("department")
         client_id = qp.get("client_id")
-        limit = int(qp.get("limit", 50))
-        offset = int(qp.get("offset", 0))
+        from forgeos_web.common.pagination import paginate, parse_page
+        page, page_size = parse_page(request)
 
         if not platform_registry:
             if admin_tools:
                 agents = admin_tools.list_agents(department=department)
-                return Response(agents[offset:offset + limit] if isinstance(agents, list) else [])
-            return Response([])
+                return Response(paginate(agents if isinstance(agents, list) else [], request))
+            return Response(paginate([], request))
         filters = {}
         if stack:
             filters["stack"] = stack
@@ -625,7 +625,10 @@ class AgentsView(APIView):
                 a for a in all_agents
                 if _can_access_agent(uid, role, a, my_namespaces=my_ns)
             ]
-        agents = all_agents[offset:offset + limit]
+
+        total = len(all_agents)
+        start = (page - 1) * page_size
+        agents = all_agents[start:start + page_size]
 
         out = []
         for a in agents:
@@ -641,7 +644,7 @@ class AgentsView(APIView):
             except Exception:
                 pass
             out.append(d)
-        return Response(out)
+        return Response({"items": out, "total": total, "page": page, "page_size": page_size})
 
     def post(self, request):
         req = _validated_agent_request(request.data)
@@ -978,19 +981,22 @@ class RunsListView(APIView):
     def get(self, request):
         ctx = di.get_context()
         platform_executor = ctx.platform_executor
-        limit = int(request.query_params.get("limit", 100))
+        from forgeos_web.common.pagination import paginate
         agent_id = request.query_params.get("agent_id")
         source = request.query_params.get("source")
         if not platform_executor or not getattr(platform_executor, "agent_runs", None):
-            return Response({"runs": []})
+            return Response(paginate([], request))
+        # Fetch a generous batch so we can paginate server-side without touching
+        # the platform layer's DB queries (max 500; enough for all practical UIs).
+        fetch_limit = 500
         if agent_id:
-            runs = async_to_sync(platform_executor.agent_runs.list_for_agent)(agent_id, limit=limit)
+            runs = async_to_sync(platform_executor.agent_runs.list_for_agent)(agent_id, limit=fetch_limit)
         else:
-            runs = async_to_sync(platform_executor.agent_runs.list_recent)(limit=limit)
+            runs = async_to_sync(platform_executor.agent_runs.list_recent)(limit=fetch_limit)
         runs = _enrich_runs(runs)
         if source:
             runs = [r for r in runs if r.get("source") == source or r.get("trigger") == source]
-        return Response({"runs": runs})
+        return Response(paginate(runs, request, default=20))
 
 
 # --------------------------------------------------------------------------- #
