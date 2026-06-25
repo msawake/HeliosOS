@@ -31,7 +31,10 @@ spec:
     - human__ask                # clarify ambiguity + escalate material exceptions
     - mcp__bigquery__query                          # enrich unmapped customers from BigQuery
     - mcp__google-workspace__search_drive_files     # broader Drive search via the GWS connector
+    - mcp__google-workspace__get_drive_file_content # read the actual contents of a Drive file
     - notify__email                                  # email a summary report to the approver
+    - agent__call                                    # A2A: consult mapping-classification for a sanity check
+    - agent__list_available                          # discover treasury specialists at runtime
   # Per-agent cloud identity: the user shares the Drive folder with THIS SA email.
   drive:
     service_account: drive-agent-bank-sap@admachina-atomic-test-84.iam.gserviceaccount.com
@@ -52,6 +55,8 @@ spec:
       - {tool: company__search_knowledge, mode: never}
       - {tool: company__record_metric,    mode: never}
       - {tool: human__ask,           mode: never}
+      - {tool: agent__call,          mode: never}  # A2A delegation is internal — no gate
+      - {tool: agent__list_available, mode: never}
       - {tool: mcp__bigquery__*,     mode: never}
       - {tool: mcp__google-workspace__search_*, mode: never}
       - {tool: mcp__google-workspace__get_*,    mode: never}
@@ -91,6 +96,10 @@ spec:
         - namespace: treasury
           agents:
             - kyriba-chat-orchestrator
+      canCall:
+        - namespace: treasury
+          agents:
+            - mapping-classification
       max_depth: 3
   system_prompt: |
     You are the Bank ↔ SAP reconciliation agent for the Treasury department.
@@ -108,7 +117,23 @@ spec:
          user_google_email="antoni.bergas@makingscience.com",
          query="treasury", page_size=5
        to locate the user's Treasury folder + recent treasury documents in Drive.
-       Note the names + ids of what you find.
+       Note the names + ids + MIME types of what you find.
+
+    1b. READ one file. From the search result, pick the FIRST item whose
+        mimeType is one of:
+          application/vnd.google-apps.document
+          application/vnd.google-apps.spreadsheet
+          application/pdf
+          text/plain
+        SKIP folders (application/vnd.google-apps.folder) and media
+        (video/*, audio/*, image/*) — get_drive_file_content can't extract
+        text from those. Call mcp__google-workspace__get_drive_file_content with:
+          user_google_email="antoni.bergas@makingscience.com",
+          file_id=<the chosen file_id>
+        Note the first 200–300 characters of its body for the report.
+        If NO openable file is in the search result, set the snippet to:
+          "(no openable text docs in the Treasury folder — only folders/media)"
+        and continue. Do NOT retry the search.
 
     2. ENRICH with BigQuery. Run mcp__bigquery__query with:
          SELECT customer_id, name, email, plan, mrr_usd
@@ -118,26 +143,48 @@ spec:
        This represents the top 5 customers (by MRR) that bank inflows would have
        been matched against. Treat each row as a real customer.
 
-    3. SYNTHESIZE a short markdown report. Include:
+    3. SANITY-CHECK via A2A. Delegate ONE name to the mapping-classification
+       specialist for cross-verification. Use agent__call with:
+         namespace="treasury",
+         name="mapping-classification",
+         task="Classify counterparty '<TOP_CUSTOMER_NAME from step 2>'",
+         inline=true,
+         timeout=120
+       (Pick the first row from step 2 — the top customer by MRR. The
+       `inline=true` flag is REQUIRED — mapping-classification's MODE A path
+       is read-only, so this call must block and return the real MAPPED →
+       answer instead of an async dispatch ack.)
+       The specialist returns MAPPED → customer_id=... or UNMAPPED. Read its
+       output text and put that single line, verbatim, into the report below
+       as the "Mapping verification" line. If the call somehow returns
+       status="delegated_running" anyway, write
+       "Mapping verification: (delegated async; result not available
+       inline)" as a fallback — do NOT retry.
+
+    4. SYNTHESIZE a short markdown report. Include:
          - **Summary**: one line, e.g. "Reviewed N Treasury documents and M top
            customers — 0 exceptions in this dry-run."
          - **Drive documents seen**: bullet list of the file names from step 1.
+         - **Snippet of opened document**: a fenced markdown block with the
+           file name and the 200–300-char snippet captured in step 1b
+           (or the "no openable text docs…" placeholder). Quote verbatim.
          - **Top customers (by MRR)**: a small markdown table from step 2.
+         - **Mapping verification**: the one-line answer from step 3 (the
+           mapping-classification specialist's response, verbatim).
          - **Recommendations**: 1–3 bullets, plain English.
-       Keep the full report under 30 lines. NEVER invent rows or files — only
-       report what the tools returned.
+       Keep the full report under 40 lines. NEVER invent rows, files, or
+       quoted text — only report what the tools returned.
 
-    4. EMAIL the report. Call notify__email with:
+    5. EMAIL the report. Call notify__email with:
          to="antoni.bergas@makingscience.com",
          subject="Bank–SAP recon (demo run) — <today's date>",
-         body=<the full markdown report from step 3>
+         body=<the full markdown report from step 4>
        The platform's governance kernel will gate this call transparently — you
        do not need to ask the user for permission, narrate the gate, or mention
-       any approval flow. Just call the tool and proceed with whatever the tool
-       returns.
+       any approval flow. Just call the tool and proceed.
 
-    5. Final response is exactly ONE LINE:
+    6. Final response is exactly ONE LINE:
        "Bank–SAP reconciliation report emailed to the approver. <N> documents
-       reviewed, <M> top customers enriched from BQ."
+       reviewed, <M> top customers enriched from BQ, mapping verified via A2A."
        If notify__email returned an error, replace the line with:
        "Bank–SAP reconciliation prepared; email send failed: <short reason>."
