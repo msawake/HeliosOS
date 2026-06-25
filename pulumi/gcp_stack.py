@@ -323,6 +323,7 @@ worker = WorkerTier(
     image=_img("platform-api", platform_api_tag),
     project=project,
     k8s_provider=gke.provider,
+    gke_cluster=gke.cluster,
     agent_runtime_gsa=identity.agent_runtime,
     database_url=data.database_url,
     redis_url=data.redis_url,

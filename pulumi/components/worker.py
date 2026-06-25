@@ -37,6 +37,7 @@ class WorkerTier(pulumi.ComponentResource):
         image: pulumi.Input[str],
         project: pulumi.Input[str],
         k8s_provider: k8s.Provider,
+        gke_cluster: pulumi.Resource,
         agent_runtime_gsa: gcp.serviceaccount.Account,
         database_url: pulumi.Input[str],
         redis_url: pulumi.Input[str] | None,
@@ -79,6 +80,12 @@ class WorkerTier(pulumi.ComponentResource):
             ),
             opts=child,
         )
+        # The WI binding references the GKE Workload Identity pool
+        # (PROJECT.svc.id.goog), which is auto-created when the GKE cluster
+        # with Workload Identity enabled becomes ready. Without an explicit
+        # depends_on, Pulumi creates this IAMMember in parallel with the
+        # cluster and fails because the pool doesn't exist yet (the cluster
+        # takes 5-10+ minutes to provision).
         gcp.serviceaccount.IAMMember(
             f"{name}-wi",
             service_account_id=agent_runtime_gsa.name,
@@ -86,7 +93,7 @@ class WorkerTier(pulumi.ComponentResource):
             member=pulumi.Output.concat(
                 "serviceAccount:", project, ".svc.id.goog[", namespace, "/", ksa_name, "]"
             ),
-            opts=gcp_child,
+            opts=pulumi.ResourceOptions(parent=self, depends_on=[gke_cluster]),
         )
 
         # k8s Secret with the env the app reads directly. Only include keys with
