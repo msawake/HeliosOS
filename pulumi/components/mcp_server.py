@@ -70,10 +70,10 @@ class McpServer(pulumi.ComponentResource):
                 containers=[
                     gcp.cloudrunv2.ServiceTemplateContainerArgs(
                         image=image,
-                        # Reuse the platform-api image; run the MCP server on
-                        # streamable-http bound to 0.0.0.0:8080 (Cloud Run port).
-                        commands=["python", "-m", "src.forgeos_mcp"],
-                        args=["--transport", "streamable-http", "--port", "8080", "--host", "0.0.0.0"],
+                        # NOTE: src.forgeos_mcp was removed from the repo. The
+                        # commands/args override is disabled until a dedicated
+                        # MCP image is built and mcp_tag is pinned to it. The
+                        # service uses the image's default CMD for now.
                         ports=gcp.cloudrunv2.ServiceTemplateContainerPortsArgs(
                             container_port=8080,
                         ),

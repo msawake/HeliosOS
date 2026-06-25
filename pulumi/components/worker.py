@@ -119,6 +119,12 @@ class WorkerTier(pulumi.ComponentResource):
 
         labels = {"app": "forgeos-worker", "forgeos.io/system": "worker", "environment": environment}
 
+        # skip_await: don't block pulumi up on pod readiness. The worker/beat
+        # pods may fail to start if the image is a placeholder or the DB isn't
+        # reachable yet. The Deployment object is still created; pods will
+        # retry per k8s backoff. Remove this once images are stable.
+        skip_await_annotations = {"pulumi.com/skip-await": "true"}
+
         plain_env = [
             k8s.core.v1.EnvVarArgs(name="FORGEOS_RUNTIME_V2", value="1"),
             k8s.core.v1.EnvVarArgs(name="FORGEOS_RUNTIME_WORKERS", value="1"),
@@ -134,6 +140,7 @@ class WorkerTier(pulumi.ComponentResource):
                 name="forgeos-worker",
                 namespace=ns.metadata.name,
                 labels=labels,
+                annotations=skip_await_annotations,
             ),
             spec=k8s.apps.v1.DeploymentSpecArgs(
                 replicas=replicas,
@@ -197,6 +204,7 @@ class WorkerTier(pulumi.ComponentResource):
                 name="forgeos-beat",
                 namespace=ns.metadata.name,
                 labels=beat_labels,
+                annotations=skip_await_annotations,
             ),
             spec=k8s.apps.v1.DeploymentSpecArgs(
                 replicas=1,
