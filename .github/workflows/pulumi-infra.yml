@@ -646,11 +646,26 @@ jobs:
             --max-retries=1 --task-timeout=300 \
             --set-secrets="DATABASE_URL=forgeos-database-url:latest,FORGEOS_BOOTSTRAP_ADMIN_PASSWORD=forgeos-bootstrap-admin-password:latest" \
             --set-env-vars="FORGEOS_BOOTSTRAP_ADMIN_EMAIL=${ADMIN_EMAIL},FORGEOS_TENANT_ID=${TENANT_ID}" \
-            --command="python" \
-            --args="manage.py,ensure_admin"
+            --command="bash" \
+            --args="-c,set -eu; python -u manage.py migrate --noinput; python -u manage.py ensure_admin"
 
           gcloud run jobs execute forgeos-ensure-admin \
             --project="$PROJECT" --region="$REGION" --wait
 
           echo "✅ ensure_admin ran. Log in at the platform-api /admin/ as ${ADMIN_EMAIL}"
           echo "   (password = the forgeos-bootstrap-admin-password secret value)."
+
+      # On failure, surface the container logs from Cloud Logging so we don't
+      # have to ssh-into-a-cloud-shell to diagnose. Requires logging.viewer on
+      # the deploy SA — falls back gracefully if missing.
+      - name: Dump container logs on failure
+        if: failure()
+        env:
+          PROJECT: ${{ needs.resolve-stack.outputs.gcp_project }}
+        run: |
+          echo "── tail of forgeos-ensure-admin container output ──"
+          gcloud logging read \
+            'resource.type="cloud_run_job" AND resource.labels.job_name="forgeos-ensure-admin"' \
+            --project="$PROJECT" --limit=200 --order=desc \
+            --format='value(timestamp,severity,textPayload,jsonPayload.message)' \
+            2>&1 | tail -120 || echo "(could not fetch logs — SA may lack logging.viewer)"
