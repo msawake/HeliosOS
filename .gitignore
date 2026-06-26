@@ -46,3 +46,5 @@ infrastructure/docker/.env
 .local-worker.log
 .local-beat.log
 .local-flower.log
+.local-hotreload.log
+.local-api-restart.log

@@ -18,7 +18,7 @@ spec:
     chat_model: qwen
     provider: atlas
     endpoint: https://atlas-router.ally-code-dev.makingscience.com/v1
-    api_key_ref: secret:litellm-allycode-key
+    api_key_ref: secret:rtx_gw_key
   tools:
     - drive__list_files
     - drive__find_by_name
@@ -27,16 +27,39 @@ spec:
     - company__search_knowledge
     - company__record_metric
     - human__ask
+    - mcp__bigquery__query                          # enrich vendor/customer lookups from BigQuery
+    - mcp__google-workspace__search_drive_files     # broader Drive search via the GWS connector
+    - mcp__google-workspace__get_drive_file_content # read the actual contents of a Drive file
+    - notify__email                                  # email a summary report to the approver
   drive:
     service_account: drive-agent-po@admachina-atomic-test-84.iam.gserviceaccount.com
     folder_id: 1FdUNDp0HdAo6EqccQIncWAfKKOecbL2s
     access: readwrite
+  # --- Governance: rules match TOP-DOWN; first match wins (jira-helper pattern).
+  # Reads are exempt. External delivery / writes require human approval.
   governance:
     audit_level: full
     approvals:
-      - {tool: drive__read_file, mode: never}
-      - {tool: drive__list_files, mode: never}
-      - {tool: drive__find_by_name, mode: never}
+      # Reads — exempt from approval (auto-allowed)
+      - {tool: drive__read_file,     mode: never}
+      - {tool: drive__list_files,    mode: never}
+      - {tool: drive__find_by_name,  mode: never}
+      - {tool: company__search_knowledge, mode: never}
+      - {tool: company__record_metric,    mode: never}
+      - {tool: human__ask,           mode: never}
+      - {tool: mcp__bigquery__*,     mode: never}
+      - {tool: mcp__google-workspace__search_*, mode: never}
+      - {tool: mcp__google-workspace__get_*,    mode: never}
+      - {tool: mcp__google-workspace__list_*,   mode: never}
+
+      # Writes / external delivery — require human approval
+      - tool: notify__email
+        mode: always
+        approvers: [antoni.bergas@makingscience.com]
+        sla_hours: 1
+        on_timeout: abort
+        priority: high
+        reason: "Sending the PO reconciliation report by email (external delivery)"
       - tool: drive__update_file
         mode: always
         approvers: [antoni.bergas@makingscience.com]
@@ -44,6 +67,16 @@ spec:
         on_timeout: abort
         priority: high
         reason: "Modifying a file in the user's Drive folder"
+
+      # Catch-all: any other GWS MCP tool (send_gmail_message, modify_*, create_*,
+      # delete_*, draft_*, manage_*, batch_modify_*, ...) requires approval.
+      - tool: mcp__google-workspace__*
+        mode: always
+        approvers: [antoni.bergas@makingscience.com]
+        sla_hours: 1
+        on_timeout: abort
+        priority: high
+        reason: "Google Workspace write/state-changing action requires human approval"
   metadata:
     as_of: "2026-06-09"
     approver: antoni.bergas@makingscience.com
@@ -56,42 +89,64 @@ spec:
       max_depth: 3
   system_prompt: |
     You are the Purchase-Order reconciliation agent for the Treasury department.
-    You are a READ-ONLY analyst — produce a report and escalate; never approve or
-    release a vendor payment. Your inputs and your report live in your own Google
-    Drive folder (shared with your service account); drive tools default to it.
+    You are a READ-ONLY analyst — produce a report and escalate; never approve
+    or release a vendor payment.
 
-    0. CLARIFY FIRST. If the request is ambiguous (which period? which vendor?),
-       ask the human via human__ask BEFORE doing anything. Don't guess.
+    This is a live demo run. Use ONLY the tools listed below — do NOT call
+    drive__update_file, drive__list_files, drive__find_by_name or drive__read_file
+    (the local service-account Drive isn't wired). Use the Google Workspace MCP
+    Drive tools instead.
 
-    1. RULES. Optionally pull "Reconciliation Exception Taxonomy" and "GL
-       Classification Rules" via company__search_knowledge. Tolerance:
-       max(EUR 5.00, 0.5%).
+    Steps — execute them in order, in ONE pass, no clarifying questions:
 
-    2. LOAD DATA from your Drive folder: drive__list_files then drive__read_file
-       for purchase_orders.csv, vendor_invoices.csv, ap_payments.csv.
+    1. DISCOVER PO/vendor inputs. Call mcp__google-workspace__search_drive_files
+       with user_google_email="antoni.bergas@makingscience.com",
+       query="purchase order vendor", page_size=5
+       (fallback to query="treasury" if the first call returns zero files).
+       Note the names + ids + MIME types of what you find.
 
-    3. THREE-WAY MATCH per po_number:
-         - invoice amount within tolerance of PO amount, and payment matches the
-           invoice → matched (clean).
-         - invoice_amount > po_amount beyond tolerance → PO_OVERBILL (report the
-           overage).
-         - two invoices with the same po_number + amount → DUPLICATE invoice.
-         - an invoice with an empty po_number → MAVERICK_SPEND (off-contract).
-         - a PO with no invoice → OUTSTANDING commitment (informational).
-         - an invoice matched to PO but not yet paid → OPEN payable (informational
-           unless also an exception).
+    1b. READ one file. Pick the FIRST search result whose mimeType is one of:
+          application/vnd.google-apps.document
+          application/vnd.google-apps.spreadsheet
+          application/pdf
+          text/plain
+        Skip folders + video/audio/image. Call
+        mcp__google-workspace__get_drive_file_content with file_id=<that id>
+        and capture the first ~250 chars for the report. If nothing is
+        openable, set snippet to "(no openable text docs in the matched
+        files)" and continue.
 
-    4. OUTPUT a markdown report (summary + matched table + exceptions table:
-       type, po/invoice/payment ids, EUR delta, proposed action). Your report file
-       ALREADY EXISTS in your folder — locate it with drive__find_by_name
-       "po_reconciliation_report" and overwrite it with drive__update_file (pass
-       that file_id + the full report as content). You CANNOT create files; only
-       update the shared report doc. This WRITE pauses for human approval — state
-       what you'll write, then call drive__update_file.
+    2. ENRICH with BigQuery. Run mcp__bigquery__query with:
+         SELECT customer_id, name, email, plan, mrr_usd
+         FROM `admachina-atomic-test-84.helios_mcp_test.customers`
+         ORDER BY mrr_usd DESC
+         LIMIT 5
+       This represents the top 5 vendors/customers whose invoices would have
+       been matched against POs in this dry-run.
 
-    5. LOG via company__record_metric (name "po_reconciliation").
+    3. SYNTHESIZE a short markdown report. Include:
+         - **Summary**: one line, e.g. "Reviewed N PO/vendor documents and M top
+           vendors — 0 exceptions in this dry-run."
+         - **Drive documents seen**: bullet list of the file names from step 1.
+         - **Snippet of opened document**: fenced markdown block with the
+           file name + the ~250-char snippet from step 1b (or the
+           "no openable text docs…" placeholder). Quote verbatim.
+         - **Top vendors (by MRR)**: a small markdown table from step 2.
+         - **Recommendations**: 1–3 bullets focused on PO governance (eg.
+           "Enforce PO-required for vendors with MRR > $1k").
+       Keep the full report under 30 lines. NEVER invent rows or files — only
+       report what the tools returned.
 
-    6. ESCALATE every PO_OVERBILL, DUPLICATE and MAVERICK_SPEND, plus anything
-       with |delta| > 10,000, to the approver via human__ask with a recommendation.
+    4. EMAIL the report. Call notify__email with:
+         to="antoni.bergas@makingscience.com",
+         subject="PO reconciliation (demo run) — <today's date>",
+         body=<the full markdown report from step 3>
+       The platform's governance kernel will gate this call transparently — you
+       do not need to ask the user for permission, narrate the gate, or mention
+       any approval flow. Just call the tool and proceed.
 
-    Finish with a one-line summary.
+    5. Final response is exactly ONE LINE:
+       "PO reconciliation report emailed to the approver. <N> documents
+       reviewed, <M> top vendors enriched from BQ."
+       If notify__email returned an error, replace the line with:
+       "PO reconciliation prepared; email send failed: <short reason>."

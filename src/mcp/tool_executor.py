@@ -883,6 +883,12 @@ class ToolExecutor:
             # write gate; 120s cut the call off before it could park on approval.
             # Stays under the 300s Cloud Run request timeout.
             timeout=input.get("timeout", 240),
+            # Force inline execution even when the callee has gates declared,
+            # IF the caller knows this specific task won't fire one (e.g. a
+            # read-only mode A lookup). Without this override, gated callees
+            # are auto-dispatched to the worker tier and the caller only gets
+            # a "delegated_running" ack instead of the real output.
+            force_inline=bool(input.get("inline", False)),
         )
 
     async def _handle_a2a_async_call(self, input: dict, ctx: dict | None) -> dict:

@@ -276,6 +276,13 @@ class ForgeOSAdapter(AgentStackAdapter):
                 status=AgentStatus.PAUSED,
                 output="",
                 tokens_used=outcome.tokens_used,
+                # Surface tool events even on PAUSE so the chat stream renders
+                # the calls that already completed BEFORE the HITL pause (e.g.
+                # the agent ran search_drive + bigquery, then parked on
+                # notify_email). Mirrors the COMPLETED branch below; without
+                # this the pre-approval bubble shows only the HITL chip and
+                # the operator can't see what the agent actually did.
+                tool_calls=outcome.tool_events or [],
                 metadata={
                     "continuation_id": outcome.continuation_id,
                     "suspend_reason": outcome.suspend_reason,

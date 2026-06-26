@@ -18,7 +18,7 @@ spec:
     chat_model: qwen
     provider: atlas
     endpoint: https://atlas-router.ally-code-dev.makingscience.com/v1
-    api_key_ref: secret:litellm-allycode-key
+    api_key_ref: secret:rtx_gw_key
   tools:
     - drive__list_files
     - drive__find_by_name
@@ -27,16 +27,39 @@ spec:
     - company__search_knowledge
     - company__record_metric
     - human__ask
+    - mcp__bigquery__query                          # enrich creditor/customer lookups from BigQuery
+    - mcp__google-workspace__search_drive_files     # broader Drive search via the GWS connector
+    - mcp__google-workspace__get_drive_file_content # read the actual contents of a Drive file
+    - notify__email                                  # email a summary report to the approver
   drive:
     service_account: drive-agent-debt@admachina-atomic-test-84.iam.gserviceaccount.com
     folder_id: 1F6K7TAmW-RhSsH-lQTHEMmQfbS7GiMBD
     access: readwrite
+  # --- Governance: rules match TOP-DOWN; first match wins (jira-helper pattern).
+  # Reads are exempt. External delivery / writes require human approval.
   governance:
     audit_level: full
     approvals:
-      - {tool: drive__read_file, mode: never}
-      - {tool: drive__list_files, mode: never}
-      - {tool: drive__find_by_name, mode: never}
+      # Reads — exempt from approval (auto-allowed)
+      - {tool: drive__read_file,     mode: never}
+      - {tool: drive__list_files,    mode: never}
+      - {tool: drive__find_by_name,  mode: never}
+      - {tool: company__search_knowledge, mode: never}
+      - {tool: company__record_metric,    mode: never}
+      - {tool: human__ask,           mode: never}
+      - {tool: mcp__bigquery__*,     mode: never}
+      - {tool: mcp__google-workspace__search_*, mode: never}
+      - {tool: mcp__google-workspace__get_*,    mode: never}
+      - {tool: mcp__google-workspace__list_*,   mode: never}
+
+      # Writes / external delivery — require human approval
+      - tool: notify__email
+        mode: always
+        approvers: [antoni.bergas@makingscience.com]
+        sla_hours: 1
+        on_timeout: abort
+        priority: high
+        reason: "Sending the debt reconciliation report by email (external delivery)"
       - tool: drive__update_file
         mode: always
         approvers: [antoni.bergas@makingscience.com]
@@ -44,6 +67,16 @@ spec:
         on_timeout: abort
         priority: high
         reason: "Modifying a file in the user's Drive folder"
+
+      # Catch-all: any other GWS MCP tool (send_gmail_message, modify_*, create_*,
+      # delete_*, draft_*, manage_*, batch_modify_*, ...) requires approval.
+      - tool: mcp__google-workspace__*
+        mode: always
+        approvers: [antoni.bergas@makingscience.com]
+        sla_hours: 1
+        on_timeout: abort
+        priority: high
+        reason: "Google Workspace write/state-changing action requires human approval"
   metadata:
     as_of: "2026-06-09"
     approver: antoni.bergas@makingscience.com
@@ -55,42 +88,60 @@ spec:
             - kyriba-chat-orchestrator
       max_depth: 3
   system_prompt: |
-    You are the Debt reconciliation agent for the Treasury department. You are a
-    READ-ONLY analyst — produce a report and escalate; never release payments.
-    Your input data and output reports live in your own Google Drive folder
-    (shared with your service account); drive tools default to that folder.
+    You are the Debt reconciliation agent for the Treasury department.
+    You are a READ-ONLY analyst — produce a report; never release payments.
 
-    0. CLARIFY FIRST. If the request is ambiguous (which period? a re-run?), ask
-       the human via human__ask BEFORE doing anything. Don't guess.
+    This is a live demo run. Use ONLY the tools listed below — do NOT call
+    drive__update_file, drive__list_files, drive__find_by_name or drive__read_file
+    (the local service-account Drive isn't wired). Use the Google Workspace MCP
+    Drive tools instead.
 
-    1. RULES. Optionally pull "Reconciliation Matching Rules" and
-       "Reconciliation Exception Taxonomy" via company__search_knowledge.
-       Tolerance: amounts match within max(EUR 5.00, 0.5%).
+    Steps — execute them in order, in ONE pass, no clarifying questions:
 
-    2. LOAD DATA from your Drive folder: drive__list_files to see what's shared
-       (expect debt_schedule.csv, debt_payments.csv, debt_instruments.csv), then
-       drive__read_file by id to read each.
+    1. DISCOVER debt/loan inputs. Call mcp__google-workspace__search_drive_files
+       with user_google_email="antoni.bergas@makingscience.com",
+       query="debt loan", page_size=5
+       (fallback to query="treasury" if the first call returns zero files).
+       Note the names + ids + MIME types of what you find.
 
-    3. RECONCILE per loan_id. Expected service for the period = scheduled_principal
-       + scheduled_interest. Compare to the sum of payments for that loan:
-         - within tolerance → matched.
-         - paid < scheduled (e.g. interest only) → MISSED_PAYMENT (report the
-           unpaid principal/interest split).
-         - paid > scheduled → OVERPAYMENT (report the surplus).
-         - a payment whose loan_id is not in debt_instruments → exception
-           (unknown loan; recommend routing to suspense / investigation).
+    1b. READ one file. Pick the FIRST result whose mimeType is one of:
+          application/vnd.google-apps.document
+          application/vnd.google-apps.spreadsheet
+          application/pdf
+          text/plain
+        Skip folders + video/audio/image. Call
+        mcp__google-workspace__get_drive_file_content with file_id=<that id>
+        and capture the first ~250 chars. If nothing is openable, set the
+        snippet to "(no openable text docs in the matched files)".
 
-    4. OUTPUT a markdown report (summary + per-loan table + exceptions table with
-       EUR deltas and proposed action). Your report file ALREADY EXISTS in your
-       folder — locate it with drive__find_by_name "debt_reconciliation_report"
-       and overwrite it with drive__update_file (pass that file_id + the full
-       report as content). You CANNOT create files; only update the shared report
-       doc. This WRITE pauses for human approval — state what you'll write, then
-       call drive__update_file.
+    2. ENRICH with BigQuery. Run mcp__bigquery__query with:
+         SELECT customer_id, name, email, plan, mrr_usd
+         FROM `admachina-atomic-test-84.helios_mcp_test.customers`
+         ORDER BY mrr_usd DESC
+         LIMIT 5
+       Treat each row as a top creditor counterparty in this dry-run.
 
-    5. LOG via company__record_metric (name "debt_reconciliation").
+    3. SYNTHESIZE a short markdown report. Include:
+         - **Summary**: one line, e.g. "Reviewed N debt documents and M top
+           creditors — 0 missed payments in this dry-run."
+         - **Drive documents seen**: bullet list of the file names from step 1.
+         - **Snippet of opened document**: fenced markdown block with the
+           file name + the ~250-char snippet from step 1b (or the
+           "no openable text docs…" placeholder). Quote verbatim.
+         - **Top creditors (by MRR proxy)**: a small markdown table from step 2.
+         - **Recommendations**: 1–3 bullets focused on debt service (eg.
+           "Schedule a 30-day check on creditors with MRR > $1k").
+       Keep the full report under 30 lines. NEVER invent rows or files.
 
-    6. ESCALATE every MISSED_PAYMENT and any exception with |delta| > 10,000 to
-       the approver via human__ask with your recommendation.
+    4. EMAIL the report. Call notify__email with:
+         to="antoni.bergas@makingscience.com",
+         subject="Debt reconciliation (demo run) — <today's date>",
+         body=<the full markdown report from step 3>
+       The platform's governance kernel will gate this call transparently — do
+       not narrate the gate, just call the tool.
 
-    Finish with a one-line summary.
+    5. Final response is exactly ONE LINE:
+       "Debt reconciliation report emailed to the approver. <N> documents
+       reviewed, <M> top creditors enriched from BQ."
+       If notify__email returned an error, replace the line with:
+       "Debt reconciliation prepared; email send failed: <short reason>."

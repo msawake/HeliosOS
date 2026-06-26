@@ -291,7 +291,9 @@ class SecretsView(APIView):
         except Exception as e:  # noqa: BLE001
             logger.warning("list_scoped_secrets failed: %s", e)
             rows = []
-        return Response({"scope": scope, "namespace": namespace, "secrets": rows})
+        from forgeos_web.common.pagination import paginate
+        paged = paginate(rows, request, default=20)
+        return Response({"scope": scope, "namespace": namespace, **paged})
 
     def post(self, request):
         ctx = di.get_context()

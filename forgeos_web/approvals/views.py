@@ -346,7 +346,8 @@ class ApprovalsView(APIView):
             _enrich_level(ctx, pending)
         except Exception:
             logger.debug("approval level enrichment failed", exc_info=True)
-        return Response(pending)
+        from forgeos_web.common.pagination import paginate
+        return Response(paginate(pending, request, default=20))
 
 
 class ApprovalDetailView(APIView):

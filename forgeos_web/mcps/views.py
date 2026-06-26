@@ -265,7 +265,8 @@ class PlatformMcpServersView(APIView):
                     out.append({**row, "scope": s, "owner": owner, "client_id": cid})
             except Exception as e:
                 logger.warning("MCP scope listing: list_for_client(%s) failed: %s", cid, e)
-        return Response(out)
+        from forgeos_web.common.pagination import paginate
+        return Response(paginate(out, request, default=20))
 
     def post(self, request):
         """Add a platform-scoped MCP server and connect it live."""
