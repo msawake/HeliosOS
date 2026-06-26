@@ -173,7 +173,11 @@ jobs:
             --substitutions=_TAG="${TAG}" \
             --gcs-source-staging-dir="gs://${GCP_PROJECT}_cloudbuild/source" \
             --async \
-            --format='value(metadata.build.id)')
+            --format='value(id)')
+          if [[ -z "${BUILD_ID}" ]]; then
+            echo "::error::Could not capture build id from gcloud submit"
+            exit 1
+          fi
           echo "Build id: ${BUILD_ID}"
 
           while true; do
