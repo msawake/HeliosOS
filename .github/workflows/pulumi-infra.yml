@@ -592,25 +592,50 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Clone the image + VPC wiring from the existing migrate job, and the
-          # service account from the live platform-api service (that GSA is the
-          # one with access to both the DB and bootstrap-admin secrets).
-          IMAGE=$(gcloud run services describe forgeos-platform-api \
-            --project="$PROJECT" --region="$REGION" \
-            --format='value(spec.template.spec.containers[0].image)')
-          SA=$(gcloud run services describe forgeos-platform-api \
-            --project="$PROJECT" --region="$REGION" \
-            --format='value(spec.template.spec.serviceAccountName)')
-          NETWORK=$(gcloud run jobs describe forgeos-django-migrate \
-            --project="$PROJECT" --region="$REGION" \
-            --format='value(spec.template.spec.template.spec.vpcAccess.networkInterfaces[0].network)')
-          SUBNET=$(gcloud run jobs describe forgeos-django-migrate \
-            --project="$PROJECT" --region="$REGION" \
-            --format='value(spec.template.spec.template.spec.vpcAccess.networkInterfaces[0].subnetwork)')
+          # Clone image + SA + VPC wiring from the live platform-api service
+          # (that GSA has access to both the DB and bootstrap-admin secrets, and
+          # the service runs in the same VPC the job needs to reach Cloud SQL).
+          # Dump once as JSON and dig with jq — gcloud's --format=value path
+          # differs between v1/v2 Cloud Run schemas so we try structural paths
+          # first, then fall back to the v1 vpc-access annotation, then to a
+          # last-resort recursive scan keyed on the project's naming pattern.
+          gcloud run services describe forgeos-platform-api \
+            --project="$PROJECT" --region="$REGION" --format=json > /tmp/svc.json
+
+          IMAGE=$(jq -r '.spec.template.spec.containers[0].image // empty' /tmp/svc.json)
+          SA=$(jq -r '.spec.template.spec.serviceAccountName // empty' /tmp/svc.json)
+          NETWORK=$(jq -r '
+            .spec.template.spec.vpcAccess.networkInterfaces[0].network //
+            ((.spec.template.metadata.annotations["run.googleapis.com/network-interfaces"] // "[]") | fromjson | .[0].network) //
+            empty' /tmp/svc.json)
+          SUBNET=$(jq -r '
+            .spec.template.spec.vpcAccess.networkInterfaces[0].subnetwork //
+            ((.spec.template.metadata.annotations["run.googleapis.com/network-interfaces"] // "[]") | fromjson | .[0].subnetwork) //
+            empty' /tmp/svc.json)
+
+          if [[ -z "$NETWORK" ]]; then
+            NETWORK=$(jq -r '.. | strings | select(test("forgeos-vpc-"))' /tmp/svc.json | head -1)
+          fi
+          if [[ -z "$SUBNET" ]]; then
+            SUBNET=$(jq -r '.. | strings | select(test("forgeos-subnet-"))' /tmp/svc.json | head -1)
+          fi
 
           echo "image=$IMAGE"
-          echo "sa=$SA  network=$NETWORK  subnet=$SUBNET"
-          test -n "$IMAGE" && test -n "$SA" && test -n "$NETWORK" && test -n "$SUBNET"
+          echo "sa=$SA"
+          echo "network=$NETWORK"
+          echo "subnet=$SUBNET"
+
+          missing=""
+          [[ -z "$IMAGE"   ]] && missing="$missing IMAGE"
+          [[ -z "$SA"      ]] && missing="$missing SA"
+          [[ -z "$NETWORK" ]] && missing="$missing NETWORK"
+          [[ -z "$SUBNET"  ]] && missing="$missing SUBNET"
+          if [[ -n "$missing" ]]; then
+            echo "::error::Missing required values:$missing — dumping svc.json keys for diagnosis"
+            jq '.spec.template | keys' /tmp/svc.json || true
+            jq '.spec.template.metadata.annotations // {} | keys' /tmp/svc.json || true
+            exit 1
+          fi
 
           # Create-or-update the one-off job, then execute and wait.
           gcloud run jobs deploy forgeos-ensure-admin \
