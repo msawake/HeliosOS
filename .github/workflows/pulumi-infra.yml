@@ -10,6 +10,30 @@ name: "Pulumi Infrastructure"
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
+  # Manual: seed/reset the platform admin login (Django /admin/ + dashboard) on a
+  # target environment. Runs a one-off Cloud Run job on the live platform-api
+  # image as the platform-api GSA — see the `create-admin` job below.
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to run"
+        required: true
+        default: create-admin
+        type: choice
+        options: [create-admin]
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [dev, pre, pro]
+      admin_email:
+        description: "Admin email / Django username"
+        required: false
+        default: "admin@forgeos.local"
+      tenant_id:
+        description: "Tenant id for the platform (dashboard) admin row"
+        required: false
+        default: "leadforge"
   pull_request:
     branches: [dev, pre, main]
     paths:
@@ -56,9 +80,17 @@ jobs:
     steps:
       - id: map
         run: |
-          # For PRs use the base branch; for pushes use the pushed ref.
+          # For PRs use the base branch; for pushes use the pushed ref; for a
+          # manual dispatch translate the chosen environment to its branch.
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             BRANCH="${{ github.base_ref }}"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            case "${{ inputs.environment }}" in
+              dev) BRANCH="dev"  ;;
+              pre) BRANCH="pre"  ;;
+              pro) BRANCH="main" ;;
+              *)   echo "::error::Unsupported environment: ${{ inputs.environment }}"; exit 1 ;;
+            esac
           else
             BRANCH="${{ github.ref_name }}"
           fi
@@ -492,3 +524,79 @@ jobs:
           pulumi login "$PULUMI_BACKEND_URL"
           pulumi stack select ${{ needs.resolve-stack.outputs.stack }}
           pulumi up --yes --color never
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Create / reset the platform admin login — manual (workflow_dispatch) only.
+  #
+  # Why this exists: the FastAPI→Django migration dropped the bootstrap-admin
+  # seeding, so a fresh deploy has no usable Django /admin/ or dashboard login.
+  # This runs a one-off Cloud Run job on the live platform-api image executing
+  # `manage.py ensure_admin` (idempotent). It runs as the platform-api GSA — the
+  # only identity granted accessor on BOTH the database-url and the
+  # bootstrap-admin-password secrets.
+  #
+  # The `environment:` gate means a `pro` run still goes through that GitHub
+  # environment's protection rules (required reviewers, etc.).
+  # ────────────────────────────────────────────────────────────────────────────
+  create-admin:
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'create-admin'
+    needs: resolve-stack
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-stack.outputs.stack }}
+    concurrency:
+      group: forgeos-create-admin-${{ needs.resolve-stack.outputs.stack }}
+      cancel-in-progress: false
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ needs.resolve-stack.outputs.wif_provider }}
+          service_account:            ${{ needs.resolve-stack.outputs.wif_sa }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Run ensure_admin as a one-off Cloud Run job
+        env:
+          PROJECT:     ${{ needs.resolve-stack.outputs.gcp_project }}
+          REGION:      europe-west1
+          ADMIN_EMAIL: ${{ inputs.admin_email }}
+          TENANT_ID:   ${{ inputs.tenant_id }}
+        run: |
+          set -euo pipefail
+
+          # Clone the image + VPC wiring from the existing migrate job, and the
+          # service account from the live platform-api service (that GSA is the
+          # one with access to both the DB and bootstrap-admin secrets).
+          IMAGE=$(gcloud run services describe forgeos-platform-api \
+            --project="$PROJECT" --region="$REGION" \
+            --format='value(spec.template.spec.containers[0].image)')
+          SA=$(gcloud run services describe forgeos-platform-api \
+            --project="$PROJECT" --region="$REGION" \
+            --format='value(spec.template.spec.serviceAccountName)')
+          NETWORK=$(gcloud run jobs describe forgeos-django-migrate \
+            --project="$PROJECT" --region="$REGION" \
+            --format='value(spec.template.spec.template.spec.vpcAccess.networkInterfaces[0].network)')
+          SUBNET=$(gcloud run jobs describe forgeos-django-migrate \
+            --project="$PROJECT" --region="$REGION" \
+            --format='value(spec.template.spec.template.spec.vpcAccess.networkInterfaces[0].subnetwork)')
+
+          echo "image=$IMAGE"
+          echo "sa=$SA  network=$NETWORK  subnet=$SUBNET"
+          test -n "$IMAGE" && test -n "$SA" && test -n "$NETWORK" && test -n "$SUBNET"
+
+          # Create-or-update the one-off job, then execute and wait.
+          gcloud run jobs deploy forgeos-ensure-admin \
+            --project="$PROJECT" --region="$REGION" \
+            --image="$IMAGE" \
+            --service-account="$SA" \
+            --network="$NETWORK" --subnet="$SUBNET" --vpc-egress=all-traffic \
+            --max-retries=1 --task-timeout=300 \
+            --set-secrets="DATABASE_URL=forgeos-database-url:latest,FORGEOS_BOOTSTRAP_ADMIN_PASSWORD=forgeos-bootstrap-admin-password:latest" \
+            --set-env-vars="FORGEOS_BOOTSTRAP_ADMIN_EMAIL=${ADMIN_EMAIL},FORGEOS_TENANT_ID=${TENANT_ID}" \
+            --command="python" \
+            --args="manage.py,ensure_admin"
+
+          gcloud run jobs execute forgeos-ensure-admin \
+            --project="$PROJECT" --region="$REGION" --wait
+
+          echo "✅ ensure_admin ran. Log in at the platform-api /admin/ as ${ADMIN_EMAIL}"
+          echo "   (password = the forgeos-bootstrap-admin-password secret value)."
