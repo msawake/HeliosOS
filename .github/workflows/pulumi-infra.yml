@@ -159,11 +159,17 @@ jobs:
           TAG=$(git rev-parse --short HEAD)
           IMAGE="europe-west1-docker.pkg.dev/${GCP_PROJECT}/forgeos/platform-api:${TAG}"
           echo "Submitting Cloud Build for ${IMAGE}…"
+          # --suppress-logs: don't try to stream logs from the default bucket
+          # (the deploy SA isn't a project Viewer, so log streaming would 500
+          # even when the build itself succeeds). The command still waits for
+          # the build to finish and propagates its real exit code; full logs
+          # remain available at the Cloud Build URL above.
           gcloud builds submit . \
             --project="${GCP_PROJECT}" \
             --config=infrastructure/cloudbuild.platform-api.yaml \
             --substitutions=_TAG="${TAG}" \
-            --gcs-source-staging-dir="gs://${GCP_PROJECT}_cloudbuild/source"
+            --gcs-source-staging-dir="gs://${GCP_PROJECT}_cloudbuild/source" \
+            --suppress-logs
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "✅ Built and pushed ${IMAGE}"
 
