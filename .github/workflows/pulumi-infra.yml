@@ -159,17 +159,36 @@ jobs:
           TAG=$(git rev-parse --short HEAD)
           IMAGE="europe-west1-docker.pkg.dev/${GCP_PROJECT}/forgeos/platform-api:${TAG}"
           echo "Submitting Cloud Build for ${IMAGE}…"
-          # --suppress-logs: don't try to stream logs from the default bucket
-          # (the deploy SA isn't a project Viewer, so log streaming would 500
-          # even when the build itself succeeds). The command still waits for
-          # the build to finish and propagates its real exit code; full logs
-          # remain available at the Cloud Build URL above.
-          gcloud builds submit . \
+          # --async + poll via `builds describe`:
+          # The deploy SA has cloudbuild.builds.editor (create/get/list) but not
+          # logging.viewer, so the default streaming path errors even with
+          # --suppress-logs (gcloud tries to read default-bucket logs to print
+          # the build's tail). --async hands back immediately with a build id,
+          # then we poll status with `builds describe` — needs only the
+          # `cloudbuild.builds.get` permission, which the SA already has.
+          # Full logs remain available at the Cloud Build URL above.
+          BUILD_ID=$(gcloud builds submit . \
             --project="${GCP_PROJECT}" \
             --config=infrastructure/cloudbuild.platform-api.yaml \
             --substitutions=_TAG="${TAG}" \
             --gcs-source-staging-dir="gs://${GCP_PROJECT}_cloudbuild/source" \
-            --suppress-logs
+            --async \
+            --format='value(metadata.build.id)')
+          echo "Build id: ${BUILD_ID}"
+
+          while true; do
+            STATUS=$(gcloud builds describe "${BUILD_ID}" \
+              --project="${GCP_PROJECT}" --format='value(status)')
+            echo "  status=${STATUS}"
+            case "${STATUS}" in
+              SUCCESS) break ;;
+              FAILURE|INTERNAL_ERROR|TIMEOUT|CANCELLED|EXPIRED)
+                echo "::error::Cloud Build ${STATUS} — see https://console.cloud.google.com/cloud-build/builds/${BUILD_ID}?project=${GCP_PROJECT}"
+                exit 1
+                ;;
+            esac
+            sleep 15
+          done
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "✅ Built and pushed ${IMAGE}"
 
