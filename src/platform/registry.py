@@ -117,6 +117,28 @@ class AgentRegistry:
         logger.info("Loaded %d agents from persistent store", len(agents))
         return len(agents)
 
+    def refresh(self, agent_id: str) -> AgentDefinition | None:
+        """Re-read a single agent's definition from the backing store, refreshing
+        the in-memory cache. Returns the fresh definition, or None if the agent
+        no longer exists in the store.
+
+        Cache coherence across processes: ``update()`` only refreshes the cache
+        in the process that called it. The platform-api updates its own cache,
+        but Celery workers (separate processes) keep their stale boot-time
+        copies until they restart. Call this before any read whose freshness
+        matters across processes — notably at invoke time in the worker.
+
+        No-op when no backing store is wired (returns the cached value).
+        """
+        if not self._store:
+            return self._agents.get(agent_id)
+        fresh = self._store.get(agent_id)
+        if fresh is None:
+            self._agents.pop(agent_id, None)
+            return None
+        self._agents[agent_id] = fresh
+        return fresh
+
     def query(
         self,
         stack: str | None = None,

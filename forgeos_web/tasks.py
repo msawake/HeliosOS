@@ -81,6 +81,22 @@ def _execute(agent_id, prompt, context, session_id, tenant_id, trigger):
     ex = ctx.platform_executor
     if ex is None:
         raise RuntimeError("platform executor unavailable in worker (FORGEOS_CELERY_BOOT=0?)")
+
+    # Cross-process cache coherence: the platform-api's PUT updates its own
+    # in-memory registry cache; the worker's cache stayed stale until restart,
+    # so PUT-then-invoke would run with the old llm_config (e.g. missing
+    # api_key_ref/endpoint). Pull the latest definition from Postgres into the
+    # worker's registry cache before executor.invoke reads it. One small DB
+    # round-trip per invocation; agent definitions are small.
+    reg = getattr(ctx, "platform_registry", None)
+    if reg is not None and hasattr(reg, "refresh"):
+        try:
+            reg.refresh(agent_id)
+        except Exception:
+            logger.warning(
+                "registry.refresh(%s) failed; proceeding with cached def", agent_id,
+                exc_info=True,
+            )
     invoke_ctx = dict(context or {})
     invoke_ctx.setdefault("user_id", "default")
     invoke_ctx["tenant_id"] = tenant_id or invoke_ctx.get("tenant_id", "default")

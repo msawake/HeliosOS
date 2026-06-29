@@ -33,7 +33,6 @@ from components.exec_environments import ExecEnvironments
 from components.gke import Gke
 from components.identity import Identity
 from components.mcp_server import McpServer
-from components.migrations import Migrations
 from components.network import Network
 from components.platform_api import PlatformApi
 from components.registry import Registry
@@ -191,19 +190,15 @@ exec_environments = ExecEnvironments(
     k8s_provider=gke.provider,
 )
 
-# 8. Migrations — depends on the database-url SecretVersion (Cloud Run validates
-# secret_key_ref :latest at create-time, so the version must exist first).
-migrations = Migrations(
-    "forgeos",
-    region=region,
-    image=_img("migrations", migrations_tag),
-    gsa_email=identity.migrations.email,
-    database_url_secret=secrets.database_url.id,
-    vpc_network=network.network.id,
-    vpc_subnet=network.subnet.id,
-    environment=environment,
-    opts=pulumi.ResourceOptions(depends_on=[secrets.versions["database-url"]]),
-)
+# 8. Legacy SQL-migrations Cloud Run Job removed. It pointed at
+# `<registry>/migrations:<tag>` — an image Cloud Build never produces (CI
+# only builds platform-api). Django migrations are now applied by
+# forgeos-django-migrate (see DjangoMigrate below); the raw infrastructure/
+# database/*.sql schema is applied out-of-band when bringing up a fresh DB.
+# Removing the Migrations() call here makes the next `pulumi up` delete the
+# `forgeos-job` Cloud Run Job from each env. The
+# `forgeos-gcp:migrations_tag` config key in Pulumi.{stack}.yaml is now
+# unused — safe to leave or remove.
 
 # Django migrate job (platform-api image) — applies the Django migration graph
 # the raw-SQL job doesn't: auth/admin/sessions, django_celery_beat (Beat needs
