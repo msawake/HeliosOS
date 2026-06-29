@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import pulumi
 
+from components.admin_iam import Admin
 from components.dashboard import Dashboard
 from components.data import Data
 from components.django_migrate import DjangoMigrate
@@ -45,6 +46,14 @@ gcp_config = pulumi.Config("gcp")
 
 project: str = gcp_config.require("project")
 region: str = gcp_config.require("region")
+
+# Project-level admin grants — adds roles/owner to the configured principals.
+# Defaults to the toolshub.admin@group.makingscience.com Google Group so the
+# admin team can read secret values, exec Cloud Run jobs, see logs, and grant
+# further IAM without going through CI. Override via:
+#   pulumi config set --path 'admin_members[0]' group:other@group.example.com
+admin_members: list[str] | None = config.get_object("admin_members")  # type: ignore[assignment]
+Admin("forgeos-admin", project=project, members=admin_members)
 
 network_cidr: str = config.require("network_cidr")
 pods_cidr: str = config.require("pods_cidr")
