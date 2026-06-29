@@ -429,6 +429,23 @@ jobs:
           pulumi config set forgeos-gcp:platform_api_tag "$NEW_TAG"
           echo "Pinned platform_api_tag = $NEW_TAG (migrations_tag intentionally left alone)"
 
+      # Reconcile Pulumi state with what actually exists in GCP before the
+      # preview/up. Without this, resources removed out-of-band (e.g. a Cloud
+      # Run Job deleted by hand to work around deletion_protection) keep
+      # showing up in `pulumi up` as failed deletes against a resource the
+      # cloud doesn't have. `refresh` drops them from state and `pulumi up`
+      # becomes a no-op for that resource. ~30s, idempotent, safe by design.
+      - name: Pulumi refresh (reconcile state with cloud)
+        working-directory: pulumi
+        env:
+          CLOUDSDK_COMPUTE_REGION:  europe-west1
+          USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
+        run: |
+          source venv/bin/activate
+          pulumi login "$PULUMI_BACKEND_URL"
+          pulumi stack select ${{ needs.resolve-stack.outputs.stack }}
+          pulumi refresh --yes --color never --skip-preview
+
       - name: Pre-deploy preview (plan hash)
         id: predeploy_preview
         working-directory: pulumi
