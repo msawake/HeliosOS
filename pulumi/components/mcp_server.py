@@ -73,9 +73,13 @@ class McpServer(pulumi.ComponentResource):
                         # NOTE: src.forgeos_mcp was removed from the repo. The
                         # commands/args override is disabled until a dedicated
                         # MCP image is built and mcp_tag is pinned to it. The
-                        # service uses the image's default CMD for now.
+                        # service uses the image's default CMD (platform-api
+                        # bootstrap on port 5000) for now — so the container
+                        # port must match what the image actually listens on,
+                        # NOT Cloud Run's default 8080. Without this Cloud Run
+                        # health-checks port 8080 forever and times out.
                         ports=gcp.cloudrunv2.ServiceTemplateContainerPortsArgs(
-                            container_port=8080,
+                            container_port=5000,
                         ),
                         envs=envs,
                         resources=gcp.cloudrunv2.ServiceTemplateContainerResourcesArgs(
