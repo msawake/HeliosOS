@@ -33,7 +33,6 @@ from components.exec_environments import ExecEnvironments
 from components.flower import Flower
 from components.gke import Gke
 from components.identity import Identity
-from components.mcp_server import McpServer
 from components.network import Network
 from components.platform_api import PlatformApi
 from components.registry import Registry
@@ -352,21 +351,11 @@ flower = Flower(
 )
 
 # 11. MCP Server — remote MCP endpoint (FastMCP streamable-http) on the
-# platform-api image, pointed at the platform API. Wires FORGEOS_API_KEY only
-# when the api-key secret has a version (else the Service deploy would fail
-# validating secret_key_ref :latest).
-_mcp_api_key_secret = secrets.api_key.id if "api-key" in secrets.versions else None
-_mcp_deps = [secrets.versions["api-key"]] if "api-key" in secrets.versions else []
-mcp_server = McpServer(
-    "forgeos",
-    region=region,
-    image=_img("platform-api", mcp_tag),
-    gsa_email=identity.mcp.email,
-    platform_api_url=platform_api.url,
-    api_key_secret=_mcp_api_key_secret,
-    environment=environment,
-    opts=pulumi.ResourceOptions(depends_on=_mcp_deps),
-)
+# McpServer Cloud Run service removed. Its source (`src.forgeos_mcp`) was
+# pruned from this repo and the remote MCP endpoint is moving to its own
+# repo with its own image. The placeholder reuse of the platform-api image
+# on port 8080 (then 5000) only stalled `pulumi up` at the health check.
+# Next `pulumi up` will delete `forgeos-mcp` from each env.
 
 # 12. Dashboard — Next.js web UI. Pure HTTP client of the platform API; its
 # browser/SSR calls are rewritten to FORGEOS_API_URL (the platform-api URL).
@@ -390,7 +379,7 @@ pulumi.export("pubsub_agent_triggers", data.agent_triggers.name)
 pulumi.export("gke_cluster_name", gke.cluster.name)
 pulumi.export("gke_endpoint", pulumi.Output.secret(gke.cluster.endpoint))
 pulumi.export("platform_api_url", platform_api.url)
-pulumi.export("mcp_server_url", mcp_server.url)
+# mcp_server_url export removed with the McpServer resource (moves to its own repo).
 pulumi.export("dashboard_url", dashboard.url)
 # migrations_job export removed with the legacy Migrations resource.
 pulumi.export("django_migrate_job", django_migrate.job.name)

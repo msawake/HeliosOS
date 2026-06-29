@@ -83,15 +83,22 @@ def _execute(agent_id, prompt, context, session_id, tenant_id, trigger):
         raise RuntimeError("platform executor unavailable in worker (FORGEOS_CELERY_BOOT=0?)")
 
     # Cross-process cache coherence: the platform-api's PUT updates its own
-    # in-memory registry cache; the worker's cache stayed stale until restart,
-    # so PUT-then-invoke would run with the old llm_config (e.g. missing
-    # api_key_ref/endpoint). Pull the latest definition from Postgres into the
-    # worker's registry cache before executor.invoke reads it. One small DB
-    # round-trip per invocation; agent definitions are small.
+    # in-memory registry cache AND the stack adapter's _agents cache; the
+    # worker has its own copies of both that stayed stale until restart, so
+    # PUT-then-invoke ran with the old llm_config (e.g. missing api_key_ref/
+    # endpoint). Pull the latest definition from Postgres into the registry
+    # cache AND propagate it to the adapter (the adapter's invoke() reads
+    # from its OWN _agents cache, not the registry — see
+    # stacks/forgeos/adapter.py:invoke). One small DB round-trip per
+    # invocation; agent definitions are small.
     reg = getattr(ctx, "platform_registry", None)
     if reg is not None and hasattr(reg, "refresh"):
         try:
-            reg.refresh(agent_id)
+            fresh = reg.refresh(agent_id)
+            if fresh is not None and hasattr(ex, "get_adapter"):
+                adapter = ex.get_adapter(fresh.stack)
+                if adapter is not None and hasattr(adapter, "_agents"):
+                    adapter._agents[agent_id] = fresh
         except Exception:
             logger.warning(
                 "registry.refresh(%s) failed; proceeding with cached def", agent_id,
