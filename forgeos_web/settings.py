@@ -43,6 +43,27 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or os.environ.get(
 DEBUG = _flag("DJANGO_DEBUG", "0")
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
+# Behind Cloud Run (and any TLS-terminating proxy): Django sees the request as
+# plain HTTP and would refuse CSRF-protected POSTs from an https:// page
+# because the Origin header doesn't match the request scheme it observes.
+# Cloud Run reliably sets X-Forwarded-Proto, so trust it for scheme detection.
+# Harmless locally — the header isn't present when hitting :5000 directly.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Origins whose POSTs Django will accept CSRF tokens from. Defaults to all
+# *.run.app and *.a.run.app (the Cloud Run-hosted dashboard + platform-api),
+# plus localhost ports we hit in dev. Override with DJANGO_CSRF_TRUSTED_ORIGINS
+# (comma-separated, full scheme://host[:port]). Wildcards on the subdomain
+# are allowed; ports are NOT — provide the exact host:port for non-standard.
+CSRF_TRUSTED_ORIGINS = [
+    o.strip()
+    for o in os.environ.get(
+        "DJANGO_CSRF_TRUSTED_ORIGINS",
+        "https://*.run.app,https://*.a.run.app,http://localhost:3000,http://localhost:5000",
+    ).split(",")
+    if o.strip()
+]
+
 # Auth gate. The FastAPI app used FORGEOS_AUTH_DISABLED (default off in local dev).
 FORGEOS_AUTH_ENABLED = not _flag("FORGEOS_AUTH_DISABLED", "0")
 

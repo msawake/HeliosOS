@@ -405,12 +405,19 @@ jobs:
       # preview job embedded in the PR comment.  If the hashes differ the plan
       # has changed since the PR was reviewed (state drift, concurrent merges,
       # etc.) and we abort before touching real infrastructure.
-      # ── Override image tags with the freshly-built ones ──────────────────
+      # ── Override the platform-api image tag with the freshly-built one ───
       # `pulumi config set` modifies the on-disk Pulumi.{stack}.yaml ephemerally
       # in the runner workspace (NOT committed back) so subsequent `pulumi
-      # preview` + `up` see the new tag. platform-api / mcp / migrations all
-      # share the same image (same Dockerfile, different commands), so
-      # `migrations_tag` gets the same value.
+      # preview` + `up` see the new tag.
+      #
+      # We do NOT pin `migrations_tag` to the same SHA: Cloud Build only
+      # produces a `platform-api` image; the legacy psql-based
+      # `<registry>/migrations:<tag>` image is not built here. Pinning it
+      # rewrote the legacy Migrations Cloud Run Job to a non-existent tag and
+      # failed every deploy at the "updating forgeos-job" step. Leaving it on
+      # whatever value Pulumi.{stack}.yaml carries makes the Migrations
+      # resource a no-op on each deploy; Django migrations are owned by the
+      # separate forgeos-django-migrate job.
       - name: Pin freshly-built platform-api tag
         working-directory: pulumi
         env:
@@ -420,8 +427,7 @@ jobs:
           pulumi login "$PULUMI_BACKEND_URL"
           pulumi stack select ${{ needs.resolve-stack.outputs.stack }}
           pulumi config set forgeos-gcp:platform_api_tag "$NEW_TAG"
-          pulumi config set forgeos-gcp:migrations_tag   "$NEW_TAG"
-          echo "Pinned platform_api_tag + migrations_tag = $NEW_TAG"
+          echo "Pinned platform_api_tag = $NEW_TAG (migrations_tag intentionally left alone)"
 
       - name: Pre-deploy preview (plan hash)
         id: predeploy_preview
