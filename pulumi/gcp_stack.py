@@ -378,5 +378,5 @@ pulumi.export("gke_endpoint", pulumi.Output.secret(gke.cluster.endpoint))
 pulumi.export("platform_api_url", platform_api.url)
 pulumi.export("mcp_server_url", mcp_server.url)
 pulumi.export("dashboard_url", dashboard.url)
-pulumi.export("migrations_job", migrations.job.name)
+# migrations_job export removed with the legacy Migrations resource.
 pulumi.export("django_migrate_job", django_migrate.job.name)

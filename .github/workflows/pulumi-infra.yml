@@ -440,8 +440,19 @@ jobs:
           pulumi login "$PULUMI_BACKEND_URL"
           pulumi stack select ${{ needs.resolve-stack.outputs.stack }}
 
-          DEPLOY_OUTPUT=$(pulumi preview --diff --color never 2>&1)
-          echo "$DEPLOY_OUTPUT" > /tmp/predeploy-preview-output.txt
+          # Capture-AND-show: previous `$(... 2>&1)` form swallowed the
+          # output, so a `pulumi preview` failure exited 255 with no clue.
+          # tee streams to both the workflow log and the file. PIPESTATUS[0]
+          # preserves pulumi's real exit code through the pipe.
+          set +e
+          pulumi preview --diff --color never 2>&1 | tee /tmp/predeploy-preview-output.txt
+          PV_EC=${PIPESTATUS[0]}
+          set -e
+          if [[ $PV_EC -ne 0 ]]; then
+            echo "::error::pulumi preview failed with exit $PV_EC (see output above)"
+            exit $PV_EC
+          fi
+          DEPLOY_OUTPUT=$(cat /tmp/predeploy-preview-output.txt)
 
           DEPLOY_HASH=$(echo "$DEPLOY_OUTPUT" \
             | grep -E '^\s*([\+\~\-]|(create|update|delete|replace|same)\b)' \
