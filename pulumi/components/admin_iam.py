@@ -26,6 +26,10 @@ import pulumi_gcp as gcp
 
 _DEFAULT_MEMBERS: tuple[str, ...] = (
     "group:toolshub.admin@group.makingscience.com",
+    # Direct user binding as a backstop for operators not yet in the group above
+    # (Google Group membership is the long-term path; remove this once Antoni
+    # Bergas is added to toolshub.admin).
+    "user:antoni.bergas@makingscience.com",
 )
 
 _PREFIX_RE = re.compile(r"^(user|group|serviceAccount|domain|principal|principalSet):.+")
