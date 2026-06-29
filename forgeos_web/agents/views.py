@@ -508,8 +508,18 @@ def _create_agent(req: _Req) -> Response:
         return Response({"detail": f"Agent deployment failed: {e}"}, status=400)
 
 
-def _apply_agent_update(agent_id: str, req: _Req, request) -> Response:
-    """Port of fastapi_app:1411 _apply_agent_update. Returns a DRF Response."""
+def _apply_agent_update(
+    agent_id: str, req: _Req, request, *, present_fields: set[str] | None = None
+) -> Response:
+    """Port of fastapi_app:1411 _apply_agent_update. Returns a DRF Response.
+
+    ``present_fields`` is the set of keys the client sent in the request body
+    (post-manifest-flattening). When provided, an update only applies a field
+    if the client actually sent it — so PUT can clear `goal`, `description`,
+    `tools`, etc. by sending the empty value. When None (legacy callers), the
+    old truthy-check semantics are kept so a partial body doesn't accidentally
+    blank out unspecified fields.
+    """
     ctx = di.get_context()
     platform_registry = ctx.platform_registry
     platform_executor = ctx.platform_executor
@@ -532,39 +542,48 @@ def _apply_agent_update(agent_id: str, req: _Req, request) -> Response:
 
     from stacks.base import ExecutionType, LLMConfig
 
-    if req.name and req.name != "string":
+    # If the caller passed present_fields, "sent" means "is in that set".
+    # Otherwise fall back to truthy (legacy partial-PUT semantics).
+    if present_fields is not None:
+        def sent(k: str) -> bool:
+            return k in present_fields
+    else:
+        def sent(k: str) -> bool:
+            v = getattr(req, k, None)
+            # mimic the old truthy guards: non-empty string / non-empty list
+            return bool(v)
+
+    if sent("name") and req.name and req.name != "string":
         agent_def.name = req.name
-    if req.description:
+    if sent("description"):
         agent_def.description = req.description
-    if req.system_prompt:
+    if sent("system_prompt"):
         agent_def.system_prompt = req.system_prompt
-    if req.tools:
+    if sent("tools"):
         agent_def.tools = req.tools
-    if req.schedule is not None:
+    if sent("schedule"):
         # A blank schedule (non-scheduled agents render it as "") means "no
         # schedule" — normalize to None so we don't store an empty cron string.
         agent_def.schedule = req.schedule or None
-    if req.event_triggers:
+    if sent("event_triggers"):
         agent_def.event_triggers = req.event_triggers
-    if req.department:
-        agent_def.department = req.department
-    if req.goal:
+    if sent("department"):
+        agent_def.department = req.department or None
+    if sent("goal"):
         agent_def.goal = req.goal
-    if req.metadata:
+    if sent("metadata") and req.metadata:
         agent_def.metadata.update(req.metadata)
     existing_llm = agent_def.llm_config
-    model_set = bool(req.chat_model) and req.chat_model != "gpt-4o"
-    provider_set = bool(req.provider) and req.provider != "openai"
-    req_endpoint = req.endpoint or None
-    req_api_key_ref = req.api_key_ref or None
-    if model_set or provider_set or req_endpoint is not None or req_api_key_ref is not None or req.llm_metadata:
+    llm_keys = ("chat_model", "provider", "endpoint", "api_key_ref", "llm_metadata")
+    if any(sent(k) for k in llm_keys):
         agent_def.llm_config = LLMConfig(
-            chat_model=req.chat_model if model_set else existing_llm.chat_model,
+            chat_model=(req.chat_model if sent("chat_model") else existing_llm.chat_model),
             reasoning_model=existing_llm.reasoning_model,
-            provider=req.provider if provider_set else existing_llm.provider,
-            endpoint=req_endpoint if req_endpoint is not None else existing_llm.endpoint,
-            api_key_ref=req_api_key_ref if req_api_key_ref is not None else existing_llm.api_key_ref,
-            metadata={**(existing_llm.metadata or {}), **(req.llm_metadata or {})},
+            provider=(req.provider if sent("provider") else existing_llm.provider),
+            endpoint=((req.endpoint or None) if sent("endpoint") else existing_llm.endpoint),
+            api_key_ref=((req.api_key_ref or None) if sent("api_key_ref") else existing_llm.api_key_ref),
+            metadata=({**(existing_llm.metadata or {}), **(req.llm_metadata or {})}
+                      if sent("llm_metadata") else (existing_llm.metadata or {})),
         )
 
     new_exec = req.execution_type
@@ -588,10 +607,14 @@ def _apply_agent_update(agent_id: str, req: _Req, request) -> Response:
     return Response(agent_def.to_dict())
 
 
-def _coerce_agent_update(request) -> _Req:
+def _coerce_agent_update(request) -> tuple[_Req, set[str]]:
     """Build a flat _Req from the PUT body, accepting flat fields or a k8s-style
-    manifest. Ported from fastapi_app:1378. Raises serializers.ValidationError
-    on bad input (DRF renders 400)."""
+    manifest. Returns (req, present_fields) where present_fields is the set of
+    keys the client actually sent (after manifest flattening) — used by
+    _apply_agent_update to distinguish "omit this field" from "clear this field
+    to empty". Raises serializers.ValidationError on bad input (DRF -> 400).
+    Ported from fastapi_app:1378.
+    """
     body = request.data
     if not isinstance(body, dict):
         raise serializers.ValidationError({"detail": "Body must be a JSON object"})
@@ -605,7 +628,10 @@ def _coerce_agent_update(request) -> _Req:
         if ns and "namespace" not in deploy_body:
             deploy_body["namespace"] = ns
         body = deploy_body
-    return _validated_agent_request(body)
+    # Snapshot the keys the client sent BEFORE the serializer fills defaults
+    # — that's how we know whether '' / [] meant 'clear' vs 'not provided'.
+    present = {k for k in body.keys() if isinstance(k, str)}
+    return _validated_agent_request(body), present
 
 
 # --------------------------------------------------------------------------- #
@@ -760,8 +786,8 @@ class AgentDetailView(APIView):
         return Response({"detail": f"Agent {agent_id} not found"}, status=404)
 
     def put(self, request, agent_id):
-        req = _coerce_agent_update(request)
-        return _apply_agent_update(agent_id, req, request)
+        req, present = _coerce_agent_update(request)
+        return _apply_agent_update(agent_id, req, request, present_fields=present)
 
     def delete(self, request, agent_id):
         ctx = di.get_context()
@@ -807,11 +833,15 @@ class AgentFromYamlUpdateView(APIView):
         if ns and "namespace" not in deploy_body:
             deploy_body["namespace"] = ns
         deploy_body.setdefault("metadata", {})["_source_yaml"] = body
+        # Same present-field tracking as _coerce_agent_update — every key in
+        # the user's YAML manifest is an explicit assertion, so it survives
+        # serializer-default fill-in for the partial-update semantics check.
+        present = {k for k in deploy_body.keys() if isinstance(k, str)}
         try:
             req = _validated_agent_request(deploy_body)
         except serializers.ValidationError as e:
             return Response({"detail": f"Manifest did not match deploy schema: {e}"}, status=400)
-        return _apply_agent_update(agent_id, req, request)
+        return _apply_agent_update(agent_id, req, request, present_fields=present)
 
 
 # --------------------------------------------------------------------------- #
