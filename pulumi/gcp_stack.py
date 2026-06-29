@@ -30,6 +30,7 @@ from components.dashboard import Dashboard
 from components.data import Data
 from components.django_migrate import DjangoMigrate
 from components.exec_environments import ExecEnvironments
+from components.flower import Flower
 from components.gke import Gke
 from components.identity import Identity
 from components.mcp_server import McpServer
@@ -335,6 +336,19 @@ worker = WorkerTier(
     kernel_mode=kernel_mode,
     replicas=worker_replicas,
     environment=environment,
+)
+
+# 10b. Flower — Celery monitoring UI. Same namespace as the workers; reuses
+# the forgeos-worker-env Secret so REDIS_URL stays the one source of truth.
+# Reach via `kubectl -n forgeos-system port-forward svc/forgeos-flower 5555`.
+flower = Flower(
+    "forgeos",
+    k8s_provider=gke.provider,
+    gke_cluster=gke.cluster,
+    namespace="forgeos-system",
+    env_secret_name="forgeos-worker-env",
+    environment=environment,
+    opts=pulumi.ResourceOptions(depends_on=[worker]),
 )
 
 # 11. MCP Server — remote MCP endpoint (FastMCP streamable-http) on the
