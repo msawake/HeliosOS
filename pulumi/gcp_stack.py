@@ -166,7 +166,7 @@ for sa, label in [
         secrets.grant_access(f"{label}-{secret_name}-access", secret, sa.email)
 
 secrets.grant_access("migrations-db-access", secrets.database_url, identity.migrations.email)
-secrets.grant_access("mcp-api-key-access", secrets.api_key, identity.mcp.email)
+secrets.grant_access("mcp-admin-key-access", secrets.admin_api_key, identity.mcp.email)
 # Auth secrets — platform-api only (worker/agent SAs don't authenticate users).
 secrets.grant_access("platform-api-admin-key-access", secrets.admin_api_key, identity.platform_api.email)
 secrets.grant_access("platform-api-dev-password-access", secrets.dashboard_password, identity.platform_api.email)
@@ -354,10 +354,15 @@ flower = Flower(
 
 # 11. MCP Server — remote MCP endpoint (FastMCP streamable-http) on a
 # dedicated forgeos-mcp image. Source: bitbucket.org/i2tic/helios-os-mcp.
-# Wires FORGEOS_API_KEY only when the api-key secret has a version (else the
-# Service deploy would fail validating secret_key_ref :latest).
-_mcp_api_key_secret = secrets.api_key.id if "api-key" in secrets.versions else None
-_mcp_deps = [secrets.versions["api-key"]] if "api-key" in secrets.versions else []
+#
+# FORGEOS_API_KEY comes from the ADMIN api key, not the tenant api key —
+# admin-gated tools (forgeos_deploy / forgeos_undeploy / etc.) need an admin
+# principal at the platform-api. AuthManager.verify_admin_key recognises
+# the value without a DB lookup, so this works on a fresh tenant. The
+# admin-api-key secret is auto-generated in secrets.py (length=48) — its
+# `:latest` version always exists, so no conditional wiring is needed.
+_mcp_api_key_secret = secrets.admin_api_key.id
+_mcp_deps = [secrets.versions["admin-api-key"]] if "admin-api-key" in secrets.versions else []
 mcp_server = McpServer(
     "forgeos",
     region=region,
