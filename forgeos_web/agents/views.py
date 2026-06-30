@@ -52,7 +52,12 @@ def _can_access_agent(uid: str, role: str, agent_def, *, my_namespaces: set[str]
 
     - tenant admin → always
     - PERSONAL → only the ``owner_id``
-    - SHARED → any effective member of the agent's namespace
+    - SHARED + namespace=``default`` → tenant-wide (any authenticated user).
+      ``default`` is the implicit tenant bucket — no Namespace row is required
+      and no membership table exists for it. Treating it as restrictive made
+      the wizard's "tenant" ownership unusable: agents got created in
+      ``default`` and the creator couldn't see them back.
+    - SHARED + other namespace → any effective member of that namespace
     - CLIENT/unknown → admin/operator only (unchanged from the pre-RBAC default)
 
     ``my_namespaces`` (precomputed member∪admin set) lets the list view avoid a
@@ -66,6 +71,9 @@ def _can_access_agent(uid: str, role: str, agent_def, *, my_namespaces: set[str]
         return bool(owner) and owner == uid
     if own == "shared":
         ns = getattr(agent_def, "namespace", None) or "default"
+        if ns == "default":
+            # Tenant-wide: visible to every authenticated user in this tenant.
+            return True
         if my_namespaces is not None:
             return ns in my_namespaces
         from src.platform.namespace_admins import is_effective_member
