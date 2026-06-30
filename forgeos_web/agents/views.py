@@ -411,8 +411,15 @@ def _validated_agent_request(data: dict) -> _Req:
 # --------------------------------------------------------------------------- #
 # Shared create / update logic (ported from create_agent / _apply_agent_update)
 # --------------------------------------------------------------------------- #
-def _create_agent(req: _Req) -> Response:
-    """Port of fastapi_app:1024 create_agent. Returns a DRF Response."""
+def _create_agent(req: _Req, request=None) -> Response:
+    """Port of fastapi_app:1024 create_agent. Returns a DRF Response.
+
+    ``request`` is needed so PERSONAL agents can default ``owner_id`` to the
+    acting user when the caller didn't supply one. Without that default, the
+    agent gets stored with ``owner_id=None`` and `_can_access_agent` returns
+    False for everyone except admins — i.e. the creator can't see their own
+    agent in the list.
+    """
     ctx = di.get_context()
     platform_executor = ctx.platform_executor
     if not platform_executor:
@@ -424,6 +431,11 @@ def _create_agent(req: _Req) -> Response:
         if req.client_id:
             ownership = OwnershipType.CLIENT
             owner_id = req.client_id
+        # PERSONAL agents must have an owner; otherwise the creator can't
+        # even read their own agent back. Default to the acting user.
+        if ownership == OwnershipType.PERSONAL and not owner_id and request is not None:
+            uid, _role = acting_principal(request, ctx)
+            owner_id = uid or owner_id
         defn = AgentDefinition(
             name=req.name, stack=req.stack,
             execution_type=ExecutionType(req.execution_type),
@@ -725,7 +737,7 @@ class AgentsView(APIView):
 
     def post(self, request):
         req = _validated_agent_request(request.data)
-        return _create_agent(req)
+        return _create_agent(req, request)
 
 
 # --------------------------------------------------------------------------- #
@@ -756,7 +768,7 @@ class AgentsFromYamlView(APIView):
             req = _validated_agent_request(deploy_body)
         except serializers.ValidationError as e:
             return Response({"detail": f"Manifest did not match deploy schema: {e}"}, status=400)
-        return _create_agent(req)
+        return _create_agent(req, request)
 
 
 # --------------------------------------------------------------------------- #
