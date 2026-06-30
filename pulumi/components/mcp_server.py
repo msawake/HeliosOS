@@ -1,15 +1,15 @@
 """Helios OS MCP Server on Cloud Run (FastMCP streamable-http).
 
-Serves src/forgeos_mcp as a remote MCP endpoint so any MCP client (Claude,
-Cursor, …) can reach the fleet over HTTP instead of spawning a local stdio
-process. It's HTTP-native — it just calls the platform API — so it runs as its
-own scale-to-zero Cloud Run service pointed at the platform API URL, reusing
-the platform-api image with a CMD override (no separate image/build).
+Serves the standalone `forgeos_mcp` package (bitbucket.org/i2tic/helios-os-mcp)
+as a remote MCP endpoint so any MCP client (Claude, Cursor, …) can reach the
+fleet over HTTP. The image is the dedicated `forgeos/forgeos-mcp` repo — its
+CMD already runs `python -m forgeos_mcp --transport streamable-http --port
+$PORT`, so we don't override commands here.
 
 Auth: the server presents FORGEOS_API_KEY to the platform API as X-API-Key,
-validated against tenants.api_key_hash (Phase 2). The key is wired only when
-its Secret Manager version exists, so a versionless secret doesn't break the
-Service (Cloud Run validates secret_key_ref :latest at deploy).
+validated against tenants.api_key_hash. The key is wired only when its Secret
+Manager version exists, so a versionless secret doesn't break the Service
+(Cloud Run validates secret_key_ref :latest at deploy).
 """
 
 from __future__ import annotations
@@ -70,16 +70,12 @@ class McpServer(pulumi.ComponentResource):
                 containers=[
                     gcp.cloudrunv2.ServiceTemplateContainerArgs(
                         image=image,
-                        # NOTE: src.forgeos_mcp was removed from the repo. The
-                        # commands/args override is disabled until a dedicated
-                        # MCP image is built and mcp_tag is pinned to it. The
-                        # service uses the image's default CMD (platform-api
-                        # bootstrap on port 5000) for now — so the container
-                        # port must match what the image actually listens on,
-                        # NOT Cloud Run's default 8080. Without this Cloud Run
-                        # health-checks port 8080 forever and times out.
+                        # The dedicated forgeos-mcp image reads $PORT (Cloud
+                        # Run sets it to whatever container_port we declare)
+                        # and binds FastMCP's streamable-http transport there.
+                        # Default Cloud Run port is 8080 — match it.
                         ports=gcp.cloudrunv2.ServiceTemplateContainerPortsArgs(
-                            container_port=5000,
+                            container_port=8080,
                         ),
                         envs=envs,
                         resources=gcp.cloudrunv2.ServiceTemplateContainerResourcesArgs(

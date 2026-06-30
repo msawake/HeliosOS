@@ -33,6 +33,7 @@ from components.exec_environments import ExecEnvironments
 from components.flower import Flower
 from components.gke import Gke
 from components.identity import Identity
+from components.mcp_server import McpServer
 from components.network import Network
 from components.platform_api import PlatformApi
 from components.registry import Registry
@@ -80,11 +81,12 @@ environment: str = config.get("environment") or "dev"
 platform_api_tag: str = config.get("platform_api_tag") or "latest"
 migrations_tag: str = config.get("migrations_tag") or "latest"
 dashboard_tag: str = config.get("dashboard_tag") or "latest"
-# The remote MCP server (src/forgeos_mcp) was removed from the repo, so the
-# current platform-api image can't run `python -m src.forgeos_mcp`. Pin the
-# forgeos-mcp service to its own tag (its last image that still had that code)
-# so platform-api bumps don't break it. Defaults to platform_api_tag.
-mcp_tag: str = config.get("mcp_tag") or platform_api_tag
+# The remote MCP server lives in its own repo (bitbucket.org/i2tic/helios-os-mcp)
+# and pushes to a separate AR path: forgeos/forgeos-mcp. Its SHAs don't match
+# the platform-api SHAs, so don't inherit platform_api_tag here — default to
+# `latest` and override per-deploy via:
+#   pulumi config set forgeos-gcp:mcp_tag <short-sha>
+mcp_tag: str = config.get("mcp_tag") or "latest"
 
 # Qwen (vLLM) gateway — when set, agents on provider=vllm route here. The key
 # rides Secret Manager (vllm-api-key); the URL is plain config.
@@ -350,12 +352,22 @@ flower = Flower(
     opts=pulumi.ResourceOptions(depends_on=[worker]),
 )
 
-# 11. MCP Server — remote MCP endpoint (FastMCP streamable-http) on the
-# McpServer Cloud Run service removed. Its source (`src.forgeos_mcp`) was
-# pruned from this repo and the remote MCP endpoint is moving to its own
-# repo with its own image. The placeholder reuse of the platform-api image
-# on port 8080 (then 5000) only stalled `pulumi up` at the health check.
-# Next `pulumi up` will delete `forgeos-mcp` from each env.
+# 11. MCP Server — remote MCP endpoint (FastMCP streamable-http) on a
+# dedicated forgeos-mcp image. Source: bitbucket.org/i2tic/helios-os-mcp.
+# Wires FORGEOS_API_KEY only when the api-key secret has a version (else the
+# Service deploy would fail validating secret_key_ref :latest).
+_mcp_api_key_secret = secrets.api_key.id if "api-key" in secrets.versions else None
+_mcp_deps = [secrets.versions["api-key"]] if "api-key" in secrets.versions else []
+mcp_server = McpServer(
+    "forgeos",
+    region=region,
+    image=_img("forgeos-mcp", mcp_tag),
+    gsa_email=identity.mcp.email,
+    platform_api_url=platform_api.url,
+    api_key_secret=_mcp_api_key_secret,
+    environment=environment,
+    opts=pulumi.ResourceOptions(depends_on=_mcp_deps),
+)
 
 # 12. Dashboard — Next.js web UI. Pure HTTP client of the platform API; its
 # browser/SSR calls are rewritten to FORGEOS_API_URL (the platform-api URL).
