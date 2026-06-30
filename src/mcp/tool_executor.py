@@ -602,7 +602,10 @@ class ToolExecutor:
                         return result
                     return {"success": True, "result": result}
                 except Exception as e:
-                    logger.error("Custom tool %s failed: %s", tool_name, e)
+                    # Log with full traceback so the agent-call / A2A failure
+                    # mode "NoneType object has no attribute 'get'" is
+                    # debuggable from worker logs without code changes.
+                    logger.exception("Custom tool %s failed: %s", tool_name, e)
                     return {"success": False, "error": str(e)}
 
             # MCP tools: mcp__<server>__<tool> — with timeout
