@@ -54,7 +54,10 @@ class McpServer(pulumi.ComponentResource):
 
         self.service = gcp.cloudrunv2.Service(
             f"{name}-svc",
-            name="forgeos-mcp",
+            # Helios OS canonical name. The previous "forgeos-mcp" service is
+            # implicitly deleted on the next `pulumi up` (Cloud Run service
+            # names are immutable, so the provider deletes + recreates).
+            name="helios-mcp",
             location=region,
             ingress="INGRESS_TRAFFIC_ALL",
             deletion_protection=False,
