@@ -238,6 +238,13 @@ class PlatformMcpServersView(APIView):
         platform-scoped servers. ``?scope=all|user|namespace|tenant`` returns
         configs across client scopes, each tagged with its ``scope`` + ``owner``
         so the dashboard can show + filter by ownership level.
+
+        Caller-scoping: for non-admin callers the result is filtered so they
+        only see MCPs they have a legitimate stake in — own user-scope MCPs,
+        member namespace MCPs, and tenant-scope MCPs. Without this filter a
+        non-admin operator could enumerate every other user's user-scope MCP
+        (including secret keys, even though values are redacted).
+        Admins see everything (matches the agent list contract).
         """
         ctx = di.get_context()
         client_store, client_mcp_store = _client_stores(ctx)
@@ -245,6 +252,27 @@ class PlatformMcpServersView(APIView):
         if not scope or scope == "platform":
             return Response(
                 client_mcp_store.list_for_client(PLATFORM_CLIENT_ID, redact_secrets=True))
+
+        # Build the caller's allow-set (only used when role != admin).
+        uid, role = _acting_principal(request, ctx)
+        my_namespaces: set[str] = set()
+        if ctx.auth_enabled and role != "admin":
+            try:
+                from forgeos_web.agents.views import _visible_namespaces
+                my_namespaces = _visible_namespaces(uid)
+            except Exception as e:
+                logger.warning("MCP scope listing: _visible_namespaces(%s) failed: %s", uid, e)
+
+        def _visible_to_caller(s: str, owner: str) -> bool:
+            if role == "admin" or not ctx.auth_enabled:
+                return True
+            if s == "tenant":  # tenant-wide is visible to any authenticated user
+                return True
+            if s == "user":
+                return owner == uid
+            if s == "namespace":
+                return owner in my_namespaces
+            return False
 
         client_ids: list[str] = [PLATFORM_CLIENT_ID]
         try:
@@ -259,6 +287,8 @@ class PlatformMcpServersView(APIView):
             seen.add(cid)
             s, owner = _scope_owner(cid)
             if scope != "all" and s != scope:
+                continue
+            if not _visible_to_caller(s, owner):
                 continue
             try:
                 for row in client_mcp_store.list_for_client(cid, redact_secrets=True):
