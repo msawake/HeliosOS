@@ -255,6 +255,38 @@ class AuthManager:
         ).rstrip(b"=").decode()
         return f"{signed}.{sig}"
 
+    def verify_personal_token(self, token: str) -> AuthUser | None:
+        """Verify a Helios OS Personal Access Token (``hpat_...``).
+
+        PATs are long-lived, revocable tokens users create from the dashboard
+        to configure MCP / CLI / third-party clients. Storage is hashed; this
+        looks the token up in ``personal_access_tokens`` and returns the
+        owner's AuthUser on a match. Returns None when the token isn't a
+        PAT, is revoked/expired, or the store is unavailable.
+        """
+        if not token or not self._db or not getattr(self._db, "is_connected", False):
+            return None
+        try:
+            from src.api.personal_tokens import PersonalTokenStore, TOKEN_PREFIX
+        except Exception:
+            return None
+        if not token.startswith(TOKEN_PREFIX):
+            return None
+        try:
+            ident = PersonalTokenStore(self._db, tenant_id=self._tenant_id).verify(token)
+        except Exception:
+            logger.exception("verify_personal_token failed")
+            return None
+        if ident is None:
+            return None
+        return AuthUser(
+            user_id=ident.user_id,
+            email=ident.email,
+            tenant_id=ident.tenant_id,
+            role=ident.role,
+            name=ident.name,
+        )
+
     def verify_token(self, token: str) -> AuthUser | None:
         """Verify a signed session token. None on bad sig / expiry / malformed."""
         try:
@@ -369,10 +401,19 @@ class AuthManager:
 
         auth_header = request.headers.get("Authorization", "")
 
-        # Bearer token — a signed local session token first, then Firebase JWT.
+        # Bearer token — try (in order):
+        #   1. personal access token   (``hpat_...`` prefix, long-lived, revocable)
+        #   2. signed session token    (``v1.<payload>.<sig>`` from /api/auth/login)
+        #   3. Firebase JWT            (federated login)
+        # Only the PAT path touches the DB when the prefix matches, so the
+        # other paths keep their existing latency profile.
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
-            user = self.verify_token(token) or self.verify_jwt(token)
+            user = (
+                self.verify_personal_token(token)
+                or self.verify_token(token)
+                or self.verify_jwt(token)
+            )
             if not user:
                 _record_auth_failure(ip)
             return user

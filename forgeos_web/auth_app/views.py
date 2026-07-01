@@ -199,3 +199,98 @@ class UserDetailView(APIView):
         store.delete_user(user_id)
         _audit("user.delete", actor=acting_caller(request), resource_id=user_id, details={})
         return Response({"deleted": True, "id": user_id})
+
+
+# --------------------------------------------------------------------------- #
+# Personal Access Tokens (PATs) — long-lived, revocable bearer tokens users
+# create from the dashboard's "Settings → MCP Access" page to configure their
+# MCP client (Claude Code, Cursor, …). AuthManager.verify_personal_token
+# recognises the ``hpat_`` prefix; on match the caller inherits the token
+# owner's identity + role.
+# --------------------------------------------------------------------------- #
+class PersonalTokenCreateSerializer(serializers.Serializer):
+    name = serializers.CharField(min_length=1, max_length=200)
+    # ISO-8601 or null; leave open-ended for now (dashboard won't send an expiry
+    # by default — a token with no expiry is the friendliest UX for MCP setup).
+    expires_at = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+
+def _pat_store():
+    """Late-bound: personal_tokens depends on the platform's DatabaseClient."""
+    from forgeos_web.di import get_context
+    from src.api.personal_tokens import PersonalTokenStore
+    ctx = get_context()
+    db = getattr(ctx, "db_client", None) or getattr(ctx, "database", None)
+    if db is None:
+        return None
+    tenant_id = getattr(ctx, "tenant_id", None) or "default"
+    return PersonalTokenStore(db, tenant_id=tenant_id)
+
+
+def _acting_user_id(request) -> str | None:
+    """Which user owns tokens minted / listed on this request.
+
+    Uses the DRF principal (set by ForgeOSAuthentication) — never the
+    ``X-Forgeos-User`` header override, so an operator can't accidentally
+    list another user's tokens by faking a header. Anonymous → None.
+    """
+    principal = getattr(request, "auth", None)
+    uid = getattr(principal, "user_id", None) if principal else None
+    if not uid or uid in ("default", "admin", "api-user", "dev-user"):
+        # Synthetic identities (unauth / admin key / dev login) don't own
+        # PATs — they aren't DB rows in tenant_users. Refuse politely.
+        return None
+    return uid
+
+
+class PersonalTokensView(APIView):
+    """GET/POST /api/tokens — list + create the caller's PATs."""
+
+    def get(self, request):
+        uid = _acting_user_id(request)
+        if not uid:
+            return Response({"detail": "Personal tokens require a real user login"}, status=403)
+        store = _pat_store()
+        if store is None or not store.available:
+            return Response({"detail": "Token store not configured"}, status=503)
+        return Response({"items": store.list_for_user(uid)})
+
+    def post(self, request):
+        uid = _acting_user_id(request)
+        if not uid:
+            return Response({"detail": "Personal tokens require a real user login"}, status=403)
+        store = _pat_store()
+        if store is None or not store.available:
+            return Response({"detail": "Token store not configured"}, status=503)
+        ser = PersonalTokenCreateSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+        try:
+            minted = store.create(
+                uid,
+                data["name"],
+                expires_at=(data.get("expires_at") or None) or None,
+            )
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=400)
+        _audit("token.create", actor=acting_caller(request), resource_id=minted["id"],
+               details={"name": minted["name"]})
+        # `token` (plaintext) is returned ONCE; the dashboard shows it in a
+        # copy-once modal and never fetches it again.
+        return Response(minted, status=status.HTTP_201_CREATED)
+
+
+class PersonalTokenDetailView(APIView):
+    """DELETE /api/tokens/{token_id} — revoke a PAT the caller owns."""
+
+    def delete(self, request, token_id):
+        uid = _acting_user_id(request)
+        if not uid:
+            return Response({"detail": "Personal tokens require a real user login"}, status=403)
+        store = _pat_store()
+        if store is None or not store.available:
+            return Response({"detail": "Token store not configured"}, status=503)
+        if not store.revoke(uid, token_id):
+            return Response({"detail": "Token not found or already revoked"}, status=404)
+        _audit("token.revoke", actor=acting_caller(request), resource_id=token_id, details={})
+        return Response({"revoked": True, "id": token_id})
