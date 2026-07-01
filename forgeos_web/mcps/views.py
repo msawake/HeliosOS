@@ -6,7 +6,6 @@ Ported 1:1 from src/dashboard/fastapi_app.py:
   - /api/mcps/{name:path}                       (2440)
   - /api/platform/mcp/servers  GET/POST         (2688, 2717)
   - /api/platform/mcp/servers/{server_name} PUT/DELETE (2733, 2746)
-  - /api/users/{user_id}/mcp/jira  POST          (4509)
   - /api/users/{user_id}/mcp/{server_name} POST  (4543)
   - /api/namespaces/{ns}/mcp/{server_name} POST  (4603)
 
@@ -442,37 +441,6 @@ class PlatformMcpServerDetailView(APIView):
 # ---------------------------------------------------------------------------
 # Per-user MCP enrollment.
 # ---------------------------------------------------------------------------
-
-class UserJiraMcpView(APIView):
-    """POST /api/users/{user_id}/mcp/jira — wire a per-user JIRA MCP."""
-
-    def post(self, request, user_id):
-        from src.platform.credentials import jira_secret_names
-
-        ctx = di.get_context()
-        client_store, client_mcp_store = _client_stores(ctx)
-        cid = f"user:{user_id}"
-        try:
-            if not client_store.exists(cid):
-                client_store.create(cid, f"user:{user_id}", {"kind": "user-mcp"})
-        except Exception as e:
-            logger.warning("enroll jira: client seed failed for %s: %s", cid, e)
-        names = jira_secret_names(user_id)
-        env_vars = {
-            "JIRA_URL": f"secret:{names['url']}",
-            "JIRA_USERNAME": f"secret:{names['email']}",
-            "JIRA_API_TOKEN": f"secret:{names['token']}",
-        }
-        try:
-            client_mcp_store.add(cid, "atlassian", "mcp-atlassian", env_vars, [])
-        except ValueError:
-            client_mcp_store.update(cid, "atlassian", "mcp-atlassian", env_vars, [])
-        _refresh_client_mcp_cache(ctx, client_mcp_store, cid)
-        _audit("user_mcp.enroll", resource_type="user_mcp", resource_id=cid,
-               details={"server": "atlassian", "package": "mcp-atlassian"})
-        return Response(
-            {"enrolled": True, "client_id": cid, "server_name": "atlassian"}, status=201)
-
 
 class UserMcpView(APIView):
     """POST /api/users/{user_id}/mcp/{server_name} — register any MCP for a user."""

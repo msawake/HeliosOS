@@ -224,12 +224,6 @@
     ]
   },
   {
-    "path": "/api/credentials/jira",
-    "methods": [
-      "POST"
-    ]
-  },
-  {
     "path": "/api/credentials/secret",
     "methods": [
       "POST"
@@ -732,12 +726,6 @@
     "methods": [
       "DELETE",
       "PATCH"
-    ]
-  },
-  {
-    "path": "/api/users/{user_id}/mcp/jira",
-    "methods": [
-      "POST"
     ]
   },
   {

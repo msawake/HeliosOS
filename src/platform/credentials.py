@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_USER_ID = "default"
 GH_PAT_KIND = "github"
-JIRA_KIND = "jira"
 
 # Three secret tiers. Stored names are scope-qualified so one flat key space
 # (works on both the encrypted-Postgres and GCP Secret Manager backends) holds
@@ -100,26 +99,6 @@ def _secret_name(kind: str, user_id: str) -> str:
     return f"forgeos-{kind}-pat-{user_id}"
 
 
-def _field_secret_name(kind: str, field: str, user_id: str) -> str:
-    """Generic multi-field key: ``forgeos-<kind>-<field>-<user_id>``.
-
-    Used for credentials with more than one part (e.g. JIRA needs url + email
-    + token). The same names appear verbatim as ``secret:<name>`` references in
-    per-user MCP server configs so the MCP env resolves to the stored values.
-    """
-    user_id = user_id or DEFAULT_USER_ID
-    return f"forgeos-{kind}-{field}-{user_id}"
-
-
-def jira_secret_names(user_id: str) -> dict[str, str]:
-    """Return the SecretsManager keys for a user's JIRA credential fields."""
-    return {
-        "url": _field_secret_name(JIRA_KIND, "url", user_id),
-        "email": _field_secret_name(JIRA_KIND, "email", user_id),
-        "token": _field_secret_name(JIRA_KIND, "token", user_id),
-    }
-
-
 def allowed_scopes_for_agent(agent_def: Any) -> tuple[tuple[str, ...], str | None]:
     """Map an agent's ownership to the secret scopes it may read at runtime.
 
@@ -184,37 +163,6 @@ class CredentialStore:
             kind=kind,
             scope=SCOPE_USER,
         )
-
-    def put_jira(
-        self,
-        *,
-        url: str,
-        email: str,
-        token: str,
-        user_id: str = DEFAULT_USER_ID,
-        caller: str = "",
-    ) -> bool:
-        """Store a user's Atlassian Cloud credential (url + email + token).
-
-        Writes three secrets whose names match the ``secret:`` references in the
-        user's MCP server config, so the JIRA MCP env resolves to these values.
-        """
-        fields = {"url": url, "email": email, "token": token}
-        missing = [k for k, v in fields.items() if not (v and v.strip())]
-        if missing:
-            raise ValueError(f"jira credential missing field(s): {', '.join(missing)}")
-        names = jira_secret_names(user_id)
-        ok = True
-        for field, value in fields.items():
-            ok = self._secrets.put(
-                names[field],
-                value.strip(),
-                caller=caller,
-                reason=f"credentials.put.jira.{field}",
-                user_id=user_id,
-                kind=JIRA_KIND,
-            ) and ok
-        return ok
 
     def get_github_pat(
         self,

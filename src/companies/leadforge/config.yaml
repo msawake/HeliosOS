@@ -18,13 +18,9 @@ models:
   orchestrator_default: "gemini-2.0-flash"
   doer_default: "gemini-2.0-flash"
 
-mcp_servers:
-  tier1:
-    - name: "atlassian"
-      package: "mcp-atlassian"
-      required: false
-      env_vars:
-        JIRA_URL: "secret:jira-url"
-        JIRA_USERNAME: "secret:jira-username"
-        JIRA_API_TOKEN: "secret:jira-api-token"
-        READ_ONLY_MODE: "secret:jira-read-only-mode"
+# mcp_servers intentionally empty — credentialed MCPs (Atlassian, GitHub, …)
+# are registered per-user (or per-namespace / per-tenant) via the dashboard
+# `/mcp` page or `POST /api/{platform|users|namespaces}/...` at runtime, not
+# hardcoded here. Boot-time `secret:` refs to unset credentials just create
+# 0-tool servers that shadow legitimate user-scope MCPs of the same name.
+mcp_servers: {}
