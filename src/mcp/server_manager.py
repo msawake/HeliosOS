@@ -26,6 +26,8 @@ except ImportError:
     HAS_MCP = False
     logger.info("mcp SDK not installed — MCP servers will not be connected")
 
+from src.mcp.launch_utils import materialize_gcp_credentials, resolve_launch_command
+
 # Streamable HTTP is optional in older mcp SDK builds — feature-detect so
 # stdio-only deployments keep working.
 try:
@@ -220,16 +222,10 @@ class MCPServerManager:
         if transport_kind == "streamable-http":
             return await self._connect_http_server(config)
 
-        # stdio (default) — determine command based on package type
-        package = config.package
-        if package.startswith("@") or package.startswith("mcp-server-"):
-            # npm package — run via npx
-            command = "npx"
-            args = ["-y", package] + config.args
-        else:
-            # Python package — run via python -m or uvx
-            command = "uvx"
-            args = [package] + config.args
+        # stdio (default) — determine command based on package type (npm→npx,
+        # PyPI→uvx; an explicit npm:/pypi: prefix on the package disambiguates
+        # the `mcp-server-*` name, which both registries use).
+        command, args = resolve_launch_command(config.package, config.args)
 
         # Resolve environment variables securely at runtime. We always start
         # from a copy of os.environ so the child inherits PATH, HOME, TMPDIR,
@@ -270,6 +266,10 @@ class MCPServerManager:
                 else:
                     # Plaintext value
                     resolved_env[k] = v
+
+        # BigQuery/Drive/Vertex MCP servers authenticate via ADC (a key FILE);
+        # turn a service-account JSON secret into GOOGLE_APPLICATION_CREDENTIALS.
+        resolved_env = materialize_gcp_credentials(resolved_env)
 
         server_params = StdioServerParameters(
             command=command,

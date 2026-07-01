@@ -34,6 +34,8 @@ try:
 except ImportError:
     HAS_MCP_HTTP = False
 
+from src.mcp.launch_utils import materialize_gcp_credentials, resolve_launch_command
+
 
 @dataclass
 class ClientMCPConnection:
@@ -380,14 +382,12 @@ class ClientMCPManager:
             extra_args = config.get("args", [])
             if not package:
                 return None
-            if package.startswith("@") or package.startswith("mcp-server-"):
-                command = "npx"
-                args = ["-y", package] + extra_args
-            else:
-                command = "uvx"
-                args = [package] + extra_args
+            command, args = resolve_launch_command(package, extra_args)
             resolved_env = self._resolve_env(env_vars, namespace=namespace, client_id=client_id,
                                              server_name=server_name)
+            # BigQuery/Drive/Vertex MCP servers authenticate via ADC (a key FILE);
+            # turn a service-account JSON secret into GOOGLE_APPLICATION_CREDENTIALS.
+            resolved_env = materialize_gcp_credentials(resolved_env)
             server_params = StdioServerParameters(
                 command=command, args=args, env=resolved_env,
             )
