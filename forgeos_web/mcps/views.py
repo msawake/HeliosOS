@@ -442,16 +442,46 @@ class PlatformMcpServerDetailView(APIView):
 # Per-user MCP enrollment.
 # ---------------------------------------------------------------------------
 
+def _parse_mcp_transport(body: dict) -> tuple[str, str, str | None] | Response:
+    """Extract (package, transport, url) from a register-MCP body.
+
+    Returns a 400 ``Response`` on shape mismatch. Rules match the platform-scope
+    serializer: ``stdio`` needs ``package`` and no ``url``; ``streamable-http``
+    needs ``url`` (http:// or https://) and does not require ``package``.
+    """
+    package = (body.get("package") or "").strip()
+    transport = (body.get("transport") or "stdio").strip() or "stdio"
+    url = (body.get("url") or "").strip()
+    if transport not in ("stdio", "streamable-http"):
+        return Response(
+            {"detail": f"transport must be 'stdio' or 'streamable-http', got '{transport}'"},
+            status=400,
+        )
+    if transport == "stdio":
+        if not package:
+            return Response({"detail": "`package` is required for stdio transport"}, status=400)
+        if url:
+            return Response({"detail": "`url` must be empty for stdio transport"}, status=400)
+        return package, "stdio", None
+    if not url:
+        return Response({"detail": "`url` is required for streamable-http transport"}, status=400)
+    scheme = (url.split(":", 1)[0] or "").lower()
+    if scheme not in ("http", "https"):
+        return Response({"detail": "`url` must start with http:// or https://"}, status=400)
+    return package, "streamable-http", url
+
+
 class UserMcpView(APIView):
-    """POST /api/users/{user_id}/mcp/{server_name} — register any MCP for a user."""
+    """POST/DELETE /api/users/{user_id}/mcp/{server_name} — per-user MCP CRUD."""
 
     def post(self, request, user_id, server_name):
         ctx = di.get_context()
         client_store, client_mcp_store = _client_stores(ctx)
         body = request.data if isinstance(request.data, dict) else {}
-        package = (body.get("package") or "").strip()
-        if not package:
-            return Response({"detail": "`package` is required"}, status=400)
+        parsed = _parse_mcp_transport(body)
+        if isinstance(parsed, Response):
+            return parsed
+        package, transport, url = parsed
         env_vars = dict(body.get("env_vars") or {})
         secrets = dict(body.get("secrets") or {})
         args = body.get("args") or []
@@ -483,22 +513,41 @@ class UserMcpView(APIView):
                 env_vars[key] = f"secret:{sname}"
 
         try:
-            client_mcp_store.add(cid, server_name, package, env_vars, args)
+            client_mcp_store.add(
+                cid, server_name, package, env_vars, args,
+                transport=transport, url=url,
+            )
         except ValueError:
-            client_mcp_store.update(cid, server_name, package, env_vars, args)
+            client_mcp_store.update(
+                cid, server_name, package, env_vars, args,
+                transport=transport, url=url,
+            )
         _refresh_client_mcp_cache(ctx, client_mcp_store, cid)
         _audit("user_mcp.enroll", resource_type="user_mcp", resource_id=cid,
                details={"server": server_name, "package": package,
+                        "transport": transport, "url": url,
                         "secret_keys": list(secrets.keys())})
         return Response({
             "enrolled": True, "client_id": cid, "server_name": server_name,
-            "package": package, "env_keys": list(env_vars.keys()),
+            "package": package, "transport": transport, "url": url,
+            "env_keys": list(env_vars.keys()),
             "secret_keys": list(secrets.keys()),
         }, status=201)
 
+    def delete(self, request, user_id, server_name):
+        ctx = di.get_context()
+        _, client_mcp_store = _client_stores(ctx)
+        cid = f"user:{user_id}"
+        if not client_mcp_store.delete(cid, server_name):
+            return Response({"detail": f"User MCP '{server_name}' not found"}, status=404)
+        _refresh_client_mcp_cache(ctx, client_mcp_store, cid)
+        _audit("user_mcp.delete", resource_type="user_mcp", resource_id=cid,
+               details={"server": server_name})
+        return Response({"deleted": True, "client_id": cid, "server_name": server_name})
+
 
 class NamespaceMcpView(APIView):
-    """POST /api/namespaces/{ns}/mcp/{server_name} — register an MCP for a namespace."""
+    """POST/DELETE /api/namespaces/{ns}/mcp/{server_name} — per-namespace MCP CRUD."""
 
     def post(self, request, ns, server_name):
         ctx = di.get_context()
@@ -508,9 +557,10 @@ class NamespaceMcpView(APIView):
                 status=403)
         client_store, client_mcp_store = _client_stores(ctx)
         body = request.data if isinstance(request.data, dict) else {}
-        package = (body.get("package") or "").strip()
-        if not package:
-            return Response({"detail": "`package` is required"}, status=400)
+        parsed = _parse_mcp_transport(body)
+        if isinstance(parsed, Response):
+            return parsed
+        package, transport, url = parsed
         env_vars = dict(body.get("env_vars") or {})
         secrets = dict(body.get("secrets") or {})
         args = body.get("args") or []
@@ -542,19 +592,43 @@ class NamespaceMcpView(APIView):
                 env_vars[key] = f"secret:{logical}"
 
         try:
-            client_mcp_store.add(cid, server_name, package, env_vars, args)
+            client_mcp_store.add(
+                cid, server_name, package, env_vars, args,
+                transport=transport, url=url,
+            )
         except ValueError:
-            client_mcp_store.update(cid, server_name, package, env_vars, args)
+            client_mcp_store.update(
+                cid, server_name, package, env_vars, args,
+                transport=transport, url=url,
+            )
         _refresh_client_mcp_cache(ctx, client_mcp_store, cid)
         _audit("namespace_mcp.enroll", actor=caller, resource_type="namespace_mcp",
                resource_id=cid,
                details={"namespace": ns, "server": server_name, "package": package,
+                        "transport": transport, "url": url,
                         "secret_keys": list(secrets.keys())})
         return Response({
             "enrolled": True, "client_id": cid, "namespace": ns, "server_name": server_name,
-            "package": package, "env_keys": list(env_vars.keys()),
+            "package": package, "transport": transport, "url": url,
+            "env_keys": list(env_vars.keys()),
             "secret_keys": list(secrets.keys()),
         }, status=201)
+
+    def delete(self, request, ns, server_name):
+        ctx = di.get_context()
+        if not _can_write_secret(request, ctx, "namespace", ns):
+            return Response(
+                {"detail": f"not authorized to manage namespace '{ns}' MCP credentials"},
+                status=403)
+        _, client_mcp_store = _client_stores(ctx)
+        cid = f"ns:{ns}"
+        if not client_mcp_store.delete(cid, server_name):
+            return Response({"detail": f"Namespace MCP '{server_name}' not found"}, status=404)
+        _refresh_client_mcp_cache(ctx, client_mcp_store, cid)
+        _audit("namespace_mcp.delete", resource_type="namespace_mcp", resource_id=cid,
+               details={"namespace": ns, "server": server_name})
+        return Response({"deleted": True, "client_id": cid, "namespace": ns,
+                         "server_name": server_name})
 
 
 def _remote_host(request) -> str:

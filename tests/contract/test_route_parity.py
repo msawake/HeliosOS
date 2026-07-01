@@ -99,6 +99,20 @@ _DJANGO_NATIVE_ADDITIONS = {
     "/api/platform/namespaces/{ns}/members/{member_user_id}",
     # Run history: list runs across the fleet, grouped client-side by conversation.
     "/api/platform/runs",
+    # Personal Access Tokens: long-lived Bearer tokens users create to
+    # configure external MCP clients (Claude Code / Cursor / …).
+    "/api/tokens",
+    "/api/tokens/{token_id}",
+}
+
+# Paths from the FastAPI contract that Django extends with additional HTTP
+# methods. The contract still guarantees the original methods; the extras are
+# intentional post-migration additions and don't count as drift.
+_DJANGO_METHOD_EXTENSIONS = {
+    # DELETE added so bad user/namespace MCPs can be removed via the same
+    # generic surface used to register them (no separate cleanup endpoint).
+    "/api/users/{user_id}/mcp/{server_name}": {"DELETE"},
+    "/api/namespaces/{ns}/mcp/{server_name}": {"DELETE"},
 }
 
 
@@ -113,7 +127,8 @@ def test_no_path_drift(contract):
         if path not in contract:
             drift.append(f"{path} {sorted(methods)} — not in FastAPI contract")
             continue
-        extra = methods - contract[path]
+        allowed = contract[path] | _DJANGO_METHOD_EXTENSIONS.get(path, set())
+        extra = methods - allowed
         if extra:
             drift.append(f"{path} — methods {sorted(extra)} not in contract {sorted(contract[path])}")
     assert not drift, "Django routes diverge from the FastAPI contract:\n" + "\n".join(drift)
