@@ -150,9 +150,12 @@ class ClientMCPConfigRequestSerializer(serializers.Serializer):
     * ``transport="stdio"`` (default, legacy): the platform spawns
       ``package`` as a subprocess (``uvx`` or ``npx``). ``env_vars`` become
       the child's env.
-    * ``transport="streamable-http"`` / ``"sse"``: remote MCP endpoint.
-      ``url`` is required; ``env_vars`` are sent as HTTP headers on the
-      outbound request. ``package`` may be empty.
+    * ``transport="streamable-http"``: remote MCP endpoint. ``url`` is
+      required; ``env_vars`` are sent as HTTP headers on the outbound
+      request. ``package`` may be empty.
+
+    HTTP+SSE (the pre-2025-03-26 MCP HTTP transport) is intentionally not
+    exposed — the MCP spec superseded it with Streamable HTTP.
 
     ``secret:<name>`` values in ``env_vars`` resolve through the three-tier
     credential store in both shapes.
@@ -163,7 +166,7 @@ class ClientMCPConfigRequestSerializer(serializers.Serializer):
     env_vars = serializers.DictField(required=False, default=dict)
     args = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     transport = serializers.ChoiceField(
-        choices=("stdio", "streamable-http", "sse"),
+        choices=("stdio", "streamable-http"),
         required=False, default="stdio",
     )
     url = serializers.CharField(required=False, allow_blank=True, default="")
@@ -179,7 +182,7 @@ class ClientMCPConfigRequestSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"url": "must be empty for stdio transport"})
         else:
             if not url:
-                raise serializers.ValidationError({"url": f"required for {transport} transport"})
+                raise serializers.ValidationError({"url": "required for streamable-http transport"})
             scheme = (url.split(":", 1)[0] or "").lower()
             if scheme not in ("http", "https"):
                 raise serializers.ValidationError(

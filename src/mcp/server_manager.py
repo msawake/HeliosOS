@@ -26,7 +26,7 @@ except ImportError:
     HAS_MCP = False
     logger.info("mcp SDK not installed — MCP servers will not be connected")
 
-# HTTP transports are optional in older mcp SDK builds — feature-detect so
+# Streamable HTTP is optional in older mcp SDK builds — feature-detect so
 # stdio-only deployments keep working.
 try:
     from mcp.client.streamable_http import streamablehttp_client  # type: ignore
@@ -34,14 +34,8 @@ try:
 except ImportError:
     HAS_MCP_HTTP = False
 
-try:
-    from mcp.client.sse import sse_client  # type: ignore
-    HAS_MCP_SSE = True
-except ImportError:
-    HAS_MCP_SSE = False
 
-
-TRANSPORTS = ("stdio", "streamable-http", "sse")
+TRANSPORTS = ("stdio", "streamable-http")
 
 
 @dataclass
@@ -54,12 +48,15 @@ class MCPServerConfig:
       a subprocess (``uvx <package>`` or ``npx -y <package>``). Set
       ``package`` + optional ``args``; ``env_vars`` become the child's env.
       ``url`` must be None.
-    * ``transport="streamable-http"`` or ``"sse"`` — server is remote and
-      spoken to over HTTP via the MCP SDK's HTTP client. Set ``url`` to the
-      MCP endpoint (e.g. ``https://…/mcp``); ``env_vars`` are sent as HTTP
+    * ``transport="streamable-http"`` — server is remote and spoken to over
+      HTTP via the MCP SDK's Streamable HTTP client. Set ``url`` to the MCP
+      endpoint (e.g. ``https://…/mcp``); ``env_vars`` are sent as HTTP
       headers on the outbound request (``secret:<name>`` refs resolve through
-      the three-tier credential store, same as stdio env). ``package`` may be
-      empty.
+      the three-tier credential store, same as stdio env). ``package`` may
+      be empty.
+
+    HTTP+SSE (the pre-2025-03-26 MCP HTTP transport) is intentionally
+    NOT exposed — it was deprecated by the spec in favor of Streamable HTTP.
     """
     name: str
     package: str
@@ -220,8 +217,8 @@ class MCPServerManager:
             return None
 
         transport_kind = (config.transport or "stdio").lower()
-        if transport_kind in ("streamable-http", "sse"):
-            return await self._connect_http_server(config, transport_kind)
+        if transport_kind == "streamable-http":
+            return await self._connect_http_server(config)
 
         # stdio (default) — determine command based on package type
         package = config.package
@@ -289,10 +286,8 @@ class MCPServerManager:
         self._sessions.append((transport, session))
         return session
 
-    async def _connect_http_server(
-        self, config: MCPServerConfig, transport_kind: str,
-    ) -> Any | None:
-        """Connect to a remote MCP server over streamable-http or SSE.
+    async def _connect_http_server(self, config: MCPServerConfig) -> Any | None:
+        """Connect to a remote MCP server over Streamable HTTP.
 
         ``config.env_vars`` are sent as HTTP headers on the outbound request
         (``secret:`` refs resolve through CredentialStore at platform scope,
@@ -300,16 +295,10 @@ class MCPServerManager:
         """
         if not HAS_MCP or not config.url:
             return None
-        if transport_kind == "streamable-http" and not HAS_MCP_HTTP:
+        if not HAS_MCP_HTTP:
             logger.error(
                 "MCP server '%s': streamable-http requested but "
                 "mcp.client.streamable_http is not installed", config.name,
-            )
-            return None
-        if transport_kind == "sse" and not HAS_MCP_SSE:
-            logger.error(
-                "MCP server '%s': sse requested but mcp.client.sse is not installed",
-                config.name,
             )
             return None
 
@@ -341,13 +330,8 @@ class MCPServerManager:
                 else:
                     headers[k] = str(v)
 
-        if transport_kind == "streamable-http":
-            transport = streamablehttp_client(config.url, headers=headers)
-            read_stream, write_stream, _ = await transport.__aenter__()
-        else:  # sse
-            transport = sse_client(config.url, headers=headers)
-            read_stream, write_stream = await transport.__aenter__()
-
+        transport = streamablehttp_client(config.url, headers=headers)
+        read_stream, write_stream, _ = await transport.__aenter__()
         session = ClientSession(read_stream, write_stream)
         await session.__aenter__()
         await session.initialize()

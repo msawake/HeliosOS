@@ -26,19 +26,13 @@ try:
 except ImportError:
     HAS_MCP = False
 
-# HTTP transports are optional in older mcp SDK builds — feature-detect so
+# Streamable HTTP is optional in older mcp SDK builds — feature-detect so
 # stdio-only deployments keep working even if the client wheel is thin.
 try:
     from mcp.client.streamable_http import streamablehttp_client  # type: ignore
     HAS_MCP_HTTP = True
 except ImportError:
     HAS_MCP_HTTP = False
-
-try:
-    from mcp.client.sse import sse_client  # type: ignore
-    HAS_MCP_SSE = True
-except ImportError:
-    HAS_MCP_SSE = False
 
 
 @dataclass
@@ -348,40 +342,36 @@ class ClientMCPManager:
           (uvx/npx). ``env_vars`` become child env vars; ``secret:`` refs
           resolve through the three-tier credential store (namespace → user
           → platform).
-        * ``'streamable-http'`` / ``'sse'`` — dial the MCP endpoint at
-          ``config['url']``. ``env_vars`` are sent as HTTP headers on the
-          outbound request, with the same ``secret:`` resolution.
+        * ``'streamable-http'`` — dial the MCP endpoint at ``config['url']``.
+          ``env_vars`` are sent as HTTP headers on the outbound request,
+          with the same ``secret:`` resolution.
+
+        HTTP+SSE (the pre-2025-03-26 MCP HTTP transport) is intentionally
+        not supported — the MCP spec superseded it with Streamable HTTP.
         """
         server_name = config.get("server_name", "")
         env_vars = config.get("env_vars", {})
         transport_kind = (config.get("transport") or "stdio").lower()
 
-        if transport_kind in ("streamable-http", "sse"):
+        if transport_kind == "streamable-http":
             url = config.get("url") or ""
             if not url:
-                logger.error("MCP %s/%s transport=%s requires a url",
-                             client_id, server_name, transport_kind)
+                logger.error(
+                    "MCP %s/%s transport=streamable-http requires a url",
+                    client_id, server_name,
+                )
+                return None
+            if not HAS_MCP_HTTP:
+                logger.error(
+                    "MCP %s/%s: streamable-http requested but "
+                    "mcp.client.streamable_http is not installed",
+                    client_id, server_name,
+                )
                 return None
             headers = self._resolve_headers(env_vars, namespace=namespace,
                                              client_id=client_id, server_name=server_name)
-            if transport_kind == "streamable-http":
-                if not HAS_MCP_HTTP:
-                    logger.error(
-                        "MCP %s/%s: streamable-http requested but "
-                        "mcp.client.streamable_http is not installed", client_id, server_name,
-                    )
-                    return None
-                transport = streamablehttp_client(url, headers=headers)
-                read_stream, write_stream, _ = await transport.__aenter__()
-            else:  # sse
-                if not HAS_MCP_SSE:
-                    logger.error(
-                        "MCP %s/%s: sse requested but mcp.client.sse is not installed",
-                        client_id, server_name,
-                    )
-                    return None
-                transport = sse_client(url, headers=headers)
-                read_stream, write_stream = await transport.__aenter__()
+            transport = streamablehttp_client(url, headers=headers)
+            read_stream, write_stream, _ = await transport.__aenter__()
             session = ClientSession(read_stream, write_stream)
             await session.__aenter__()
         else:

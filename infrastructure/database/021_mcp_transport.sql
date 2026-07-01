@@ -14,14 +14,18 @@
 --     HTTP header map for the outbound request.
 -- ============================================================================
 
+-- Only two transports are supported here: 'stdio' (subprocess) and
+-- 'streamable-http' (remote MCP over HTTP). The older HTTP+SSE transport
+-- was deprecated by MCP spec revision 2025-03-26 in favor of Streamable
+-- HTTP, so we don't expose it as a first-class option.
 ALTER TABLE client_mcp_configs
     ADD COLUMN IF NOT EXISTS transport TEXT NOT NULL DEFAULT 'stdio'
-        CHECK (transport IN ('stdio', 'streamable-http', 'sse'));
+        CHECK (transport IN ('stdio', 'streamable-http'));
 
 ALTER TABLE client_mcp_configs
     ADD COLUMN IF NOT EXISTS url TEXT;
 
--- Consistency guard: HTTP transports must carry a URL; stdio must not.
+-- Consistency guard: streamable-http must carry a URL; stdio must not.
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -30,7 +34,7 @@ BEGIN
         ALTER TABLE client_mcp_configs
             ADD CONSTRAINT client_mcp_transport_shape CHECK (
                 (transport = 'stdio' AND url IS NULL)
-             OR (transport IN ('streamable-http', 'sse') AND url IS NOT NULL AND url <> '')
+             OR (transport = 'streamable-http' AND url IS NOT NULL AND url <> '')
             );
     END IF;
 END $$;

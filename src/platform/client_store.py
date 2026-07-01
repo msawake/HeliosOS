@@ -15,15 +15,18 @@ import logging
 from datetime import datetime, timezone
 
 
-_TRANSPORTS = ("stdio", "streamable-http", "sse")
+_TRANSPORTS = ("stdio", "streamable-http")
 
 
 def _validate_transport_shape(transport: str, package: str, url: str | None) -> None:
     """Enforce transport-shape invariants above the DB CHECK constraint.
 
-    stdio → package required, url must be empty. HTTP transports → url required
+    stdio → package required, url must be empty. streamable-http → url required
     (with an http/https scheme). Raises ValueError on shape mismatch so callers
     surface a clean 400 instead of relying on a raw psql CHECK failure.
+
+    HTTP+SSE (the pre-2025-03-26 MCP HTTP transport) is intentionally not
+    accepted — the MCP spec superseded it with Streamable HTTP.
     """
     if transport not in _TRANSPORTS:
         raise ValueError(
@@ -34,13 +37,13 @@ def _validate_transport_shape(transport: str, package: str, url: str | None) -> 
             raise ValueError("stdio transport requires a package")
         if url:
             raise ValueError("stdio transport must not carry a url")
-    else:
+    else:  # streamable-http
         if not url:
-            raise ValueError(f"{transport} transport requires a url")
+            raise ValueError("streamable-http transport requires a url")
         scheme = (url.split(":", 1)[0] or "").lower()
         if scheme not in ("http", "https"):
             raise ValueError(
-                f"{transport} url scheme must be http or https, got {url!r}"
+                f"streamable-http url scheme must be http or https, got {url!r}"
             )
 from typing import Any
 
