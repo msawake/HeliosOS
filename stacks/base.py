@@ -308,8 +308,12 @@ def build_agent_context(
     # resolve that user's user-scoped secrets) — it uses ns:/platform instead.
     if not client_id and agent_def.ownership == OwnershipType.PERSONAL:
         tools = agent_def.tools or []
+        # Auto-enable per-user MCP routing for any personal agent that declares
+        # `mcp__*` tools — the LLM shouldn't need a hardcoded provider allow-list
+        # to see its user's MCPs. `per_user_mcp` in metadata is still honored as
+        # an explicit override.
         wants_per_user = bool(metadata.get("per_user_mcp")) or any(
-            isinstance(t, str) and t.startswith("mcp__atlassian__") for t in tools
+            isinstance(t, str) and t.startswith("mcp__") for t in tools
         )
         if wants_per_user and user_id and user_id != "default":
             client_id = f"user:{user_id}"
