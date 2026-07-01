@@ -26,16 +26,49 @@ except ImportError:
     HAS_MCP = False
     logger.info("mcp SDK not installed — MCP servers will not be connected")
 
+# HTTP transports are optional in older mcp SDK builds — feature-detect so
+# stdio-only deployments keep working.
+try:
+    from mcp.client.streamable_http import streamablehttp_client  # type: ignore
+    HAS_MCP_HTTP = True
+except ImportError:
+    HAS_MCP_HTTP = False
+
+try:
+    from mcp.client.sse import sse_client  # type: ignore
+    HAS_MCP_SSE = True
+except ImportError:
+    HAS_MCP_SSE = False
+
+
+TRANSPORTS = ("stdio", "streamable-http", "sse")
+
 
 @dataclass
 class MCPServerConfig:
-    """Configuration for a single MCP server."""
+    """Configuration for a single MCP server.
+
+    Two transport shapes are supported:
+
+    * ``transport="stdio"`` (default) — server is a local package launched as
+      a subprocess (``uvx <package>`` or ``npx -y <package>``). Set
+      ``package`` + optional ``args``; ``env_vars`` become the child's env.
+      ``url`` must be None.
+    * ``transport="streamable-http"`` or ``"sse"`` — server is remote and
+      spoken to over HTTP via the MCP SDK's HTTP client. Set ``url`` to the
+      MCP endpoint (e.g. ``https://…/mcp``); ``env_vars`` are sent as HTTP
+      headers on the outbound request (``secret:<name>`` refs resolve through
+      the three-tier credential store, same as stdio env). ``package`` may be
+      empty.
+    """
     name: str
     package: str
     required: bool = False
     tier: int = 1
     env_vars: dict[str, str] = field(default_factory=dict)
     args: list[str] = field(default_factory=list)
+    transport: str = "stdio"
+    url: str | None = None
 
 
 class MCPServerManager:
@@ -70,6 +103,8 @@ class MCPServerManager:
                         tier=tier_num,
                         env_vars=entry.get("env_vars", {}),
                         args=entry.get("args", []),
+                        transport=entry.get("transport", "stdio"),
+                        url=entry.get("url") or None,
                     ))
 
         return servers
@@ -137,6 +172,9 @@ class MCPServerManager:
         package: str,
         env_vars: dict[str, str] | None = None,
         args: list[str] | None = None,
+        *,
+        transport: str = "stdio",
+        url: str | None = None,
     ) -> list[dict]:
         """Connect a single MCP server on demand and discover its tools.
 
@@ -145,6 +183,9 @@ class MCPServerManager:
         schemas (same shape as ``get_all_tool_schemas()`` values) so the
         caller can register them with the ToolExecutor. Re-registering an
         existing server reconnects it. Raises on connection failure.
+
+        ``transport``/``url``: forwarded to ``_connect_server``. Supports
+        ``'stdio'`` (default), ``'streamable-http'``, and ``'sse'``.
         """
         if not HAS_MCP:
             raise RuntimeError("MCP SDK not installed — cannot connect server")
@@ -153,6 +194,8 @@ class MCPServerManager:
             package=package,
             env_vars=env_vars or {},
             args=args or [],
+            transport=transport,
+            url=url,
         )
         client = await self._connect_server(cfg)
         if not client:
@@ -172,11 +215,15 @@ class MCPServerManager:
         return schemas
 
     async def _connect_server(self, config: MCPServerConfig) -> Any | None:
-        """Connect to a single MCP server via stdio transport."""
+        """Connect to a single MCP server via the configured transport."""
         if not HAS_MCP:
             return None
 
-        # Determine command based on package type
+        transport_kind = (config.transport or "stdio").lower()
+        if transport_kind in ("streamable-http", "sse"):
+            return await self._connect_http_server(config, transport_kind)
+
+        # stdio (default) — determine command based on package type
         package = config.package
         if package.startswith("@") or package.startswith("mcp-server-"):
             # npm package — run via npx
@@ -235,6 +282,72 @@ class MCPServerManager:
 
         transport = stdio_client(server_params)
         read_stream, write_stream = await transport.__aenter__()
+        session = ClientSession(read_stream, write_stream)
+        await session.__aenter__()
+        await session.initialize()
+
+        self._sessions.append((transport, session))
+        return session
+
+    async def _connect_http_server(
+        self, config: MCPServerConfig, transport_kind: str,
+    ) -> Any | None:
+        """Connect to a remote MCP server over streamable-http or SSE.
+
+        ``config.env_vars`` are sent as HTTP headers on the outbound request
+        (``secret:`` refs resolve through CredentialStore at platform scope,
+        same as stdio env). ``config.url`` is the MCP endpoint.
+        """
+        if not HAS_MCP or not config.url:
+            return None
+        if transport_kind == "streamable-http" and not HAS_MCP_HTTP:
+            logger.error(
+                "MCP server '%s': streamable-http requested but "
+                "mcp.client.streamable_http is not installed", config.name,
+            )
+            return None
+        if transport_kind == "sse" and not HAS_MCP_SSE:
+            logger.error(
+                "MCP server '%s': sse requested but mcp.client.sse is not installed",
+                config.name,
+            )
+            return None
+
+        # Resolve ``secret:`` refs into concrete header values.
+        headers: dict[str, str] = {}
+        if config.env_vars:
+            cred_store = None
+            if self._secrets_manager:
+                from src.platform.credentials import CredentialStore, SCOPE_PLATFORM
+                cred_store = CredentialStore(self._secrets_manager)
+            for k, v in config.env_vars.items():
+                if isinstance(v, str) and v.startswith("secret:"):
+                    secret_name = v[len("secret:"):]
+                    if cred_store is not None:
+                        resolved_val = cred_store.resolve(
+                            secret_name, namespace=None, user_id="default",
+                            order=(SCOPE_PLATFORM,), caller=f"mcp_server_{config.name}",
+                        )
+                        headers[k] = resolved_val or ""
+                        if not resolved_val:
+                            logger.warning(
+                                "Secret '%s' not found for MCP server '%s'",
+                                secret_name, config.name,
+                            )
+                    else:
+                        import os as _os
+                        env_name = secret_name.upper().replace("-", "_")
+                        headers[k] = _os.environ.get(env_name, "")
+                else:
+                    headers[k] = str(v)
+
+        if transport_kind == "streamable-http":
+            transport = streamablehttp_client(config.url, headers=headers)
+            read_stream, write_stream, _ = await transport.__aenter__()
+        else:  # sse
+            transport = sse_client(config.url, headers=headers)
+            read_stream, write_stream = await transport.__aenter__()
+
         session = ClientSession(read_stream, write_stream)
         await session.__aenter__()
         await session.initialize()

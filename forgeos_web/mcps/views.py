@@ -143,12 +143,52 @@ def _can_write_secret(request, ctx, scope: str, namespace: str | None) -> bool:
 # ---------------------------------------------------------------------------
 
 class ClientMCPConfigRequestSerializer(serializers.Serializer):
-    """Mirror of fastapi_app.ClientMCPConfigRequest (line 148)."""
+    """Register (or update) an MCP server for a client.
+
+    Two transport shapes:
+
+    * ``transport="stdio"`` (default, legacy): the platform spawns
+      ``package`` as a subprocess (``uvx`` or ``npx``). ``env_vars`` become
+      the child's env.
+    * ``transport="streamable-http"`` / ``"sse"``: remote MCP endpoint.
+      ``url`` is required; ``env_vars`` are sent as HTTP headers on the
+      outbound request. ``package`` may be empty.
+
+    ``secret:<name>`` values in ``env_vars`` resolve through the three-tier
+    credential store in both shapes.
+    """
 
     server_name = serializers.CharField()
-    package = serializers.CharField()
+    package = serializers.CharField(required=False, allow_blank=True, default="")
     env_vars = serializers.DictField(required=False, default=dict)
     args = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+    transport = serializers.ChoiceField(
+        choices=("stdio", "streamable-http", "sse"),
+        required=False, default="stdio",
+    )
+    url = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        transport = attrs.get("transport") or "stdio"
+        package = (attrs.get("package") or "").strip()
+        url = (attrs.get("url") or "").strip()
+        if transport == "stdio":
+            if not package:
+                raise serializers.ValidationError({"package": "required for stdio transport"})
+            if url:
+                raise serializers.ValidationError({"url": "must be empty for stdio transport"})
+        else:
+            if not url:
+                raise serializers.ValidationError({"url": f"required for {transport} transport"})
+            scheme = (url.split(":", 1)[0] or "").lower()
+            if scheme not in ("http", "https"):
+                raise serializers.ValidationError(
+                    {"url": "must start with http:// or https://"}
+                )
+        attrs["transport"] = transport
+        attrs["url"] = url or None
+        attrs["package"] = package
+        return attrs
 
 
 # ---------------------------------------------------------------------------
@@ -205,11 +245,15 @@ class McpPackageView(APIView):
 # Platform-scoped MCP servers.
 # ---------------------------------------------------------------------------
 
-def _connect_platform_mcp(ctx, server_name, package, env_vars, args) -> dict:
+def _connect_platform_mcp(
+    ctx, server_name, package, env_vars, args,
+    *, transport: str = "stdio", url: str | None = None,
+) -> dict:
     """Bring a platform MCP server up live and register its tools.
 
-    Port of fastapi_app.py:2693 (_connect_platform_mcp). The awaited
-    mcp_manager.connect_one is run via async_to_sync. Never raises.
+    Port of fastapi_app.py:2693 (_connect_platform_mcp), extended with
+    ``transport`` / ``url`` for remote (streamable-http, sse) MCPs. The
+    awaited mcp_manager.connect_one is run via async_to_sync. Never raises.
     """
     if ctx.mcp_manager is None or ctx.tool_executor is None:
         return {"connected": False, "tools_discovered": 0,
@@ -217,12 +261,37 @@ def _connect_platform_mcp(ctx, server_name, package, env_vars, args) -> dict:
     try:
         schemas = async_to_sync(ctx.mcp_manager.connect_one)(
             server_name, package, env_vars, args,
+            transport=transport, url=url,
         )
         ctx.tool_executor.register_mcp_tools(server_name, schemas)
         client = ctx.mcp_manager.get_clients().get(server_name)
         if client is not None:
             ctx.tool_executor._mcp_clients[server_name] = client
-        return {"connected": True, "tools_discovered": len(schemas)}
+        return {"connected": True, "tools_discovered": len(schemas),
+                "transport": transport}
+    except TypeError:
+        # Older MCPServerManager without transport support — fall back to
+        # the stdio-only signature so the deploy still succeeds when the
+        # platform image predates the HTTP branch.
+        if transport != "stdio":
+            logger.warning(
+                "MCP manager does not support transport=%s; refusing live connect for '%s'",
+                transport, server_name,
+            )
+            return {"connected": False, "tools_discovered": 0,
+                    "detail": f"platform build does not support transport={transport}"}
+        try:
+            schemas = async_to_sync(ctx.mcp_manager.connect_one)(
+                server_name, package, env_vars, args,
+            )
+            ctx.tool_executor.register_mcp_tools(server_name, schemas)
+            client = ctx.mcp_manager.get_clients().get(server_name)
+            if client is not None:
+                ctx.tool_executor._mcp_clients[server_name] = client
+            return {"connected": True, "tools_discovered": len(schemas), "transport": "stdio"}
+        except Exception as e:
+            logger.warning("Live connect failed (stdio fallback) for MCP '%s': %s", server_name, e)
+            return {"connected": False, "tools_discovered": 0, "detail": str(e)}
     except Exception as e:
         logger.warning("Live connect failed for MCP '%s': %s", server_name, e)
         return {"connected": False, "tools_discovered": 0, "detail": str(e)}
@@ -309,16 +378,18 @@ class PlatformMcpServersView(APIView):
             config = client_mcp_store.add(
                 PLATFORM_CLIENT_ID, req["server_name"], req["package"],
                 req["env_vars"], req["args"],
+                transport=req["transport"], url=req["url"],
             )
         except ValueError as e:
             logger.warning("Platform MCP conflict: %s", e)
             return Response({"detail": "MCP server configuration conflict"}, status=409)
         status = _connect_platform_mcp(
             ctx, req["server_name"], req["package"], req["env_vars"], req["args"],
+            transport=req["transport"], url=req["url"],
         )
         _audit("platform_mcp.add", resource_type="platform_mcp",
                resource_id=req["server_name"],
-               details={"package": req["package"], **status})
+               details={"package": req["package"], "transport": req["transport"], **status})
         return Response({**config, **status}, status=201)
 
 
@@ -334,15 +405,18 @@ class PlatformMcpServerDetailView(APIView):
         _, client_mcp_store = _client_stores(ctx)
         updated = client_mcp_store.update(
             PLATFORM_CLIENT_ID, server_name, req["package"], req["env_vars"], req["args"],
+            transport=req["transport"], url=req["url"],
         )
         if not updated:
             return Response(
                 {"detail": f"Platform MCP server '{server_name}' not found"}, status=404)
         status = _connect_platform_mcp(
             ctx, req["server_name"], req["package"], req["env_vars"], req["args"],
+            transport=req["transport"], url=req["url"],
         )
         _audit("platform_mcp.update", resource_type="platform_mcp",
-               resource_id=server_name, details={"package": req["package"], **status})
+               resource_id=server_name,
+               details={"package": req["package"], "transport": req["transport"], **status})
         return Response({**updated, **status})
 
     def delete(self, request, server_name):

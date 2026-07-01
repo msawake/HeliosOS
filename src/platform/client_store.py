@@ -13,6 +13,35 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
+
+
+_TRANSPORTS = ("stdio", "streamable-http", "sse")
+
+
+def _validate_transport_shape(transport: str, package: str, url: str | None) -> None:
+    """Enforce transport-shape invariants above the DB CHECK constraint.
+
+    stdio → package required, url must be empty. HTTP transports → url required
+    (with an http/https scheme). Raises ValueError on shape mismatch so callers
+    surface a clean 400 instead of relying on a raw psql CHECK failure.
+    """
+    if transport not in _TRANSPORTS:
+        raise ValueError(
+            f"transport must be one of {_TRANSPORTS!r}, got {transport!r}"
+        )
+    if transport == "stdio":
+        if not package:
+            raise ValueError("stdio transport requires a package")
+        if url:
+            raise ValueError("stdio transport must not carry a url")
+    else:
+        if not url:
+            raise ValueError(f"{transport} transport requires a url")
+        scheme = (url.split(":", 1)[0] or "").lower()
+        if scheme not in ("http", "https"):
+            raise ValueError(
+                f"{transport} url scheme must be http or https, got {url!r}"
+            )
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -161,14 +190,28 @@ class PostgresClientMCPStore:
         package: str,
         env_vars: dict | None = None,
         args: list[str] | None = None,
+        *,
+        transport: str = "stdio",
+        url: str | None = None,
     ) -> dict:
-        """Add an MCP server config. Raises ValueError if a duplicate exists."""
+        """Add an MCP server config. Raises ValueError if a duplicate exists.
+
+        ``transport``: one of ``'stdio'`` (default), ``'streamable-http'``, ``'sse'``.
+        ``url``: required for HTTP transports, must be None for stdio (the CHECK
+        constraint enforces this at the DB layer too).
+        """
+        _validate_transport_shape(transport, package, url)
+        # Normalize the stored URL (empty string → NULL) so the CHECK constraint
+        # stays happy for stdio and the DB never contains ambiguous empties.
+        url = url or None
         config = {
             "server_name": server_name,
             "package": package,
             "env_vars": env_vars or {},
             "args": args or [],
             "enabled": True,
+            "transport": transport,
+            "url": url,
         }
 
         if self._has_db:
@@ -185,10 +228,12 @@ class PostgresClientMCPStore:
                         )
                     conn.execute(
                         "INSERT INTO client_mcp_configs "
-                        "(tenant_id, client_id, server_name, package, env_vars, args, enabled) "
-                        "VALUES (%s, %s, %s, %s, %s::jsonb, %s, true)",
+                        "(tenant_id, client_id, server_name, package, env_vars, args, "
+                        "enabled, transport, url) "
+                        "VALUES (%s, %s, %s, %s, %s::jsonb, %s, true, %s, %s)",
                         (self._tenant_id, client_id, server_name, package,
-                         json.dumps(env_vars or {}), args or []),
+                         json.dumps(env_vars or {}), args or [],
+                         transport, url),
                     )
                     conn.commit()
                 self._memory.setdefault(client_id, []).append(config)
@@ -215,7 +260,8 @@ class PostgresClientMCPStore:
             try:
                 with self._db.tenant(self._tenant_id) as conn:
                     rows = conn.execute(
-                        "SELECT server_name, package, env_vars, args, enabled "
+                        "SELECT server_name, package, env_vars, args, enabled, "
+                        "transport, url "
                         "FROM client_mcp_configs "
                         "WHERE client_id = %s AND tenant_id = %s ORDER BY server_name",
                         (client_id, self._tenant_id),
@@ -229,6 +275,8 @@ class PostgresClientMCPStore:
                             ),
                             "args": r.get("args") or [],
                             "enabled": bool(r.get("enabled", True)),
+                            "transport": r.get("transport") or "stdio",
+                            "url": r.get("url"),
                         }
                         for r in (rows or [])
                     ]
@@ -259,14 +307,21 @@ class PostgresClientMCPStore:
         package: str,
         env_vars: dict | None = None,
         args: list[str] | None = None,
+        *,
+        transport: str = "stdio",
+        url: str | None = None,
     ) -> dict | None:
         """Update an existing MCP config. Returns the new config or None if not found."""
+        _validate_transport_shape(transport, package, url)
+        url = url or None
         new_config = {
             "server_name": server_name,
             "package": package,
             "env_vars": env_vars or {},
             "args": args or [],
             "enabled": True,
+            "transport": transport,
+            "url": url,
         }
 
         if self._has_db:
@@ -275,9 +330,10 @@ class PostgresClientMCPStore:
                     rc = conn.execute(
                         "UPDATE client_mcp_configs SET "
                         "package = %s, env_vars = %s::jsonb, args = %s, "
-                        "updated_at = NOW() "
+                        "transport = %s, url = %s, updated_at = NOW() "
                         "WHERE client_id = %s AND server_name = %s AND tenant_id = %s",
                         (package, json.dumps(env_vars or {}), args or [],
+                         transport, url,
                          client_id, server_name, self._tenant_id),
                     )
                     conn.commit()

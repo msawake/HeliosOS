@@ -26,6 +26,20 @@ try:
 except ImportError:
     HAS_MCP = False
 
+# HTTP transports are optional in older mcp SDK builds — feature-detect so
+# stdio-only deployments keep working even if the client wheel is thin.
+try:
+    from mcp.client.streamable_http import streamablehttp_client  # type: ignore
+    HAS_MCP_HTTP = True
+except ImportError:
+    HAS_MCP_HTTP = False
+
+try:
+    from mcp.client.sse import sse_client  # type: ignore
+    HAS_MCP_SSE = True
+except ImportError:
+    HAS_MCP_SSE = False
+
 
 @dataclass
 class ClientMCPConnection:
@@ -219,7 +233,8 @@ class ClientMCPManager:
             try:
                 with self._db.tenant(self._tenant_id) as conn:
                     rows = conn.execute(
-                        "SELECT server_name, package, env_vars, args, enabled "
+                        "SELECT server_name, package, env_vars, args, enabled, "
+                        "transport, url "
                         "FROM client_mcp_configs WHERE client_id = %s AND enabled = true",
                         (client_id,),
                     )
@@ -230,6 +245,8 @@ class ClientMCPManager:
                         "env_vars": r.get("env_vars", {}),
                         "args": r.get("args", []),
                         "enabled": r.get("enabled", True),
+                        "transport": r.get("transport") or "stdio",
+                        "url": r.get("url"),
                     }
                     for r in (rows or [])
                 ]
@@ -300,44 +317,94 @@ class ClientMCPManager:
                 resolved_env[k] = v
         return resolved_env
 
+    def _resolve_headers(
+        self, env_vars: dict, *, namespace: str, client_id: str, server_name: str = "",
+    ) -> dict[str, str]:
+        """Resolve HTTP headers for a remote MCP server.
+
+        Mirrors ``_resolve_env`` — expands ``secret:<name>`` refs through the
+        same three-tier credential store — but returns a plain dict suitable
+        for passing to the MCP HTTP client. Unlike ``_resolve_env`` this does
+        NOT start from ``os.environ``: headers are only what the caller
+        explicitly configured (plus any resolved secret values).
+        """
+        if not env_vars:
+            return {}
+        # Reuse the env resolver over an empty base, then strip the os.environ
+        # inheritance by keeping only keys the caller declared.
+        env_before = dict(env_vars)
+        resolved = self._resolve_env(env_vars, namespace=namespace,
+                                     client_id=client_id, server_name=server_name)
+        return {k: str(resolved.get(k, "")) for k in env_before}
+
     async def _connect(
         self, client_id: str, config: dict, namespace: str = "default"
     ) -> ClientMCPConnection | None:
         """Connect to a single MCP server for a client.
 
-        ``secret:`` env refs resolve through the three-tier credential store
-        namespace-first, then user (derived from a ``user:<id>`` client_id),
-        then platform — i.e. "run with namespace credentials if available,
-        otherwise user credentials"."""
-        package = config.get("package", "")
+        Supports two transports keyed by ``config['transport']``:
+
+        * ``'stdio'`` (default) — spawn the ``package`` as a subprocess
+          (uvx/npx). ``env_vars`` become child env vars; ``secret:`` refs
+          resolve through the three-tier credential store (namespace → user
+          → platform).
+        * ``'streamable-http'`` / ``'sse'`` — dial the MCP endpoint at
+          ``config['url']``. ``env_vars`` are sent as HTTP headers on the
+          outbound request, with the same ``secret:`` resolution.
+        """
         server_name = config.get("server_name", "")
         env_vars = config.get("env_vars", {})
-        extra_args = config.get("args", [])
+        transport_kind = (config.get("transport") or "stdio").lower()
 
-        if not package:
-            return None
-
-        # Determine command based on package type
-        if package.startswith("@") or package.startswith("mcp-server-"):
-            command = "npx"
-            args = ["-y", package] + extra_args
+        if transport_kind in ("streamable-http", "sse"):
+            url = config.get("url") or ""
+            if not url:
+                logger.error("MCP %s/%s transport=%s requires a url",
+                             client_id, server_name, transport_kind)
+                return None
+            headers = self._resolve_headers(env_vars, namespace=namespace,
+                                             client_id=client_id, server_name=server_name)
+            if transport_kind == "streamable-http":
+                if not HAS_MCP_HTTP:
+                    logger.error(
+                        "MCP %s/%s: streamable-http requested but "
+                        "mcp.client.streamable_http is not installed", client_id, server_name,
+                    )
+                    return None
+                transport = streamablehttp_client(url, headers=headers)
+                read_stream, write_stream, _ = await transport.__aenter__()
+            else:  # sse
+                if not HAS_MCP_SSE:
+                    logger.error(
+                        "MCP %s/%s: sse requested but mcp.client.sse is not installed",
+                        client_id, server_name,
+                    )
+                    return None
+                transport = sse_client(url, headers=headers)
+                read_stream, write_stream = await transport.__aenter__()
+            session = ClientSession(read_stream, write_stream)
+            await session.__aenter__()
         else:
-            command = "uvx"
-            args = [package] + extra_args
-
-        resolved_env = self._resolve_env(env_vars, namespace=namespace, client_id=client_id,
-                                         server_name=server_name)
-
-        server_params = StdioServerParameters(
-            command=command,
-            args=args,
-            env=resolved_env,
-        )
-
-        transport = stdio_client(server_params)
-        read_stream, write_stream = await transport.__aenter__()
-        session = ClientSession(read_stream, write_stream)
-        await session.__aenter__()
+            # stdio (default) — existing subprocess launcher.
+            package = config.get("package", "")
+            extra_args = config.get("args", [])
+            if not package:
+                return None
+            if package.startswith("@") or package.startswith("mcp-server-"):
+                command = "npx"
+                args = ["-y", package] + extra_args
+            else:
+                command = "uvx"
+                args = [package] + extra_args
+            resolved_env = self._resolve_env(env_vars, namespace=namespace, client_id=client_id,
+                                             server_name=server_name)
+            server_params = StdioServerParameters(
+                command=command, args=args, env=resolved_env,
+            )
+            transport = stdio_client(server_params)
+            read_stream, write_stream = await transport.__aenter__()
+            session = ClientSession(read_stream, write_stream)
+            await session.__aenter__()
         # uvx/npx-launched servers (esp. heavy Python ones like mcp-atlassian on
         # first run) can take well over 10s to import + handshake. Configurable
         # via FORGEOS_MCP_INIT_TIMEOUT; default generous.
