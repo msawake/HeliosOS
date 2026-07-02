@@ -420,3 +420,101 @@ class PostgresClientMCPStore:
 
     def count_for_client(self, client_id: str) -> int:
         return len(self.list_for_client(client_id))
+
+
+class PostgresMcpAccessGroupStore:
+    """Tenant-scoped store for `mcp_access_groups` (migration 024).
+
+    A group is a named bundle of MCP server-names. Agents reference one by name
+    via `metadata.mcp_access_group`; the MCP layer intersects the agent's
+    in-scope servers with the group's `server_names`. Same DB/in-memory-fallback
+    style as the client stores above.
+    """
+
+    def __init__(self, db_client, tenant_id: str = "default"):
+        self._db = db_client
+        self._tenant_id = tenant_id
+        self._memory: dict[str, list[str]] = {}
+
+    @property
+    def _has_db(self) -> bool:
+        return bool(self._db and getattr(self._db, "is_connected", False))
+
+    def list_groups(self) -> list[dict]:
+        if self._has_db:
+            try:
+                with self._db.tenant(self._tenant_id) as conn:
+                    rows = conn.execute(
+                        "SELECT name, server_names, created_at FROM mcp_access_groups "
+                        "WHERE tenant_id = %s ORDER BY name",
+                        (self._tenant_id,),
+                    )
+                return [
+                    {
+                        "name": r["name"],
+                        "server_names": _coerce_tool_list(r.get("server_names")) or [],
+                        "created_at": (
+                            r["created_at"].isoformat() if r.get("created_at") else None
+                        ),
+                    }
+                    for r in (rows or [])
+                ]
+            except Exception as e:
+                logger.warning("Failed to list MCP access groups: %s", e)
+        return [
+            {"name": n, "server_names": list(s), "created_at": None}
+            for n, s in self._memory.items()
+        ]
+
+    def get(self, name: str) -> list[str] | None:
+        """Return the group's server_names, or None if the group doesn't exist."""
+        if self._has_db:
+            try:
+                with self._db.tenant(self._tenant_id) as conn:
+                    row = conn.execute_one(
+                        "SELECT server_names FROM mcp_access_groups "
+                        "WHERE tenant_id = %s AND name = %s",
+                        (self._tenant_id, name),
+                    )
+                if row is None:
+                    return None
+                return _coerce_tool_list(row.get("server_names")) or []
+            except Exception as e:
+                logger.warning("Failed to get MCP access group %s: %s", name, e)
+        return list(self._memory[name]) if name in self._memory else None
+
+    def upsert(self, name: str, server_names: list[str]) -> dict:
+        names = [str(s) for s in (server_names or [])]
+        if self._has_db:
+            try:
+                with self._db.tenant(self._tenant_id) as conn:
+                    conn.execute(
+                        "INSERT INTO mcp_access_groups (tenant_id, name, server_names) "
+                        "VALUES (%s, %s, %s::jsonb) "
+                        "ON CONFLICT (tenant_id, name) DO UPDATE SET "
+                        "server_names = EXCLUDED.server_names, updated_at = NOW()",
+                        (self._tenant_id, name, json.dumps(names)),
+                    )
+                    conn.commit()
+            except Exception as e:
+                logger.warning("Failed to upsert MCP access group %s: %s", name, e)
+        self._memory[name] = names
+        return {"name": name, "server_names": names}
+
+    def delete(self, name: str) -> bool:
+        removed = False
+        if self._has_db:
+            try:
+                with self._db.tenant(self._tenant_id) as conn:
+                    rc = conn.execute(
+                        "DELETE FROM mcp_access_groups WHERE tenant_id = %s AND name = %s",
+                        (self._tenant_id, name),
+                    )
+                    conn.commit()
+                    removed = bool(rc)
+            except Exception as e:
+                logger.warning("Failed to delete MCP access group %s: %s", name, e)
+        if name in self._memory:
+            del self._memory[name]
+            removed = True
+        return removed

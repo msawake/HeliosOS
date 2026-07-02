@@ -676,3 +676,63 @@ def _remote_host(request) -> str:
     """Best-effort client host for audit/caller attribution (FastAPI's
     request.client.host fallback)."""
     return request.META.get("REMOTE_ADDR") or "api"
+
+
+# ---------------------------------------------------------------------------
+# MCP access groups (migration 024) — named, reusable bundles of server-names
+# an agent can be scoped to via metadata.mcp_access_group. Django-native
+# additions (recorded in tests/contract test_route_parity._DJANGO_NATIVE_ADDITIONS).
+# ---------------------------------------------------------------------------
+
+def _access_group_store(ctx):
+    from src.platform.client_store import PostgresMcpAccessGroupStore
+    return PostgresMcpAccessGroupStore(db_client=ctx.db_client, tenant_id=ctx.tenant_id)
+
+
+class McpAccessGroupSerializer(serializers.Serializer):
+    name = serializers.CharField(min_length=1, max_length=200)
+    server_names = serializers.ListField(
+        child=serializers.CharField(), required=False, default=list,
+    )
+
+
+class McpAccessGroupsView(APIView):
+    """GET/POST /api/mcp/access-groups — list / create-or-update access groups.
+
+    Managing groups is a governance action, so writes require the admin role
+    (reads are open to any authenticated caller so operators can pick a group).
+    """
+
+    def get(self, request):
+        ctx = di.get_context()
+        return Response(_access_group_store(ctx).list_groups())
+
+    def post(self, request):
+        ctx = di.get_context()
+        _, role = _acting_principal(request, ctx)
+        if ctx.auth_enabled and role != ADMIN_ROLE:
+            return Response(
+                {"detail": "only admins may manage MCP access groups"}, status=403)
+        ser = McpAccessGroupSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        req = ser.validated_data
+        out = _access_group_store(ctx).upsert(req["name"], req["server_names"])
+        _audit("mcp_access_group.upsert", resource_type="mcp_access_group",
+               resource_id=req["name"], details={"server_names": req["server_names"]})
+        return Response(out, status=201)
+
+
+class McpAccessGroupDetailView(APIView):
+    """DELETE /api/mcp/access-groups/{name}."""
+
+    def delete(self, request, name):
+        ctx = di.get_context()
+        _, role = _acting_principal(request, ctx)
+        if ctx.auth_enabled and role != ADMIN_ROLE:
+            return Response(
+                {"detail": "only admins may manage MCP access groups"}, status=403)
+        if not _access_group_store(ctx).delete(name):
+            return Response({"detail": f"access group '{name}' not found"}, status=404)
+        _audit("mcp_access_group.delete", resource_type="mcp_access_group",
+               resource_id=name)
+        return Response({"deleted": True, "name": name})

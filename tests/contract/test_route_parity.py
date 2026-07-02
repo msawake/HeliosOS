@@ -103,6 +103,10 @@ _DJANGO_NATIVE_ADDITIONS = {
     # configure external MCP clients (Claude Code / Cursor / …).
     "/api/tokens",
     "/api/tokens/{token_id}",
+    # MCP access groups: named, reusable bundles of MCP server-names attachable
+    # to an agent (migration 024).
+    "/api/mcp/access-groups",
+    "/api/mcp/access-groups/{name}",
 }
 
 # Paths from the FastAPI contract that Django extends with additional HTTP

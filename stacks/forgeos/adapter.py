@@ -168,10 +168,12 @@ class ForgeOSAdapter(AgentStackAdapter):
             try:
                 _actx = build_agent_context(agent_def, agent_id, context=context)
                 # Aggregate across the agent's full permitted scope chain
-                # (own + broader/shared), not just the single client_id.
+                # (own + broader/shared), not just the single client_id, and
+                # narrow to the agent's MCP access group if one is set.
                 _chain = _actx.get("mcp_scope_chain") or _actx.get("client_id")
                 tools = await append_client_mcp_tools(
                     tools, self._tool_executor, _chain, agent_def.tools or None,
+                    access_group=_actx.get("mcp_access_group"),
                 )
             except Exception:
                 logger.debug("client MCP tool merge failed for %s", agent_id, exc_info=True)

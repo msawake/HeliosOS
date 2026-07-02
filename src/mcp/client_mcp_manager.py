@@ -289,6 +289,26 @@ class ClientMCPManager:
                 return cfg
         return None
 
+    def resolve_access_group(self, name: str) -> set[str] | None:
+        """Resolve an MCP access-group name to its set of server_names.
+
+        Returns None when the group is unset or doesn't exist (→ callers treat
+        that as "no restriction", i.e. all in-scope servers). An existing but
+        empty group returns an empty set (→ nothing visible), which is a valid
+        way to fully mask MCPs for an agent. Backed by `mcp_access_groups`
+        (migration 024); tenant-scoped via the manager's own db + tenant_id.
+        """
+        if not name:
+            return None
+        try:
+            from src.platform.client_store import PostgresMcpAccessGroupStore
+            store = PostgresMcpAccessGroupStore(self._db, tenant_id=self._tenant_id)
+            names = store.get(name)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("resolve_access_group(%s) failed: %s", name, e)
+            return None
+        return set(names) if names is not None else None
+
     def _load_all_configs(self, client_id: str) -> list[dict]:
         """Load all MCP configs for a client from DB or in-memory cache."""
         # In-memory cache (dev mode)

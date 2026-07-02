@@ -87,11 +87,16 @@ def test_filter_tool_schemas_subtracts():
 class _FakeManager:
     """Minimal stand-in whose get_all_client_tools returns per-scope tool maps."""
 
-    def __init__(self, by_client):
+    def __init__(self, by_client, access_groups=None):
         self._by_client = by_client
+        self._access_groups = access_groups or {}
 
     async def get_all_client_tools(self, client_id):
         return self._by_client.get(client_id, {})
+
+    def resolve_access_group(self, name):
+        v = self._access_groups.get(name)
+        return set(v) if v is not None else None
 
 
 class _FakeExecutor:
@@ -135,3 +140,49 @@ async def test_shared_agent_chain_yields_no_user_tools():
     names = [t["name"] for t in tools]
     assert names == ["mcp__slack__post"]
     assert all("jira" not in n for n in names)
+
+
+# --------------------------------------------------------------------------- #
+# access groups — narrowing the in-scope servers
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.asyncio
+async def test_access_group_narrows_to_listed_servers():
+    mgr = _FakeManager(
+        {"user:U": {
+            "jira": [{"name": "getIssue", "description": "", "inputSchema": {}}],
+            "slack": [{"name": "post", "description": "", "inputSchema": {}}],
+        }},
+        access_groups={"support": ["jira"]},  # slack excluded
+    )
+    tools = await append_client_mcp_tools(
+        [], _FakeExecutor(mgr), ["user:U"], None, access_group="support",
+    )
+    assert [t["name"] for t in tools] == ["mcp__jira__getIssue"]
+
+
+@pytest.mark.asyncio
+async def test_missing_access_group_means_no_restriction():
+    # A group name that doesn't resolve (None) must NOT hide everything — it
+    # falls back to all in-scope servers.
+    mgr = _FakeManager(
+        {"user:U": {"jira": [{"name": "getIssue", "description": "", "inputSchema": {}}]}},
+        access_groups={},  # 'ghost' resolves to None
+    )
+    tools = await append_client_mcp_tools(
+        [], _FakeExecutor(mgr), ["user:U"], None, access_group="ghost",
+    )
+    assert [t["name"] for t in tools] == ["mcp__jira__getIssue"]
+
+
+@pytest.mark.asyncio
+async def test_empty_access_group_masks_everything():
+    # An existing but empty group is a valid way to fully mask MCPs.
+    mgr = _FakeManager(
+        {"user:U": {"jira": [{"name": "getIssue", "description": "", "inputSchema": {}}]}},
+        access_groups={"locked": []},
+    )
+    tools = await append_client_mcp_tools(
+        [], _FakeExecutor(mgr), ["user:U"], None, access_group="locked",
+    )
+    assert tools == []

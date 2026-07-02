@@ -569,6 +569,7 @@ async def append_client_mcp_tools(
     tool_executor,
     client_id: "str | list[str] | None",
     agent_tools: list[str] | None,
+    access_group: str | None = None,
 ) -> list[dict]:
     """Append the agent's aggregated MCP tool schemas to *tool_defs*.
 
@@ -590,6 +591,14 @@ async def append_client_mcp_tools(
     if not (mgr and client_id):
         return tool_defs
     chain = [client_id] if isinstance(client_id, str) else list(client_id)
+    # Optional access-group narrowing: only servers in the group are advertised.
+    # None = no restriction; an existing-but-empty group masks everything.
+    allowed_servers: set[str] | None = None
+    if access_group:
+        try:
+            allowed_servers = mgr.resolve_access_group(access_group)
+        except Exception:
+            logger.debug("resolve_access_group failed for %s", access_group, exc_info=True)
     existing = {t.get("name") for t in tool_defs}
     seen_servers: set[str] = set()
     for cid in chain:
@@ -601,6 +610,8 @@ async def append_client_mcp_tools(
             logger.debug("append_client_mcp_tools failed for %s", cid, exc_info=True)
             continue
         for server_name, schemas in (by_server or {}).items():
+            if allowed_servers is not None and server_name not in allowed_servers:
+                continue  # not in the agent's access group
             if server_name in seen_servers:
                 # A narrower scope already provided this server — it shadows the
                 # broader one entirely (same server-name = same intended target).

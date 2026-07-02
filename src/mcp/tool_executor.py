@@ -744,6 +744,24 @@ class ToolExecutor:
         if not chain:
             _cid = (agent_context or {}).get("client_id")
             chain = [_cid] if _cid else []
+        # Access-group enforcement (execute funnel): if the agent is bound to an
+        # MCP access group, a server outside it is off-limits even if named
+        # directly — symmetric with the advertising filter in
+        # append_client_mcp_tools.
+        _group = (agent_context or {}).get("mcp_access_group")
+        if _group and self._client_mcp_manager:
+            try:
+                allowed_servers = self._client_mcp_manager.resolve_access_group(_group)
+            except Exception:
+                allowed_servers = None
+            if allowed_servers is not None and server_name not in allowed_servers:
+                return {
+                    "success": False,
+                    "error": (
+                        f"MCP server '{server_name}' is not in this agent's "
+                        f"access group '{_group}'"
+                    ),
+                }
         if chain and self._client_mcp_manager:
             for client_id in chain:
                 if not client_id:

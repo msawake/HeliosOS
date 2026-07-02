@@ -378,6 +378,11 @@ def build_agent_context(
         # broader/shared). Consumed by append_client_mcp_tools (advertising) and
         # tool_executor._execute_mcp_tool (routing). Narrowest wins on collision.
         "mcp_scope_chain": _mcp_scope_chain(agent_def, user_id, client_id),
+        # Optional MCP access-group name (migration 024). When set, the MCP
+        # layer intersects the agent's in-scope servers with the group's
+        # server_names — resolved lazily where DB access exists, so this stays
+        # a pure name copy. None/absent = no restriction.
+        "mcp_access_group": metadata.get("mcp_access_group") or None,
         "user_id": user_id,
         "allowed_tools": agent_def.tools or None,
         "tenant_id": ctx.get("tenant_id") or metadata.get("tenant_id", "default"),
