@@ -466,6 +466,41 @@ def _create_agent(req: _Req, request=None) -> Response:
             ),
             system_prompt=req.system_prompt,
         )
+
+        # Auto-provision a dedicated GCP service account when the manifest asks
+        # for it (spec.drive.provision). Create it BEFORE deploy so the stored
+        # agent carries the real SA email; a failure here aborts creation (better
+        # than deploying a half-wired agent).
+        drive_meta = (defn.metadata or {}).get("_drive")
+        if isinstance(drive_meta, dict) and drive_meta.get("provision"):
+            from src.platform.gcp_provisioning import (
+                provision_agent_sa, ProvisioningError, default_project_id,
+            )
+            project_id = default_project_id()
+            if not project_id:
+                return Response(
+                    {"detail": "spec.drive.provision requested but no project could be "
+                               "determined (set GCP_PROJECT_ID on the platform)."}, status=400)
+            requested = (drive_meta.get("service_account") or "").strip()
+            slug = requested.split("@", 1)[0] if requested else (defn.name or "agent")
+            # BigQuery grant is opt-in via env: it needs the runtime SA to hold
+            # project IAM-admin (broad). Off by default → provisioning works with
+            # just roles/iam.serviceAccountAdmin.
+            import os as _os
+            grant_bq = _os.environ.get("FORGEOS_PROVISION_BIGQUERY", "").lower() in ("1", "true", "yes")
+            try:
+                sa_email = provision_agent_sa(slug, project_id=project_id, grant_bigquery=grant_bq)
+            except ProvisioningError as e:
+                _audit("agent.sa_provision", outcome="failure", resource_type="agent",
+                       resource_id=req.name, details={"error": str(e)})
+                return Response({"detail": f"Service account provisioning failed: {e}"}, status=502)
+            drive_meta["service_account"] = sa_email
+            drive_meta["provisioned"] = True
+            drive_meta.pop("provision", None)
+            defn.metadata["_drive"] = drive_meta
+            _audit("agent.sa_provision", resource_type="agent", resource_id=req.name,
+                   details={"service_account": sa_email, "project": project_id})
+
         agent_id = async_to_sync(platform_executor.deploy)(defn)
 
         digest: str | None = None
@@ -825,7 +860,23 @@ class AgentDetailView(APIView):
                 allowed = role in ("admin", "operator") or (own == "personal" and owner == uid)
                 if not allowed:
                     return Response({"detail": "Not authorized to delete this agent"}, status=403)
+            # Capture a platform-provisioned SA (if any) before undeploy so we can
+            # clean it up. Only SAs WE created (_drive.provisioned) are deletable —
+            # never a user-supplied service_account.
+            provisioned_sa = None
+            if existed:
+                dm = (getattr(agent_def, "metadata", None) or {}).get("_drive") or {}
+                if dm.get("provisioned") and dm.get("service_account"):
+                    provisioned_sa = dm["service_account"]
             removed = bool(async_to_sync(platform_executor.undeploy)(agent_id)) and existed
+            if removed and provisioned_sa:
+                try:
+                    from src.platform.gcp_provisioning import deprovision_agent_sa, default_project_id
+                    deprovision_agent_sa(provisioned_sa, project_id=default_project_id())
+                    _audit("agent.sa_deprovision", resource_type="agent", resource_id=agent_id,
+                           details={"service_account": provisioned_sa})
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("deprovision SA %s failed: %s", provisioned_sa, e)
         _audit("agent.undeploy", resource_type="agent", resource_id=agent_id,
                details={"removed": removed})
         return Response({"ok": True, "removed": removed})

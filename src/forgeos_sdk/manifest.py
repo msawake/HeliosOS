@@ -385,6 +385,17 @@ class DriveConfig(BaseModel):
     access: Literal["read", "readwrite"] = Field(
         "read", description="read = context only; readwrite = also write reports back"
     )
+    provision: bool = Field(
+        False,
+        description="If true, the platform auto-creates this SA (using service_account's "
+        "local-part as the id) in the current project on deploy, grants the runtime SA "
+        "token-creator on it, and deletes it on undeploy.",
+    )
+    provisioned: bool = Field(
+        False,
+        description="Set by the platform after it auto-created the SA (internal marker; "
+        "gates deletion so user-supplied SAs are never removed).",
+    )
 
 
 class AgentDependency(BaseModel):
