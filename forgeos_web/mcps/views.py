@@ -169,6 +169,14 @@ class ClientMCPConfigRequestSerializer(serializers.Serializer):
         required=False, default="stdio",
     )
     url = serializers.CharField(required=False, allow_blank=True, default="")
+    # Per-server tool allow/deny (bare upstream tool names, e.g. "getJiraIssue").
+    # allowed_tools=None → expose every tool; disallowed_tools subtracts after.
+    allowed_tools = serializers.ListField(
+        child=serializers.CharField(), required=False, allow_null=True, default=None,
+    )
+    disallowed_tools = serializers.ListField(
+        child=serializers.CharField(), required=False, default=list,
+    )
 
     def validate(self, attrs):
         transport = attrs.get("transport") or "stdio"
@@ -381,6 +389,8 @@ class PlatformMcpServersView(APIView):
                 PLATFORM_CLIENT_ID, req["server_name"], req["package"],
                 req["env_vars"], req["args"],
                 transport=req["transport"], url=req["url"],
+                allowed_tools=req.get("allowed_tools"),
+                disallowed_tools=req.get("disallowed_tools") or [],
             )
         except ValueError as e:
             logger.warning("Platform MCP conflict: %s", e)
@@ -408,6 +418,8 @@ class PlatformMcpServerDetailView(APIView):
         updated = client_mcp_store.update(
             PLATFORM_CLIENT_ID, server_name, req["package"], req["env_vars"], req["args"],
             transport=req["transport"], url=req["url"],
+            allowed_tools=req.get("allowed_tools"),
+            disallowed_tools=req.get("disallowed_tools") or [],
         )
         if not updated:
             return Response(
@@ -471,6 +483,23 @@ def _parse_mcp_transport(body: dict) -> tuple[str, str, str | None] | Response:
     return package, "streamable-http", url
 
 
+def _parse_tool_filters(body: dict) -> tuple[list[str] | None, list[str]]:
+    """Extract (allowed_tools, disallowed_tools) from a register-MCP body.
+
+    ``allowed_tools`` absent/null → None (allow every tool). ``disallowed_tools``
+    absent → []. Both are lists of bare upstream tool names.
+    """
+    raw_allowed = body.get("allowed_tools")
+    allowed = (
+        [str(t) for t in raw_allowed] if isinstance(raw_allowed, list) else None
+    )
+    raw_disallowed = body.get("disallowed_tools")
+    disallowed = (
+        [str(t) for t in raw_disallowed] if isinstance(raw_disallowed, list) else []
+    )
+    return allowed, disallowed
+
+
 class UserMcpView(APIView):
     """POST/DELETE /api/users/{user_id}/mcp/{server_name} — per-user MCP CRUD."""
 
@@ -482,6 +511,7 @@ class UserMcpView(APIView):
         if isinstance(parsed, Response):
             return parsed
         package, transport, url = parsed
+        allowed_tools, disallowed_tools = _parse_tool_filters(body)
         env_vars = dict(body.get("env_vars") or {})
         secrets = dict(body.get("secrets") or {})
         args = body.get("args") or []
@@ -516,20 +546,25 @@ class UserMcpView(APIView):
             client_mcp_store.add(
                 cid, server_name, package, env_vars, args,
                 transport=transport, url=url,
+                allowed_tools=allowed_tools, disallowed_tools=disallowed_tools,
             )
         except ValueError:
             client_mcp_store.update(
                 cid, server_name, package, env_vars, args,
                 transport=transport, url=url,
+                allowed_tools=allowed_tools, disallowed_tools=disallowed_tools,
             )
         _refresh_client_mcp_cache(ctx, client_mcp_store, cid)
         _audit("user_mcp.enroll", resource_type="user_mcp", resource_id=cid,
                details={"server": server_name, "package": package,
                         "transport": transport, "url": url,
+                        "allowed_tools": allowed_tools,
+                        "disallowed_tools": disallowed_tools,
                         "secret_keys": list(secrets.keys())})
         return Response({
             "enrolled": True, "client_id": cid, "server_name": server_name,
             "package": package, "transport": transport, "url": url,
+            "allowed_tools": allowed_tools, "disallowed_tools": disallowed_tools,
             "env_keys": list(env_vars.keys()),
             "secret_keys": list(secrets.keys()),
         }, status=201)
@@ -561,6 +596,7 @@ class NamespaceMcpView(APIView):
         if isinstance(parsed, Response):
             return parsed
         package, transport, url = parsed
+        allowed_tools, disallowed_tools = _parse_tool_filters(body)
         env_vars = dict(body.get("env_vars") or {})
         secrets = dict(body.get("secrets") or {})
         args = body.get("args") or []
@@ -595,21 +631,26 @@ class NamespaceMcpView(APIView):
             client_mcp_store.add(
                 cid, server_name, package, env_vars, args,
                 transport=transport, url=url,
+                allowed_tools=allowed_tools, disallowed_tools=disallowed_tools,
             )
         except ValueError:
             client_mcp_store.update(
                 cid, server_name, package, env_vars, args,
                 transport=transport, url=url,
+                allowed_tools=allowed_tools, disallowed_tools=disallowed_tools,
             )
         _refresh_client_mcp_cache(ctx, client_mcp_store, cid)
         _audit("namespace_mcp.enroll", actor=caller, resource_type="namespace_mcp",
                resource_id=cid,
                details={"namespace": ns, "server": server_name, "package": package,
                         "transport": transport, "url": url,
+                        "allowed_tools": allowed_tools,
+                        "disallowed_tools": disallowed_tools,
                         "secret_keys": list(secrets.keys())})
         return Response({
             "enrolled": True, "client_id": cid, "namespace": ns, "server_name": server_name,
             "package": package, "transport": transport, "url": url,
+            "allowed_tools": allowed_tools, "disallowed_tools": disallowed_tools,
             "env_keys": list(env_vars.keys()),
             "secret_keys": list(secrets.keys()),
         }, status=201)

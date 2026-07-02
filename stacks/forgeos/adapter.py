@@ -166,9 +166,12 @@ class ForgeOSAdapter(AgentStackAdapter):
             # Merge the acting user's per-user MCP tool schemas (e.g. their JIRA
             # via mcp-atlassian) so the LLM sees them on the inline path too.
             try:
-                _cid = build_agent_context(agent_def, agent_id, context=context).get("client_id")
+                _actx = build_agent_context(agent_def, agent_id, context=context)
+                # Aggregate across the agent's full permitted scope chain
+                # (own + broader/shared), not just the single client_id.
+                _chain = _actx.get("mcp_scope_chain") or _actx.get("client_id")
                 tools = await append_client_mcp_tools(
-                    tools, self._tool_executor, _cid, agent_def.tools or None,
+                    tools, self._tool_executor, _chain, agent_def.tools or None,
                 )
             except Exception:
                 logger.debug("client MCP tool merge failed for %s", agent_id, exc_info=True)

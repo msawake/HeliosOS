@@ -567,41 +567,58 @@ def _tool_name_matches(name: str, agent_tools: list[str]) -> bool:
 async def append_client_mcp_tools(
     tool_defs: list[dict],
     tool_executor,
-    client_id: str | None,
+    client_id: "str | list[str] | None",
     agent_tools: list[str] | None,
 ) -> list[dict]:
-    """Append a client's per-user MCP tool schemas to *tool_defs*.
+    """Append the agent's aggregated MCP tool schemas to *tool_defs*.
 
     Platform-global MCP tools are advertised by build_tool_definitions, but
-    per-client connections (e.g. a user's JIRA via mcp-atlassian) are discovered
-    lazily and keyed by client_id — so their schemas must be merged in at invoke
-    time or the LLM never sees them. Names are prefixed `mcp__<server>__<tool>`
-    to match `tool_executor._execute_mcp_tool` routing. No-op without a
-    client_id or a ClientMCPManager. Connecting here also warms the connection.
+    per-client connections (a user's JIRA, a namespace's Slack, …) are
+    discovered lazily and keyed by client_id — so their schemas must be merged
+    in at invoke time or the LLM never sees them. Names are prefixed
+    `mcp__<server>__<tool>` to match `tool_executor._execute_mcp_tool` routing.
+
+    ``client_id`` may be a single id (back-compat) or the ordered
+    ``mcp_scope_chain`` (narrowest-first, e.g. ``["user:U", "ns:N",
+    "_platform"]``). Scopes are aggregated in order and **deduped by
+    server_name** — the first (narrowest) scope that provides a given server
+    wins, so a user's private ``jira`` shadows a tenant-wide ``jira``. Per-server
+    ``allowed_tools``/``disallowed_tools`` filtering is already applied inside
+    ``get_all_client_tools``. No-op without a client_id or a ClientMCPManager.
     """
     mgr = getattr(tool_executor, "_client_mcp_manager", None)
     if not (mgr and client_id):
         return tool_defs
-    try:
-        by_server = await mgr.get_all_client_tools(client_id)
-    except Exception:
-        logger.debug("append_client_mcp_tools failed for %s", client_id, exc_info=True)
-        return tool_defs
+    chain = [client_id] if isinstance(client_id, str) else list(client_id)
     existing = {t.get("name") for t in tool_defs}
-    for server_name, schemas in (by_server or {}).items():
-        for schema in schemas:
-            name = f"mcp__{server_name}__{schema.get('name', '')}"
-            if name in existing:
+    seen_servers: set[str] = set()
+    for cid in chain:
+        if not cid:
+            continue
+        try:
+            by_server = await mgr.get_all_client_tools(cid)
+        except Exception:
+            logger.debug("append_client_mcp_tools failed for %s", cid, exc_info=True)
+            continue
+        for server_name, schemas in (by_server or {}).items():
+            if server_name in seen_servers:
+                # A narrower scope already provided this server — it shadows the
+                # broader one entirely (same server-name = same intended target).
                 continue
-            if agent_tools and not _tool_name_matches(name, agent_tools):
-                continue
-            tool_defs.append({
-                "name": name,
-                "description": schema.get("description", ""),
-                "input_schema": schema.get(
-                    "inputSchema",
-                    schema.get("input_schema", {"type": "object", "properties": {}}),
-                ),
-            })
-            existing.add(name)
+            seen_servers.add(server_name)
+            for schema in schemas:
+                name = f"mcp__{server_name}__{schema.get('name', '')}"
+                if name in existing:
+                    continue
+                if agent_tools and not _tool_name_matches(name, agent_tools):
+                    continue
+                tool_defs.append({
+                    "name": name,
+                    "description": schema.get("description", ""),
+                    "input_schema": schema.get(
+                        "inputSchema",
+                        schema.get("input_schema", {"type": "object", "properties": {}}),
+                    ),
+                })
+                existing.add(name)
     return tool_defs

@@ -18,6 +18,26 @@ from datetime import datetime, timezone
 _TRANSPORTS = ("stdio", "streamable-http")
 
 
+def _coerce_tool_list(value, *, none_ok: bool = False) -> list[str] | None:
+    """Normalize a JSONB tool-name column to a list[str] (or None).
+
+    psycopg may hand back a decoded ``list`` or a raw JSON ``str`` depending on
+    adapters. ``none_ok`` preserves NULL as None (allow-all semantics for
+    ``allowed_tools``); otherwise NULL collapses to None and the caller applies
+    its own ``or []`` default.
+    """
+    if value is None:
+        return None if none_ok else None
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (ValueError, TypeError):
+            return None
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    return None
+
+
 def _validate_transport_shape(transport: str, package: str, url: str | None) -> None:
     """Enforce transport-shape invariants above the DB CHECK constraint.
 
@@ -196,12 +216,17 @@ class PostgresClientMCPStore:
         *,
         transport: str = "stdio",
         url: str | None = None,
+        allowed_tools: list[str] | None = None,
+        disallowed_tools: list[str] | None = None,
     ) -> dict:
         """Add an MCP server config. Raises ValueError if a duplicate exists.
 
         ``transport``: one of ``'stdio'`` (default), ``'streamable-http'``, ``'sse'``.
         ``url``: required for HTTP transports, must be None for stdio (the CHECK
         constraint enforces this at the DB layer too).
+        ``allowed_tools``: bare upstream tool names to expose (None = allow all).
+        ``disallowed_tools``: bare upstream tool names to hide (subtracted after
+        the allow-list).
         """
         _validate_transport_shape(transport, package, url)
         # Normalize the stored URL (empty string → NULL) so the CHECK constraint
@@ -215,7 +240,11 @@ class PostgresClientMCPStore:
             "enabled": True,
             "transport": transport,
             "url": url,
+            "allowed_tools": allowed_tools,
+            "disallowed_tools": disallowed_tools or [],
         }
+        _allowed_json = json.dumps(allowed_tools) if allowed_tools is not None else None
+        _disallowed_json = json.dumps(disallowed_tools) if disallowed_tools else None
 
         if self._has_db:
             try:
@@ -232,11 +261,12 @@ class PostgresClientMCPStore:
                     conn.execute(
                         "INSERT INTO client_mcp_configs "
                         "(tenant_id, client_id, server_name, package, env_vars, args, "
-                        "enabled, transport, url) "
-                        "VALUES (%s, %s, %s, %s, %s::jsonb, %s, true, %s, %s)",
+                        "enabled, transport, url, allowed_tools, disallowed_tools) "
+                        "VALUES (%s, %s, %s, %s, %s::jsonb, %s, true, %s, %s, "
+                        "%s::jsonb, %s::jsonb)",
                         (self._tenant_id, client_id, server_name, package,
                          json.dumps(env_vars or {}), args or [],
-                         transport, url),
+                         transport, url, _allowed_json, _disallowed_json),
                     )
                     conn.commit()
                 self._memory.setdefault(client_id, []).append(config)
@@ -264,7 +294,7 @@ class PostgresClientMCPStore:
                 with self._db.tenant(self._tenant_id) as conn:
                     rows = conn.execute(
                         "SELECT server_name, package, env_vars, args, enabled, "
-                        "transport, url "
+                        "transport, url, allowed_tools, disallowed_tools "
                         "FROM client_mcp_configs "
                         "WHERE client_id = %s AND tenant_id = %s ORDER BY server_name",
                         (client_id, self._tenant_id),
@@ -280,6 +310,8 @@ class PostgresClientMCPStore:
                             "enabled": bool(r.get("enabled", True)),
                             "transport": r.get("transport") or "stdio",
                             "url": r.get("url"),
+                            "allowed_tools": _coerce_tool_list(r.get("allowed_tools"), none_ok=True),
+                            "disallowed_tools": _coerce_tool_list(r.get("disallowed_tools")) or [],
                         }
                         for r in (rows or [])
                     ]
@@ -313,6 +345,8 @@ class PostgresClientMCPStore:
         *,
         transport: str = "stdio",
         url: str | None = None,
+        allowed_tools: list[str] | None = None,
+        disallowed_tools: list[str] | None = None,
     ) -> dict | None:
         """Update an existing MCP config. Returns the new config or None if not found."""
         _validate_transport_shape(transport, package, url)
@@ -325,7 +359,11 @@ class PostgresClientMCPStore:
             "enabled": True,
             "transport": transport,
             "url": url,
+            "allowed_tools": allowed_tools,
+            "disallowed_tools": disallowed_tools or [],
         }
+        _allowed_json = json.dumps(allowed_tools) if allowed_tools is not None else None
+        _disallowed_json = json.dumps(disallowed_tools) if disallowed_tools else None
 
         if self._has_db:
             try:
@@ -333,10 +371,12 @@ class PostgresClientMCPStore:
                     rc = conn.execute(
                         "UPDATE client_mcp_configs SET "
                         "package = %s, env_vars = %s::jsonb, args = %s, "
-                        "transport = %s, url = %s, updated_at = NOW() "
+                        "transport = %s, url = %s, "
+                        "allowed_tools = %s::jsonb, disallowed_tools = %s::jsonb, "
+                        "updated_at = NOW() "
                         "WHERE client_id = %s AND server_name = %s AND tenant_id = %s",
                         (package, json.dumps(env_vars or {}), args or [],
-                         transport, url,
+                         transport, url, _allowed_json, _disallowed_json,
                          client_id, server_name, self._tenant_id),
                     )
                     conn.commit()

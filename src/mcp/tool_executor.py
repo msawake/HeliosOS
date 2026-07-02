@@ -17,6 +17,7 @@ import json
 import jsonschema
 from jsonschema.exceptions import ValidationError
 
+from src.mcp.client_mcp_manager import tool_permitted as _mcp_tool_permitted
 from src.platform.pod_dev_tools import POD_ROUTABLE_TOOLS
 
 logger = logging.getLogger(__name__)
@@ -733,40 +734,76 @@ class ToolExecutor:
                     chunks.append(str(c))
             return (not is_error, "\n".join(chunks))
 
-        # Try client-specific MCP server first. The agent's namespace scopes
-        # credential resolution (namespace creds preferred, else user creds).
-        client_id = (agent_context or {}).get("client_id")
-        namespace = (agent_context or {}).get("namespace") or "default"
-        if client_id and self._client_mcp_manager:
-            try:
-                client_session = await self._client_mcp_manager.get_client(
-                    client_id, server_name, namespace,
+        # Try client-specific MCP servers first, walking the agent's scope chain
+        # (narrowest-first: user -> namespace -> platform). The first scope that
+        # actually has this server wins — matching the narrowest-wins dedupe used
+        # to advertise the tool in append_client_mcp_tools. For a ``ns:<name>``
+        # scope the credential namespace is that name; otherwise the agent's own.
+        agent_namespace = (agent_context or {}).get("namespace") or "default"
+        chain = (agent_context or {}).get("mcp_scope_chain")
+        if not chain:
+            _cid = (agent_context or {}).get("client_id")
+            chain = [_cid] if _cid else []
+        if chain and self._client_mcp_manager:
+            for client_id in chain:
+                if not client_id:
+                    continue
+                ns_for_call = (
+                    client_id.split("ns:", 1)[1]
+                    if client_id.startswith("ns:")
+                    else agent_namespace
                 )
-                if client_session:
-                    # Per-user MCP servers connect lazily and never went through
-                    # ``register_mcp_tools`` at boot, so ``_get_tool_schema`` was
-                    # missing their schemas — logging a warning on every call and
-                    # skipping local input validation. Populate the cache once,
-                    # from the schemas discovered at connect, so subsequent calls
-                    # validate locally and stay quiet.
-                    if server_name not in self._mcp_tool_definitions:
-                        try:
-                            schemas = await self._client_mcp_manager.get_tool_schemas(
-                                client_id, server_name, namespace,
-                            )
-                            if schemas:
-                                self.register_mcp_tools(server_name, schemas)
-                        except Exception:
-                            logger.debug(
-                                "could not cache schemas for %s/%s",
-                                client_id, server_name, exc_info=True,
-                            )
+                try:
+                    client_session = await self._client_mcp_manager.get_client(
+                        client_id, server_name, ns_for_call,
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Client MCP %s/%s tool %s failed: %s",
+                        client_id, server_name, method_name, e,
+                    )
+                    return {"success": False, "error": str(e)}
+                if not client_session:
+                    continue  # this scope doesn't have the server — try broader
+                # Per-server allow/deny enforcement (the execute funnel — the
+                # advertising funnel in get_all_client_tools is bypassable since
+                # an LLM can name an unadvertised tool directly).
+                cfg = self._client_mcp_manager._load_server_config(
+                    client_id, server_name,
+                )
+                if not _mcp_tool_permitted(method_name, cfg):
+                    return {
+                        "success": False,
+                        "error": (
+                            f"tool '{method_name}' is not permitted for MCP "
+                            f"server '{server_name}'"
+                        ),
+                    }
+                # Per-client MCP servers connect lazily and never went through
+                # ``register_mcp_tools`` at boot, so populate the schema cache
+                # once so subsequent calls validate locally and stay quiet.
+                if server_name not in self._mcp_tool_definitions:
+                    try:
+                        schemas = await self._client_mcp_manager.get_tool_schemas(
+                            client_id, server_name, ns_for_call,
+                        )
+                        if schemas:
+                            self.register_mcp_tools(server_name, schemas)
+                    except Exception:
+                        logger.debug(
+                            "could not cache schemas for %s/%s",
+                            client_id, server_name, exc_info=True,
+                        )
+                try:
                     result = await client_session.call_tool(method_name, tool_input)
-                    ok, body = _flatten(result)
-                    return {"success": ok, "result": body}
-            except Exception as e:
-                logger.error("Client MCP %s/%s tool %s failed: %s", client_id, server_name, method_name, e)
-                return {"success": False, "error": str(e)}
+                except Exception as e:
+                    logger.error(
+                        "Client MCP %s/%s tool %s failed: %s",
+                        client_id, server_name, method_name, e,
+                    )
+                    return {"success": False, "error": str(e)}
+                ok, body = _flatten(result)
+                return {"success": ok, "result": body}
 
         # Fallback to company-level MCP client
         client = self._mcp_clients.get(server_name)

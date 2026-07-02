@@ -262,6 +262,52 @@ class AgentStackAdapter(ABC):
         return None
 
 
+def _mcp_scope_chain(
+    agent_def: "AgentDefinition", user_id: str, explicit_client_id: str | None,
+) -> list[str]:
+    """Ordered client_ids an agent may aggregate MCP servers from.
+
+    Narrowest-first (the head wins on server-name collisions), covering the
+    agent's own scope plus every broader/shared scope it is entitled to — and
+    NEVER a more-private scope. This mirrors the credential boundary already
+    enforced in ``ClientMCPManager._resolve_env`` (a shared/namespace agent
+    cannot read user-scoped secrets) and extends it to tool *visibility*:
+
+        personal (user U, namespace N) -> ["user:U", "ns:N", "_platform"]
+        shared / namespace N           -> ["ns:N", "_platform"]
+        tenant / platform / CLIENT     -> [explicit_client_id?, "_platform"]
+
+    ``explicit_client_id`` is the single client_id the legacy precedence
+    resolved (CLIENT owner_id, an explicit context override, or the per-user /
+    namespace_mcp id) — it seeds the head of the chain so existing routing is
+    unchanged. Namespace "default" is the tenant-wide convention, so it is
+    folded into ``_platform`` rather than a phantom ``ns:default`` scope.
+    """
+    chain: list[str] = []
+    if explicit_client_id:
+        chain.append(explicit_client_id)
+    if (
+        agent_def.ownership == OwnershipType.PERSONAL
+        and user_id
+        and user_id != "default"
+    ):
+        cid = f"user:{user_id}"
+        if cid not in chain:
+            chain.append(cid)
+    ns = agent_def.namespace
+    if (
+        ns
+        and ns != "default"
+        and agent_def.ownership in (OwnershipType.PERSONAL, OwnershipType.SHARED)
+    ):
+        cid = f"ns:{ns}"
+        if cid not in chain:
+            chain.append(cid)
+    if "_platform" not in chain:
+        chain.append("_platform")
+    return chain
+
+
 def build_agent_context(
     agent_def: AgentDefinition,
     agent_id: str,
@@ -293,6 +339,10 @@ def build_agent_context(
            single shared agent serves each user with their own credentials.
     `namespace` is always carried so MCP credential resolution can prefer
     namespace-scoped secrets (then user, then platform).
+
+    `mcp_scope_chain` extends the single `client_id` into the ordered list of
+    scopes the agent may aggregate MCP servers from (own + broader/shared, never
+    more-private) — see `_mcp_scope_chain`.
     """
     metadata = agent_def.metadata or {}
     ctx = context or {}
@@ -324,6 +374,10 @@ def build_agent_context(
         "namespace": agent_def.namespace,
         "department": agent_def.department,
         "client_id": client_id,
+        # Ordered client_ids this agent may aggregate MCPs from (own scope +
+        # broader/shared). Consumed by append_client_mcp_tools (advertising) and
+        # tool_executor._execute_mcp_tool (routing). Narrowest wins on collision.
+        "mcp_scope_chain": _mcp_scope_chain(agent_def, user_id, client_id),
         "user_id": user_id,
         "allowed_tools": agent_def.tools or None,
         "tenant_id": ctx.get("tenant_id") or metadata.get("tenant_id", "default"),

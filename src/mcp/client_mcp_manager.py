@@ -37,6 +37,52 @@ except ImportError:
 from src.mcp.launch_utils import materialize_gcp_credentials, resolve_launch_command
 
 
+def _coerce_tool_list(value, *, none_ok: bool = False):
+    """Normalize a JSONB tool-name value to list[str] or None.
+
+    Handles both a psycopg-decoded ``list`` and a raw JSON ``str``. ``none_ok``
+    keeps NULL as None (allow-all for ``allowed_tools``).
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            import json as _json
+            value = _json.loads(value)
+        except (ValueError, TypeError):
+            return None
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    return None
+
+
+def tool_permitted(tool_name: str, cfg: dict | None) -> bool:
+    """Whether a bare upstream ``tool_name`` is allowed by a server's config.
+
+    ``allowed_tools`` None/absent → allow all; otherwise the name must be in it.
+    ``disallowed_tools`` is subtracted afterward. This is the single source of
+    truth for both the advertising funnel (``get_all_client_tools`` →
+    ``filter_tool_schemas``) and the execution funnel
+    (``ToolExecutor._execute_mcp_tool``).
+    """
+    if not cfg:
+        return True
+    allow = cfg.get("allowed_tools")
+    deny = set(cfg.get("disallowed_tools") or [])
+    if tool_name in deny:
+        return False
+    if allow is None:
+        return True
+    return tool_name in set(allow)
+
+
+def filter_tool_schemas(schemas: list[dict], cfg: dict | None) -> list[dict]:
+    """Drop tool schemas not permitted by the server's allow/deny config."""
+    if not cfg or (cfg.get("allowed_tools") is None and not cfg.get("disallowed_tools")):
+        return schemas
+    return [s for s in schemas if tool_permitted(s.get("name", ""), cfg)]
+
+
 @dataclass
 class ClientMCPConnection:
     """A cached MCP server connection for a specific client."""
@@ -170,17 +216,20 @@ class ClientMCPManager:
         ``return_exceptions=True`` and log-and-drop each failure per server.
         """
         configs = self._load_all_configs(client_id)
-        targets = [
-            cfg.get("server_name", "")
+        cfg_by_server = {
+            cfg.get("server_name", ""): cfg
             for cfg in configs
             if cfg.get("server_name") and cfg.get("enabled", True)
-        ]
+        }
+        targets = list(cfg_by_server)
         if not targets:
             return {}
 
         async def _one(name: str) -> tuple[str, list[dict]]:
             try:
-                return name, await self.get_tool_schemas(client_id, name)
+                schemas = await self.get_tool_schemas(client_id, name)
+                # Apply this server's per-server allow/deny (advertising funnel).
+                return name, filter_tool_schemas(schemas, cfg_by_server.get(name))
             except Exception as e:  # noqa: BLE001
                 logger.warning(
                     "MCP tool discovery failed for %s/%s: %s (other servers unaffected)",
@@ -253,7 +302,7 @@ class ClientMCPManager:
                 with self._db.tenant(self._tenant_id) as conn:
                     rows = conn.execute(
                         "SELECT server_name, package, env_vars, args, enabled, "
-                        "transport, url "
+                        "transport, url, allowed_tools, disallowed_tools "
                         "FROM client_mcp_configs WHERE client_id = %s AND enabled = true",
                         (client_id,),
                     )
@@ -266,6 +315,8 @@ class ClientMCPManager:
                         "enabled": r.get("enabled", True),
                         "transport": r.get("transport") or "stdio",
                         "url": r.get("url"),
+                        "allowed_tools": _coerce_tool_list(r.get("allowed_tools"), none_ok=True),
+                        "disallowed_tools": _coerce_tool_list(r.get("disallowed_tools")) or [],
                     }
                     for r in (rows or [])
                 ]
