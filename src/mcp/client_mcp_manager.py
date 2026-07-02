@@ -159,16 +159,39 @@ class ClientMCPManager:
         return conn.tool_schemas if conn else []
 
     async def get_all_client_tools(self, client_id: str) -> dict[str, list[dict]]:
-        """Get all tool schemas for all MCP servers configured for a client."""
+        """Get all tool schemas for all MCP servers configured for a client.
+
+        Each server is connected and introspected concurrently, and — critically
+        — in isolation: an exception raised by one server's connect (including
+        anyio's ``RuntimeError: Attempted to exit cancel scope in a different
+        task…`` that leaks out of ``stdio_client``'s cleanup when a subprocess
+        dies at handshake) MUST NOT abort discovery for the other servers or
+        propagate up into the enclosing Celery task. We collect results with
+        ``return_exceptions=True`` and log-and-drop each failure per server.
+        """
         configs = self._load_all_configs(client_id)
-        result: dict[str, list[dict]] = {}
-        for cfg in configs:
-            server_name = cfg.get("server_name", "")
-            if server_name and cfg.get("enabled", True):
-                schemas = await self.get_tool_schemas(client_id, server_name)
-                if schemas:
-                    result[server_name] = schemas
-        return result
+        targets = [
+            cfg.get("server_name", "")
+            for cfg in configs
+            if cfg.get("server_name") and cfg.get("enabled", True)
+        ]
+        if not targets:
+            return {}
+
+        async def _one(name: str) -> tuple[str, list[dict]]:
+            try:
+                return name, await self.get_tool_schemas(client_id, name)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "MCP tool discovery failed for %s/%s: %s (other servers unaffected)",
+                    client_id, name, e,
+                )
+                return name, []
+
+        pairs = await asyncio.gather(
+            *(_one(n) for n in targets), return_exceptions=False,
+        )
+        return {name: schemas for name, schemas in pairs if schemas}
 
     async def disconnect_client(self, client_id: str) -> None:
         """Disconnect all MCP servers for a client."""

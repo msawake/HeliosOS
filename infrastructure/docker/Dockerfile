@@ -140,10 +140,18 @@ RUN git config --global user.name "forgeos-agent" \
  # GitHub convention for token-as-password.
  && git config --global credential.helper '!f() { echo username=x-access-token; echo "password=${GH_TOKEN}"; }; f'
 
+# Warm the uv/uvx cache for popular stdio MCPs so the FIRST agent invocation
+# after a worker pod restart doesn't burn its 45s MCP-initialize timeout on a
+# cold `uvx <pkg>` install (~115 wheels for mcp-atlassian alone). Anything
+# listed here is a persistent `uv tool install` under
+# ~/.local/share/uv/tools/<pkg>; `uvx <pkg>` finds it instantly. Add entries as
+# more common MCPs land; keep the list small so the image stays tight.
+ENV UV_CACHE_DIR=/home/forgeos/.cache/uv
+RUN uv tool install mcp-atlassian || echo "warn: uv tool install mcp-atlassian failed, cold-start will fall back to ephemeral uvx"
+
 ENV PYTHONPATH=/app:/app/a2h \
     PYTHONUNBUFFERED=1 \
     PORT=5000 \
-    UV_CACHE_DIR=/home/forgeos/.cache/uv \
     # qwen-code defaults — agents can override per-call via the tool's
     # `model` / `base_url` parameters; Cloud Run env can override at deploy time.
     FORGEOS_QWEN_BASE_URL=http://79.117.23.16:20327/v1 \
