@@ -132,6 +132,13 @@ class AgentRegistry:
         """
         if not self._store:
             return self._agents.get(agent_id)
+        # The store itself may memoize (PostgresAgentRegistry populates a
+        # per-process cache at boot via list_all). Bust it first, or this
+        # "refresh" returns the stale boot-time copy and defeats the whole
+        # cross-process freshness contract this method exists to provide.
+        inval = getattr(self._store, "invalidate", None)
+        if callable(inval):
+            inval(agent_id)
         fresh = self._store.get(agent_id)
         if fresh is None:
             self._agents.pop(agent_id, None)

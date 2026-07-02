@@ -87,8 +87,18 @@ class PostgresAgentRegistry:
 
     # -- read ------------------------------------------------------------
 
-    def get(self, agent_id: str) -> AgentDefinition | None:
-        if agent_id in self._cache:
+    def invalidate(self, agent_id: str) -> None:
+        """Drop the memoized definition so the next get() re-reads the DB.
+
+        Cross-process freshness: this store memoizes in ``_cache`` (populated at
+        boot by ``list_all``). A def PUT in another process (the platform-api)
+        leaves THIS process's cache stale, so ``AgentRegistry.refresh`` must
+        invalidate here before re-reading, or it returns the boot-time copy.
+        """
+        self._cache.pop(agent_id, None)
+
+    def get(self, agent_id: str, *, use_cache: bool = True) -> AgentDefinition | None:
+        if use_cache and agent_id in self._cache:
             return self._cache[agent_id]
         with self._db.tenant(self._tenant_id) as conn:
             row = conn.execute_one(
