@@ -38,6 +38,18 @@ def _coerce_tool_list(value, *, none_ok: bool = False) -> list[str] | None:
     return None
 
 
+def _coerce_json_obj(value):
+    """Normalize a JSONB object column to a dict (psycopg may hand back str)."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (ValueError, TypeError):
+            return None
+    return value if isinstance(value, dict) else None
+
+
 def _validate_transport_shape(transport: str, package: str, url: str | None) -> None:
     """Enforce transport-shape invariants above the DB CHECK constraint.
 
@@ -218,6 +230,8 @@ class PostgresClientMCPStore:
         url: str | None = None,
         allowed_tools: list[str] | None = None,
         disallowed_tools: list[str] | None = None,
+        auth_type: str = "headers",
+        auth_config: dict | None = None,
     ) -> dict:
         """Add an MCP server config. Raises ValueError if a duplicate exists.
 
@@ -227,11 +241,14 @@ class PostgresClientMCPStore:
         ``allowed_tools``: bare upstream tool names to expose (None = allow all).
         ``disallowed_tools``: bare upstream tool names to hide (subtracted after
         the allow-list).
+        ``auth_type`` / ``auth_config``: typed auth for streamable-http servers
+        (``headers`` default = env_vars are the headers).
         """
         _validate_transport_shape(transport, package, url)
         # Normalize the stored URL (empty string → NULL) so the CHECK constraint
         # stays happy for stdio and the DB never contains ambiguous empties.
         url = url or None
+        auth_type = auth_type or "headers"
         config = {
             "server_name": server_name,
             "package": package,
@@ -242,9 +259,12 @@ class PostgresClientMCPStore:
             "url": url,
             "allowed_tools": allowed_tools,
             "disallowed_tools": disallowed_tools or [],
+            "auth_type": auth_type,
+            "auth_config": auth_config or {},
         }
         _allowed_json = json.dumps(allowed_tools) if allowed_tools is not None else None
         _disallowed_json = json.dumps(disallowed_tools) if disallowed_tools else None
+        _auth_json = json.dumps(auth_config) if auth_config else None
 
         if self._has_db:
             try:
@@ -261,12 +281,14 @@ class PostgresClientMCPStore:
                     conn.execute(
                         "INSERT INTO client_mcp_configs "
                         "(tenant_id, client_id, server_name, package, env_vars, args, "
-                        "enabled, transport, url, allowed_tools, disallowed_tools) "
+                        "enabled, transport, url, allowed_tools, disallowed_tools, "
+                        "auth_type, auth_config) "
                         "VALUES (%s, %s, %s, %s, %s::jsonb, %s, true, %s, %s, "
-                        "%s::jsonb, %s::jsonb)",
+                        "%s::jsonb, %s::jsonb, %s, %s::jsonb)",
                         (self._tenant_id, client_id, server_name, package,
                          json.dumps(env_vars or {}), args or [],
-                         transport, url, _allowed_json, _disallowed_json),
+                         transport, url, _allowed_json, _disallowed_json,
+                         auth_type, _auth_json),
                     )
                     conn.commit()
                 self._memory.setdefault(client_id, []).append(config)
@@ -294,7 +316,8 @@ class PostgresClientMCPStore:
                 with self._db.tenant(self._tenant_id) as conn:
                     rows = conn.execute(
                         "SELECT server_name, package, env_vars, args, enabled, "
-                        "transport, url, allowed_tools, disallowed_tools "
+                        "transport, url, allowed_tools, disallowed_tools, "
+                        "auth_type, auth_config "
                         "FROM client_mcp_configs "
                         "WHERE client_id = %s AND tenant_id = %s ORDER BY server_name",
                         (client_id, self._tenant_id),
@@ -312,6 +335,8 @@ class PostgresClientMCPStore:
                             "url": r.get("url"),
                             "allowed_tools": _coerce_tool_list(r.get("allowed_tools"), none_ok=True),
                             "disallowed_tools": _coerce_tool_list(r.get("disallowed_tools")) or [],
+                            "auth_type": r.get("auth_type") or "headers",
+                            "auth_config": _coerce_json_obj(r.get("auth_config")) or {},
                         }
                         for r in (rows or [])
                     ]
@@ -322,10 +347,15 @@ class PostgresClientMCPStore:
             configs = list(self._memory.get(client_id, []))
 
         if redact_secrets:
-            configs = [
-                {**c, "env_vars": {k: "***" for k in c.get("env_vars", {})}}
-                for c in configs
-            ]
+            def _redact(c: dict) -> dict:
+                out = {**c, "env_vars": {k: "***" for k in c.get("env_vars", {})}}
+                ac = c.get("auth_config")
+                if isinstance(ac, dict) and ac:
+                    # Redact auth_config values (may hold a literal client_secret /
+                    # bearer token) but keep the keys so the UI shows the shape.
+                    out["auth_config"] = {k: "***" for k in ac}
+                return out
+            configs = [_redact(c) for c in configs]
         return configs
 
     def get(self, client_id: str, server_name: str) -> dict | None:
@@ -347,10 +377,13 @@ class PostgresClientMCPStore:
         url: str | None = None,
         allowed_tools: list[str] | None = None,
         disallowed_tools: list[str] | None = None,
+        auth_type: str = "headers",
+        auth_config: dict | None = None,
     ) -> dict | None:
         """Update an existing MCP config. Returns the new config or None if not found."""
         _validate_transport_shape(transport, package, url)
         url = url or None
+        auth_type = auth_type or "headers"
         new_config = {
             "server_name": server_name,
             "package": package,
@@ -361,9 +394,12 @@ class PostgresClientMCPStore:
             "url": url,
             "allowed_tools": allowed_tools,
             "disallowed_tools": disallowed_tools or [],
+            "auth_type": auth_type,
+            "auth_config": auth_config or {},
         }
         _allowed_json = json.dumps(allowed_tools) if allowed_tools is not None else None
         _disallowed_json = json.dumps(disallowed_tools) if disallowed_tools else None
+        _auth_json = json.dumps(auth_config) if auth_config else None
 
         if self._has_db:
             try:
@@ -373,10 +409,12 @@ class PostgresClientMCPStore:
                         "package = %s, env_vars = %s::jsonb, args = %s, "
                         "transport = %s, url = %s, "
                         "allowed_tools = %s::jsonb, disallowed_tools = %s::jsonb, "
+                        "auth_type = %s, auth_config = %s::jsonb, "
                         "updated_at = NOW() "
                         "WHERE client_id = %s AND server_name = %s AND tenant_id = %s",
                         (package, json.dumps(env_vars or {}), args or [],
                          transport, url, _allowed_json, _disallowed_json,
+                         auth_type, _auth_json,
                          client_id, server_name, self._tenant_id),
                     )
                     conn.commit()

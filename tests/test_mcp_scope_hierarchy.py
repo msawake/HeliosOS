@@ -186,3 +186,55 @@ async def test_empty_access_group_masks_everything():
         [], _FakeExecutor(mgr), ["user:U"], None, access_group="locked",
     )
     assert tools == []
+
+
+# --------------------------------------------------------------------------- #
+# typed auth (_apply_auth): bearer_token + oauth2 token caching
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.asyncio
+async def test_apply_auth_headers_is_noop():
+    from src.mcp.client_mcp_manager import ClientMCPManager
+    m = ClientMCPManager(db_client=None, tenant_id="t")
+    out = await m._apply_auth(
+        {"X-Foo": "bar"}, {"auth_type": "headers"},
+        namespace="default", client_id="user:U", server_name="s",
+    )
+    assert out == {"X-Foo": "bar"}
+
+
+@pytest.mark.asyncio
+async def test_apply_auth_bearer_token_literal():
+    from src.mcp.client_mcp_manager import ClientMCPManager
+    m = ClientMCPManager(db_client=None, tenant_id="t")
+    out = await m._apply_auth(
+        {}, {"auth_type": "bearer_token", "auth_config": {"token": "abc123"}},
+        namespace="default", client_id="user:U", server_name="s",
+    )
+    assert out["Authorization"] == "Bearer abc123"
+
+
+@pytest.mark.asyncio
+async def test_apply_auth_oauth2_uses_cached_token():
+    from src.mcp.client_mcp_manager import ClientMCPManager
+    m = ClientMCPManager(db_client=None, tenant_id="t")
+    # Pre-seed a live cached token so no HTTP call is made.
+    import time as _t
+    m._oauth_tokens[("user:U", "s")] = ("cached-tok", _t.time() + 999)
+    out = await m._apply_auth(
+        {}, {"auth_type": "oauth2_client_credentials",
+             "auth_config": {"token_url": "https://x/t", "client_id": "cid"}},
+        namespace="default", client_id="user:U", server_name="s",
+    )
+    assert out["Authorization"] == "Bearer cached-tok"
+
+
+@pytest.mark.asyncio
+async def test_apply_auth_unknown_type_passes_through():
+    from src.mcp.client_mcp_manager import ClientMCPManager
+    m = ClientMCPManager(db_client=None, tenant_id="t")
+    out = await m._apply_auth(
+        {"H": "1"}, {"auth_type": "aws_sigv4"},
+        namespace="default", client_id="user:U", server_name="s",
+    )
+    assert out == {"H": "1"}  # unsupported → headers unchanged, no crash

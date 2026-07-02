@@ -177,6 +177,10 @@ class ClientMCPConfigRequestSerializer(serializers.Serializer):
     disallowed_tools = serializers.ListField(
         child=serializers.CharField(), required=False, default=list,
     )
+    # Typed auth for streamable-http servers (default 'headers' = env_vars are
+    # the headers). See _parse_auth / ClientMCPManager._apply_auth.
+    auth_type = serializers.CharField(required=False, default="headers")
+    auth_config = serializers.DictField(required=False, default=dict)
 
     def validate(self, attrs):
         transport = attrs.get("transport") or "stdio"
@@ -391,6 +395,8 @@ class PlatformMcpServersView(APIView):
                 transport=req["transport"], url=req["url"],
                 allowed_tools=req.get("allowed_tools"),
                 disallowed_tools=req.get("disallowed_tools") or [],
+                auth_type=req.get("auth_type") or "headers",
+                auth_config=req.get("auth_config") or {},
             )
         except ValueError as e:
             logger.warning("Platform MCP conflict: %s", e)
@@ -420,6 +426,8 @@ class PlatformMcpServerDetailView(APIView):
             transport=req["transport"], url=req["url"],
             allowed_tools=req.get("allowed_tools"),
             disallowed_tools=req.get("disallowed_tools") or [],
+            auth_type=req.get("auth_type") or "headers",
+            auth_config=req.get("auth_config") or {},
         )
         if not updated:
             return Response(
@@ -500,6 +508,17 @@ def _parse_tool_filters(body: dict) -> tuple[list[str] | None, list[str]]:
     return allowed, disallowed
 
 
+def _parse_auth(body: dict) -> tuple[str, dict]:
+    """Extract (auth_type, auth_config) from a register-MCP body.
+
+    Defaults to ('headers', {}) — env_vars are the outbound headers.
+    """
+    auth_type = (body.get("auth_type") or "headers").strip() or "headers"
+    raw = body.get("auth_config")
+    auth_config = dict(raw) if isinstance(raw, dict) else {}
+    return auth_type, auth_config
+
+
 class UserMcpView(APIView):
     """POST/DELETE /api/users/{user_id}/mcp/{server_name} — per-user MCP CRUD."""
 
@@ -512,6 +531,7 @@ class UserMcpView(APIView):
             return parsed
         package, transport, url = parsed
         allowed_tools, disallowed_tools = _parse_tool_filters(body)
+        auth_type, auth_config = _parse_auth(body)
         env_vars = dict(body.get("env_vars") or {})
         secrets = dict(body.get("secrets") or {})
         args = body.get("args") or []
@@ -547,12 +567,14 @@ class UserMcpView(APIView):
                 cid, server_name, package, env_vars, args,
                 transport=transport, url=url,
                 allowed_tools=allowed_tools, disallowed_tools=disallowed_tools,
+                auth_type=auth_type, auth_config=auth_config,
             )
         except ValueError:
             client_mcp_store.update(
                 cid, server_name, package, env_vars, args,
                 transport=transport, url=url,
                 allowed_tools=allowed_tools, disallowed_tools=disallowed_tools,
+                auth_type=auth_type, auth_config=auth_config,
             )
         _refresh_client_mcp_cache(ctx, client_mcp_store, cid)
         _audit("user_mcp.enroll", resource_type="user_mcp", resource_id=cid,
@@ -560,11 +582,13 @@ class UserMcpView(APIView):
                         "transport": transport, "url": url,
                         "allowed_tools": allowed_tools,
                         "disallowed_tools": disallowed_tools,
+                        "auth_type": auth_type,
                         "secret_keys": list(secrets.keys())})
         return Response({
             "enrolled": True, "client_id": cid, "server_name": server_name,
             "package": package, "transport": transport, "url": url,
             "allowed_tools": allowed_tools, "disallowed_tools": disallowed_tools,
+            "auth_type": auth_type,
             "env_keys": list(env_vars.keys()),
             "secret_keys": list(secrets.keys()),
         }, status=201)
@@ -597,6 +621,7 @@ class NamespaceMcpView(APIView):
             return parsed
         package, transport, url = parsed
         allowed_tools, disallowed_tools = _parse_tool_filters(body)
+        auth_type, auth_config = _parse_auth(body)
         env_vars = dict(body.get("env_vars") or {})
         secrets = dict(body.get("secrets") or {})
         args = body.get("args") or []
@@ -632,12 +657,14 @@ class NamespaceMcpView(APIView):
                 cid, server_name, package, env_vars, args,
                 transport=transport, url=url,
                 allowed_tools=allowed_tools, disallowed_tools=disallowed_tools,
+                auth_type=auth_type, auth_config=auth_config,
             )
         except ValueError:
             client_mcp_store.update(
                 cid, server_name, package, env_vars, args,
                 transport=transport, url=url,
                 allowed_tools=allowed_tools, disallowed_tools=disallowed_tools,
+                auth_type=auth_type, auth_config=auth_config,
             )
         _refresh_client_mcp_cache(ctx, client_mcp_store, cid)
         _audit("namespace_mcp.enroll", actor=caller, resource_type="namespace_mcp",
@@ -646,11 +673,13 @@ class NamespaceMcpView(APIView):
                         "transport": transport, "url": url,
                         "allowed_tools": allowed_tools,
                         "disallowed_tools": disallowed_tools,
+                        "auth_type": auth_type,
                         "secret_keys": list(secrets.keys())})
         return Response({
             "enrolled": True, "client_id": cid, "namespace": ns, "server_name": server_name,
             "package": package, "transport": transport, "url": url,
             "allowed_tools": allowed_tools, "disallowed_tools": disallowed_tools,
+            "auth_type": auth_type,
             "env_keys": list(env_vars.keys()),
             "secret_keys": list(secrets.keys()),
         }, status=201)

@@ -56,6 +56,19 @@ def _coerce_tool_list(value, *, none_ok: bool = False):
     return None
 
 
+def _coerce_json_obj(value):
+    """Normalize a JSONB object column to a dict (psycopg may hand back str)."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            import json as _json
+            value = _json.loads(value)
+        except (ValueError, TypeError):
+            return None
+    return value if isinstance(value, dict) else None
+
+
 def tool_permitted(tool_name: str, cfg: dict | None) -> bool:
     """Whether a bare upstream ``tool_name`` is allowed by a server's config.
 
@@ -128,6 +141,9 @@ class ClientMCPManager:
         self._connect_cooldowns: dict[tuple[str, str, str], float] = {}  # key → earliest_retry_time
         self._COOLDOWN_SECONDS = 60.0
         self._secrets_manager = secrets_manager
+        # OAuth2 client-credentials token cache: (client_id, server_name) →
+        # (access_token, expiry_epoch). Refreshed in _apply_auth on expiry.
+        self._oauth_tokens: dict[tuple[str, str], tuple[str, float]] = {}
 
     def register_client_config(self, client_id: str, configs: list[dict]) -> None:
         """Register MCP configs for a client (in-memory, for dev/no-DB mode)."""
@@ -322,7 +338,8 @@ class ClientMCPManager:
                 with self._db.tenant(self._tenant_id) as conn:
                     rows = conn.execute(
                         "SELECT server_name, package, env_vars, args, enabled, "
-                        "transport, url, allowed_tools, disallowed_tools "
+                        "transport, url, allowed_tools, disallowed_tools, "
+                        "auth_type, auth_config "
                         "FROM client_mcp_configs WHERE client_id = %s AND enabled = true",
                         (client_id,),
                     )
@@ -337,6 +354,8 @@ class ClientMCPManager:
                         "url": r.get("url"),
                         "allowed_tools": _coerce_tool_list(r.get("allowed_tools"), none_ok=True),
                         "disallowed_tools": _coerce_tool_list(r.get("disallowed_tools")) or [],
+                        "auth_type": r.get("auth_type") or "headers",
+                        "auth_config": _coerce_json_obj(r.get("auth_config")) or {},
                     }
                     for r in (rows or [])
                 ]
@@ -427,6 +446,111 @@ class ClientMCPManager:
                                      client_id=client_id, server_name=server_name)
         return {k: str(resolved.get(k, "")) for k in env_before}
 
+    def _resolve_secret_value(
+        self, value: str, *, namespace: str, client_id: str, server_name: str,
+    ) -> str:
+        """Resolve a single possibly-``secret:``-prefixed value to a literal.
+
+        Reuses the three-tier resolution in ``_resolve_headers`` (which handles
+        both literal and ``secret:<name>`` inputs) over a one-key dict.
+        """
+        if not value:
+            return ""
+        return self._resolve_headers(
+            {"_v": value}, namespace=namespace, client_id=client_id,
+            server_name=server_name,
+        ).get("_v", "")
+
+    async def _apply_auth(
+        self, headers: dict[str, str], config: dict, *,
+        namespace: str, client_id: str, server_name: str,
+    ) -> dict[str, str]:
+        """Layer a typed auth scheme onto already-resolved HTTP headers.
+
+        ``auth_type`` (with ``auth_config``):
+          * ``headers`` (default) — no-op; env_vars already ARE the headers.
+          * ``bearer_token`` — inject ``Authorization: Bearer <token>`` where
+            ``auth_config.token`` may be a ``secret:`` ref.
+          * ``oauth2_client_credentials`` — run the OAuth2 client-credentials
+            grant against ``auth_config.token_url`` and inject the bearer,
+            caching the access token until shortly before expiry.
+          * ``aws_sigv4`` — not yet supported (needs per-request signing);
+            logged and skipped.
+        """
+        auth_type = (config.get("auth_type") or "headers").lower()
+        if auth_type in ("", "headers", "none"):
+            return headers
+        ac = config.get("auth_config") or {}
+
+        if auth_type == "bearer_token":
+            token = self._resolve_secret_value(
+                ac.get("token", ""), namespace=namespace,
+                client_id=client_id, server_name=server_name,
+            )
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            return headers
+
+        if auth_type == "oauth2_client_credentials":
+            token = await self._oauth2_client_credentials_token(
+                ac, namespace=namespace, client_id=client_id, server_name=server_name,
+            )
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            return headers
+
+        logger.warning(
+            "MCP %s/%s: auth_type '%s' not supported — sending headers as-is",
+            client_id, server_name, auth_type,
+        )
+        return headers
+
+    async def _oauth2_client_credentials_token(
+        self, ac: dict, *, namespace: str, client_id: str, server_name: str,
+    ) -> str | None:
+        """Fetch (and cache) an OAuth2 client-credentials access token."""
+        key = (client_id, server_name)
+        cached = self._oauth_tokens.get(key)
+        if cached and time.time() < cached[1]:
+            return cached[0]
+        token_url = ac.get("token_url") or ""
+        oauth_client_id = ac.get("client_id") or ""
+        if not token_url or not oauth_client_id:
+            logger.error(
+                "MCP %s/%s: oauth2 requires auth_config.token_url + client_id",
+                client_id, server_name,
+            )
+            return None
+        client_secret = self._resolve_secret_value(
+            ac.get("client_secret", ""), namespace=namespace,
+            client_id=client_id, server_name=server_name,
+        )
+        data = {"grant_type": "client_credentials",
+                "client_id": oauth_client_id, "client_secret": client_secret}
+        if ac.get("scope"):
+            data["scope"] = ac["scope"]
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=30) as c:
+                resp = await c.post(token_url, data=data)
+                resp.raise_for_status()
+                payload = resp.json()
+        except Exception as e:  # noqa: BLE001
+            logger.error(
+                "MCP %s/%s: oauth2 token fetch failed: %s",
+                client_id, server_name, e,
+            )
+            return None
+        token = payload.get("access_token")
+        if not token:
+            logger.error("MCP %s/%s: oauth2 response had no access_token",
+                         client_id, server_name)
+            return None
+        # Cache until 60s before expiry (default 1h if the server omits it).
+        expires_in = float(payload.get("expires_in", 3600) or 3600)
+        self._oauth_tokens[key] = (token, time.time() + max(0.0, expires_in - 60))
+        return token
+
     async def _connect(
         self, client_id: str, config: dict, namespace: str = "default"
     ) -> ClientMCPConnection | None:
@@ -466,6 +590,10 @@ class ClientMCPManager:
                 return None
             headers = self._resolve_headers(env_vars, namespace=namespace,
                                              client_id=client_id, server_name=server_name)
+            headers = await self._apply_auth(
+                headers, config, namespace=namespace,
+                client_id=client_id, server_name=server_name,
+            )
             transport = streamablehttp_client(url, headers=headers)
             read_stream, write_stream, _ = await transport.__aenter__()
             session = ClientSession(read_stream, write_stream)
