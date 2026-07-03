@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from src.platform.email_tool import _access_token, _resolve_creds
+from src.platform.gws_auth import _access_token, _resolve_creds
 
 logger = logging.getLogger(__name__)
 
