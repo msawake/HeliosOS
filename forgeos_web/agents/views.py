@@ -47,6 +47,50 @@ def _visible_namespaces(uid: str) -> set[str]:
     return set(member_store.namespaces_for_user(uid)) | set(admin_store.namespaces_for_user(uid))
 
 
+def _can_create_agent(
+    uid: str, role: str, *, namespace: str, ownership: str,
+) -> tuple[bool, str]:
+    """Whether ``(uid, role)`` may CREATE an agent with the given namespace/ownership.
+
+    Mirrors ``_can_access_agent``'s read rules so a user can never write into
+    a namespace they can't see:
+
+      - admin → always
+      - PERSONAL → allowed for anyone (owner_id defaults to the acting user in
+        ``_create_agent``, and only the owner can then access it)
+      - SHARED + namespace='default' → allowed (tenant-wide bucket; every
+        authenticated user can already see + create in the tenant-wide space)
+      - SHARED + other namespace → must be an effective member (member or
+        admin) of that namespace
+      - CLIENT → admin/operator only
+
+    Returns ``(ok, reason)``. ``reason`` is a human-readable message the API
+    surfaces on refusal.
+    """
+    if role == "admin":
+        return True, ""
+    own = (ownership or "").lower()
+    ns = (namespace or "default").strip() or "default"
+    if own == "personal":
+        return True, ""
+    if own == "shared":
+        if ns == "default":
+            return True, ""
+        from src.platform.namespace_admins import is_effective_member
+        member_store, admin_store = _access_stores()
+        if is_effective_member(uid, ns, member_store=member_store, admin_store=admin_store):
+            return True, ""
+        return False, (
+            f"You are not a member of namespace '{ns}'. Ask a namespace admin "
+            f"to add you, or choose 'personal' ownership."
+        )
+    if own == "client":
+        if role == "operator":
+            return True, ""
+        return False, "CLIENT ownership requires an operator or admin role."
+    return False, f"Unknown ownership '{ownership}'."
+
+
 def _can_access_agent(uid: str, role: str, agent_def, *, my_namespaces: set[str] | None = None) -> bool:
     """Whether ``(uid, role)`` may see/run/edit ``agent_def``.
 
@@ -439,6 +483,22 @@ def _create_agent(req: _Req, request=None) -> Response:
         if req.client_id:
             ownership = OwnershipType.CLIENT
             owner_id = req.client_id
+
+        # Namespace-membership gate. The read side (list/detail) filters by
+        # membership already; without the symmetric check on create, a
+        # non-member could write into a namespace they can't even see back
+        # (until this fix a plain "operator" could POST an agent into any
+        # namespace string just by naming it). Admins bypass. --no-auth
+        # local dev bypasses via ctx.auth_enabled == False.
+        if ctx.auth_enabled and request is not None:
+            uid, role = acting_principal(request, ctx)
+            requested_ns = req.namespace or "default"
+            ok, reason = _can_create_agent(
+                uid, role, namespace=requested_ns, ownership=req.ownership,
+            )
+            if not ok:
+                return Response({"detail": reason}, status=403)
+
         # PERSONAL agents must have an owner; otherwise the creator can't
         # even read their own agent back. Default to the acting user.
         if ownership == OwnershipType.PERSONAL and not owner_id and request is not None:
