@@ -32,7 +32,11 @@ class Dashboard(pulumi.ComponentResource):
 
         self.service = gcp.cloudrunv2.Service(
             f"{name}-svc",
-            name="forgeos-dashboard",
+            # Helios OS canonical name for the browser-facing app. Renamed from
+            # "forgeos-dashboard" — Cloud Run service names are immutable, so
+            # pulumi will delete the old service and create a new one with a
+            # new URL (helios-app-<projhash>-<region>.a.run.app).
+            name="helios-app",
             location=region,
             ingress="INGRESS_TRAFFIC_ALL",
             deletion_protection=False,
