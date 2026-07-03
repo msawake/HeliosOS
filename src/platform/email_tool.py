@@ -29,12 +29,22 @@ _RESEND_SEND = "https://api.resend.com/emails"
 
 
 def _project() -> str:
-    return (
+    env = (
         os.environ.get("GCP_PROJECT_ID")
         or os.environ.get("GOOGLE_CLOUD_PROJECT")
         or os.environ.get("GOOGLE_CLOUD_PROJECT_ID")
         or ""
-    )
+    ).strip()
+    if env:
+        return env
+    # No project env on the worker → derive from ADC (running project on
+    # Cloud Run/GKE) so Secret Manager lookups still resolve.
+    try:
+        from google.auth import default as google_default
+        _creds, project = google_default()
+        return (project or "").strip()
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _resolve_secret(name: str) -> str:

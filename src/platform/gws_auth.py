@@ -26,12 +26,20 @@ _GWS_SECRETS = {
 
 
 def _project() -> str:
-    return (
+    env = (
         os.environ.get("GCP_PROJECT_ID")
         or os.environ.get("GOOGLE_CLOUD_PROJECT")
         or os.environ.get("GOOGLE_CLOUD_PROJECT_ID")
         or ""
-    )
+    ).strip()
+    if env:
+        return env
+    try:
+        from google.auth import default as google_default
+        _creds, project = google_default()
+        return (project or "").strip()
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _resolve_creds() -> dict[str, str] | str:
