@@ -19,7 +19,7 @@ config:
   # Pinned to a specific build (not "latest") so pulumi up can't revert the
   # dashboard to an image lacking the NEXT_PUBLIC_GCP_PROJECT_ID build-arg
   # (which the wizard's SA-provisioning flow needs). Bump on new dashboard builds.
-  forgeos-gcp:dashboard_tag: "3d28493"
+  forgeos-gcp:dashboard_tag: "e67621f"
   # Full Drive scope so per-agent SAs (treasury demo) can read/write folders
   # SHARED with their email; default drive.file only sees app-created files.
   forgeos-gcp:drive_scopes: drive
