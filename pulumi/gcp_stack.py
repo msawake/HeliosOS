@@ -253,6 +253,11 @@ _pa_extra_env: dict[str, pulumi.Input[str]] = {
     "FORGEOS_RUNTIME_V2": "1",
     "FORGEOS_RUNTIME_WORKERS": "1",
     "GCP_PROJECT_ID": project,
+    # The identity that impersonates auto-provisioned per-agent SAs at runtime is
+    # the GKE worker (agents run only in the worker tier). So when the platform-api
+    # provisions an agent SA (wizard "provision a service account"), it must grant
+    # token-creator to the WORKER GSA, not its own. gcp_provisioning reads this.
+    "FORGEOS_RUNTIME_SA_EMAIL": identity.agent_runtime.email,
     # Exec-environment sandbox: target the forgeos-envs namespace and reach the
     # cluster via a kubeconfig materialized from this content (no creds inside —
     # auth is the gke-gcloud-auth-plugin using the platform-api GSA's ADC).
