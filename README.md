@@ -28,7 +28,7 @@ Agents (the processes)
 Requires only Docker. From a fresh clone:
 
 ```bash
-git clone https://github.com/makingscience-awake/forgeos.git
+git clone https://github.com/msawake/HeliosOS.git
 cd forgeos
 docker compose up
 ```

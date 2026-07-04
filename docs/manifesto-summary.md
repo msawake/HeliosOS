@@ -110,4 +110,4 @@ BSL auto-converts to Apache 2.0 on **2030-05-20**.
 
 *Helios OS is not another agent framework. It's the harness that every framework is missing — the control layer for AI agents. Under the hood, it's built like an operating system, because that's the only architecture that scales.*
 
-**github.com/makingscience-awake/forgeos**
+**github.com/msawake/HeliosOS**

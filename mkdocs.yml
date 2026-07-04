@@ -1,7 +1,7 @@
 site_name: Helios OS
 site_description: The agentic harness — deploy, orchestrate, and govern AI agents across framework adapters.
-repo_url: https://github.com/makingscience-awake/forgeos
-repo_name: makingscience-awake/forgeos
+repo_url: https://github.com/msawake/HeliosOS
+repo_name: msawake/HeliosOS
 edit_uri: edit/leadforge/docs/
 
 docs_dir: docs

@@ -3,7 +3,7 @@ kind: Agent
 metadata:
   name: codebase-guardian
   description: >-
-    Daily read-only security review of the makingscience-awake/forgeos repo.
+    Daily read-only security review of the msawake/HeliosOS repo.
     Runs gemini-2.5-pro, uses the gh CLI via shell__exec to scan open PRs and
     recent commits for hardcoded secrets, injection, and XSS, checks branch
     protection, and emails a verdict matrix to the operator. Comments-only;
@@ -32,6 +32,6 @@ spec:
   system_prompt:
     file: system_prompt.md
   metadata:
-    repo: "makingscience-awake/forgeos"
+    repo: "msawake/HeliosOS"
     report_to: "antoni.bergas@makingscience.com"
     memory_key_prefix: "guardian/"
