@@ -25,7 +25,7 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 import tools as gh_tools
 
-REPO = os.environ.get("GITHUB_REPO", "makingscience-awake/forgeos")
+REPO = os.environ.get("GITHUB_REPO", "msawake/HeliosOS")
 
 
 async def run_guardian():

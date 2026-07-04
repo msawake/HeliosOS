@@ -125,11 +125,11 @@ Guardian finds a `private_key` hardcoded in PR #87:
 
 ```bash
 # Raw (findings go to stdout):
-PYTHONPATH=. GITHUB_REPO=makingscience-awake/forgeos \
+PYTHONPATH=. GITHUB_REPO=msawake/HeliosOS \
   python3 examples/codebase-guardian/agent_raw.py
 
 # Governed (15 controls, HITL for critical):
-PYTHONPATH=. GITHUB_REPO=makingscience-awake/forgeos \
+PYTHONPATH=. GITHUB_REPO=msawake/HeliosOS \
   ATLAS_GATEWAY_URL=... ATLAS_GATEWAY_KEY=... \
   python3 examples/codebase-guardian/agent.py
 ```

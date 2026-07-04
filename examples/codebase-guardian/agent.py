@@ -38,19 +38,19 @@ Helios OS kernel (Mode C / HTTP) enforces governance.
 
 Usage:
   # Single run (review current open PRs):
-  PYTHONPATH=. GITHUB_REPO=makingscience-awake/forgeos \
+  PYTHONPATH=. GITHUB_REPO=msawake/HeliosOS \
   python3 examples/codebase-guardian/agent.py
 
   # Continuous (every 5 min):
   MAX_ITERATIONS=0 INTERVAL=300 \
-  GITHUB_REPO=makingscience-awake/forgeos \
+  GITHUB_REPO=msawake/HeliosOS \
   python3 examples/codebase-guardian/agent.py
 
   # With Helios OS HTTP kernel:
   FORGEOS_API_URL=https://forgeos-api-xxx.run.app \
   ATLAS_GATEWAY_URL=https://atlas-gateway-xxx.run.app/v1 \
   ATLAS_GATEWAY_KEY=sk-... \
-  GITHUB_REPO=makingscience-awake/forgeos \
+  GITHUB_REPO=msawake/HeliosOS \
   python3 examples/codebase-guardian/agent.py
 """
 
@@ -74,7 +74,7 @@ logger = logging.getLogger("codebase-guardian")
 FORGEOS_URL = os.environ.get("FORGEOS_API_URL", "")
 AGENT_ID = os.environ.get("FORGEOS_AGENT_ID", "codebase-guardian")
 NAMESPACE = os.environ.get("FORGEOS_NAMESPACE", "engineering")
-GITHUB_REPO = os.environ.get("GITHUB_REPO", "makingscience-awake/forgeos")
+GITHUB_REPO = os.environ.get("GITHUB_REPO", "msawake/HeliosOS")
 MODEL = os.environ.get("REVIEW_MODEL", "claude-sonnet")
 MAX_ITERATIONS = int(os.environ.get("MAX_ITERATIONS", "1"))
 INTERVAL = int(os.environ.get("INTERVAL", "300"))

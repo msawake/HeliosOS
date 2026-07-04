@@ -6,7 +6,7 @@ This guide deploys Helios OS (API + Dashboard + Mission Control) on Google Cloud
 > path. For a repeatable, automated deployment (GKE Autopilot for agent
 > workloads, Cloud SQL + Memorystore + Pub/Sub, identity, networking,
 > observability, secrets), use the Pulumi stack at the top-level
-> [`pulumi/`](https://github.com/makingscience-awake/forgeos/tree/main/pulumi)
+> [`pulumi/`](https://github.com/msawake/HeliosOS/tree/main/pulumi)
 > directory — see `pulumi/README.md`.
 
 ## Architecture
