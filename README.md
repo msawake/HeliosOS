@@ -1,3 +1,10 @@
+> [!IMPORTANT]
+> **This repository has moved.** Development continues at **[msawake/HeliosOS](https://github.com/msawake/HeliosOS)**.
+> This copy is kept as a read-only archive and will no longer receive updates. Please update your remotes:
+> ```
+> git remote set-url origin git@github.com:msawake/HeliosOS.git
+> ```
+
 # Helios OS
 
 **The agentic harness.** Control what your agents do — on any framework, without changing their code. Deploy, orchestrate, and govern agents across 9 framework adapters with a kernel, syscall pipeline, runtime SDK, and inter-agent protocols.
