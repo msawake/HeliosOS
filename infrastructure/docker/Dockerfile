@@ -61,6 +61,20 @@ RUN pip install --no-cache-dir --prefix=/install \
     "google-cloud-logging>=3.5" \
     "google-cloud-storage>=2.10"
 
+# Optional commercial plugin (`heliosos` / `forgeos_billing`). The deploy
+# workflow builds the wheel from the private heliosos-enterprise repo (using a
+# CI-only PAT) and drops it in vendor-wheels/ before the build; the private
+# source never lands in this public repo. When no wheel is present (open-source
+# builds, local dev) this is a no-op and the platform boots in OSS mode via the
+# existing `except ImportError` guards in src/bootstrap.py + forgeos_web/urls.py.
+COPY vendor-wheels/ /tmp/vendor-wheels/
+RUN if ls /tmp/vendor-wheels/heliosos-*.whl >/dev/null 2>&1; then \
+        pip install --no-cache-dir --prefix=/install /tmp/vendor-wheels/heliosos-*.whl \
+        && echo "enterprise plugin: installed $(ls /tmp/vendor-wheels/heliosos-*.whl)"; \
+    else \
+        echo "enterprise plugin: no wheel in build context — open-source mode"; \
+    fi
+
 # ---------------------------------------------------------------------------
 # Stage 2 — api (runtime)
 # ---------------------------------------------------------------------------
