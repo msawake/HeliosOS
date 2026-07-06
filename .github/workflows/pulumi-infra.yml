@@ -153,6 +153,31 @@ jobs:
           workload_identity_provider: ${{ needs.resolve-stack.outputs.wif_provider }}
           service_account:            ${{ needs.resolve-stack.outputs.wif_sa }}
       - uses: google-github-actions/setup-gcloud@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build enterprise plugin wheel (private)
+        # Builds the `heliosos` commercial plugin wheel from the private
+        # heliosos-enterprise repo and drops it in vendor-wheels/ so the
+        # Dockerfile installs it. The PAT (read-only, scoped to that repo) lives
+        # only in this runner — it never reaches Cloud Build or an image layer,
+        # and the private source is never committed to this public repo. Absent
+        # secret → no wheel → image builds in open-source mode.
+        env:
+          ENT_TOKEN: ${{ secrets.HELIOSOS_ENTERPRISE_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p vendor-wheels
+          if [[ -z "${ENT_TOKEN:-}" ]]; then
+            echo "HELIOSOS_ENTERPRISE_TOKEN not set — skipping enterprise wheel (open-source build)."
+            exit 0
+          fi
+          python -m pip install --upgrade build
+          git clone --depth 1 \
+            "https://x-access-token:${ENT_TOKEN}@github.com/makingscience-awake/heliosos-enterprise.git" \
+            /tmp/heliosos-enterprise
+          python -m build --wheel --outdir vendor-wheels /tmp/heliosos-enterprise
+          echo "Built enterprise wheel(s):"; ls -la vendor-wheels/*.whl
       - id: build
         name: Build platform-api image via Cloud Build
         env:
