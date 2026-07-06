@@ -1,0 +1,173 @@
+# Promotion pipeline for Helios OS.
+#
+# Trigger: manual Cloud Build trigger invoked with a release tag ref.
+# Example for pre:
+#   gcloud builds triggers run helios-promote-pre \
+#     --region=europe-west1 \
+#     --tag=v1.4.2 \
+#     --substitutions=_TARGET_STACK=pre
+# Example for pro:
+#   gcloud builds triggers run helios-promote-pro \
+#     --region=europe-west1 \
+#     --tag=v1.4.2 \
+#     --substitutions=_TARGET_STACK=pro
+#
+# Cloud Build provides TAG_NAME, SHORT_SHA and COMMIT_SHA on tag-triggered runs.
+# If TAG_NAME is unavailable, the _VERSION substitution can be used as a
+# fallback (set to the full version string, e.g. 1.4.2-abc1234).
+#
+# Pipeline:
+#   1. Compute VERSION = <tag without leading v>-<short-sha>.
+#   2. PRE-FLIGHT: verify that europe-west1-docker.pkg.dev/ms-awake-sys/helios/
+#      platform-api:$VERSION already exists. Promotion NEVER builds the image;
+#      it only rolls forward an existing release artifact.
+#   3. Pulumi up on the target stack (pre or pro), impersonating
+#      helios-pulumi-deploy@ms-awake-${_TARGET_STACK}.
+#   4. ONLY for _TARGET_STACK=pro and only after the deploy succeeds: push a
+#      compatibility git tag helios-pro-platform-api-<unix-epoch> at COMMIT_SHA
+#      to https://github.com/msawake/HeliosOS.git. This tag triggers downstream
+#      tenant fan-out builds and Django migrations, so it is gated strictly
+#      behind a successful pro deploy.
+#
+# IAM prerequisites:
+#   - helios-cicd@ms-awake-sys must have roles/artifactregistry.reader on
+#     europe-west1-docker.pkg.dev/ms-awake-sys/helios (pre-flight image lookup).
+#   - helios-cicd must have roles/iam.serviceAccountTokenCreator on
+#     helios-pulumi-deploy@ms-awake-{pre,pro}.
+#   - helios-pulumi-deploy@ms-awake-${_TARGET_STACK} must have Pulumi deploy IAM
+#     for the target project plus access to gs://hub-helios-${_TARGET_STACK}-pulumi-backend.
+#   - helios-cicd must have roles/secretmanager.secretAccessor on
+#     projects/ms-awake-sys/secrets/helios-github-pat (pro tag push only).
+#
+# Security note:
+#   - The GitHub PAT is delivered via Cloud Build availableSecrets/secretEnv and
+#     is never logged. Do not echo it or persist it outside the push step.
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1800s
+substitutions:
+  _TARGET_STACK: ""
+  _VERSION: ""
+availableSecrets:
+  secretManager:
+    - versionName: projects/ms-awake-sys/secrets/helios-github-pat/versions/latest
+      env: GITHUB_PAT
+steps:
+  # ── Resolve version ─────────────────────────────────────────────────────────
+  - id: resolve-version
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        if [[ -n "${TAG_NAME:-}" ]]; then
+          VERSION="${TAG_NAME#v}-${SHORT_SHA}"
+        elif [[ -n "${_VERSION:-}" ]]; then
+          VERSION="${_VERSION}"
+        else
+          echo "ERROR: TAG_NAME is empty and _VERSION substitution was not provided." >&2
+          exit 1
+        fi
+        echo "VERSION=${VERSION}"
+        echo "${VERSION}" > /workspace/VERSION
+
+  # ── Pre-flight: promoted image must already exist ───────────────────────────
+  - id: preflight-image
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        VERSION=$(cat /workspace/VERSION)
+        IMAGE="europe-west1-docker.pkg.dev/ms-awake-sys/helios/platform-api:${VERSION}"
+        echo "Verifying promoted image exists: ${IMAGE}"
+        gcloud artifacts docker images describe "${IMAGE}" \
+          --project=ms-awake-sys \
+          --include-tags \
+          --quiet
+        echo "Image found; proceeding with promotion."
+
+  # ── Pulumi deploy to target stack ───────────────────────────────────────────
+  - id: pulumi-deploy
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    env:
+      - CLOUDSDK_COMPUTE_REGION=europe-west1
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        VERSION=$(cat /workspace/VERSION)
+
+        # Resolve target-environment specifics from _TARGET_STACK.
+        case "${_TARGET_STACK}" in
+          pre)
+            TARGET_PROJECT="ms-awake-pre"
+            PULUMI_BACKEND="gs://hub-helios-pre-pulumi-backend"
+            IMPERSONATE_SA="helios-pulumi-deploy@ms-awake-pre.iam.gserviceaccount.com"
+            ;;
+          pro)
+            TARGET_PROJECT="ms-awake-pro"
+            PULUMI_BACKEND="gs://hub-helios-pro-pulumi-backend"
+            IMPERSONATE_SA="helios-pulumi-deploy@ms-awake-pro.iam.gserviceaccount.com"
+            ;;
+          *)
+            echo "ERROR: _TARGET_STACK must be one of [pre, pro]; got '${_TARGET_STACK:-<empty>}'" >&2
+            exit 1
+            ;;
+        esac
+
+        echo "Promoting VERSION=${VERSION} to stack ${_TARGET_STACK} (project ${TARGET_PROJECT})"
+
+        # Make impersonation active for ADC-based Pulumi GCP provider and gcloud.
+        export GOOGLE_IMPERSONATE_SERVICE_ACCOUNT="${IMPERSONATE_SA}"
+        export CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT="${IMPERSONATE_SA}"
+
+        # Install pinned Pulumi CLI.
+        PULUMI_VERSION="3.130.0"
+        curl -fsSL "https://get.pulumi.com/releases/sdk/pulumi-v${PULUMI_VERSION}-linux-x64.tar.gz" \
+          | tar -xz -C /workspace
+        export PATH="/workspace/pulumi:${PATH}"
+        pulumi version
+
+        python3 -m venv /workspace/pulumi-venv
+        source /workspace/pulumi-venv/bin/activate
+        pip install --quiet -r pulumi/requirements.txt
+
+        pulumi login "${PULUMI_BACKEND}"
+        pulumi stack select "${_TARGET_STACK}" --cwd pulumi
+        pulumi config set forgeos-gcp:platform_api_tag "${VERSION}" --cwd pulumi
+        pulumi config set forgeos-gcp:migrations_tag "${VERSION}" --cwd pulumi
+        pulumi up --yes --cwd pulumi
+
+  # ── Pro-only compatibility tag push ─────────────────────────────────────────
+  # This step only runs if the deploy step succeeded. The PAT is injected via
+  # availableSecrets/secretEnv and is never echoed or persisted in git config.
+  - id: push-compat-tag
+    name: gcr.io/cloud-builders/git
+    entrypoint: bash
+    secretEnv: [GITHUB_PAT]
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        if [[ "${_TARGET_STACK}" != "pro" ]]; then
+          echo "Target stack is ${_TARGET_STACK}; skipping compatibility tag push."
+          exit 0
+        fi
+
+        COMPAT_TAG="helios-pro-platform-api-$(date -u +%s)"
+        echo "Pushing compatibility tag ${COMPAT_TAG} at ${COMMIT_SHA}"
+        git tag "${COMPAT_TAG}" "${COMMIT_SHA}"
+
+        AUTH_HEADER="Authorization: Basic $(printf 'x-access-token:%s' "$GITHUB_PAT" | base64 -w0)"
+        if ! git -c http.extraHeader="$AUTH_HEADER" \
+             push https://github.com/msawake/HeliosOS.git "refs/tags/${COMPAT_TAG}" \
+             2> /tmp/push-stderr.txt; then
+          echo "ERROR: failed to push compatibility tag ${COMPAT_TAG}" >&2
+          sed "s|${GITHUB_PAT}|[REDACTED]|g" /tmp/push-stderr.txt >&2 || true
+          exit 1
+        fi

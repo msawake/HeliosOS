@@ -34,6 +34,7 @@ from components.flower import Flower
 from components.gke import Gke
 from components.identity import Identity
 from components.mcp_server import McpServer
+from components.apis import EnabledApis
 from components.network import Network
 from components.platform_api import PlatformApi
 from components.registry import Registry
@@ -81,6 +82,13 @@ environment: str = config.get("environment") or "dev"
 platform_api_tag: str = config.get("platform_api_tag") or "latest"
 migrations_tag: str = config.get("migrations_tag") or "latest"
 dashboard_tag: str = config.get("dashboard_tag") or "latest"
+
+# Central Artifact Registry override. When set, all container images are
+# resolved from europe-west1-docker.pkg.dev/<registry_project>/<registry_repo_id>/
+# instead of the per-environment Registry component. The env Registry is still
+# created (existing repos are not deleted) — only image URL composition changes.
+registry_project: str | None = config.get("registry_project")
+registry_repo_id: str = config.get("registry_repo_id") or "helios"
 # The remote MCP server lives in its own repo (bitbucket.org/i2tic/helios-os-mcp)
 # and pushes to a separate AR path: forgeos/forgeos-mcp. Its SHAs don't match
 # the platform-api SHAs, so don't inherit platform_api_tag here — default to
@@ -98,6 +106,11 @@ vllm_base_url: str = config.get("vllm_base_url") or ""
 drive_scopes: str = config.get("drive_scopes") or ""
 
 
+# Belt-and-suspenders: Terraform owns API enablement (ms_tool_hub_iac); this
+# only ensures a fresh project can converge. disable_on_destroy=False avoids
+# ownership conflicts.
+EnabledApis("forgeos", project=project)
+
 # 1. Network
 network = Network(
     "forgeos",
@@ -112,6 +125,18 @@ registry = Registry("forgeos", region=region, project=project)
 
 
 def _img(name: str, tag: str) -> pulumi.Output[str]:
+    if registry_project:
+        return pulumi.Output.concat(
+            region,
+            "-docker.pkg.dev/",
+            registry_project,
+            "/",
+            registry_repo_id,
+            "/",
+            name,
+            ":",
+            tag,
+        )
     return pulumi.Output.concat(registry.url, "/", name, ":", tag)
 
 

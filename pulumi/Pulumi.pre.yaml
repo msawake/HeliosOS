@@ -12,6 +12,8 @@ config:
   forgeos-gcp:platform_api_tag: "latest"
   forgeos-gcp:migrations_tag: "latest"
   forgeos-gcp:dashboard_tag: "latest"
+  # Central Artifact Registry where Cloud Build pushes release images.
+  forgeos-gcp:registry_project: ms-awake-sys
   forgeos-gcp:deletion_protection: "false"
   forgeos-gcp:environment: "pre"
 secretsprovider: gcpkms://projects/ms-tool-sys/locations/europe-west1/keyRings/helios-pulumi/cryptoKeys/pulumi-secrets

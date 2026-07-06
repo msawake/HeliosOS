@@ -1,0 +1,113 @@
+# Dev branch pipeline for Helios OS.
+#
+# Trigger: push to the dev branch.
+#
+# This is identical to cloudbuild.release.yaml, but VERSION is
+# "dev-<short-sha>" instead of a semantic version. This lets every merge to
+# dev build and deploy immediately without cutting a release tag.
+#
+# Pipeline:
+#   1. VERSION = dev-<short-sha>.
+#   2. Build the optional private `heliosos` enterprise plugin wheel from
+#      makingscience-awake/heliosos-enterprise and drop it in vendor-wheels/.
+#      The Dockerfile installs any heliosos-*.whl found there. If the secret is
+#      unset/empty the step no-ops and the image builds in open-source mode.
+#   3. Build + push platform-api image to the central Artifact Registry:
+#        europe-west1-docker.pkg.dev/ms-awake-sys/helios/platform-api:$VERSION
+#   4. Deploy to the dev Pulumi stack, impersonating
+#      helios-pulumi-deploy@ms-awake-dev.
+#
+# See cloudbuild.release.yaml for detailed IAM prerequisites and notes.
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1800s
+availableSecrets:
+  secretManager:
+    - versionName: projects/ms-awake-sys/secrets/heliosos-enterprise-token/versions/latest
+      env: HELIOSOS_ENTERPRISE_TOKEN
+substitutions:
+  _TARGET_STACK: dev
+  _PULUMI_BACKEND: gs://hub-helios-dev-pulumi-backend
+  _IMPERSONATE_SA: helios-pulumi-deploy@ms-awake-dev.iam.gserviceaccount.com
+steps:
+  - id: resolve-version
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        VERSION="dev-${SHORT_SHA}"
+        echo "VERSION=${VERSION}"
+        echo "${VERSION}" > /workspace/VERSION
+
+  # ── Build optional private enterprise plugin wheel ──────────────────────────
+  # Installs any heliosos-*.whl into the image; absent/empty secret → no-op.
+  - id: build-enterprise-wheel
+    name: python:3.12-slim
+    entrypoint: bash
+    secretEnv: [HELIOSOS_ENTERPRISE_TOKEN]
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        mkdir -p vendor-wheels
+        if [[ -z "${HELIOSOS_ENTERPRISE_TOKEN:-}" || "${HELIOSOS_ENTERPRISE_TOKEN}" == "PLACEHOLDER_VALUE_TO_BE_REPLACED" ]]; then
+          echo "HELIOSOS_ENTERPRISE_TOKEN not set — skipping enterprise wheel (open-source build)."
+          exit 0
+        fi
+        apt-get update && apt-get install -y --no-install-recommends git
+        python -m pip install --upgrade build
+        git clone --depth 1 \
+          "https://x-access-token:${HELIOSOS_ENTERPRISE_TOKEN}@github.com/makingscience-awake/heliosos-enterprise.git" \
+          /tmp/heliosos-enterprise
+        python -m build --wheel --outdir vendor-wheels /tmp/heliosos-enterprise
+        echo "Built enterprise wheel(s):"; ls -la vendor-wheels/*.whl
+
+  - id: build-push
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        VERSION=$(cat /workspace/VERSION)
+        IMAGE="europe-west1-docker.pkg.dev/ms-awake-sys/helios/platform-api:${VERSION}"
+        echo "Building and pushing ${IMAGE} …"
+        docker build \
+          -f infrastructure/docker/Dockerfile \
+          --target api \
+          -t "${IMAGE}" \
+          .
+        docker push "${IMAGE}"
+
+  - id: pulumi-deploy
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    env:
+      - GOOGLE_IMPERSONATE_SERVICE_ACCOUNT=${_IMPERSONATE_SA}
+      - CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT=${_IMPERSONATE_SA}
+      - CLOUDSDK_COMPUTE_REGION=europe-west1
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        VERSION=$(cat /workspace/VERSION)
+
+        PULUMI_VERSION="3.130.0"
+        curl -fsSL "https://get.pulumi.com/releases/sdk/pulumi-v${PULUMI_VERSION}-linux-x64.tar.gz" \
+          | tar -xz -C /workspace
+        export PATH="/workspace/pulumi:${PATH}"
+        pulumi version
+
+        python3 -m venv /workspace/pulumi-venv
+        source /workspace/pulumi-venv/bin/activate
+        pip install --quiet -r pulumi/requirements.txt
+
+        echo "Deploying VERSION=${VERSION} to stack ${_TARGET_STACK} …"
+        pulumi login "${_PULUMI_BACKEND}"
+        pulumi stack select "${_TARGET_STACK}" --cwd pulumi
+        pulumi config set forgeos-gcp:platform_api_tag "${VERSION}" --cwd pulumi
+        pulumi config set forgeos-gcp:migrations_tag "${VERSION}" --cwd pulumi
+        pulumi up --yes --cwd pulumi
