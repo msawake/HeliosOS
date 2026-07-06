@@ -194,7 +194,7 @@ class SyscallPipeline:
             # Any non-allow decision short-circuits.
             if decision.action != "allow":
                 if stage_name != "audit":
-                    self._run_audit_on_deny(syscall, decision)
+                    self._run_audit_on_deny(syscall, decision, stage_name)
                 if KERNEL_VERBOSE:
                     logger.info("[kernel] DECISION verb=%s object=%s -> %s (%s) [stage=%s]",
                                 syscall.verb, syscall.object, decision.action,
@@ -211,13 +211,20 @@ class SyscallPipeline:
                         syscall.verb, syscall.object)
         return KernelDecision.allow(reason="syscall allowed", **details)
 
-    def _run_audit_on_deny(self, syscall: Syscall, decision: KernelDecision) -> None:
+    def _run_audit_on_deny(
+        self, syscall: Syscall, decision: KernelDecision, stage_name: str | None = None
+    ) -> None:
         audit = self._stages.get("audit")
         if audit is None:
             return
         try:
             # Attach the denial to the syscall so the audit stage records it.
             syscall.context["last_decision"] = decision.to_dict()
+            # The originating pipeline stage ("capability"/"quota"/"policy"/…)
+            # is the reliable signal for the audit taxonomy — a stage's deny
+            # decision doesn't always carry its own name in ``details``.
+            if stage_name is not None:
+                syscall.context["last_decision_stage"] = stage_name
             audit(syscall)
         except Exception:
             logger.exception("audit stage failed while logging deny")
@@ -396,29 +403,93 @@ def make_dispatch_stage(dispatcher: Callable[[Syscall], KernelDecision | None] |
     return _stage
 
 
+def _audit_action_outcome(verb: str, action: str, stage: str | None) -> tuple[str, str]:
+    """Map a syscall (verb + decision) to the enterprise audit taxonomy.
+
+    Produces the same action names the ``_facade._audit`` inline path emits
+    (``tool.allowed`` / ``tool.denied`` / ``tool.ask_human`` /
+    ``tool.policy_denied`` / ``tool.budget_denied`` / ``a2a.denied`` / …) so
+    that both admission paths write rows the observability/compliance readers
+    can group uniformly. ``family`` is the verb prefix (``tool`` / ``a2a`` /
+    ``data`` / ``secret`` / ``process``).
+    """
+    family = verb.split(".", 1)[0] or "agent"
+    if action == "allow":
+        return f"{family}.allowed", "success"
+    if action == "ask_human":
+        return f"{family}.ask_human", "ask_human"
+    if action == "rate_limit":
+        return f"{family}.budget_denied", "deny"
+    if action == "mask":
+        return f"{family}.masked", "success"
+    if action == "deny":
+        if stage == "policy":
+            return f"{family}.policy_denied", "deny"
+        if stage == "quota":
+            return f"{family}.budget_denied", "deny"
+        return f"{family}.denied", "deny"
+    return f"{family}.{action}", "info"
+
+
 def make_audit_stage(audit_recorder: Any) -> Stage:
-    """Audit stage — single append of the full decision record.
+    """Audit stage — single append of the final decision record.
 
     Always runs last on successful paths, and is also invoked on deny
-    short-circuits by :class:`SyscallPipeline`. Never denies; only records.
+    short-circuits by :class:`SyscallPipeline` (which stashes the denying
+    decision in ``syscall.context['last_decision']``). Never denies; only
+    records.
+
+    Records in the same shape as the facade's inline ``_audit`` helper so the
+    enterprise observability/compliance readers see one uniform contract:
+    ``actor`` = the subject (agent/caller), ``resource_id`` = the target
+    (tool name / callee), ``outcome`` derived from the decision, and
+    ``details.agent`` set for the ``details->>'agent'`` group-by.
     """
 
     def _stage(syscall: Syscall) -> KernelDecision | None:
         ar = audit_recorder
-        if ar is None:
+        if ar is None or not hasattr(ar, "record"):
             return None
-        if not hasattr(ar, "record"):
-            return None
+
+        ctx = syscall.context or {}
+        last = ctx.get("last_decision")
+        if last:
+            d_action = last.get("action", "deny")
+            # Prefer the originating pipeline stage the runner stashed; fall
+            # back to any ``stage`` the decision carried in its details.
+            d_stage = ctx.get("last_decision_stage") or (last.get("details") or {}).get("stage")
+            reason = last.get("reason")
+        else:
+            # Reached the terminal audit stage with no short-circuit → allow.
+            d_action, d_stage, reason = "allow", None, None
+
+        action, outcome = _audit_action_outcome(syscall.verb, d_action, d_stage)
+        family = syscall.verb.split(".", 1)[0] or "agent"
+        if family == "a2a":
+            resource_type = "a2a"
+            detail_key = "target"
+        elif family == "tool":
+            resource_type = "tool"
+            detail_key = "tool"
+        else:
+            resource_type = family
+            detail_key = "object"
+        resource_id = syscall.object or syscall.subject
+
+        details: dict[str, Any] = {"agent": syscall.subject}
+        if syscall.object:
+            details[detail_key] = syscall.object
+        if reason:
+            details["reason"] = reason
+
         try:
             ar.record(
-                action=syscall.verb,
-                agent_id=syscall.subject,
-                details={
-                    "object": syscall.object,
-                    "args": syscall.args,
-                    "context": syscall.context,
-                    "budget_ticket": syscall.budget_ticket,
-                },
+                action=action,
+                actor=syscall.subject or "system",
+                resource_type=resource_type,
+                resource_id=resource_id,
+                outcome=outcome,
+                details=details,
             )
         except Exception:
             logger.debug("audit recorder raised — continuing")
