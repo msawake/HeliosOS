@@ -58,6 +58,8 @@ steps:
   - id: resolve-version
     name: gcr.io/cloud-builders/gcloud
     entrypoint: bash
+    env:
+      - 'TAG_NAME=${TAG_NAME}'
     args:
       - -c
       - |
