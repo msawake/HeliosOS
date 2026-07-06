@@ -86,8 +86,8 @@ steps:
       - |
         set -euo pipefail
         mkdir -p vendor-wheels
-        if [[ -z "${HELIOSOS_ENTERPRISE_TOKEN:-}" ]]; then
-          echo "HELIOSOS_ENTERPRISE_TOKEN not available — skipping enterprise wheel (open-source build)."
+        if [[ -z "${HELIOSOS_ENTERPRISE_TOKEN:-}" || "${HELIOSOS_ENTERPRISE_TOKEN}" == "PLACEHOLDER_VALUE_TO_BE_REPLACED" ]]; then
+          echo "HELIOSOS_ENTERPRISE_TOKEN not set — skipping enterprise wheel (open-source build)."
           exit 0
         fi
         apt-get update && apt-get install -y --no-install-recommends git
