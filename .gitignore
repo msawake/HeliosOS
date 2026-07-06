@@ -48,3 +48,6 @@ infrastructure/docker/.env
 .local-flower.log
 .local-hotreload.log
 .local-api-restart.log
+
+# Enterprise plugin wheels are injected at CI build time, never committed.
+vendor-wheels/*.whl

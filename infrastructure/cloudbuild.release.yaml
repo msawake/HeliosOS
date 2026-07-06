@@ -6,11 +6,15 @@
 # Pipeline:
 #   1. Compute VERSION = <tag without leading v>-<short-sha>
 #      (example: v1.4.2 + abc1234 -> 1.4.2-abc1234).
-#   2. Build the platform-api image from infrastructure/docker/Dockerfile
+#   2. Build the optional private `heliosos` enterprise plugin wheel from
+#      makingscience-awake/heliosos-enterprise and drop it in vendor-wheels/.
+#      The Dockerfile installs any heliosos-*.whl found there. If the secret is
+#      unset/empty the step no-ops and the image builds in open-source mode.
+#   3. Build the platform-api image from infrastructure/docker/Dockerfile
 #      --target api and push it to the central Artifact Registry:
 #        europe-west1-docker.pkg.dev/ms-awake-sys/helios/platform-api:$VERSION
 #      The platform-api image also serves api/worker/migrations by command.
-#   3. Deploy to the dev Pulumi stack, overriding platform_api_tag and
+#   4. Deploy to the dev Pulumi stack, overriding platform_api_tag and
 #      migrations_tag in-flight. The Pulumi GCP provider and gcloud/gsutil
 #      calls impersonate helios-pulumi-deploy@ms-awake-dev via the
 #      GOOGLE_IMPERSONATE_SERVICE_ACCOUNT / CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT
@@ -24,16 +28,25 @@
 #     helios-pulumi-deploy@ms-awake-dev so it can impersonate it.
 #   - helios-pulumi-deploy@ms-awake-dev must have the Pulumi deploy IAM for the
 #     dev project plus access to gs://hub-helios-dev-pulumi-backend.
+#   - helios-cicd must have roles/secretmanager.secretAccessor on
+#     projects/ms-awake-sys/secrets/heliosos-enterprise-token (enterprise wheel
+#     build; create the secret with an empty value for open-source-only builds).
 #
 # Notes:
 #   - The build runs in the central ms-awake-sys project, so the registry path
 #     is hard-coded to ms-awake-sys/helios.
 #   - Pulumi config keys gcp:project/gcp:region live in Pulumi.dev.yaml; the
 #     deploy step only overrides the image tags.
+#   - The enterprise wheel PAT is delivered via availableSecrets/secretEnv and
+#     never logged. Do not echo it or persist it outside this step.
 options:
   machineType: E2_HIGHCPU_8
   logging: CLOUD_LOGGING_ONLY
 timeout: 1800s
+availableSecrets:
+  secretManager:
+    - versionName: projects/ms-awake-sys/secrets/heliosos-enterprise-token/versions/latest
+      env: HELIOSOS_ENTERPRISE_TOKEN
 substitutions:
   _TARGET_STACK: dev
   _PULUMI_BACKEND: gs://hub-helios-dev-pulumi-backend
@@ -61,6 +74,29 @@ steps:
         fi
         echo "VERSION=${VERSION}"
         echo "${VERSION}" > /workspace/VERSION
+
+  # ── Build optional private enterprise plugin wheel ──────────────────────────
+  # Installs any heliosos-*.whl into the image; absent/empty secret → no-op.
+  - id: build-enterprise-wheel
+    name: python:3.12-slim
+    entrypoint: bash
+    secretEnv: [HELIOSOS_ENTERPRISE_TOKEN]
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        mkdir -p vendor-wheels
+        if [[ -z "${HELIOSOS_ENTERPRISE_TOKEN:-}" ]]; then
+          echo "HELIOSOS_ENTERPRISE_TOKEN not available — skipping enterprise wheel (open-source build)."
+          exit 0
+        fi
+        apt-get update && apt-get install -y --no-install-recommends git
+        python -m pip install --upgrade build
+        git clone --depth 1 \
+          "https://x-access-token:${HELIOSOS_ENTERPRISE_TOKEN}@github.com/makingscience-awake/heliosos-enterprise.git" \
+          /tmp/heliosos-enterprise
+        python -m build --wheel --outdir vendor-wheels /tmp/heliosos-enterprise
+        echo "Built enterprise wheel(s):"; ls -la vendor-wheels/*.whl
 
   # ── Build + push platform-api image ─────────────────────────────────────────
   - id: build-push

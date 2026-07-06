@@ -1,0 +1,10 @@
+# Placeholder so the build context always contains this directory.
+#
+# The Cloud Build release/dev pipelines (infrastructure/cloudbuild.release.yaml
+# and infrastructure/cloudbuild.dev.yaml) build the private `heliosos`
+# enterprise plugin wheel from makingscience-awake/heliosos-enterprise (using the
+# HELIOSOS_ENTERPRISE_TOKEN secret in Secret Manager) and drop it here before
+# the docker build. The Dockerfile builder installs any wheel found in this dir.
+# When no token/wheel is present the image builds in open-source mode (the
+# enterprise package is simply absent → bootstrap/urls fall back via their
+# existing `except ImportError`). Actual *.whl files are gitignored.
