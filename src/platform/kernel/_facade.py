@@ -1250,15 +1250,42 @@ class Kernel:
 
     # ---- Internal -------------------------------------------------------
 
-    def _audit(self, action: str, resource_id: str, **details) -> None:
-        if self._audit_log:
-            try:
-                self._audit_log.record(
-                    action=action,
-                    resource_type="agent",
-                    resource_id=resource_id,
-                    outcome="info",
-                    details=details,
-                )
-            except Exception as e:
-                logger.debug("Kernel audit record failed: %s", e)
+    def _audit(self, action: str, subject: str, **details) -> None:
+        """Record a kernel decision to the audit log in the shape the
+        observability/compliance readers expect.
+
+        ``subject`` is the acting agent/caller. The record maps to:
+          * actor = subject (the agent)
+          * resource_type/resource_id: the tool (details['tool']), else the A2A
+            target (details['target']), else the agent itself
+          * outcome: derived from the action verb (deny / ask_human / success / info)
+          * details: carries ``agent`` so per-agent grouping resolves
+        Call sites are unchanged: ``_audit(action, agent_id, tool=…, target=…, reason=…)``.
+        """
+        if not self._audit_log:
+            return
+        if "tool" in details:
+            resource_type, resource_id = "tool", details["tool"]
+        elif "target" in details:
+            resource_type, resource_id = "a2a", details["target"]
+        else:
+            resource_type, resource_id = "agent", subject
+        if action.endswith(("denied", "rejected")):
+            outcome = "deny"
+        elif action.endswith("ask_human"):
+            outcome = "ask_human"
+        elif action.endswith(("allowed", "admitted")):
+            outcome = "success"
+        else:
+            outcome = "info"
+        try:
+            self._audit_log.record(
+                action=action,
+                actor=subject or "system",
+                resource_type=resource_type,
+                resource_id=resource_id or subject,
+                outcome=outcome,
+                details={"agent": subject, **details},
+            )
+        except Exception as e:
+            logger.debug("Kernel audit record failed: %s", e)

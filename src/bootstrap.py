@@ -389,12 +389,19 @@ class PlatformBootstrap:
             else:
                 logger.info("  Policy stores: in-memory (no DB — policies reset on restart)")
 
+            from src.platform.audit import AuditLog
             self._kernel = PlatformKernel(
                 registry=self.platform_registry,
                 tool_executor=self._tool_executor,
                 a2a_handler=getattr(self, '_a2a_handler', None),
                 usage_enforcer=getattr(self, '_usage_enforcer', None),
-                audit_log=None,  # wired by FastAPI layer which owns the AuditLog
+                # Persistent audit recorder so the kernel's tool-decision events
+                # (tool.denied / tool.ask_human / tool.budget_denied / tool.policy_denied /
+                # tool.allowed / a2a.*) land in platform_audit_log (hash-chained). This
+                # is what the enterprise observability/compliance features read. Was
+                # None (orphaned when the FastAPI layer that owned it was removed).
+                # Runs in both the platform-api and the GKE worker (shared boot path).
+                audit_log=AuditLog(db_client=self._db, tenant_id=self.tenant_id),
                 license_manager=self._license_manager,
                 capability_store=capability_store,
                 namespace_policy_store=namespace_policy_store,
