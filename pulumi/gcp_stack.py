@@ -34,6 +34,7 @@ from components.flower import Flower
 from components.gke import Gke
 from components.identity import Identity
 from components.mcp_server import McpServer
+from components.apis import EnabledApis
 from components.network import Network
 from components.platform_api import PlatformApi
 from components.registry import Registry
@@ -104,6 +105,11 @@ vllm_base_url: str = config.get("vllm_base_url") or ""
 # their SA (the treasury demo model). Applied to both the API and worker tiers.
 drive_scopes: str = config.get("drive_scopes") or ""
 
+
+# Belt-and-suspenders: Terraform owns API enablement (ms_tool_hub_iac); this
+# only ensures a fresh project can converge. disable_on_destroy=False avoids
+# ownership conflicts.
+EnabledApis("forgeos", project=project)
 
 # 1. Network
 network = Network(
