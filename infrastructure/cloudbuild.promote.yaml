@@ -62,16 +62,16 @@ steps:
       - -c
       - |
         set -euo pipefail
-        if [[ -n "${TAG_NAME:-}" ]]; then
-          VERSION="${TAG_NAME#v}-${SHORT_SHA}"
-        elif [[ -n "${_VERSION:-}" ]]; then
+        if [[ -n "$${TAG_NAME:-}" ]]; then
+          VERSION="$${TAG_NAME#v}-${SHORT_SHA}"
+        elif [[ -n "$${_VERSION:-}" ]]; then
           VERSION="${_VERSION}"
         else
           echo "ERROR: TAG_NAME is empty and _VERSION substitution was not provided." >&2
           exit 1
         fi
-        echo "VERSION=${VERSION}"
-        echo "${VERSION}" > /workspace/VERSION
+        echo "VERSION=$${VERSION}"
+        echo "$${VERSION}" > /workspace/VERSION
 
   # ── Pre-flight: promoted image must already exist ───────────────────────────
   - id: preflight-image
@@ -82,9 +82,9 @@ steps:
       - |
         set -euo pipefail
         VERSION=$(cat /workspace/VERSION)
-        IMAGE="europe-west1-docker.pkg.dev/ms-awake-sys/helios/platform-api:${VERSION}"
-        echo "Verifying promoted image exists: ${IMAGE}"
-        gcloud artifacts docker images describe "${IMAGE}" \
+        IMAGE="europe-west1-docker.pkg.dev/ms-awake-sys/helios/platform-api:$${VERSION}"
+        echo "Verifying promoted image exists: $${IMAGE}"
+        gcloud artifacts docker images describe "$${IMAGE}" \
           --project=ms-awake-sys \
           --include-tags \
           --quiet
@@ -115,32 +115,32 @@ steps:
             IMPERSONATE_SA="helios-pulumi-deploy@ms-awake-pro.iam.gserviceaccount.com"
             ;;
           *)
-            echo "ERROR: _TARGET_STACK must be one of [pre, pro]; got '${_TARGET_STACK:-<empty>}'" >&2
+            echo "ERROR: _TARGET_STACK must be one of [pre, pro]; got '$${_TARGET_STACK:-<empty>}'" >&2
             exit 1
             ;;
         esac
 
-        echo "Promoting VERSION=${VERSION} to stack ${_TARGET_STACK} (project ${TARGET_PROJECT})"
+        echo "Promoting VERSION=$${VERSION} to stack ${_TARGET_STACK} (project $${TARGET_PROJECT})"
 
         # Make impersonation active for ADC-based Pulumi GCP provider and gcloud.
-        export GOOGLE_IMPERSONATE_SERVICE_ACCOUNT="${IMPERSONATE_SA}"
-        export CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT="${IMPERSONATE_SA}"
+        export GOOGLE_IMPERSONATE_SERVICE_ACCOUNT="$${IMPERSONATE_SA}"
+        export CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT="$${IMPERSONATE_SA}"
 
         # Install pinned Pulumi CLI.
         PULUMI_VERSION="3.130.0"
-        curl -fsSL "https://get.pulumi.com/releases/sdk/pulumi-v${PULUMI_VERSION}-linux-x64.tar.gz" \
+        curl -fsSL "https://get.pulumi.com/releases/sdk/pulumi-v$${PULUMI_VERSION}-linux-x64.tar.gz" \
           | tar -xz -C /workspace
-        export PATH="/workspace/pulumi:${PATH}"
+        export PATH="/workspace/pulumi:$${PATH}"
         pulumi version
 
         python3 -m venv /workspace/pulumi-venv
         source /workspace/pulumi-venv/bin/activate
         pip install --quiet -r pulumi/requirements.txt
 
-        pulumi login "${PULUMI_BACKEND}"
+        pulumi login "$${PULUMI_BACKEND}"
         pulumi stack select "${_TARGET_STACK}" --cwd pulumi
-        pulumi config set forgeos-gcp:platform_api_tag "${VERSION}" --cwd pulumi
-        pulumi config set forgeos-gcp:migrations_tag "${VERSION}" --cwd pulumi
+        pulumi config set forgeos-gcp:platform_api_tag "$${VERSION}" --cwd pulumi
+        pulumi config set forgeos-gcp:migrations_tag "$${VERSION}" --cwd pulumi
         pulumi up --yes --cwd pulumi
 
   # ── Pro-only compatibility tag push ─────────────────────────────────────────
@@ -160,14 +160,14 @@ steps:
         fi
 
         COMPAT_TAG="helios-pro-platform-api-$(date -u +%s)"
-        echo "Pushing compatibility tag ${COMPAT_TAG} at ${COMMIT_SHA}"
-        git tag "${COMPAT_TAG}" "${COMMIT_SHA}"
+        echo "Pushing compatibility tag $${COMPAT_TAG} at ${COMMIT_SHA}"
+        git tag "$${COMPAT_TAG}" "${COMMIT_SHA}"
 
-        AUTH_HEADER="Authorization: Basic $(printf 'x-access-token:%s' "$GITHUB_PAT" | base64 -w0)"
-        if ! git -c http.extraHeader="$AUTH_HEADER" \
-             push https://github.com/msawake/HeliosOS.git "refs/tags/${COMPAT_TAG}" \
+        AUTH_HEADER="Authorization: Basic $(printf 'x-access-token:%s' "$$GITHUB_PAT" | base64 -w0)"
+        if ! git -c http.extraHeader="$$AUTH_HEADER" \
+             push https://github.com/msawake/HeliosOS.git "refs/tags/$${COMPAT_TAG}" \
              2> /tmp/push-stderr.txt; then
-          echo "ERROR: failed to push compatibility tag ${COMPAT_TAG}" >&2
-          sed "s|${GITHUB_PAT}|[REDACTED]|g" /tmp/push-stderr.txt >&2 || true
+          echo "ERROR: failed to push compatibility tag $${COMPAT_TAG}" >&2
+          sed "s|$${GITHUB_PAT}|[REDACTED]|g" /tmp/push-stderr.txt >&2 || true
           exit 1
         fi

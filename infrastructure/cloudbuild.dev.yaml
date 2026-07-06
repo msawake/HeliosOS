@@ -39,8 +39,8 @@ steps:
       - |
         set -euo pipefail
         VERSION="dev-${SHORT_SHA}"
-        echo "VERSION=${VERSION}"
-        echo "${VERSION}" > /workspace/VERSION
+        echo "VERSION=$${VERSION}"
+        echo "$${VERSION}" > /workspace/VERSION
 
   # ── Build optional private enterprise plugin wheel ──────────────────────────
   # Installs any heliosos-*.whl into the image; absent/empty secret → no-op.
@@ -53,14 +53,14 @@ steps:
       - |
         set -euo pipefail
         mkdir -p vendor-wheels
-        if [[ -z "${HELIOSOS_ENTERPRISE_TOKEN:-}" || "${HELIOSOS_ENTERPRISE_TOKEN}" == "PLACEHOLDER_VALUE_TO_BE_REPLACED" ]]; then
+        if [[ -z "$${HELIOSOS_ENTERPRISE_TOKEN:-}" || "$${HELIOSOS_ENTERPRISE_TOKEN}" == "PLACEHOLDER_VALUE_TO_BE_REPLACED" ]]; then
           echo "HELIOSOS_ENTERPRISE_TOKEN not set — skipping enterprise wheel (open-source build)."
           exit 0
         fi
         apt-get update && apt-get install -y --no-install-recommends git
         python -m pip install --upgrade build
         git clone --depth 1 \
-          "https://x-access-token:${HELIOSOS_ENTERPRISE_TOKEN}@github.com/makingscience-awake/heliosos-enterprise.git" \
+          "https://x-access-token:$${HELIOSOS_ENTERPRISE_TOKEN}@github.com/makingscience-awake/heliosos-enterprise.git" \
           /tmp/heliosos-enterprise
         python -m build --wheel --outdir vendor-wheels /tmp/heliosos-enterprise
         echo "Built enterprise wheel(s):"; ls -la vendor-wheels/*.whl
@@ -73,14 +73,14 @@ steps:
       - |
         set -euo pipefail
         VERSION=$(cat /workspace/VERSION)
-        IMAGE="europe-west1-docker.pkg.dev/ms-awake-sys/helios/platform-api:${VERSION}"
-        echo "Building and pushing ${IMAGE} …"
+        IMAGE="europe-west1-docker.pkg.dev/ms-awake-sys/helios/platform-api:$${VERSION}"
+        echo "Building and pushing $${IMAGE} …"
         docker build \
           -f infrastructure/docker/Dockerfile \
           --target api \
-          -t "${IMAGE}" \
+          -t "$${IMAGE}" \
           .
-        docker push "${IMAGE}"
+        docker push "$${IMAGE}"
 
   - id: pulumi-deploy
     name: gcr.io/cloud-builders/gcloud
@@ -96,18 +96,18 @@ steps:
         VERSION=$(cat /workspace/VERSION)
 
         PULUMI_VERSION="3.130.0"
-        curl -fsSL "https://get.pulumi.com/releases/sdk/pulumi-v${PULUMI_VERSION}-linux-x64.tar.gz" \
+        curl -fsSL "https://get.pulumi.com/releases/sdk/pulumi-v$${PULUMI_VERSION}-linux-x64.tar.gz" \
           | tar -xz -C /workspace
-        export PATH="/workspace/pulumi:${PATH}"
+        export PATH="/workspace/pulumi:$${PATH}"
         pulumi version
 
         python3 -m venv /workspace/pulumi-venv
         source /workspace/pulumi-venv/bin/activate
         pip install --quiet -r pulumi/requirements.txt
 
-        echo "Deploying VERSION=${VERSION} to stack ${_TARGET_STACK} …"
+        echo "Deploying VERSION=$${VERSION} to stack ${_TARGET_STACK} …"
         pulumi login "${_PULUMI_BACKEND}"
         pulumi stack select "${_TARGET_STACK}" --cwd pulumi
-        pulumi config set forgeos-gcp:platform_api_tag "${VERSION}" --cwd pulumi
-        pulumi config set forgeos-gcp:migrations_tag "${VERSION}" --cwd pulumi
+        pulumi config set forgeos-gcp:platform_api_tag "$${VERSION}" --cwd pulumi
+        pulumi config set forgeos-gcp:migrations_tag "$${VERSION}" --cwd pulumi
         pulumi up --yes --cwd pulumi
