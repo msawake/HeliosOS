@@ -124,11 +124,16 @@ steps:
     entrypoint: bash
     env:
       - GOOGLE_IMPERSONATE_SERVICE_ACCOUNT=${_IMPERSONATE_SA}
+      - CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT=${_IMPERSONATE_SA}
     args:
       - -c
       - |
         set -euo pipefail
-        apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-certificates git >/dev/null
+        apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-certificates git gnupg >/dev/null
+        curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+        echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" > /etc/apt/sources.list.d/google-cloud-sdk.list
+        apt-get update -qq && apt-get install -y -qq --no-install-recommends google-cloud-cli google-cloud-cli-gke-gcloud-auth-plugin >/dev/null
+        export USE_GKE_GCLOUD_AUTH_PLUGIN=True
         VERSION=$(cat /workspace/VERSION)
 
         # Install pinned Pulumi CLI.
