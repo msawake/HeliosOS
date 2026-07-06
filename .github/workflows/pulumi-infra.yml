@@ -208,15 +208,6 @@ jobs:
             echo "status=failure" >> "$GITHUB_OUTPUT"
           fi
 
-          # Compute a stable fingerprint of the resource-change lines only.
-          # Strips timestamps, diagnostics, and progress noise so the hash is
-          # reproducible across two runs of an identical plan.
-          PLAN_HASH=$(echo "$OUTPUT" \
-            | grep -E '^\s*([\+\~\-]|(create|update|delete|replace|same)\b)' \
-            | sha256sum \
-            | cut -d' ' -f1)
-          echo "plan_hash=$PLAN_HASH" >> "$GITHUB_OUTPUT"
-
           exit $EXIT_CODE
 
       # Always post (or update) a PR comment, even when the preview step fails.
@@ -231,20 +222,12 @@ jobs:
             const project   = '${{ needs.resolve-stack.outputs.gcp_project }}';
             const ok        = '${{ steps.preview.outputs.status }}' === 'success';
             const icon      = ok ? '✅' : '❌';
-            const planHash  = '${{ steps.preview.outputs.plan_hash }}';
 
             // GitHub comment body limit is 65 536 characters.
             const MAX_LEN = 60_000;
             const body_content = output.length > MAX_LEN
               ? output.substring(0, MAX_LEN) + '\n\n… (truncated — see workflow logs for full output)'
               : output;
-
-            // The hidden hash marker lets the deploy job verify that the plan
-            // has not changed between PR review and merge.  Format must stay
-            // stable — the deploy job parses it with a regex.
-            const hashMarker = planHash
-              ? `\n<!-- pulumi-plan-hash:${stack}:${planHash} -->`
-              : '';
 
             const body = [
               `## ${icon} Pulumi Preview — \`${stack}\` (${project})`,
@@ -259,7 +242,6 @@ jobs:
               '</details>',
               '',
               `*Workflow: ${context.workflow} | Run: [#${context.runNumber}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})*`,
-              hashMarker,
             ].join('\n');
 
             // Find an existing bot comment for this stack so we update rather

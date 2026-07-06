@@ -145,7 +145,7 @@ steps:
 
   # ── Pro-only compatibility tag push ─────────────────────────────────────────
   # This step only runs if the deploy step succeeded. The PAT is injected via
-  # availableSecrets/secretEnv and is not echoed.
+  # availableSecrets/secretEnv and is never echoed or persisted in git config.
   - id: push-compat-tag
     name: gcr.io/cloud-builders/git
     entrypoint: bash
@@ -161,7 +161,13 @@ steps:
 
         COMPAT_TAG="helios-pro-platform-api-$(date -u +%s)"
         echo "Pushing compatibility tag ${COMPAT_TAG} at ${COMMIT_SHA}"
-        git remote set-url origin \
-          "https://x-access-token:${GITHUB_PAT}@github.com/msawake/HeliosOS.git"
         git tag "${COMPAT_TAG}" "${COMMIT_SHA}"
-        git push origin "${COMPAT_TAG}"
+
+        AUTH_HEADER="Authorization: Basic $(printf 'x-access-token:%s' "$GITHUB_PAT" | base64 -w0)"
+        if ! git -c http.extraHeader="$AUTH_HEADER" \
+             push https://github.com/msawake/HeliosOS.git "refs/tags/${COMPAT_TAG}" \
+             2> /tmp/push-stderr.txt; then
+          echo "ERROR: failed to push compatibility tag ${COMPAT_TAG}" >&2
+          sed "s|${GITHUB_PAT}|[REDACTED]|g" /tmp/push-stderr.txt >&2 || true
+          exit 1
+        fi
