@@ -15,10 +15,9 @@
 #        europe-west1-docker.pkg.dev/ms-awake-sys/helios/platform-api:$VERSION
 #      The platform-api image also serves api/worker/migrations by command.
 #   4. Deploy to the dev Pulumi stack, overriding platform_api_tag and
-#      migrations_tag in-flight. The Pulumi GCP provider and gcloud/gsutil
-#      calls impersonate helios-pulumi-deploy@ms-awake-dev via the
-#      GOOGLE_IMPERSONATE_SERVICE_ACCOUNT / CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT
-#      environment variables.
+#      migrations_tag in-flight. The Pulumi GCP provider impersonates
+#      helios-pulumi-deploy@ms-awake-dev via the GOOGLE_IMPERSONATE_SERVICE_ACCOUNT
+#      environment variable.
 #
 # IAM prerequisites:
 #   - helios-cicd@ms-awake-sys.iam.gserviceaccount.com (the Cloud Build SA)
@@ -117,20 +116,19 @@ steps:
         docker push "$${IMAGE}"
 
   # ── Pulumi deploy to dev ────────────────────────────────────────────────────
-  # Impersonation: the build SA is helios-cicd@ms-awake-sys. Both env vars below
-  # cause ADC-based tools (Pulumi GCP provider, gcloud, gsutil) to act as
+  # Impersonation: the build SA is helios-cicd@ms-awake-sys. The env var below
+  # causes the ADC-based Pulumi GCP provider to act as
   # helios-pulumi-deploy@ms-awake-dev, including for state-bucket access.
   - id: pulumi-deploy
-    name: gcr.io/cloud-builders/gcloud
+    name: python:3.12-slim
     entrypoint: bash
     env:
       - GOOGLE_IMPERSONATE_SERVICE_ACCOUNT=${_IMPERSONATE_SA}
-      - CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT=${_IMPERSONATE_SA}
-      - CLOUDSDK_COMPUTE_REGION=europe-west1
     args:
       - -c
       - |
         set -euo pipefail
+        apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-certificates git >/dev/null
         VERSION=$(cat /workspace/VERSION)
 
         # Install pinned Pulumi CLI.

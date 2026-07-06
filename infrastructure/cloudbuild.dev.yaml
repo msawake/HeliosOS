@@ -83,16 +83,15 @@ steps:
         docker push "$${IMAGE}"
 
   - id: pulumi-deploy
-    name: gcr.io/cloud-builders/gcloud
+    name: python:3.12-slim
     entrypoint: bash
     env:
       - GOOGLE_IMPERSONATE_SERVICE_ACCOUNT=${_IMPERSONATE_SA}
-      - CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT=${_IMPERSONATE_SA}
-      - CLOUDSDK_COMPUTE_REGION=europe-west1
     args:
       - -c
       - |
         set -euo pipefail
+        apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-certificates git >/dev/null
         VERSION=$(cat /workspace/VERSION)
 
         PULUMI_VERSION="3.130.0"
