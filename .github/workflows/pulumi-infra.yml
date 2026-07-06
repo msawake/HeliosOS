@@ -1,12 +1,20 @@
 name: "Pulumi Infrastructure"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# State backend: per-environment GCS buckets gs://hub-helios-{dev,pre,pro}-pulumi-state (in ms-tool-sys).
+# State backend: per-environment GCS buckets gs://hub-helios-{dev,pre,pro}-pulumi-backend.
 # No PULUMI_ACCESS_TOKEN needed — the WIF service account authenticates to GCS.
 #
 # GCP authentication is keyless (Workload Identity Federation / OIDC).
 # No long-lived service-account JSON key is stored in GitHub.
 # The WIF provider + SA addresses are hard-coded per environment below.
+#
+# Deployment flow (build + deploy) has moved to Cloud Build in the central
+# ms-awake-sys project:
+#   - Tag push ^v\d+.\d+.\d+$  -> infrastructure/cloudbuild.release.yaml (dev deploy)
+#   - Push to dev branch        -> infrastructure/cloudbuild.dev.yaml (dev deploy)
+#   - Manual promote trigger    -> infrastructure/cloudbuild.promote.yaml (pre/pro)
+# This GitHub Actions workflow now only previews pull requests and runs the
+# occasional manual create-admin job.
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -48,12 +56,6 @@ on:
       - "manage.py"
       - "pyproject.toml"
       - ".github/workflows/pulumi-infra.yml"
-  push:
-    branches: [dev, pre, main]
-    # No path filter on push — any merge / direct push to a deploy branch
-    # builds + deploys. Image builds are cheap (~3 min on E2_HIGHCPU_8) and a
-    # "Pulumi-only" push still benefits from re-tagging the image with the
-    # head commit so the running revision matches the source tree.
 
 env:
   PULUMI_VERSION: "3.130.0"
@@ -67,7 +69,7 @@ permissions:
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
   # Determine which Pulumi stack and GCP project to target based on the branch.
-  # Outputs are consumed by both the preview and deploy jobs.
+  # Outputs are consumed by the preview and create-admin jobs.
   # ────────────────────────────────────────────────────────────────────────────
   resolve-stack:
     runs-on: ubuntu-latest
@@ -80,8 +82,8 @@ jobs:
     steps:
       - id: map
         run: |
-          # For PRs use the base branch; for pushes use the pushed ref; for a
-          # manual dispatch translate the chosen environment to its branch.
+          # For PRs use the base branch; for a manual dispatch translate the
+          # chosen environment to its branch.
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             BRANCH="${{ github.base_ref }}"
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -92,7 +94,8 @@ jobs:
               *)   echo "::error::Unsupported environment: ${{ inputs.environment }}"; exit 1 ;;
             esac
           else
-            BRANCH="${{ github.ref_name }}"
+            echo "::error::Unexpected event: ${{ github.event_name }}"
+            exit 1
           fi
 
           case "$BRANCH" in
@@ -101,103 +104,27 @@ jobs:
               echo "gcp_project=ms-awake-dev"                                                                                                >> "$GITHUB_OUTPUT"
               echo "wif_provider=projects/980612545569/locations/global/workloadIdentityPools/github-actions/providers/github-oidc"          >> "$GITHUB_OUTPUT"
               echo "wif_sa=helios-pulumi-deploy@ms-awake-dev.iam.gserviceaccount.com"                                                        >> "$GITHUB_OUTPUT"
-              echo "pulumi_backend=gs://hub-helios-dev-pulumi-state"                                                                       >> "$GITHUB_OUTPUT"
+              echo "pulumi_backend=gs://hub-helios-dev-pulumi-backend"                                                                       >> "$GITHUB_OUTPUT"
               ;;
             pre)
               echo "stack=pre"                                                                                                                >> "$GITHUB_OUTPUT"
               echo "gcp_project=ms-awake-pre"                                                                                                >> "$GITHUB_OUTPUT"
               echo "wif_provider=projects/276870250956/locations/global/workloadIdentityPools/github-actions/providers/github-oidc"          >> "$GITHUB_OUTPUT"
               echo "wif_sa=helios-pulumi-deploy@ms-awake-pre.iam.gserviceaccount.com"                                                        >> "$GITHUB_OUTPUT"
-              echo "pulumi_backend=gs://hub-helios-pre-pulumi-state"                                                                       >> "$GITHUB_OUTPUT"
+              echo "pulumi_backend=gs://hub-helios-pre-pulumi-backend"                                                                       >> "$GITHUB_OUTPUT"
               ;;
             main)
               echo "stack=pro"                                                                                                                >> "$GITHUB_OUTPUT"
               echo "gcp_project=ms-awake-pro"                                                                                                >> "$GITHUB_OUTPUT"
               echo "wif_provider=projects/179734091472/locations/global/workloadIdentityPools/github-actions/providers/github-oidc"          >> "$GITHUB_OUTPUT"
               echo "wif_sa=helios-pulumi-deploy@ms-awake-pro.iam.gserviceaccount.com"                                                        >> "$GITHUB_OUTPUT"
-              echo "pulumi_backend=gs://hub-helios-pro-pulumi-state"                                                                       >> "$GITHUB_OUTPUT"
+              echo "pulumi_backend=gs://hub-helios-pro-pulumi-backend"                                                                       >> "$GITHUB_OUTPUT"
               ;;
             *)
               echo "::error::Unsupported branch: $BRANCH"
               exit 1
               ;;
           esac
-
-  # ────────────────────────────────────────────────────────────────────────────
-  # Build images — Cloud Build submits the platform-api image (multi-stage
-  # Dockerfile → api, mcp, migrations all share this image, differing only by
-  # command). The resulting short-SHA tag is consumed by the deploy job, which
-  # overrides `platform_api_tag` + `migrations_tag` in Pulumi config IN-FLIGHT
-  # via `pulumi config set` before `pulumi up` — no commit-back to
-  # `Pulumi.{stack}.yaml` needed; the image tag is pinned by what just built.
-  #
-  # Runs only on push (not PR previews) so the PR diff stays cheap. PR-time
-  # previews see whatever tag is in `Pulumi.{stack}.yaml`; the deploy will
-  # override to the freshly-built tag and the plan-hash check warns rather
-  # than fails when this happens (see "Verify plan hash" below).
-  #
-  # IAM: requires the WIF SA to have `cloudbuild.builds.editor` on the target
-  # project + `storage.objectAdmin` on the implicit `<project>_cloudbuild`
-  # source-staging bucket + `artifactregistry.writer` on the `forgeos` repo.
-  # ────────────────────────────────────────────────────────────────────────────
-  build-images:
-    if: github.event_name == 'push' && !contains(github.event.head_commit.message, '[skip-deploy]')
-    needs: resolve-stack
-    runs-on: ubuntu-latest
-    outputs:
-      platform_api_tag: ${{ steps.build.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ needs.resolve-stack.outputs.wif_provider }}
-          service_account:            ${{ needs.resolve-stack.outputs.wif_sa }}
-      - uses: google-github-actions/setup-gcloud@v2
-      - id: build
-        name: Build platform-api image via Cloud Build
-        env:
-          GCP_PROJECT: ${{ needs.resolve-stack.outputs.gcp_project }}
-        run: |
-          set -euo pipefail
-          TAG=$(git rev-parse --short HEAD)
-          IMAGE="europe-west1-docker.pkg.dev/${GCP_PROJECT}/forgeos/platform-api:${TAG}"
-          echo "Submitting Cloud Build for ${IMAGE}…"
-          # --async + poll via `builds describe`:
-          # The deploy SA has cloudbuild.builds.editor (create/get/list) but not
-          # logging.viewer, so the default streaming path errors even with
-          # --suppress-logs (gcloud tries to read default-bucket logs to print
-          # the build's tail). --async hands back immediately with a build id,
-          # then we poll status with `builds describe` — needs only the
-          # `cloudbuild.builds.get` permission, which the SA already has.
-          # Full logs remain available at the Cloud Build URL above.
-          BUILD_ID=$(gcloud builds submit . \
-            --project="${GCP_PROJECT}" \
-            --config=infrastructure/cloudbuild.platform-api.yaml \
-            --substitutions=_TAG="${TAG}" \
-            --gcs-source-staging-dir="gs://${GCP_PROJECT}_cloudbuild/source" \
-            --async \
-            --format='value(id)')
-          if [[ -z "${BUILD_ID}" ]]; then
-            echo "::error::Could not capture build id from gcloud submit"
-            exit 1
-          fi
-          echo "Build id: ${BUILD_ID}"
-
-          while true; do
-            STATUS=$(gcloud builds describe "${BUILD_ID}" \
-              --project="${GCP_PROJECT}" --format='value(status)')
-            echo "  status=${STATUS}"
-            case "${STATUS}" in
-              SUCCESS) break ;;
-              FAILURE|INTERNAL_ERROR|TIMEOUT|CANCELLED|EXPIRED)
-                echo "::error::Cloud Build ${STATUS} — see https://console.cloud.google.com/cloud-build/builds/${BUILD_ID}?project=${GCP_PROJECT}"
-                exit 1
-                ;;
-            esac
-            sleep 15
-          done
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "✅ Built and pushed ${IMAGE}"
 
   # ────────────────────────────────────────────────────────────────────────────
   # Preview — runs on every PR, posts/updates a comment with the plan output.
@@ -363,237 +290,6 @@ jobs:
                 body,
               });
             }
-
-  # ────────────────────────────────────────────────────────────────────────────
-  # Deploy — runs on merge/push to a protected branch.
-  # The `environment` field enables GitHub environment protection rules
-  # (required reviewers, deployment gates, etc.) per stack.
-  # ────────────────────────────────────────────────────────────────────────────
-  deploy:
-    if: github.event_name == 'push' && !contains(github.event.head_commit.message, '[skip-deploy]')
-    needs: [resolve-stack, build-images]
-    runs-on: ubuntu-latest
-    concurrency:
-      group: pulumi-deploy-${{ github.ref }}
-      cancel-in-progress: false
-    environment: ${{ needs.resolve-stack.outputs.stack }}
-    env:
-      PULUMI_BACKEND_URL: ${{ needs.resolve-stack.outputs.pulumi_backend }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ needs.resolve-stack.outputs.wif_provider }}
-          service_account:            ${{ needs.resolve-stack.outputs.wif_sa }}
-
-      - uses: google-github-actions/setup-gcloud@v2
-        with:
-          install_components: gke-gcloud-auth-plugin
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install Pulumi CLI
-        uses: pulumi/actions@v6
-        with:
-          pulumi-version: ${{ env.PULUMI_VERSION }}
-
-      - name: Install Python dependencies
-        working-directory: pulumi
-        run: |
-          python -m venv venv
-          source venv/bin/activate
-          pip install --quiet -r requirements.txt
-
-      # ── Plan-hash verification ────────────────────────────────────────────────
-      # Re-run pulumi preview and compute the same stable fingerprint that the
-      # preview job embedded in the PR comment.  If the hashes differ the plan
-      # has changed since the PR was reviewed (state drift, concurrent merges,
-      # etc.) and we abort before touching real infrastructure.
-      # ── Override the platform-api image tag with the freshly-built one ───
-      # `pulumi config set` modifies the on-disk Pulumi.{stack}.yaml ephemerally
-      # in the runner workspace (NOT committed back) so subsequent `pulumi
-      # preview` + `up` see the new tag.
-      #
-      # We do NOT pin `migrations_tag` to the same SHA: Cloud Build only
-      # produces a `platform-api` image; the legacy psql-based
-      # `<registry>/migrations:<tag>` image is not built here. Pinning it
-      # rewrote the legacy Migrations Cloud Run Job to a non-existent tag and
-      # failed every deploy at the "updating forgeos-job" step. Leaving it on
-      # whatever value Pulumi.{stack}.yaml carries makes the Migrations
-      # resource a no-op on each deploy; Django migrations are owned by the
-      # separate forgeos-django-migrate job.
-      - name: Pin freshly-built platform-api tag
-        working-directory: pulumi
-        env:
-          NEW_TAG: ${{ needs.build-images.outputs.platform_api_tag }}
-        run: |
-          source venv/bin/activate
-          pulumi login "$PULUMI_BACKEND_URL"
-          pulumi stack select ${{ needs.resolve-stack.outputs.stack }}
-          pulumi config set forgeos-gcp:platform_api_tag "$NEW_TAG"
-          echo "Pinned platform_api_tag = $NEW_TAG (migrations_tag intentionally left alone)"
-
-      # Reconcile Pulumi state with what actually exists in GCP before the
-      # preview/up. Without this, resources removed out-of-band (e.g. a Cloud
-      # Run Job deleted by hand to work around deletion_protection) keep
-      # showing up in `pulumi up` as failed deletes against a resource the
-      # cloud doesn't have. `refresh` drops them from state and `pulumi up`
-      # becomes a no-op for that resource. ~30s, idempotent, safe by design.
-      - name: Pulumi refresh (reconcile state with cloud)
-        working-directory: pulumi
-        env:
-          CLOUDSDK_COMPUTE_REGION:  europe-west1
-          USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
-        run: |
-          source venv/bin/activate
-          pulumi login "$PULUMI_BACKEND_URL"
-          pulumi stack select ${{ needs.resolve-stack.outputs.stack }}
-          pulumi refresh --yes --color never --skip-preview
-
-      - name: Pre-deploy preview (plan hash)
-        id: predeploy_preview
-        working-directory: pulumi
-        env:
-          CLOUDSDK_COMPUTE_REGION:  europe-west1
-          USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
-        run: |
-          source venv/bin/activate
-          pulumi login "$PULUMI_BACKEND_URL"
-          pulumi stack select ${{ needs.resolve-stack.outputs.stack }}
-
-          # Capture-AND-show: previous `$(... 2>&1)` form swallowed the
-          # output, so a `pulumi preview` failure exited 255 with no clue.
-          # tee streams to both the workflow log and the file. PIPESTATUS[0]
-          # preserves pulumi's real exit code through the pipe.
-          set +e
-          pulumi preview --diff --color never 2>&1 | tee /tmp/predeploy-preview-output.txt
-          PV_EC=${PIPESTATUS[0]}
-          set -e
-          if [[ $PV_EC -ne 0 ]]; then
-            echo "::error::pulumi preview failed with exit $PV_EC (see output above)"
-            exit $PV_EC
-          fi
-          DEPLOY_OUTPUT=$(cat /tmp/predeploy-preview-output.txt)
-
-          DEPLOY_HASH=$(echo "$DEPLOY_OUTPUT" \
-            | grep -E '^\s*([\+\~\-]|(create|update|delete|replace|same)\b)' \
-            | sha256sum \
-            | cut -d' ' -f1)
-          echo "deploy_hash=$DEPLOY_HASH" >> "$GITHUB_OUTPUT"
-
-      - name: Verify plan hash against PR comment
-        uses: actions/github-script@v7
-        env:
-          DEPLOY_HASH: ${{ steps.predeploy_preview.outputs.deploy_hash }}
-        with:
-          script: |
-            const stack       = '${{ needs.resolve-stack.outputs.stack }}';
-            const deployHash  = process.env.DEPLOY_HASH;
-            const commitSha   = context.sha;
-
-            // ── 1. Find the PR associated with this merge commit ──────────────
-            // The commits/{sha}/pulls endpoint returns the PR(s) that introduced
-            // this commit — the most reliable way to go from a merge SHA to a PR.
-            let prNumber = null;
-            try {
-              const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-                owner:      context.repo.owner,
-                repo:       context.repo.repo,
-                commit_sha: commitSha,
-              });
-              // Prefer the merged PR targeting the pushed branch; fall back to
-              // the first result if there is exactly one.
-              const merged = prs.filter(p => p.state === 'closed' && p.merged_at);
-              if (merged.length > 0) {
-                prNumber = merged[0].number;
-              } else if (prs.length === 1) {
-                prNumber = prs[0].number;
-              }
-            } catch (err) {
-              core.warning(`Could not look up PR for commit ${commitSha}: ${err.message}`);
-            }
-
-            if (!prNumber) {
-              core.warning(
-                'No associated PR found for this commit — skipping plan-hash ' +
-                'verification.  This is expected for direct pushes or the first ' +
-                'deploy.  Proceeding with pulumi up.'
-              );
-              return;
-            }
-
-            // ── 2. Find the bot comment that contains the plan hash ───────────
-            // Paginate to handle PRs with many comments.
-            let reviewHash = null;
-            const hashPattern = new RegExp(
-              `<!--\\s*pulumi-plan-hash:${stack}:([a-f0-9]{64})\\s*-->`
-            );
-            let page = 1;
-            while (true) {
-              const { data: comments } = await github.rest.issues.listComments({
-                owner:        context.repo.owner,
-                repo:         context.repo.repo,
-                issue_number: prNumber,
-                per_page:     100,
-                page,
-              });
-              if (comments.length === 0) break;
-
-              // Walk in reverse so we pick up the *latest* bot comment if the
-              // preview was re-run multiple times on the same PR.
-              for (let i = comments.length - 1; i >= 0; i--) {
-                const c = comments[i];
-                if (c.user.type !== 'Bot') continue;
-                const m = hashPattern.exec(c.body);
-                if (m) { reviewHash = m[1]; break; }
-              }
-              if (reviewHash || comments.length < 100) break;
-              page++;
-            }
-
-            if (!reviewHash) {
-              core.warning(
-                `No plan-hash marker found in PR #${prNumber} comments for ` +
-                `stack \`${stack}\`.  This can happen if the preview job ran ` +
-                `before this verification was introduced.  Proceeding with ` +
-                `pulumi up — please ensure future PRs go through the preview job.`
-              );
-              return;
-            }
-
-            // ── 3. Compare ────────────────────────────────────────────────────
-            core.info(`PR #${prNumber} reviewed hash : ${reviewHash}`);
-            core.info(`Pre-deploy hash              : ${deployHash}`);
-
-            if (reviewHash !== deployHash) {
-              // A freshly-built image tag was pinned before this step, so the
-              // diff almost always includes a `platform_api_tag` change that
-              // the PR preview didn't see. Warn instead of failing — the diff
-              // is auditable in the workflow logs.
-              core.warning(
-                `Plan hash differs from PR comment — this is expected when ` +
-                `the build-images job produced a new tag.\n` +
-                `  Reviewed hash : ${reviewHash}\n` +
-                `  Current hash  : ${deployHash}\n` +
-                `\nReview the updated preview output in this run's logs.`
-              );
-            } else {
-              core.info('✅ Plan hash matches — proceeding with pulumi up.');
-            }
-
-      - name: Pulumi up
-        working-directory: pulumi
-        env:
-          CLOUDSDK_COMPUTE_REGION:  europe-west1
-          USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
-        run: |
-          source venv/bin/activate
-          pulumi login "$PULUMI_BACKEND_URL"
-          pulumi stack select ${{ needs.resolve-stack.outputs.stack }}
-          pulumi up --yes --color never
 
   # ────────────────────────────────────────────────────────────────────────────
   # Create / reset the platform admin login — manual (workflow_dispatch) only.

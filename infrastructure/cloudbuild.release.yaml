@@ -1,0 +1,117 @@
+# Tag-based release pipeline for Helios OS.
+#
+# Trigger: git tag matching ^v\d+\.\d+\.\d+$ (e.g. v1.4.2). Cloud Build provides
+# TAG_NAME, SHORT_SHA and COMMIT_SHA substitutions on tag-triggered builds.
+#
+# Pipeline:
+#   1. Compute VERSION = <tag without leading v>-<short-sha>
+#      (example: v1.4.2 + abc1234 -> 1.4.2-abc1234).
+#   2. Build the platform-api image from infrastructure/docker/Dockerfile
+#      --target api and push it to the central Artifact Registry:
+#        europe-west1-docker.pkg.dev/ms-awake-sys/helios/platform-api:$VERSION
+#      The platform-api image also serves api/worker/migrations by command.
+#   3. Deploy to the dev Pulumi stack, overriding platform_api_tag and
+#      migrations_tag in-flight. The Pulumi GCP provider and gcloud/gsutil
+#      calls impersonate helios-pulumi-deploy@ms-awake-dev via the
+#      GOOGLE_IMPERSONATE_SERVICE_ACCOUNT / CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT
+#      environment variables.
+#
+# IAM prerequisites:
+#   - helios-cicd@ms-awake-sys.iam.gserviceaccount.com (the Cloud Build SA)
+#     must have roles/artifactregistry.writer on
+#     europe-west1-docker.pkg.dev/ms-awake-sys/helios.
+#   - helios-cicd must have roles/iam.serviceAccountTokenCreator on
+#     helios-pulumi-deploy@ms-awake-dev so it can impersonate it.
+#   - helios-pulumi-deploy@ms-awake-dev must have the Pulumi deploy IAM for the
+#     dev project plus access to gs://hub-helios-dev-pulumi-backend.
+#
+# Notes:
+#   - The build runs in the central ms-awake-sys project, so the registry path
+#     is hard-coded to ms-awake-sys/helios.
+#   - Pulumi config keys gcp:project/gcp:region live in Pulumi.dev.yaml; the
+#     deploy step only overrides the image tags.
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1800s
+substitutions:
+  _TARGET_STACK: dev
+  _PULUMI_BACKEND: gs://hub-helios-dev-pulumi-backend
+  _IMPERSONATE_SA: helios-pulumi-deploy@ms-awake-dev.iam.gserviceaccount.com
+  _VERSION: ""
+steps:
+  # ── Resolve version ─────────────────────────────────────────────────────────
+  # TAG_NAME is always present on tag-triggered builds. The _VERSION fallback is
+  # kept for local/emergency runs via gcloud builds submit where a tag ref is
+  # not available.
+  - id: resolve-version
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        if [[ -n "${TAG_NAME:-}" ]]; then
+          VERSION="${TAG_NAME#v}-${SHORT_SHA}"
+        elif [[ -n "${_VERSION:-}" ]]; then
+          VERSION="${_VERSION}"
+        else
+          echo "ERROR: TAG_NAME is empty and _VERSION substitution was not provided." >&2
+          exit 1
+        fi
+        echo "VERSION=${VERSION}"
+        echo "${VERSION}" > /workspace/VERSION
+
+  # ── Build + push platform-api image ─────────────────────────────────────────
+  - id: build-push
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        VERSION=$(cat /workspace/VERSION)
+        IMAGE="europe-west1-docker.pkg.dev/ms-awake-sys/helios/platform-api:${VERSION}"
+        echo "Building and pushing ${IMAGE} …"
+        docker build \
+          -f infrastructure/docker/Dockerfile \
+          --target api \
+          -t "${IMAGE}" \
+          .
+        docker push "${IMAGE}"
+
+  # ── Pulumi deploy to dev ────────────────────────────────────────────────────
+  # Impersonation: the build SA is helios-cicd@ms-awake-sys. Both env vars below
+  # cause ADC-based tools (Pulumi GCP provider, gcloud, gsutil) to act as
+  # helios-pulumi-deploy@ms-awake-dev, including for state-bucket access.
+  - id: pulumi-deploy
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    env:
+      - GOOGLE_IMPERSONATE_SERVICE_ACCOUNT=${_IMPERSONATE_SA}
+      - CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT=${_IMPERSONATE_SA}
+      - CLOUDSDK_COMPUTE_REGION=europe-west1
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        VERSION=$(cat /workspace/VERSION)
+
+        # Install pinned Pulumi CLI.
+        PULUMI_VERSION="3.130.0"
+        curl -fsSL "https://get.pulumi.com/releases/sdk/pulumi-v${PULUMI_VERSION}-linux-x64.tar.gz" \
+          | tar -xz -C /workspace
+        export PATH="/workspace/pulumi:${PATH}"
+        pulumi version
+
+        # Install Python dependencies in a venv.
+        python3 -m venv /workspace/pulumi-venv
+        source /workspace/pulumi-venv/bin/activate
+        pip install --quiet -r pulumi/requirements.txt
+
+        echo "Deploying VERSION=${VERSION} to stack ${_TARGET_STACK} …"
+        pulumi login "${_PULUMI_BACKEND}"
+        pulumi stack select "${_TARGET_STACK}" --cwd pulumi
+        pulumi config set forgeos-gcp:platform_api_tag "${VERSION}" --cwd pulumi
+        pulumi config set forgeos-gcp:migrations_tag "${VERSION}" --cwd pulumi
+        pulumi up --yes --cwd pulumi

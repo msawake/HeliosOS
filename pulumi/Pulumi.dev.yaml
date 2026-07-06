@@ -16,6 +16,8 @@ config:
   # Image tags resolved by CI on push to main (see .github/workflows).
   forgeos-gcp:platform_api_tag: "latest"
   forgeos-gcp:migrations_tag: "latest"
+  # Central Artifact Registry where Cloud Build pushes release images.
+  forgeos-gcp:registry_project: ms-awake-sys
   # Pinned to a specific build (not "latest") so pulumi up can't revert the
   # dashboard to an image lacking the NEXT_PUBLIC_GCP_PROJECT_ID build-arg
   # (which the wizard's SA-provisioning flow needs). Bump on new dashboard builds.

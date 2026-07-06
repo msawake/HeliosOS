@@ -1,0 +1,82 @@
+# Dev branch pipeline for Helios OS.
+#
+# Trigger: push to the dev branch.
+#
+# This is identical to cloudbuild.release.yaml, but VERSION is
+# "dev-<short-sha>" instead of a semantic version. This lets every merge to
+# dev build and deploy immediately without cutting a release tag.
+#
+# Pipeline:
+#   1. VERSION = dev-<short-sha>.
+#   2. Build + push platform-api image to the central Artifact Registry:
+#        europe-west1-docker.pkg.dev/ms-awake-sys/helios/platform-api:$VERSION
+#   3. Deploy to the dev Pulumi stack, impersonating
+#      helios-pulumi-deploy@ms-awake-dev.
+#
+# See cloudbuild.release.yaml for detailed IAM prerequisites and notes.
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1800s
+substitutions:
+  _TARGET_STACK: dev
+  _PULUMI_BACKEND: gs://hub-helios-dev-pulumi-backend
+  _IMPERSONATE_SA: helios-pulumi-deploy@ms-awake-dev.iam.gserviceaccount.com
+steps:
+  - id: resolve-version
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        VERSION="dev-${SHORT_SHA}"
+        echo "VERSION=${VERSION}"
+        echo "${VERSION}" > /workspace/VERSION
+
+  - id: build-push
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        VERSION=$(cat /workspace/VERSION)
+        IMAGE="europe-west1-docker.pkg.dev/ms-awake-sys/helios/platform-api:${VERSION}"
+        echo "Building and pushing ${IMAGE} …"
+        docker build \
+          -f infrastructure/docker/Dockerfile \
+          --target api \
+          -t "${IMAGE}" \
+          .
+        docker push "${IMAGE}"
+
+  - id: pulumi-deploy
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    env:
+      - GOOGLE_IMPERSONATE_SERVICE_ACCOUNT=${_IMPERSONATE_SA}
+      - CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT=${_IMPERSONATE_SA}
+      - CLOUDSDK_COMPUTE_REGION=europe-west1
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        VERSION=$(cat /workspace/VERSION)
+
+        PULUMI_VERSION="3.130.0"
+        curl -fsSL "https://get.pulumi.com/releases/sdk/pulumi-v${PULUMI_VERSION}-linux-x64.tar.gz" \
+          | tar -xz -C /workspace
+        export PATH="/workspace/pulumi:${PATH}"
+        pulumi version
+
+        python3 -m venv /workspace/pulumi-venv
+        source /workspace/pulumi-venv/bin/activate
+        pip install --quiet -r pulumi/requirements.txt
+
+        echo "Deploying VERSION=${VERSION} to stack ${_TARGET_STACK} …"
+        pulumi login "${_PULUMI_BACKEND}"
+        pulumi stack select "${_TARGET_STACK}" --cwd pulumi
+        pulumi config set forgeos-gcp:platform_api_tag "${VERSION}" --cwd pulumi
+        pulumi config set forgeos-gcp:migrations_tag "${VERSION}" --cwd pulumi
+        pulumi up --yes --cwd pulumi
