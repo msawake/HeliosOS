@@ -266,17 +266,19 @@ class TestAuditStage:
         recorded: list[dict] = []
 
         class _FakeAudit:
-            def record(self, action, agent_id, details=None):
-                recorded.append({"action": action, "agent_id": agent_id, "details": details})
+            def record(self, **kwargs):
+                recorded.append(kwargs)
 
         stage = make_audit_stage(_FakeAudit())
+        # Terminal audit stage with no short-circuit → allow.
         call = Syscall(verb="tool.call", subject="pid", object="t")
-        call.budget_ticket = "ticket-9"
         stage(call)
-        assert recorded[0]["action"] == "tool.call"
-        assert recorded[0]["agent_id"] == "pid"
-        assert recorded[0]["details"]["object"] == "t"
-        assert recorded[0]["details"]["budget_ticket"] == "ticket-9"
+        assert recorded[0]["action"] == "tool.allowed"
+        assert recorded[0]["actor"] == "pid"
+        assert recorded[0]["resource_type"] == "tool"
+        assert recorded[0]["resource_id"] == "t"
+        assert recorded[0]["outcome"] == "success"
+        assert recorded[0]["details"]["agent"] == "pid"
 
     def test_audit_failures_are_swallowed(self):
         class _BrokenAudit:
