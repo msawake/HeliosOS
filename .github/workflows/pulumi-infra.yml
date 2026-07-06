@@ -1,7 +1,7 @@
 name: "Pulumi Infrastructure"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# State backend: GCS bucket gs://helios-pulumi-state (in ms-tool-sys).
+# State backend: per-environment GCS buckets gs://hub-helios-{dev,pre,pro}-pulumi-state (in ms-tool-sys).
 # No PULUMI_ACCESS_TOKEN needed — the WIF service account authenticates to GCS.
 #
 # GCP authentication is keyless (Workload Identity Federation / OIDC).
@@ -58,7 +58,6 @@ on:
 env:
   PULUMI_VERSION: "3.130.0"
   PYTHON_VERSION: "3.12"
-  PULUMI_BACKEND_URL: "gs://hub-helios-dev-pulumi-state"
 
 permissions:
   contents: read
@@ -73,10 +72,11 @@ jobs:
   resolve-stack:
     runs-on: ubuntu-latest
     outputs:
-      stack:        ${{ steps.map.outputs.stack }}
-      gcp_project:  ${{ steps.map.outputs.gcp_project }}
-      wif_provider: ${{ steps.map.outputs.wif_provider }}
-      wif_sa:       ${{ steps.map.outputs.wif_sa }}
+      stack:          ${{ steps.map.outputs.stack }}
+      gcp_project:    ${{ steps.map.outputs.gcp_project }}
+      wif_provider:   ${{ steps.map.outputs.wif_provider }}
+      wif_sa:         ${{ steps.map.outputs.wif_sa }}
+      pulumi_backend: ${{ steps.map.outputs.pulumi_backend }}
     steps:
       - id: map
         run: |
@@ -101,18 +101,21 @@ jobs:
               echo "gcp_project=ms-awake-dev"                                                                                                >> "$GITHUB_OUTPUT"
               echo "wif_provider=projects/980612545569/locations/global/workloadIdentityPools/github-actions/providers/github-oidc"          >> "$GITHUB_OUTPUT"
               echo "wif_sa=helios-pulumi-deploy@ms-awake-dev.iam.gserviceaccount.com"                                                        >> "$GITHUB_OUTPUT"
+              echo "pulumi_backend=gs://hub-helios-dev-pulumi-state"                                                                       >> "$GITHUB_OUTPUT"
               ;;
             pre)
               echo "stack=pre"                                                                                                                >> "$GITHUB_OUTPUT"
               echo "gcp_project=ms-awake-pre"                                                                                                >> "$GITHUB_OUTPUT"
               echo "wif_provider=projects/276870250956/locations/global/workloadIdentityPools/github-actions/providers/github-oidc"          >> "$GITHUB_OUTPUT"
               echo "wif_sa=helios-pulumi-deploy@ms-awake-pre.iam.gserviceaccount.com"                                                        >> "$GITHUB_OUTPUT"
+              echo "pulumi_backend=gs://hub-helios-pre-pulumi-state"                                                                       >> "$GITHUB_OUTPUT"
               ;;
             main)
               echo "stack=pro"                                                                                                                >> "$GITHUB_OUTPUT"
               echo "gcp_project=ms-awake-pro"                                                                                                >> "$GITHUB_OUTPUT"
               echo "wif_provider=projects/179734091472/locations/global/workloadIdentityPools/github-actions/providers/github-oidc"          >> "$GITHUB_OUTPUT"
               echo "wif_sa=helios-pulumi-deploy@ms-awake-pro.iam.gserviceaccount.com"                                                        >> "$GITHUB_OUTPUT"
+              echo "pulumi_backend=gs://hub-helios-pro-pulumi-state"                                                                       >> "$GITHUB_OUTPUT"
               ;;
             *)
               echo "::error::Unsupported branch: $BRANCH"
@@ -206,6 +209,8 @@ jobs:
     concurrency:
       group: pulumi-preview-${{ github.ref }}
       cancel-in-progress: true
+    env:
+      PULUMI_BACKEND_URL: ${{ needs.resolve-stack.outputs.pulumi_backend }}
     steps:
       - uses: actions/checkout@v4
 
@@ -372,6 +377,8 @@ jobs:
       group: pulumi-deploy-${{ github.ref }}
       cancel-in-progress: false
     environment: ${{ needs.resolve-stack.outputs.stack }}
+    env:
+      PULUMI_BACKEND_URL: ${{ needs.resolve-stack.outputs.pulumi_backend }}
     steps:
       - uses: actions/checkout@v4
 
