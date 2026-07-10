@@ -1,3 +1,0 @@
-payment_id,invoice_id,po_number,pay_date,amount_eur
-APAY-01,VINV-8001,PO-3001,2026-06-08,4200.00
-APAY-02,VINV-8003,PO-3003,2026-06-09,6500.00

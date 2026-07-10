@@ -1,6 +1,0 @@
-po_number,vendor_id,vendor_name,po_amount_eur,currency,po_date,status
-PO-3001,V2001,OfficePro Supplies SL,4200.00,EUR,2026-05-20,approved
-PO-3002,V2002,CloudScale Hosting Ltd,18000.00,EUR,2026-05-22,approved
-PO-3003,V2003,TravelWise SA,6500.00,EUR,2026-05-25,approved
-PO-3004,V2005,GreenFleet Leasing GmbH,12000.00,EUR,2026-05-28,approved
-PO-3005,V2001,OfficePro Supplies SL,990.00,EUR,2026-06-02,approved
