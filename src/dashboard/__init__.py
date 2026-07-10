@@ -1,1 +1,0 @@
-"""HITL Command Center dashboard."""

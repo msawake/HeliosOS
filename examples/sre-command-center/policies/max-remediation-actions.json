@@ -1,9 +1,0 @@
-{
-  "name": "max_remediation_actions",
-  "description": "Maximum 3 remediation actions per incident to prevent cascading changes",
-  "deny_if": {
-    "op": "gt",
-    "field": "incident_action_count",
-    "value": 3
-  }
-}
