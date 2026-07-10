@@ -1,6 +1,0 @@
-name: forgeos-gcp
-runtime:
-  name: python
-  options:
-    virtualenv: venv
-description: Helios OS infrastructure on GCP (Cloud Run + GKE Autopilot + Cloud SQL)
