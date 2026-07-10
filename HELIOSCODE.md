@@ -57,7 +57,17 @@ The open-source core is designed to be fully functional out-of-the-box, but incl
 
 ---
 
-## 4. Contributing & Git Workflow Standards
+## 4. SaaS Monetization & Production Licensing
+
+To support commercialization, the open-source core enforces a strict **Production Licensing Gate**:
+* **Local Development:** When `FORGEOS_KERNEL_MODE` is unset or set to `"development"`, developers can build, run, and test agents locally for free.
+* **Production Deployment:** When deploying to a production environment, administrators must set `FORGEOS_KERNEL_MODE="production"`. In this mode, the kernel strictly requires a valid, active **Enterprise License Key** to admit agent processes or execute tool calls. If no key is present, execution is blocked with a clear warning directing the user to purchase a key.
+
+To purchase an Enterprise License Key and unlock advanced capabilities (Stateful Autonomous Loops, Durable Continuation Stores, and Cryptographic Auditing), visit [Making Science](https://makingscience.com).
+
+---
+
+## 5. Contributing & Git Workflow Standards
 
 To maintain clean, professional contributions, all commits in this repository must follow the established **Git Provenance Standards**:
 

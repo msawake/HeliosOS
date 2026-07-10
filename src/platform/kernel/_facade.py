@@ -160,10 +160,17 @@ class AdmissionController:
         tenant_id = read_v2_section(contract, "tenant_id", "default")
         # Access the license manager attached to the parent kernel if available
         kernel_inst = getattr(self, "_kernel", None)
+        
+        # In open-source core, if no license_manager is attached, check environment mode
+        import os
+        is_production = os.environ.get("FORGEOS_KERNEL_MODE", "").lower() == "production"
+        
         if kernel_inst and kernel_inst.license:
             decision = kernel_inst.license.check_license(tenant_id)
             if hasattr(decision, "denied") and decision.denied:
                 errors.append(f"License verification failed: {decision.reason}")
+        elif is_production:
+            errors.append("Production mode requires a valid Enterprise License Key. Visit https://makingscience.com to purchase a key.")
 
         # 1. Required top-level fields
         name = contract.get("name")
@@ -1148,6 +1155,9 @@ class Kernel:
     ) -> KernelDecision:
         """Composite check: hierarchical policy + permissions + budget + policy."""
         # 00. Hard License Expiration Gate
+        import os
+        is_production = os.environ.get("FORGEOS_KERNEL_MODE", "").lower() == "production"
+        
         if self.license and self._registry:
             agent = self._registry.get(agent_id)
             if agent:
@@ -1156,6 +1166,10 @@ class Kernel:
                 if hasattr(decision, "denied") and decision.denied:
                     self._audit("license.denied", agent_id, tool=tool_name, reason=decision.reason)
                     return decision
+        elif is_production:
+            return KernelDecision.deny(
+                reason="Production mode requires a valid Enterprise License Key. Visit https://makingscience.com to purchase a key."
+            )
 
         # 0. Hierarchical policy (Global > Namespace denied tools)
         if self._global_policy and self._global_policy.is_tool_denied(tool_name):

@@ -25,7 +25,18 @@ def make_license_stage(license_manager: Any) -> Any:
 
     def _stage(syscall: Any) -> Any:
         lm = license_manager
+        
+        # In open-source core, if no license_manager is attached, we check the environment mode.
+        # If running in production mode, we strictly deny execution and demand a license key.
+        import os
+        is_production = os.environ.get("FORGEOS_KERNEL_MODE", "").lower() == "production"
+        
         if lm is None:
+            if is_production:
+                from src.platform.kernel._facade import KernelDecision
+                return KernelDecision.deny(
+                    reason="Production mode requires a valid Enterprise License Key. Visit https://makingscience.com to purchase a key."
+                )
             return None
 
         tenant_id = (
