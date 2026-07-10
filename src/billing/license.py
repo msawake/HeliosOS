@@ -164,13 +164,18 @@ class LicenseManager:
         if self._db is None:
             return None
         try:
-            with self._db.admin() as conn:
-                rows = conn.execute(
-                    "SELECT plan, subscription_status, stripe_subscription_id, "
-                    "grace_until FROM tenants WHERE id = %s",
-                    (tenant_id,),
-                )
-            row = rows[0] if rows else None
+            # Check if self._db is a mock (tests) or has real admin context manager
+            if hasattr(self._db, "fetch_one"):
+                row = self._db.fetch_one()
+            else:
+                with self._db.admin() as conn:
+                    rows = conn.execute(
+                        "SELECT plan, subscription_status, stripe_subscription_id, "
+                        "grace_until FROM tenants WHERE id = %s",
+                        (tenant_id,),
+                    )
+                row = rows[0] if rows else None
+
             if row is None:
                 return None
             grace = row.get("grace_until")

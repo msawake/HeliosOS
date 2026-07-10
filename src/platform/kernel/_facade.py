@@ -156,6 +156,15 @@ class AdmissionController:
         errors: list[str] = []
         warnings: list[str] = []
 
+        # 0. Hard License Expiration Gate
+        tenant_id = read_v2_section(contract, "tenant_id", "default")
+        # Access the license manager attached to the parent kernel if available
+        kernel_inst = getattr(self, "_kernel", None)
+        if kernel_inst and kernel_inst.license:
+            decision = kernel_inst.license.check_license(tenant_id)
+            if hasattr(decision, "denied") and decision.denied:
+                errors.append(f"License verification failed: {decision.reason}")
+
         # 1. Required top-level fields
         name = contract.get("name")
         if not name or not re.match(r"^[a-zA-Z][a-zA-Z0-9_-]{1,63}$", name):
@@ -950,6 +959,7 @@ class Kernel:
             tool_executor=tool_executor,
             contract_registry=self.contracts,
         )
+        self.admission._kernel = self  # Bind parent kernel reference for license checks
         self.permissions = PermissionManager(
             registry=registry,
             a2a_handler=a2a_handler,
@@ -1137,6 +1147,16 @@ class Kernel:
         estimated_cost_usd: float | None = None,
     ) -> KernelDecision:
         """Composite check: hierarchical policy + permissions + budget + policy."""
+        # 00. Hard License Expiration Gate
+        if self.license and self._registry:
+            agent = self._registry.get(agent_id)
+            if agent:
+                tenant_id = (agent.metadata or {}).get("tenant_id", "default")
+                decision = self.license.check_license(tenant_id)
+                if hasattr(decision, "denied") and decision.denied:
+                    self._audit("license.denied", agent_id, tool=tool_name, reason=decision.reason)
+                    return decision
+
         # 0. Hierarchical policy (Global > Namespace denied tools)
         if self._global_policy and self._global_policy.is_tool_denied(tool_name):
             self._audit("tool.denied", agent_id, tool=tool_name, reason="global policy")
