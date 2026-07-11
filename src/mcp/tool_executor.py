@@ -17,7 +17,10 @@ import json
 import jsonschema
 from jsonschema.exceptions import ValidationError
 
-from src.platform.pod_dev_tools import POD_ROUTABLE_TOOLS
+try:
+    from src.platform.pod_dev_tools import POD_ROUTABLE_TOOLS
+except ImportError:  # enterprise-only module
+    POD_ROUTABLE_TOOLS = frozenset()
 
 logger = logging.getLogger(__name__)
 
@@ -121,19 +124,28 @@ class ToolExecutor:
 
         # Email tool (Gmail API via FORGEOS_GWS_* creds) — always available so
         # auditor agents can email reports without a CompanySystem.
-        from src.platform.email_tool import EMAIL_TOOL_HANDLERS
-        handlers.update(EMAIL_TOOL_HANDLERS)
+        try:
+            from src.platform.email_tool import EMAIL_TOOL_HANDLERS
+            handlers.update(EMAIL_TOOL_HANDLERS)
+        except ImportError:  # enterprise-only module
+            pass
 
         # Drive sharing-audit tool (Drive API via FORGEOS_GWS_* creds).
-        from src.platform.drive_audit_tool import DRIVE_TOOL_HANDLERS
-        handlers.update(DRIVE_TOOL_HANDLERS)
+        try:
+            from src.platform.drive_audit_tool import DRIVE_TOOL_HANDLERS
+            handlers.update(DRIVE_TOOL_HANDLERS)
+        except ImportError:  # enterprise-only module
+            pass
 
         # Drive read/write tools — authenticate via SA impersonation (keyless),
         # not the user's OAuth refresh token. Requires FORGEOS_DRIVE_AGENT_SA
         # to be set on the platform and the user to have shared the target
         # files/folders with that SA's email.
-        from src.platform.drive_tool import DRIVE_RW_TOOL_HANDLERS
-        handlers.update(DRIVE_RW_TOOL_HANDLERS)
+        try:
+            from src.platform.drive_tool import DRIVE_RW_TOOL_HANDLERS
+            handlers.update(DRIVE_RW_TOOL_HANDLERS)
+        except ImportError:  # enterprise-only module
+            pass
 
         # Execution-environment tools (env__exec / bash) — run shell commands in
         # the agent's pod, gated by the kernel `env.exec` syscall. Available
@@ -171,8 +183,11 @@ class ToolExecutor:
 
         # AgentOS A2A tools (available whenever A2A is wired)
         if self._a2a_handler:
-            from src.platform.a2a import A2A_TOOL_SCHEMAS
-            schemas.extend(A2A_TOOL_SCHEMAS)
+            try:
+                from src.platform.a2a import A2A_TOOL_SCHEMAS
+                schemas.extend(A2A_TOOL_SCHEMAS)
+            except ImportError:  # enterprise-only module
+                pass
 
         # A2H tools (agent-to-human interaction)
         if self._a2h_gateway:
@@ -187,14 +202,23 @@ class ToolExecutor:
         from src.platform.dev_tools import DEV_TOOL_SCHEMAS
         schemas.extend(DEV_TOOL_SCHEMAS)
 
-        from src.platform.email_tool import EMAIL_TOOL_SCHEMAS
-        schemas.extend(EMAIL_TOOL_SCHEMAS)
+        try:
+            from src.platform.email_tool import EMAIL_TOOL_SCHEMAS
+            schemas.extend(EMAIL_TOOL_SCHEMAS)
+        except ImportError:  # enterprise-only module
+            pass
 
-        from src.platform.drive_audit_tool import DRIVE_TOOL_SCHEMAS
-        schemas.extend(DRIVE_TOOL_SCHEMAS)
+        try:
+            from src.platform.drive_audit_tool import DRIVE_TOOL_SCHEMAS
+            schemas.extend(DRIVE_TOOL_SCHEMAS)
+        except ImportError:  # enterprise-only module
+            pass
 
-        from src.platform.drive_tool import DRIVE_RW_TOOL_SCHEMAS
-        schemas.extend(DRIVE_RW_TOOL_SCHEMAS)
+        try:
+            from src.platform.drive_tool import DRIVE_RW_TOOL_SCHEMAS
+            schemas.extend(DRIVE_RW_TOOL_SCHEMAS)
+        except ImportError:  # enterprise-only module
+            pass
 
         if self._environment_manager is not None:
             from src.platform.env_tools import ENV_TOOL_SCHEMAS

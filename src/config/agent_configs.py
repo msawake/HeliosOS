@@ -23,13 +23,22 @@ from src.core.agent_invoker import AgentConfig, AgentRegistry, AgentTier
 # Default company: LeadForge AI (backward-compatible re-exports)
 # ---------------------------------------------------------------------------
 
-from src.companies.leadforge.agent_configs import (
-    AGENT_DEFINITIONS,
-    SUBAGENT_MAP,
-    SYSTEM_PROMPTS,
-    TOOL_PERMISSIONS,
-    build_registry,
-)
+try:
+    from src.companies.leadforge.agent_configs import (
+        AGENT_DEFINITIONS,
+        SUBAGENT_MAP,
+        SYSTEM_PROMPTS,
+        TOOL_PERMISSIONS,
+        build_registry,
+    )
+except ImportError:  # company packs ship with the enterprise distribution
+    AGENT_DEFINITIONS = {}
+    SUBAGENT_MAP = {}
+    SYSTEM_PROMPTS = {}
+    TOOL_PERMISSIONS = {}
+
+    def build_registry(**kwargs) -> AgentRegistry:
+        return AgentRegistry()
 
 
 # ---------------------------------------------------------------------------

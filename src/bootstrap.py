@@ -682,8 +682,11 @@ class PlatformBootstrap:
             secrets_manager=getattr(self, 'secrets', None),
         )
         # AgentOS A2A handler (bound to platform_executor later in boot sequence)
-        from src.platform.a2a import A2AHandler
-        self._a2a_handler = A2AHandler()
+        try:
+            from src.platform.a2a import A2AHandler
+            self._a2a_handler = A2AHandler()
+        except ImportError:  # enterprise-only module
+            self._a2a_handler = None
 
         # Per-agent execution environments (k8s pods, kernel-gated env.exec).
         from src.platform.environments import EnvironmentManager

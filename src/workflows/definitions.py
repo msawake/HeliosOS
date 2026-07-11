@@ -184,17 +184,20 @@ class TaskGraphBuilder:
 # LeadForge workflow templates (backward-compatible re-exports)
 # ---------------------------------------------------------------------------
 
-from src.companies.leadforge.workflows import (
-    create_leadforge_sales_workflow,
-    create_financial_reporting_workflow,
-    create_marketing_campaign_workflow,
-    create_compliance_audit_workflow,
-    create_lead_qualification_workflow,
-    create_lead_nurture_workflow,
-    create_outbound_campaign_workflow,
-    create_abm_campaign_workflow,
-    create_client_onboarding_workflow,
-)
+try:
+    from src.companies.leadforge.workflows import (
+        create_leadforge_sales_workflow,
+        create_financial_reporting_workflow,
+        create_marketing_campaign_workflow,
+        create_compliance_audit_workflow,
+        create_lead_qualification_workflow,
+        create_lead_nurture_workflow,
+        create_outbound_campaign_workflow,
+        create_abm_campaign_workflow,
+        create_client_onboarding_workflow,
+    )
+except ImportError:  # company packs ship with the enterprise distribution
+    pass
 
 
 # ---------------------------------------------------------------------------

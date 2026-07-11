@@ -281,7 +281,10 @@ class AdmissionController:
         legacy ``_capabilities`` bag. Silently no-ops when no methods are
         declared — not every agent exposes a typed surface.
         """
-        from src.platform.a2a_contracts import A2AContract
+        try:
+            from src.platform.a2a_contracts import A2AContract
+        except ImportError:  # enterprise-only module
+            return
 
         capabilities = read_v2_section(contract, "capabilities", {}) or {}
         a2a = capabilities.get("a2a") or {}
@@ -958,8 +961,11 @@ class Kernel:
         # Phase A #3 — process-level contract registry. The admission
         # controller registers agents' typed A2A surfaces here as they're
         # admitted; A2A handler queries it to validate calls.
-        from src.platform.a2a_contracts import ContractRegistry
-        self.contracts = ContractRegistry()
+        try:
+            from src.platform.a2a_contracts import ContractRegistry
+            self.contracts = ContractRegistry()
+        except ImportError:  # enterprise-only module
+            self.contracts = None
 
         self.admission = AdmissionController(
             registry=registry,
