@@ -1,9 +1,8 @@
-> [!IMPORTANT]
-> **This repository has moved.** Development continues at **[msawake/HeliosOS](https://github.com/msawake/HeliosOS)**.
-> This copy is kept as a read-only archive and will no longer receive updates. Please update your remotes:
-> ```
-> git remote set-url origin git@github.com:msawake/HeliosOS.git
-> ```
+> [!NOTE]
+> **Open-core mirrors (kept in sync):** the stripped public tree is published to
+> **[msawake/HeliosOS](https://github.com/msawake/HeliosOS)** (canonical) and
+> **[makingscience-awake/forgeos](https://github.com/makingscience-awake/forgeos)** (mirror).
+> Both `main` branches carry the same commit history and contributors graph.
 
 # Helios OS
 
@@ -37,8 +36,8 @@ Agents (the processes)
 Requires only Docker. From a fresh clone:
 
 ```bash
-git clone https://github.com/makingscience-awake/forgeos.git
-cd forgeos
+git clone https://github.com/msawake/HeliosOS.git
+cd HeliosOS
 docker compose up
 ```
 
