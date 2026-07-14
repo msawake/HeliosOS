@@ -8,9 +8,14 @@
 |---|---|
 | `JAMA <jamartinezaguilar@gmail.com>` | Original ForgeOS v3.1 (first commit [`809d2d8`](https://github.com/makingscience-awake/heliosos-enterprise/commit/809d2d8a87a814bacc9c584f7dd92b6c41fa4fc0), May 2026) |
 | `jamartinezaguilar2025` | Open-core architecture, licensing, enterprise strip/re-integration |
-| `helioscode` | Recent enterprise platform work (dashboard, merge, CI, docs) |
 
-These are **the same author**. GitHub may list `jamartinezaguilar2025` and `helioscode` separately in Insights → Contributors because each git author string maps to a different GitHub account or email.
+`JAMA` and `jamartinezaguilar2025` are **the same person** (Jose Antonio Martinez). GitHub Insights may list them separately because each git author string can map to a different account or email.
+
+## Coding agent git identity
+
+| Git identity | What it is |
+|---|---|
+| `helioscode <helioscode@users.noreply.github.com>` | **AI coding agent** (comparable to Claude Code or Cursor Agent) — **not** a human contributor and **not** the GitHub account [github.com/helioscode](https://github.com/helioscode). Used as the git `Author` on commits produced with agent assistance and human review (enterprise dashboard, merge, CI, docs). |
 
 ## Key contributors
 

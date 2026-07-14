@@ -72,8 +72,9 @@ To purchase an Enterprise License Key and unlock advanced capabilities (Stateful
 To maintain clean, professional contributions, all commits in this repository must follow the established **Git Provenance Standards**:
 
 * **Commit Message Format:** Follow [Conventional Commits](https://www.conventionalcommits.org/) (e.g., `feat(kernel): ...`, `fix(router): ...`).
-* **Co-Author Attribution:** When contributing collaborative features, always credit the platform engine and repository owner using Git's co-author metadata:
+* **Co-Author Attribution:** When commits are produced with AI coding-agent assistance, credit the agent git identity (not a human GitHub user — see [CONTRIBUTORS.md](CONTRIBUTORS.md)):
   ```
   Co-authored-by: helioscode <helioscode@users.noreply.github.com>
   Co-authored-by: awake <awake@makingscience.com>
   ```
+  `helioscode` is the project's AI coding agent (comparable to Claude Code), not [github.com/helioscode](https://github.com/helioscode).
