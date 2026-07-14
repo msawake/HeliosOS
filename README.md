@@ -6,7 +6,7 @@
 
 # Helios OS
 
-> **Created by [Jose Antonio Martinez (jama)](https://github.com/jamartinezaguilar2025)** — first commit [`809d2d8`](https://github.com/makingscience-awake/heliosos-enterprise/commit/809d2d8a87a814bacc9c584f7dd92b6c41fa4fc0) (*ForgeOS v3.1 — Multi-Stack AI Agent Platform*, May 2026). Some commits use the `helioscode` git author — an **AI coding agent** (like Claude Code), not a human GitHub account. See [CONTRIBUTORS.md](CONTRIBUTORS.md).
+> **Created by [Jose Antonio Martinez (jama)](https://github.com/jamartinezaguilar2025)** — first commit [`809d2d8`](https://github.com/makingscience-awake/heliosos-enterprise/commit/809d2d8a87a814bacc9c584f7dd92b6c41fa4fc0) (*ForgeOS v3.1 — Multi-Stack AI Agent Platform*, May 2026). See [CONTRIBUTORS.md](CONTRIBUTORS.md) — `helioscode` is an AI coding agent (like Claude Code), not the creator or [github.com/helioscode](https://github.com/helioscode).
 
 **The agentic harness.** Control what your agents do — on any framework, without changing their code. Deploy, orchestrate, and govern agents across 9 framework adapters with a kernel, syscall pipeline, runtime SDK, and inter-agent protocols.
 

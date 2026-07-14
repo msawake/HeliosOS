@@ -2,7 +2,7 @@
 
 ## Principal author
 
-**[Jose Antonio Martinez (jama)](https://github.com/jamartinezaguilar2025)** — creator of ForgeOS / Helios OS.
+**[Jose Antonio Martinez (jama)](https://github.com/jamartinezaguilar2025)** — creator of ForgeOS / Helios OS (not `helioscode`).
 
 | Git identity | Used for |
 |---|---|
@@ -11,11 +11,13 @@
 
 `JAMA` and `jamartinezaguilar2025` are **the same person** (Jose Antonio Martinez). GitHub Insights may list them separately because each git author string can map to a different account or email.
 
-## Coding agent git identity
+## Coding agent git identity (not the creator)
+
+`helioscode` is **not** a person, **not** the project creator, and **not** [github.com/helioscode](https://github.com/helioscode). It is an **AI coding agent** (comparable to Claude Code or Cursor Agent).
 
 | Git identity | What it is |
 |---|---|
-| `helioscode <helioscode@users.noreply.github.com>` | **AI coding agent** (comparable to Claude Code or Cursor Agent) — **not** a human contributor and **not** the GitHub account [github.com/helioscode](https://github.com/helioscode). Used as the git `Author` on commits produced with agent assistance and human review (enterprise dashboard, merge, CI, docs). |
+| `helioscode <helioscode@users.noreply.github.com>` | AI coding agent git `Author` on agent-assisted commits (enterprise dashboard, merge, CI, docs) |
 
 ## Key contributors
 
