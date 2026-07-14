@@ -2,7 +2,7 @@
 
 ## Principal author
 
-**[Jama Martinez (JAMA)](https://github.com/jamartinezaguilar2025)** — creator of ForgeOS / Helios OS.
+**[Jose Antonio Martinez (jama)](https://github.com/jamartinezaguilar2025)** — creator of ForgeOS / Helios OS.
 
 | Git identity | Used for |
 |---|---|
