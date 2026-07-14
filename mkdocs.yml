@@ -2,7 +2,7 @@ site_name: Helios OS
 site_description: The agentic harness — deploy, orchestrate, and govern AI agents across framework adapters.
 repo_url: https://github.com/msawake/HeliosOS
 repo_name: msawake/HeliosOS
-edit_uri: edit/leadforge/docs/
+edit_uri: edit/main/docs/
 
 docs_dir: docs
 
@@ -75,7 +75,6 @@ nav:
       - SDK Guide: guides/sdk.md
       - SDK Developer Guide: guides/sdk-developer-guide.md
       - Example Agents: guides/example-agents.md
-      - Call Center Deployment: guides/call-center-deployment.md
   - Reference:
       - Agent Manifest: reference/agent-manifest.md
       - API Endpoints: reference/api-endpoints.md
@@ -101,12 +100,6 @@ nav:
   - Protocols:
       - Overview: protocols/README.md
       - A2H Spec: protocols/a2h-spec.md
-  - Operations:
-      - Deployment: operations/deployment.md
-      - Monitoring: operations/monitoring.md
-      - Runbooks Overview: runbooks/README.md
-      - DB Recovery: runbooks/db-recovery.md
-      - Incident Response: runbooks/incident-response.md
   - Development:
       - Contributing: development/contributing.md
       - Project History: development/project-history.md

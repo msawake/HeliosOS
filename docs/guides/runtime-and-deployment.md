@@ -12,7 +12,7 @@ When you boot the platform with `--no-auth` and deploy an agent via the CLI:
 
 ```bash
 PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
-forgeos deploy examples/sre-gcp-auditor/manifest.yaml
+forgeos deploy examples/jira-greeter-v2/manifest.yaml
 ```
 
 The agent runs **in the same Python process as the platform**. The flow:
@@ -29,7 +29,7 @@ No containers, no pods. This is the fastest loop for development.
 
 ## Mode 2 — In-platform on a server (still one process)
 
-The exact same code path as Mode 1 — but deployed to a long-running host (a VM, a Cloud Run service running the platform itself). The platform process owns the scheduler, registry, executor, and the agent's asyncio task. This is how the [Mission Control deployment](../operations/deployment.md) currently runs.
+The exact same code path as Mode 1 — but deployed to a long-running host (a VM, a Cloud Run service running the platform itself). The platform process owns the scheduler, registry, executor, and the agent's asyncio task.
 
 Trade-off: simple, but every agent shares the platform's CPU/memory. Fine for tens of lightweight agents; not the model for heavy or untrusted workloads.
 
@@ -37,16 +37,16 @@ Trade-off: simple, but every agent shares the platform's CPU/memory. Fine for te
 
 ## Mode 3 — Containerized per-agent (Cloud Run)
 
-This is what `spec.runtime.image: forgeos-sre-gcp-auditor:latest` is hinting at.
+This is what `spec.runtime.image: my-agent-job:latest` is hinting at.
 
-For a `scheduled` agent like `sre-gcp-auditor`, the production shape is:
+For a `scheduled` agent, the production shape is:
 
 ```
 Cloud Scheduler  ──(HTTPS @ 06:00 UTC daily)──▶  Cloud Run Job
                                                        │
                                                        ▼
-                                        Container: forgeos-sre-gcp-auditor:latest
-                                          ├─ runs examples/sre-gcp-auditor/agent.py
+                                        Container: my-agent-job:latest
+                                          ├─ runs your agent entrypoint
                                           └─ uses runtime SDK to talk to platform
                                                        │
                                                        ▼
@@ -58,7 +58,7 @@ The auditor's `agent.py` connects back via `FORGEOS_API_URL` to the platform's H
 
 For `always_on` agents, the equivalent is a Cloud Run *service* (not a job) with `min_instances=1`.
 
-> The repo already deploys Mission Control to Cloud Run (see commit `fc76c1cc feat: deploy Mission Control to Cloud Run`). Per-agent images follow the same pattern; see `infrastructure/terraform/gcp/` for the IaC.
+> Production deployment guides and GCP Pulumi live in the private **heliosos-enterprise** monorepo. This open-core tree documents local and in-platform execution modes.
 
 ---
 
@@ -109,4 +109,4 @@ Two things worth internalizing:
 - [Stack Adapters](../architecture/stack-adapters.md) — what each framework adapter does.
 - [Platform Layer](../architecture/platform-layer.md) — scheduler, executor, registry.
 - [Process Table](../architecture/process-table.md) — `AgentProcess`, checkpoint/restore.
-- [Deployment](../operations/deployment.md) — current production deployment steps.
+- [Quickstart](quickstart.md) — local API + CLI setup.

@@ -22,7 +22,7 @@ Following our strategic decoupling, the public repository has been sanitized int
 /tests/                     Core platform unit and integration tests
 ```
 
-*Note: Proprietary enterprise modules (`src/billing/`, `resources/skills/`, `src/companies/`, `src/dashboard/`, and `pulumi/` infrastructure) have been removed to establish the Open-Core model.*
+*Note: Proprietary enterprise modules (Next.js dashboard UI, `src/billing/`, `src/companies/`, corporate orchestration, and `pulumi/` infrastructure) are **not** in open-core. The `--dashboard` bootstrap flag starts the **Django API** (`forgeos_web/`), not a browser UI. Optional UI: [forgeos-dashboard](https://github.com/antonibergas-hue/forgeos-dashboard).*
 
 ---
 

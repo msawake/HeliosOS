@@ -13,8 +13,8 @@
 # OPENAI_API_KEY / GOOGLE_API_KEY), then `docker compose up` again — compose
 # reads ./.env automatically.
 #
-# Dashboard UI: http://localhost:3000
-# API:          http://localhost:5000  (docs at /docs, health at /api/health)
+# API:          http://localhost:5000  (health at /api/health)
+# Dashboard UI: optional — `docker compose --profile ui up` (needs ../forgeos-dashboard)
 # ----------------------------------------------------------------------------
 
 name: forgeos
@@ -111,12 +111,10 @@ services:
         condition: service_healthy
     command: ["celery", "-A", "forgeos_web.celery_app", "beat", "--scheduler", "django_celery_beat.schedulers:DatabaseScheduler", "--loglevel=info"]
 
-  # Next.js dashboard UI. Lives in its own repo now
-  # (github.com/antonibergas-hue/forgeos-dashboard); this service builds it from
-  # a sibling checkout (../forgeos-dashboard). Next's rewrites proxy /api/* to
-  # the `app` service, so the browser only ever talks to http://localhost:3000
-  # (same origin). The live-status WebSocket connects straight to the API on :5000.
+  # Optional Next.js dashboard UI (not in open-core). Clone forgeos-dashboard as a
+  # sibling repo, then: docker compose --profile ui up
   dashboard:
+    profiles: ["ui"]
     build:
       context: ../forgeos-dashboard
       dockerfile: Dockerfile

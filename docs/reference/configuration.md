@@ -52,17 +52,19 @@ Example: `DATABASE_URL=postgresql://user:pass@localhost:5433/forgeos`
 | `OPENCLAW_PORT` | Gateway listen port | `18789` |
 | `OPENCLAW_STATE_DIR` | Agent workspace storage | `~/.openclaw-forgeos` |
 
-### Dashboard
+### CLI / SDK / optional dashboard UI
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `FORGEOS_API_URL` | Backend API URL (set in `dashboard/.env`) | `http://localhost:5000` |
+| `FORGEOS_API_URL` | Platform API base URL for `forgeos` CLI, SDK, and optional Next.js dashboard | `http://localhost:5000` |
+
+The Next.js dashboard (separate repo) reads `FORGEOS_API_URL` in `.env.local`. Open-core development typically uses the API and `forgeos` / `forgeos mc` CLI directly.
 
 ---
 
-## Company Config YAML
+## Company Config YAML (enterprise)
 
-Each company has a `config.yaml` under `src/companies/<id>/`. Example: `src/companies/leadforge/config.yaml`.
+Multi-tenant company packages (`src/companies/<id>/config.yaml`) are part of the **enterprise** monorepo, not this open-core tree. Example shape (for reference):
 
 ### Schema
 

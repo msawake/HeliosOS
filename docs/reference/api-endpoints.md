@@ -1,8 +1,11 @@
 # Helios OS Platform API Reference
 
-Complete reference for all FastAPI endpoints defined in `src/dashboard/fastapi_app.py`.
+!!! warning "Historical reference — FastAPI era"
+    This document describes the **legacy FastAPI** control plane (`src/dashboard/fastapi_app.py`), which is **not** in the open-core tree. The current HTTP API is served by **`forgeos_web/`** (Django/DRF) when you boot with `python -m src.bootstrap --dashboard`.
 
-Base URL: `http://localhost:8000` (default) or the port configured via `--port`.
+    Treat endpoint paths below as **conceptual** until this page is regenerated from `forgeos_web/`. For local exploration, use the live OpenAPI schema at `http://localhost:5000/docs` (when enabled).
+
+Base URL: `http://localhost:5000` (default) or the port configured via `--port`.
 
 Authentication: Endpoints marked **Auth: Required** expect an `X-API-Key` header.
 Public paths (`/api/health`, `/api/readiness`, `/api/auth/token`, `/api/me`, `/docs`,

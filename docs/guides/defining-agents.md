@@ -1,6 +1,6 @@
 # Defining Agents
 
-This guide walks through a complete, working agent manifest end-to-end using **`examples/sre-gcp-auditor`** as the worked example. By the end you'll know how to wire every section of `agent.yaml` to real behavior at runtime.
+This guide walks through a complete, working agent manifest end-to-end using **`examples/jira-greeter-v2`** as the worked example. By the end you'll know how to wire every section of `agent.yaml` to real behavior at runtime.
 
 For an exhaustive field reference (types, defaults, enum values), see [Agent Manifest Reference](../reference/agent-manifest.md). For where the agent process actually executes, see [Runtime & Deployment](runtime-and-deployment.md).
 
@@ -27,34 +27,32 @@ spec:                      # what it does
 You deploy it with:
 
 ```bash
-forgeos validate examples/sre-gcp-auditor/manifest.yaml
-forgeos deploy   examples/sre-gcp-auditor/manifest.yaml
+forgeos validate examples/jira-greeter-v2/manifest.yaml
+forgeos deploy   examples/jira-greeter-v2/manifest.yaml
 ```
 
 The CLI is `src/forgeos_sdk/cli.py`; it validates, then `ForgeOSClient.deploy()` (`src/forgeos_sdk/client.py`) POSTs the manifest to `/api/platform/agents`. The platform executor (`src/platform/executor.py`) then registers the agent and wires its lifecycle.
 
 ---
 
-## Walkthrough: `sre-gcp-auditor`
+## Walkthrough: `jira-greeter-v2`
 
-The SRE GCP Auditor is a daily read-only audit of every GCP project in your org. It illustrates almost every interesting manifest feature.
+The Jira Ticket Greeter v2 polls Jira, asks a human via A2H whether to comment, and writes an approved greeting. It illustrates reflex agents, MCP tools, and human-in-the-loop governance.
 
 ### 1. `metadata` — identification
 
 ```yaml
 metadata:
-  name: sre-gcp-auditor
-  namespace: ops
+  name: jira-ticket-greeter-v2
+  description: "Polls Jira, asks a human via A2H, comments on approval"
+  department: operations
   labels:
-    team: sre
-    scope: org-wide
-    framework: adk
-  annotations:
-    description: "Daily read-only audit of all GCP projects"
-    owner: platform-engineering
+    category: jira
+    execution: reflex
+    protocol: a2h
 ```
 
-- `name` + `namespace` form the agent's stable identity. Other agents address it as `ops/sre-gcp-auditor`.
+- `name` is the agent's stable identity for API calls and CLI deploy.
 - `labels` are queryable — `Registry.list(namespace="ops", labels={"team": "sre"})` returns this agent. See `src/platform/registry.py`.
 - `annotations` are free-form, used by humans and tooling (e.g. signature refs).
 
@@ -64,12 +62,12 @@ metadata:
 
 ```yaml
 spec:
-  runtime:
-    framework: adk
-    image: forgeos-sre-gcp-auditor:latest
+  stack: forgeos
+  execution_type: reflex
+  ownership: shared
 ```
 
-`framework` picks the [stack adapter](../architecture/stack-adapters.md):
+`stack` picks the [stack adapter](../architecture/stack-adapters.md):
 
 | Value      | Adapter |
 |------------|---------|
@@ -79,15 +77,12 @@ spec:
 | `openclaw` | HTTP gateway subprocess (`stacks/openclaw/adapter.py`) |
 | `langgraph`| LangChain/LangGraph adapter |
 
-The SRE auditor uses **ADK** — its `agent.py` instantiates a `google.adk.Agent` and wraps every tool with `runtime.check_tool()` so the Helios OS kernel still gets the final say. See [Where does the agent run?](runtime-and-deployment.md) for what `image` means in practice.
+This example uses the native **forgeos** stack. See [Where does the agent run?](runtime-and-deployment.md) for local vs containerized deployment.
 
 ### 3. `spec.lifecycle` — when it runs
 
 ```yaml
-  lifecycle:
-    type: scheduled
-    schedule: "0 6 * * *"     # 6 AM UTC daily
-    restart_policy: on_failure
+  execution_type: reflex   # invoked manually via API/CLI, not on a cron
 ```
 
 Five lifecycle types exist:
@@ -106,7 +101,7 @@ For `scheduled` agents, the platform scheduler (`src/platform/scheduler.py`) rea
 
 ```yaml
   llm:
-    chat_model: gemini-2.0-flash
+    chat_model: gemini-2.5-flash
     provider: google
 ```
 
@@ -117,16 +112,12 @@ The platform's LLM router (`src/platform/llm_router.py`) dispatches based on the
 This is where most of the safety lives.
 
 ```yaml
-  capabilities:
-    tools:
-      allowed:
-        - gcp.list_projects
-        - gcp.list_cloud_run_services
-        - gcp.list_firewall_rules
-        # ... read-only tools only
-      denied:
-        - gcp.create_*
-        - gcp.delete_*
+  tools:
+    - mcp__atlassian__jira_search
+    - mcp__atlassian__jira_get_issue
+    - mcp__atlassian__jira_add_comment
+    - human__ask
+    - human__check
         - gcp.update_*
         - gcp.set_*
         - bash.*
@@ -142,7 +133,7 @@ This is where most of the safety lives.
 
 - `allowed` supports wildcards (e.g. `mcp__filesystem__*`).
 - `denied` takes precedence over `allowed`. The `gcp.create_*` line above means the agent literally cannot call any GCP write API — even if the underlying tool is registered, the kernel rejects the call before dispatch.
-- The agent code in `examples/sre-gcp-auditor/agent.py` wraps each ADK tool with `await runtime.check_tool(name, args)`. The check returns `denied` long before `gcloud` is shelled out.
+- The agent code in `examples/jira-greeter-v2/agent.py` wraps each ADK tool with `await runtime.check_tool(name, args)`. The check returns `denied` long before `gcloud` is shelled out.
 
 **A2A (agent-to-agent)** is enforced by `src/platform/a2a.py`:
 
@@ -202,7 +193,7 @@ Admission fails if `ops/oncall-router` is not deployed when this agent starts. O
 The YAML is a declaration; `agent.py` is the implementation. They meet at the runtime SDK:
 
 ```python
-# examples/sre-gcp-auditor/agent.py (simplified)
+# examples/jira-greeter-v2/agent.py (simplified)
 from forgeos_sdk.runtime import Runtime
 
 runtime = Runtime.from_env()   # reads FORGEOS_API_URL, FORGEOS_AGENT_ID

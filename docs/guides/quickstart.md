@@ -1,93 +1,85 @@
 # Quick Start Guide
 
-Get Helios OS running locally in 5 minutes.
+Get Helios OS running locally in a few minutes.
 
 ## Prerequisites
 
 - **Python 3.11+** (`python3 --version`)
-- **Node.js 18+** (`node --version`) -- for the dashboard
-- **Anthropic API key** (or OpenAI) -- get one at https://console.anthropic.com
+- **Anthropic API key** (or OpenAI) — get one at https://console.anthropic.com
 
 Optional:
-- **Docker** -- for PostgreSQL persistence (otherwise data is in-memory)
-- **Redis** -- for distributed rate limiting (falls back to in-memory)
 
-## 1. Install
+- **Docker** — easiest path (`docker compose up` boots Postgres, Redis, API, worker)
+- **Node.js 18+** — only if you want the optional Next.js dashboard UI from a separate repo
+
+## 1. Install (host)
 
 ```bash
-cd forgeos/
+cd HeliosOS/
 
-# Create virtual environment (recommended)
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install Python dependencies
 pip install -e ".[dev]"
-
-# Install dashboard dependencies — the dashboard is a separate repo
-git clone git@github.com:antonibergas-hue/forgeos-dashboard.git ../forgeos-dashboard
-( cd ../forgeos-dashboard && npm install )
 ```
+
+This installs the platform library, test tools, and the **`forgeos` Python CLI** (`src/forgeos_sdk/cli.py`).
 
 ## 2. Configure
 
-Create a `.env` file in the project root:
-
 ```bash
-# Required -- at least one LLM provider
-ANTHROPIC_API_KEY=sk-ant-api03-...
-
-# Optional -- enables OpenAI models (gpt-4o, o3, etc.)
-# OPENAI_API_KEY=sk-...
-
-# Optional -- PostgreSQL for persistence (otherwise in-memory)
-# DATABASE_URL=postgresql://user:pass@localhost:5433/forgeos
-
-# Optional -- Redis for distributed rate limiting
-# REDIS_URL=redis://localhost:6379
+cp .env.example .env
+# Edit .env — at minimum set ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-## 3. Boot the Platform
+## 3. Boot the platform API
+
+The `--dashboard` flag starts the **HTTP API** (Django ASGI via `forgeos_web`), not the Next.js UI:
 
 ```bash
-# Start the backend API
 PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
 ```
 
-You should see:
+You should see the platform come online and the API listening on port 5000.
 
-```
-BOOTING HELIOS OS MULTI-STACK PLATFORM
-Company: leadforge | Mode: supervised
-[Phase 1] Initializing platform subsystems...
-  LLM Router: providers=['anthropic']
-[Phase 2] Initializing legacy company subsystems...
-  Database: IN-MEMORY (set DATABASE_URL for persistence)
-[Phase 3] Registering stack adapters...
-  Stack registered: forgeos
-  Stack registered: crewai
-  Stack registered: adk
-  Stack registered: openclaw
-...
-HELIOS OS PLATFORM ONLINE
-API: http://localhost:5000 (FastAPI)
-```
+- Health: `curl http://localhost:5000/api/health`
+- OpenAPI (when enabled): http://localhost:5000/docs
 
-## 4. Start the Dashboard
-
-In a separate terminal:
+### Docker alternative (recommended)
 
 ```bash
-# The dashboard is a standalone repo: github.com/antonibergas-hue/forgeos-dashboard
-cd ../forgeos-dashboard
+docker compose up
+```
+
+Boots Postgres, Redis, API, Celery worker, and beat — no sibling repos required.
+
+## 4. Optional — Next.js dashboard UI
+
+The operator dashboard is **not** in this open-core tree. To use the standalone UI:
+
+```bash
+git clone https://github.com/antonibergas-hue/forgeos-dashboard.git ../forgeos-dashboard
+cd ../forgeos-dashboard && npm install
+echo 'FORGEOS_API_URL=http://localhost:5000' > .env.local
 npm run dev
 ```
 
-Open http://localhost:3000 in your browser. You'll see the Helios OS dashboard with agent management, admin chat, and system monitoring.
+Open http://localhost:3000. Or use `docker compose --profile ui up` with `../forgeos-dashboard` checked out.
 
-## 5. Deploy Your First Agent
+The integrated dashboard in production lives in the private **heliosos-enterprise** monorepo (`src/heliosos-dashboard/`).
 
-Using curl (or the dashboard):
+## 5. Deploy your first agent
+
+Using the in-repo Python CLI:
+
+```bash
+export FORGEOS_API_URL=http://localhost:5000
+forgeos health
+forgeos deploy examples/forgeos/hello-world.yaml
+forgeos list
+```
+
+Or with curl:
 
 ```bash
 curl -s -X POST http://localhost:5000/api/platform/agents \
@@ -96,21 +88,22 @@ curl -s -X POST http://localhost:5000/api/platform/agents \
     "name": "my-first-agent",
     "stack": "forgeos",
     "execution_type": "reflex",
-    "description": "A simple assistant that answers questions",
-    "chat_model": "claude-sonnet-4-5-20250514",
-    "system_prompt": "You are a helpful assistant. Answer questions clearly and concisely."
+    "description": "A simple assistant",
+    "chat_model": "claude-sonnet-4-6",
+    "system_prompt": "You are a helpful assistant."
   }' | python3 -m json.tool
 ```
 
-> **Tip — the `forgeos` CLI.** Instead of curl, you can use the standalone Rust
-> CLI, which lives in its own repo: [`antonibergas-hue/forgeos-cli`](https://github.com/antonibergas-hue/forgeos-cli)
-> (`cargo build --release`). Then: `forgeos deploy agent.yaml`,
-> `forgeos list`, `forgeos describe <id>`, `forgeos invoke <id> "prompt"`
-> (fire-and-return; add `--wait` to block), and `forgeos logs <id> --follow`.
+### Terminal Mission Control
 
-## 6. Chat with Your Agent
+```bash
+forgeos mc fleet
+forgeos mc agents
+```
 
-Use the streaming chat endpoint:
+`forgeos mc` is the in-repo terminal UI (no separate CLI repo required). An optional Rust CLI exists at [antonibergas-hue/forgeos-cli](https://github.com/antonibergas-hue/forgeos-cli).
+
+## 6. Chat with your agent
 
 ```bash
 curl -N http://localhost:5000/api/platform/agents/my-first-agent/chat/stream \
@@ -118,70 +111,34 @@ curl -N http://localhost:5000/api/platform/agents/my-first-agent/chat/stream \
   -d '{"message": "What is Helios OS?"}'
 ```
 
-Or open the agent in the dashboard and use the chat interface.
-
-## 7. Invoke with Tools
-
-Deploy an agent with MCP tools (if you have MCP servers connected):
-
-```bash
-curl -s -X POST http://localhost:5000/api/platform/agents \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "file-reader",
-    "stack": "forgeos",
-    "execution_type": "reflex",
-    "description": "Reads and summarizes files from your filesystem",
-    "tools": ["mcp__filesystem__read_file", "mcp__filesystem__list_directory"],
-    "chat_model": "claude-sonnet-4-5-20250514"
-  }' | python3 -m json.tool
-```
-
 ---
 
-## Optional: PostgreSQL Persistence
-
-Without a database, all agents, sessions, and audit logs are lost on restart. To add persistence:
+## Optional: PostgreSQL persistence
 
 ```bash
-# Start PostgreSQL via Docker (from the repo root)
-docker compose up -d postgres           # Port 5433, password defaults to "forgeoslocal"
-
-# Add DATABASE_URL to project .env
+docker compose up -d postgres
 echo "DATABASE_URL=postgresql://leadforge_admin:forgeoslocal@localhost:5433/leadforge" >> .env
 ```
 
-Restart the backend. You should see:
-
-```
-Database: CONNECTED (PostgreSQL)
-Migrations: 5 applied, 0 skipped
-```
+Restart the API. Migrations run on boot.
 
 ---
 
-## Common Issues
+## Common issues
 
-**`ModuleNotFoundError: No module named 'stacks'`**
-- Add `PYTHONPATH=.` before the command. Both `src/` and `stacks/` must be importable from the project root.
+**`ModuleNotFoundError: No module named 'stacks'`** — prefix commands with `PYTHONPATH=.`
 
-**`Port 5000 already in use`**
-- Use a different port: `--port 5001`
+**`Port 5000 already in use`** — use `--port 5001`
 
-**`ANTHROPIC_API_KEY not set`**
-- Create a `.env` file in the project root (not in `infrastructure/docker/`).
+**`ANTHROPIC_API_KEY not set`** — create `.env` in the repo root
 
-**Dashboard shows "Cannot connect to API"**
-- Make sure the backend is running on port 5000. If using a different port, set `FORGEOS_API_URL=http://localhost:PORT` in `dashboard/.env`.
-
-**`MCP connect_all() timed out`**
-- MCP server connections have a 30s timeout. Check that the configured MCP packages are installable. Disable slow servers in `src/companies/leadforge/config.yaml`.
+**Dashboard cannot reach API** — set `FORGEOS_API_URL=http://localhost:5000` in the dashboard's `.env.local`
 
 ---
 
-## Next Steps
+## Next steps
 
-- [Creating Agents](creating-agents.md) -- Learn the 5 execution types and 3 ownership types
-- [Agent Tools & MCP](agent-tools.md) -- Connect MCP servers and assign tools to agents
-- [Architecture Overview](../architecture/overview.md) -- Understand the framework vs agent distinction
-- [API Reference](../reference/api-endpoints.md) -- All 61 FastAPI endpoints
+- [Defining Agents](defining-agents.md) — worked example with `examples/jira-greeter-v2`
+- [Runtime & Deployment](runtime-and-deployment.md)
+- [Example Agents](example-agents.md)
+- [Architecture Overview](../architecture/overview.md)

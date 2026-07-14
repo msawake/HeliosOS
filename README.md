@@ -54,41 +54,39 @@ docker compose up
 
 ```bash
 # Install (Python 3.11+)
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Configure
-echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env
+cp .env.example .env   # set ANTHROPIC_API_KEY (and/or OPENAI_API_KEY)
 
-# Boot the platform
+# Boot the platform API (Django ASGI via forgeos_web)
 PYTHONPATH=. python3 -m src.bootstrap --no-auth --dashboard --port 5000
-
-# Start the dashboard — maintained in its own repo (separate terminal)
-git clone git@github.com:antonibergas-hue/forgeos-dashboard.git ../forgeos-dashboard
-cd ../forgeos-dashboard && npm install && npm run dev
 ```
 
-Dashboard at http://localhost:3000. API docs at http://localhost:5000/docs.
-The dashboard is a standalone Next.js app: [antonibergas-hue/forgeos-dashboard](https://github.com/antonibergas-hue/forgeos-dashboard).
+API at http://localhost:5000 (health: `/api/health`, OpenAPI: `/docs` when enabled).
+
+> **Dashboard UI:** the Next.js operator dashboard is **not** in this open-core repo. Use the API/CLI/SDK below, or optionally run the standalone dashboard from [antonibergas-hue/forgeos-dashboard](https://github.com/antonibergas-hue/forgeos-dashboard) with `FORGEOS_API_URL=http://localhost:5000`. The full integrated dashboard ships in the private [heliosos-enterprise](https://github.com/makingscience-awake/heliosos-enterprise) monorepo.
 
 ### Install the CLI
 
-The `forgeos` CLI is a single static Rust binary, maintained in its own repo: [antonibergas-hue/forgeos-cli](https://github.com/antonibergas-hue/forgeos-cli).
+This repo installs a Python `forgeos` CLI when you `pip install -e ".[dev]"`:
 
 ```bash
-git clone https://github.com/antonibergas-hue/forgeos-cli.git
-cd forgeos-cli
-cargo build --release
-sudo cp target/release/forgeos /usr/local/bin/
+export FORGEOS_API_URL=http://localhost:5000
+forgeos health
+forgeos mc --help    # terminal Mission Control (in-repo)
 ```
 
-(Prefer Python? `pip install -e .` in this repo installs an equivalent `forgeos` CLI from the SDK — use `FORGEOS_API_URL` instead of `FORGEOS_REMOTE` below.)
+An optional Rust CLI also exists at [antonibergas-hue/forgeos-cli](https://github.com/antonibergas-hue/forgeos-cli) if you prefer a static binary.
 
 ### Deploy your first agent
 
 Point the CLI at your local stack and deploy:
 
 ```bash
-export FORGEOS_REMOTE=http://localhost:5000
+export FORGEOS_API_URL=http://localhost:5000
 
 forgeos health
 
@@ -479,18 +477,17 @@ See [Agent Manifest Reference](docs/reference/agent-manifest.md) for the full sc
 
 ```
 .
-+-- src/                            # Platform + kernel (134 Python files, ~40K lines)
++-- src/                            # Platform + kernel
 |   +-- bootstrap.py                # Boot: DB -> MCP -> kernel -> adapters -> API
 |   +-- platform/                   # Kernel, syscall, process table, registry, executor,
-|   |                               #   scheduler, event bus, LLM router, agentic loop,
-|   |                               #   A2A, A2H, capabilities, checkpoints, audit, metrics
-|   +-- forgeos_sdk/                # Python SDK: Agent, Runtime, Kernel, Manifest, CLI
-|   +-- core/                       # Database, session store, model clients
-|   +-- dashboard/                  # FastAPI app (~78 endpoints)
-|   +-- billing/                    # Stripe billing, usage enforcement
-|   +-- api/                        # Auth (Firebase JWT + API keys), tenants
+|   |                               #   scheduler, event bus, LLM router, agentic loop
+|   +-- forgeos_sdk/                # Python SDK + `forgeos` / `forgeos mc` CLI
+|   +-- core/                       # Database, migrations, session store
+|   +-- mcp/                        # MCP tool execution (in-repo)
+|   +-- dashboard/                  # Chat event helpers (not the Next.js UI)
 |   +-- workflows/                  # DAG workflow engine
 |   +-- forgeos_sandbox/            # Sandbox runner (Docker container primitives)
++-- forgeos_web/                    # Django/DRF API layer (serves HTTP when `--dashboard`)
 |
 +-- stacks/                         # Stack adapter layer (9 adapters)
 |   +-- base.py                     # AgentStackAdapter ABC, AgentDefinition, enums
@@ -518,7 +515,7 @@ See [Agent Manifest Reference](docs/reference/agent-manifest.md) for the full sc
 +-- observability/                  # Prometheus + Grafana dashboards
 ```
 
-**Extracted into their own repos:** the Rust CLI ([forgeos-cli](https://github.com/antonibergas-hue/forgeos-cli)), the MCP server + tool-execution layer ([forgeos-mcp](https://github.com/antonibergas-hue/forgeos-mcp)), and the Next.js dashboard ([forgeos-dashboard](https://github.com/antonibergas-hue/forgeos-dashboard)).
+**Not in open-core (enterprise / separate repos):** Next.js operator dashboard ([forgeos-dashboard](https://github.com/antonibergas-hue/forgeos-dashboard) or `heliosos-enterprise/src/heliosos-dashboard/`), corporate orchestration, billing/commercial plugin, and production Pulumi. Optional Rust CLI: [forgeos-cli](https://github.com/antonibergas-hue/forgeos-cli).
 
 ---
 

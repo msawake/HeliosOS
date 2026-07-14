@@ -10,7 +10,7 @@
 
 - :material-rocket-launch: **New here?**
 
-    Skim the [Quickstart](guides/quickstart.md), then read [Defining Agents](guides/defining-agents.md) — a worked example built around `examples/sre-gcp-auditor`.
+    Skim the [Quickstart](guides/quickstart.md), then read [Defining Agents](guides/defining-agents.md) — a worked example built around `examples/jira-greeter-v2`.
 
 - :material-file-document-edit: **Writing an `agent.yaml`?**
 
@@ -25,6 +25,16 @@
     Start at [Architecture › Overview](architecture/overview.md) and follow the syscall pipeline.
 
 </div>
+
+## Open-core scope
+
+This public repository ships the **platform kernel, API, SDK, CLI, and examples**. It does **not** include:
+
+- The Next.js operator dashboard (optional: [forgeos-dashboard](https://github.com/antonibergas-hue/forgeos-dashboard); integrated copy in [heliosos-enterprise](https://github.com/makingscience-awake/heliosos-enterprise))
+- Corporate teams/workflows orchestration, billing, or production Pulumi
+- Enterprise-only example agents (law-firm, SRE gold-standard auditors, etc.)
+
+Local development uses the **REST API** and **`forgeos` / `forgeos mc` CLI**. The `--dashboard` bootstrap flag starts the **Django API**, not a browser UI.
 
 ## Layered model
 
