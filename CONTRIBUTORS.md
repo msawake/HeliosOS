@@ -12,6 +12,13 @@
 
 These are **the same author**. GitHub may list `jamartinezaguilar2025` and `helioscode` separately in Insights → Contributors because each git author string maps to a different GitHub account or email.
 
+## Key contributors
+
+| Contributor | GitHub | Git identity | Contributions |
+|---|---|---|---|
+| **Antoni Bergas** (Toni Bergas) | [@antonibergas-hue](https://github.com/antonibergas-hue) | `Toni Bergas`, `antonibergas-hue` | **Dashboard** — Next.js operator UI, `helios-app` Cloud Run deploys, API rewrites and wizard flows. **Platform** — kernel hardening, agent runs, billing/token tracking, Mission Control CLI, MCP. **GCP** — Pulumi stack wiring, platform-api CI builds, worker SA provisioning. |
+| **Nerea Kalandadze** | — | `Nerea Kalandadze` | **GCP** — multi-environment Pulumi stacks, GitHub Actions CI/CD (`.github/workflows/pulumi-infra.yml`), GCS-backed Pulumi state, plan-hash verification (reviewed plan = applied plan), KMS secrets provider, `[skip-deploy]` merge workflow. |
+
 ## Team
 
 - Adrian Peralta
