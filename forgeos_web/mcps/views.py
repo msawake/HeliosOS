@@ -459,6 +459,186 @@ class PlatformMcpServerDetailView(APIView):
 
 
 # ---------------------------------------------------------------------------
+# MCP tool discovery (agent-creation wizard).
+# ---------------------------------------------------------------------------
+
+def _prefixed_tool_defs(server_name: str, schemas: list[dict]) -> list[dict]:
+    """Format raw MCP tool schemas as ``mcp__<server>__<tool>`` definitions.
+
+    Mirrors ToolExecutor.register_mcp_tools so the names the wizard shows match
+    exactly what the kernel governs and the runtime dispatches.
+    """
+    out: list[dict] = []
+    for s in schemas:
+        name = s.get("name")
+        if not name:
+            continue
+        out.append({
+            "name": f"mcp__{server_name}__{name}",
+            "description": s.get("description", ""),
+            "input_schema": s.get(
+                "inputSchema", s.get("input_schema", {"type": "object", "properties": {}})),
+        })
+    return out
+
+
+def _discover_server_tools(ctx, client_mcp_store, client_id, server_name, cfg):
+    """Introspect a registered MCP server and return its tool definitions.
+
+    Returns ``(tools, connected, detail)``. Never raises — a live-connect
+    failure yields ``([], False, "<reason>")`` so the wizard degrades to the
+    free-text tool entry instead of erroring.
+
+    Platform-scoped servers already have their tools registered in the running
+    process (via ``_connect_platform_mcp``), so we serve those without a live
+    reconnect. User- and namespace-scoped servers are introspected live through
+    the ClientMCPManager, which resolves ``secret:`` env refs and connects the
+    same way the agent-execute path does.
+    """
+    # Fast path: platform tools are already registered + prefixed in-process.
+    if client_id == PLATFORM_CLIENT_ID and ctx.tool_executor is not None:
+        prefix = f"mcp__{server_name}__"
+        pre = [
+            d for d in ctx.tool_executor.get_mcp_tool_definitions()
+            if str(d.get("name", "")).startswith(prefix)
+        ]
+        if pre:
+            return pre, True, None
+
+    mgr = None
+    if ctx.platform_executor:
+        mgr = getattr(ctx.platform_executor, "_client_mcp_manager", None)
+    if mgr is None and getattr(ctx, "company_system", None):
+        mgr = getattr(ctx.company_system, "_client_mcp_manager", None)
+    if mgr is None:
+        return [], False, "Live MCP connection not available on this server."
+
+    try:
+        # Make sure the manager knows this client's configs (secrets included).
+        _refresh_client_mcp_cache(ctx, client_mcp_store, client_id)
+        ns = _scope_owner(client_id)[1] if client_id.startswith("ns:") else "default"
+        schemas = async_to_sync(mgr.get_tool_schemas)(client_id, server_name, ns)
+        # Honour the server's per-server allow/deny so discovery matches what the
+        # agent could actually call.
+        try:
+            from src.mcp.client_mcp_manager import filter_tool_schemas
+            schemas = filter_tool_schemas(schemas, cfg)
+        except Exception:  # noqa: BLE001 — filtering is best-effort
+            pass
+        return _prefixed_tool_defs(server_name, schemas), True, None
+    except Exception as e:  # noqa: BLE001 — discovery must never 500
+        logger.warning("MCP tool discovery failed for %s/%s: %s", client_id, server_name, e)
+        return [], False, str(e)
+
+
+class PlatformMcpServerToolsView(APIView):
+    """GET /api/platform/mcp/servers/{server_name}/tools.
+
+    Discover the tools a registered MCP server exposes, as
+    ``mcp__<server>__<tool>`` definitions for the agent-creation wizard's tool
+    picker (so MCP tools are selectable + governable, not hand-typed).
+
+    Works across scopes. When the same ``server_name`` exists in more than one
+    scope, disambiguate with ``?client_id=_platform|user:<id>|ns:<name>`` or
+    ``?scope=platform|tenant|user|namespace&owner=<id-or-ns>``. With neither,
+    the most-specific accessible scope wins (user → namespace → tenant).
+
+    Caller-scoping matches the server LIST endpoint: non-admins may only
+    introspect their own user-scope servers, their member namespaces, and
+    tenant/platform servers.
+    """
+
+    def _candidate_client_ids(self, request, ctx, client_store):
+        """Client IDs the caller may introspect, most-specific first."""
+        uid, role = _acting_principal(request, ctx)
+        my_ns: set[str] = set()
+        if ctx.auth_enabled and role != ADMIN_ROLE:
+            try:
+                from forgeos_web.agents.views import _visible_namespaces
+                my_ns = _visible_namespaces(uid)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("MCP tool discovery: _visible_namespaces(%s) failed: %s", uid, e)
+        else:
+            try:
+                for c in client_store.list_all():
+                    s, owner = _scope_owner(c["id"])
+                    if s == "namespace":
+                        my_ns.add(owner)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("MCP tool discovery: client_store.list_all failed: %s", e)
+        ids = [f"user:{uid}"] + [f"ns:{n}" for n in sorted(my_ns)] + [PLATFORM_CLIENT_ID]
+        return ids, uid, role
+
+    def get(self, request, server_name):
+        ctx = di.get_context()
+        client_store, client_mcp_store = _client_stores(ctx)
+        candidates, _uid, role = self._candidate_client_ids(request, ctx, client_store)
+
+        explicit = request.query_params.get("client_id")
+        scope = (request.query_params.get("scope") or "").lower()
+        owner = request.query_params.get("owner")
+
+        if explicit:
+            if role == ADMIN_ROLE or not ctx.auth_enabled or explicit in candidates:
+                order = [explicit]
+            else:
+                return Response({"detail": "Not permitted to introspect this MCP server"}, status=403)
+        elif scope:
+            cid = None
+            if scope in ("platform", "tenant"):
+                cid = PLATFORM_CLIENT_ID
+            elif scope == "user":
+                cid = f"user:{owner}" if owner else candidates[0]
+            elif scope == "namespace" and owner:
+                cid = f"ns:{owner}"
+            if cid and (role == ADMIN_ROLE or not ctx.auth_enabled or cid in candidates):
+                order = [cid]
+            elif cid:
+                return Response({"detail": "Not permitted to introspect this MCP server"}, status=403)
+            else:
+                order = candidates
+        else:
+            order = candidates
+
+        resolved = None
+        cfg = None
+        for cid in order:
+            try:
+                rows = client_mcp_store.list_for_client(cid)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("MCP tool discovery: list_for_client(%s) failed: %s", cid, e)
+                rows = []
+            for row in rows:
+                if row.get("server_name") == server_name:
+                    resolved, cfg = cid, row
+                    break
+            if resolved:
+                break
+
+        if not resolved:
+            return Response(
+                {"detail": f"MCP server '{server_name}' not found in an accessible scope"},
+                status=404,
+            )
+
+        s, own = _scope_owner(resolved)
+        tools, connected, detail = _discover_server_tools(
+            ctx, client_mcp_store, resolved, server_name, cfg)
+        body = {
+            "server_name": server_name,
+            "client_id": resolved,
+            "scope": s,
+            "owner": own,
+            "tools": tools,
+            "count": len(tools),
+            "connected": connected,
+        }
+        if detail:
+            body["detail"] = detail
+        return Response(body)
+
+
+# ---------------------------------------------------------------------------
 # Per-user MCP enrollment.
 # ---------------------------------------------------------------------------
 

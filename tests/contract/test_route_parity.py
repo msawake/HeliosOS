@@ -107,6 +107,10 @@ _DJANGO_NATIVE_ADDITIONS = {
     # to an agent (migration 024).
     "/api/mcp/access-groups",
     "/api/mcp/access-groups/{name}",
+    # MCP tool discovery for the agent-creation wizard: enumerate the tools a
+    # registered MCP server exposes (mcp__<server>__<tool>) so they're
+    # selectable + governable instead of hand-typed.
+    "/api/platform/mcp/servers/{server_name}/tools",
 }
 
 # Paths from the FastAPI contract that Django extends with additional HTTP
