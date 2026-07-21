@@ -19,6 +19,10 @@ urlpatterns = [
     path("api/mcps/search", views.McpSearchView.as_view()),
     path("api/mcps/<path:name>", views.McpPackageView.as_view()),
     path("api/platform/mcp/servers", views.PlatformMcpServersView.as_view()),
+    # Tool discovery for the agent-creation wizard — MUST precede the
+    # <server_name> detail route so the ``/tools`` suffix isn't swallowed.
+    path("api/platform/mcp/servers/<str:server_name>/tools",
+         views.PlatformMcpServerToolsView.as_view()),
     path("api/platform/mcp/servers/<str:server_name>",
          views.PlatformMcpServerDetailView.as_view()),
     path("api/users/<str:user_id>/mcp/jira", views.UserJiraMcpView.as_view()),
