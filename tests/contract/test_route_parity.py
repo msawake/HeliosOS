@@ -99,6 +99,10 @@ _DJANGO_NATIVE_ADDITIONS = {
     "/api/platform/namespaces/{ns}/members/{member_user_id}",
     # Run history: list runs across the fleet, grouped client-side by conversation.
     "/api/platform/runs",
+    # MCP tool discovery for the agent-creation wizard: enumerate the tools a
+    # registered MCP server exposes (mcp__<server>__<tool>) so they're
+    # selectable + governable instead of hand-typed.
+    "/api/platform/mcp/servers/{server_name}/tools",
 }
 
 
