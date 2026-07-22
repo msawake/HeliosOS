@@ -34,6 +34,31 @@ TOOL_DEFAULT_TIMEOUT_SECONDS = float(os.environ.get("FORGEOS_TOOL_TIMEOUT", "60.
 TOOL_MAX_RETRIES = int(os.environ.get("FORGEOS_TOOL_MAX_RETRIES", "2"))
 
 
+def _resolve_tool_name(name: str, tool_defs: list[dict] | None) -> str:
+    """Resolve unprefixed MCP tool names to their ``mcp__<server>__<name>`` form.
+
+    LLMs sometimes follow the system prompt's bare tool name instead of the
+    prefixed name from the tool definitions.  When there is exactly one
+    ``mcp__*__<bare>`` match in *tool_defs*, return the prefixed name so the
+    kernel check and the executor see a name they recognise.
+    """
+    if not tool_defs or "mcp__" in name:
+        return name
+    known = set()
+    for t in tool_defs:
+        n = t.get("name") or (t.get("function") or {}).get("name", "")
+        if n:
+            known.add(n)
+    if name in known:
+        return name
+    suffix = f"__{name}"
+    matches = [k for k in known if k.startswith("mcp__") and k.endswith(suffix)]
+    if len(matches) == 1:
+        logger.info("Resolved bare tool name %r → %r", name, matches[0])
+        return matches[0]
+    return name
+
+
 def _tool_timeout_for(tool_name: str, tool_definitions: list[dict] | None) -> float:
     """Look up a per-tool timeout from the tool definition metadata, else default."""
     if not tool_definitions:
@@ -269,18 +294,18 @@ async def run_agentic_loop(
             tasks = []
             guided_indices: dict[int, dict] = {}
             for i, tc in enumerate(response.tool_calls):
-                all_tool_calls.append({"name": tc.name, "input": tc.input})
-                # Check callback guidance before execution
+                resolved = _resolve_tool_name(tc.name, tool_definitions)
+                all_tool_calls.append({"name": resolved, "input": tc.input})
                 guidance = await _check_guidance(
-                    callback_registry, tc.name, tc.input, agent_context, guidance_counts,
+                    callback_registry, resolved, tc.input, agent_context, guidance_counts,
                 )
                 if guidance:
                     guided_indices[i] = guidance
                     tasks.append(asyncio.sleep(0))  # placeholder
                 else:
-                    tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
+                    tool_timeout = _tool_timeout_for(resolved, tool_definitions)
                     tasks.append(_execute_tool(
-                        tc.name, tc.input, tool_executor, agent_context,
+                        resolved, tc.input, tool_executor, agent_context,
                         timeout=tool_timeout,
                     ))
 
@@ -336,18 +361,18 @@ async def run_agentic_loop(
             tasks = []
             guided_indices: dict[int, dict] = {}
             for i, tc in enumerate(response.tool_calls):
-                all_tool_calls.append({"name": tc.name, "input": tc.input})
-                # Check callback guidance before execution
+                resolved = _resolve_tool_name(tc.name, tool_definitions)
+                all_tool_calls.append({"name": resolved, "input": tc.input})
                 guidance = await _check_guidance(
-                    callback_registry, tc.name, tc.input, agent_context, guidance_counts,
+                    callback_registry, resolved, tc.input, agent_context, guidance_counts,
                 )
                 if guidance:
                     guided_indices[i] = guidance
                     tasks.append(asyncio.sleep(0))  # placeholder
                 else:
-                    tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
+                    tool_timeout = _tool_timeout_for(resolved, tool_definitions)
                     tasks.append(_execute_tool(
-                        tc.name, tc.input, tool_executor, agent_context,
+                        resolved, tc.input, tool_executor, agent_context,
                         timeout=tool_timeout,
                     ))
 
@@ -382,18 +407,18 @@ async def run_agentic_loop(
             tasks = []
             guided_indices: dict[int, dict] = {}
             for i, tc in enumerate(response.tool_calls):
-                all_tool_calls.append({"name": tc.name, "input": tc.input})
-                # Check callback guidance before execution
+                resolved = _resolve_tool_name(tc.name, tool_definitions)
+                all_tool_calls.append({"name": resolved, "input": tc.input})
                 guidance = await _check_guidance(
-                    callback_registry, tc.name, tc.input, agent_context, guidance_counts,
+                    callback_registry, resolved, tc.input, agent_context, guidance_counts,
                 )
                 if guidance:
                     guided_indices[i] = guidance
                     tasks.append(asyncio.sleep(0))  # placeholder
                 else:
-                    tool_timeout = _tool_timeout_for(tc.name, tool_definitions)
+                    tool_timeout = _tool_timeout_for(resolved, tool_definitions)
                     tasks.append(_execute_tool(
-                        tc.name, tc.input, tool_executor, agent_context,
+                        resolved, tc.input, tool_executor, agent_context,
                         timeout=tool_timeout,
                     ))
 

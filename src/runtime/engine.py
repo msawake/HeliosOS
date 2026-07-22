@@ -423,8 +423,13 @@ class StepEngine:
         shape_assistant_turn(cont.messages, response, kind)
 
         # 2. Build records + dispatch every tool through the kernel.
+        from src.platform.agentic_loop import _resolve_tool_name
         records = [
-            ToolCallRecord(tool_use_id=tc.id, name=tc.name, arguments=tc.input)
+            ToolCallRecord(
+                tool_use_id=tc.id,
+                name=_resolve_tool_name(tc.name, cont.tool_definitions),
+                arguments=tc.input,
+            )
             for tc in (response.tool_calls or [])
         ]
         # Accumulate the tool-call count across turns for the run rollup.
