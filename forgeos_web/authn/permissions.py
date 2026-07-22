@@ -19,6 +19,12 @@ PUBLIC_PATHS = {
     "/docs", "/redoc", "/openapi.json",
     "/api/auth/token", "/api/auth/login", "/api/me",
     "/api/billing/webhook", "/api/billing/checkout", "/api/billing/plans",
+    # OAuth 2.0 authorization-server protocol endpoints — spec requires these
+    # to be reachable without a Helios session (MCP clients call them before
+    # any user has authenticated). Consent (/oauth/authorize/<id>) + grant
+    # management (/api/oauth/*) are deliberately NOT here — they need a login.
+    "/.well-known/oauth-authorization-server",
+    "/oauth/register", "/oauth/authorize", "/oauth/token", "/oauth/revoke",
 }
 PUBLIC_READ_PREFIXES = ("/api/approvals",)  # GET only
 

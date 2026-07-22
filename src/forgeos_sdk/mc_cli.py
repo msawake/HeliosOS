@@ -185,12 +185,12 @@ def cmd_run(args) -> int:
 
 def cmd_runs(args) -> int:
     pid = _resolve_agent_id(args)
-    data = _get(args.url, args.api_key, f"/api/platform/agents/{pid}/runs", params={"limit": args.limit})
+    data = _get(args.url, args.api_key, f"/api/platform/agents/{pid}/runs", params={"page_size": args.limit})
     if args.json:
         print(json.dumps(data, indent=2, default=str))
         return 0
     rows = []
-    for r in data.get("runs", []):
+    for r in data.get("items", []):
         rows.append([
             (r.get("started_at") or "")[:19].replace("T", " "),
             r.get("trigger", "?"),

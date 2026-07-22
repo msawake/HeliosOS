@@ -1116,11 +1116,14 @@ class AgentRunsView(APIView):
     def get(self, request, agent_id):
         ctx = di.get_context()
         platform_executor = ctx.platform_executor
-        limit = int(request.query_params.get("limit", 20))
+        from forgeos_web.common.pagination import paginate
         if not platform_executor or not getattr(platform_executor, "agent_runs", None):
-            return Response({"runs": []})
-        runs = async_to_sync(platform_executor.agent_runs.list_for_agent)(agent_id, limit=limit)
-        return Response({"runs": runs})
+            return Response(paginate([], request))
+        # Fetch a generous batch and paginate server-side, matching the standard
+        # {"items", "total", "page", "page_size"} envelope used by every other
+        # list endpoint (RunsListView, AgentsView, ...). ?page/?page_size drive it.
+        runs = async_to_sync(platform_executor.agent_runs.list_for_agent)(agent_id, limit=500)
+        return Response(paginate(runs, request))
 
 
 # --------------------------------------------------------------------------- #

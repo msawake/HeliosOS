@@ -19,6 +19,7 @@ urlpatterns = [
     path("", include("forgeos_web.approvals.urls")),
     path("", include("forgeos_web.agents.urls")),
     path("", include("forgeos_web.mcps.urls")),
+    path("", include("forgeos_web.oauth.urls")),
     path("", include("forgeos_web.clients.urls")),
     path("", include("forgeos_web.kernel.urls")),
     path("", include("forgeos_web.namespaces.urls")),

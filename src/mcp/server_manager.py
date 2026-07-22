@@ -157,7 +157,7 @@ class MCPServerManager:
 
         import asyncio
         tasks = [_connect_and_discover(config) for config in self._server_configs]
-        await asyncio.gather(*tasks)
+        await asyncio.gather(*tasks, return_exceptions=True)
 
         connected = len(self._clients)
         total = len(self._server_configs)
@@ -212,6 +212,113 @@ class MCPServerManager:
         self._tool_schemas[name] = schemas
         logger.info("MCP connected on demand: %s (%d tools discovered)", name, len(schemas))
         return schemas
+
+    async def discover_tools(
+        self,
+        name: str,
+        package: str,
+        env_vars: dict[str, str] | None = None,
+        args: list[str] | None = None,
+        *,
+        transport: str = "stdio",
+        url: str | None = None,
+    ) -> list[dict]:
+        """One-shot tool discovery: connect, read schemas, close immediately.
+
+        Unlike ``connect_one`` this does NOT keep a persistent session — the
+        transport is torn down after ``list_tools()`` completes. This avoids
+        the anyio cancel-scope RuntimeError that occurs when a streamable-http
+        transport's background SSE task is cancelled from a different task
+        (e.g. when called via ``async_to_sync``).
+
+        Returns the discovered tool schemas (same shape as ``connect_one``).
+        The schemas are cached in ``_tool_schemas`` but the session is NOT
+        kept in ``_clients`` / ``_sessions``.
+        """
+        if not HAS_MCP:
+            raise RuntimeError("MCP SDK not installed — cannot connect server")
+        cfg = MCPServerConfig(
+            name=name, package=package,
+            env_vars=env_vars or {}, args=args or [],
+            transport=transport, url=url,
+        )
+
+        transport_kind = (cfg.transport or "stdio").lower()
+        if transport_kind == "streamable-http":
+            schemas = await self._discover_http_tools(cfg)
+        else:
+            client = await self._connect_server(cfg)
+            if not client:
+                raise RuntimeError(f"MCP server '{name}' did not return a client")
+            try:
+                tools = await client.list_tools()
+                schemas = [
+                    {"name": t.name,
+                     "description": getattr(t, "description", ""),
+                     "inputSchema": getattr(t, "inputSchema", {})}
+                    for t in tools.tools
+                ]
+            finally:
+                await self._teardown_session_safe(name)
+
+        self._tool_schemas[name] = schemas
+        logger.info("MCP discover_tools: %s (%d tools)", name, len(schemas))
+        return schemas
+
+    async def _discover_http_tools(self, config: MCPServerConfig) -> list[dict]:
+        """Connect to a streamable-http MCP, read tools, tear down safely."""
+        if not HAS_MCP_HTTP or not config.url:
+            raise RuntimeError(
+                f"streamable-http not available for '{config.name}' "
+                f"(HAS_MCP_HTTP={HAS_MCP_HTTP}, url={config.url})")
+        headers = self._resolve_http_headers(config)
+
+        transport_ctx = streamablehttp_client(config.url, headers=headers)
+        read_stream, write_stream, _ = await transport_ctx.__aenter__()
+        session = ClientSession(read_stream, write_stream)
+        await session.__aenter__()
+        await session.initialize()
+
+        try:
+            tools = await session.list_tools()
+            schemas = [
+                {"name": t.name,
+                 "description": getattr(t, "description", ""),
+                 "inputSchema": getattr(t, "inputSchema", {})}
+                for t in tools.tools
+            ]
+        finally:
+            for ctx_mgr in (session, transport_ctx):
+                try:
+                    await ctx_mgr.__aexit__(None, None, None)
+                except Exception as exc:
+                    if "cancel scope" in str(exc).lower() or "connection closed" in str(exc).lower():
+                        logger.debug(
+                            "MCP '%s' benign teardown during discover: %s",
+                            config.name, exc,
+                        )
+                    else:
+                        logger.warning("MCP '%s' teardown error: %s", config.name, exc)
+
+        return schemas
+
+    async def _teardown_session_safe(self, name: str):
+        """Remove and close a session/transport pair, tolerating cancel-scope errors."""
+        remaining = []
+        for transport_ctx, sess in self._sessions:
+            if self._clients.get(name) is sess:
+                for ctx_mgr in (sess, transport_ctx):
+                    try:
+                        await ctx_mgr.__aexit__(None, None, None)
+                    except Exception as exc:
+                        if "cancel scope" in str(exc).lower():
+                            logger.debug("MCP '%s' teardown (benign): %s", name, exc)
+                        else:
+                            logger.warning("MCP '%s' teardown error: %s", name, exc)
+            else:
+                remaining.append((transport_ctx, sess))
+        self._sessions = remaining
+        self._clients.pop(name, None)
 
     async def _connect_server(self, config: MCPServerConfig) -> Any | None:
         """Connect to a single MCP server via the configured transport."""
@@ -294,6 +401,37 @@ class MCPServerManager:
         self._sessions.append((transport, session))
         return session
 
+    def _resolve_http_headers(self, config: MCPServerConfig) -> dict[str, str]:
+        """Resolve ``secret:`` refs in env_vars into concrete header values."""
+        headers: dict[str, str] = {}
+        if not config.env_vars:
+            return headers
+        cred_store = None
+        if self._secrets_manager:
+            from src.platform.credentials import CredentialStore, SCOPE_PLATFORM
+            cred_store = CredentialStore(self._secrets_manager)
+        for k, v in config.env_vars.items():
+            if isinstance(v, str) and v.startswith("secret:"):
+                secret_name = v[len("secret:"):]
+                if cred_store is not None:
+                    resolved_val = cred_store.resolve(
+                        secret_name, namespace=None, user_id="default",
+                        order=(SCOPE_PLATFORM,), caller=f"mcp_server_{config.name}",
+                    )
+                    headers[k] = resolved_val or ""
+                    if not resolved_val:
+                        logger.warning(
+                            "Secret '%s' not found for MCP server '%s'",
+                            secret_name, config.name,
+                        )
+                else:
+                    import os as _os
+                    env_name = secret_name.upper().replace("-", "_")
+                    headers[k] = _os.environ.get(env_name, "")
+            else:
+                headers[k] = str(v)
+        return headers
+
     async def _connect_http_server(self, config: MCPServerConfig) -> Any | None:
         """Connect to a remote MCP server over Streamable HTTP.
 
@@ -310,33 +448,7 @@ class MCPServerManager:
             )
             return None
 
-        # Resolve ``secret:`` refs into concrete header values.
-        headers: dict[str, str] = {}
-        if config.env_vars:
-            cred_store = None
-            if self._secrets_manager:
-                from src.platform.credentials import CredentialStore, SCOPE_PLATFORM
-                cred_store = CredentialStore(self._secrets_manager)
-            for k, v in config.env_vars.items():
-                if isinstance(v, str) and v.startswith("secret:"):
-                    secret_name = v[len("secret:"):]
-                    if cred_store is not None:
-                        resolved_val = cred_store.resolve(
-                            secret_name, namespace=None, user_id="default",
-                            order=(SCOPE_PLATFORM,), caller=f"mcp_server_{config.name}",
-                        )
-                        headers[k] = resolved_val or ""
-                        if not resolved_val:
-                            logger.warning(
-                                "Secret '%s' not found for MCP server '%s'",
-                                secret_name, config.name,
-                            )
-                    else:
-                        import os as _os
-                        env_name = secret_name.upper().replace("-", "_")
-                        headers[k] = _os.environ.get(env_name, "")
-                else:
-                    headers[k] = str(v)
+        headers = self._resolve_http_headers(config)
 
         transport = streamablehttp_client(config.url, headers=headers)
         read_stream, write_stream, _ = await transport.__aenter__()

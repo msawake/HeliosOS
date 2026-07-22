@@ -283,14 +283,14 @@ def test_mc_run_resolves_unique_name_substring(monkeypatch):
 def test_mc_runs_renders_history(monkeypatch):
     routes = {
         ("GET", "/api/platform/fleet"): (200, _fleet_one_running()),
-        ("GET", "/api/platform/agents/pid-1/runs"): (200, {"runs": [
+        ("GET", "/api/platform/agents/pid-1/runs"): (200, {"items": [
             {"started_at": "2026-05-21T14:00:00", "trigger": "manual",
              "status": "completed", "duration_ms": 12345,
              "tool_calls": 3, "tokens_used": 1500},
             {"started_at": "2026-05-21T13:00:00", "trigger": "a2h_resume",
              "status": "failed", "duration_ms": 200,
              "tool_calls": 0, "tokens_used": 0},
-        ]}),
+        ], "total": 2, "page": 1, "page_size": 20}),
     }
     with stub_server(routes) as (base_url, _):
         code, out, _ = run_cli(["mc", "runs", "pid-1"], base_url, monkeypatch)

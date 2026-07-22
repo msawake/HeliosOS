@@ -287,6 +287,41 @@ class AuthManager:
             name=ident.name,
         )
 
+    def verify_oauth_token(self, token: str) -> AuthUser | None:
+        """Verify an OAuth 2.0 access token (``hoat_...``).
+
+        Issued by Helios's own MCP authorization server (``/oauth/token``) after
+        an authorization-code + PKCE flow. Storage + lookup mirror PATs exactly
+        (hashed, cross-tenant by ``db.admin()``), so once issued these tokens
+        authenticate on the identical Bearer path — the MCP server forwards the
+        header unchanged. None when the token isn't an OAuth token, is
+        revoked/expired, or the store is unavailable.
+        """
+        if not token:
+            return None
+        try:
+            from src.api.oauth_store import ACCESS_TOKEN_PREFIX, OAuthTokenStore
+        except Exception:
+            return None
+        # The prefix gates the hot path: non-OAuth Bearer tokens fall straight
+        # through to the next verifier without touching the store.
+        if not token.startswith(ACCESS_TOKEN_PREFIX):
+            return None
+        try:
+            ident = OAuthTokenStore(self._db, tenant_id=self._tenant_id).verify_access_token(token)
+        except Exception:
+            logger.exception("verify_oauth_token failed")
+            return None
+        if ident is None:
+            return None
+        return AuthUser(
+            user_id=ident.user_id,
+            email=ident.email,
+            tenant_id=ident.tenant_id,
+            role=ident.role,
+            name=ident.name,
+        )
+
     def verify_token(self, token: str) -> AuthUser | None:
         """Verify a signed session token. None on bad sig / expiry / malformed."""
         try:
@@ -402,15 +437,17 @@ class AuthManager:
         auth_header = request.headers.get("Authorization", "")
 
         # Bearer token — try (in order):
-        #   1. personal access token   (``hpat_...`` prefix, long-lived, revocable)
-        #   2. signed session token    (``v1.<payload>.<sig>`` from /api/auth/login)
-        #   3. Firebase JWT            (federated login)
-        # Only the PAT path touches the DB when the prefix matches, so the
-        # other paths keep their existing latency profile.
+        #   1. OAuth access token      (``hoat_...`` prefix, MCP authorization server)
+        #   2. personal access token   (``hpat_...`` prefix, long-lived, revocable)
+        #   3. signed session token    (``v1.<payload>.<sig>`` from /api/auth/login)
+        #   4. Firebase JWT            (federated login)
+        # Each hashed-token path only touches the DB when its prefix matches, so
+        # the other paths keep their existing latency profile.
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
             user = (
-                self.verify_personal_token(token)
+                self.verify_oauth_token(token)
+                or self.verify_personal_token(token)
                 or self.verify_token(token)
                 or self.verify_jwt(token)
             )

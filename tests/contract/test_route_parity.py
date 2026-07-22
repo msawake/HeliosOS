@@ -111,6 +111,17 @@ _DJANGO_NATIVE_ADDITIONS = {
     # registered MCP server exposes (mcp__<server>__<tool>) so they're
     # selectable + governable instead of hand-typed.
     "/api/platform/mcp/servers/{server_name}/tools",
+    # OAuth 2.0 authorization server for the MCP endpoint (migrations 026-028):
+    # discovery + Dynamic Client Registration + auth-code/PKCE + refresh, plus
+    # the dashboard consent-decision and grant-management surface.
+    "/.well-known/oauth-authorization-server",
+    "/oauth/register",
+    "/oauth/authorize",
+    "/oauth/authorize/{request_id}",
+    "/oauth/token",
+    "/oauth/revoke",
+    "/api/oauth/grants",
+    "/api/oauth/grants/{client_id}",
 }
 
 # Paths from the FastAPI contract that Django extends with additional HTTP

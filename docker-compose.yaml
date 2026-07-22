@@ -121,13 +121,12 @@ services:
       context: ../forgeos-dashboard
       dockerfile: Dockerfile
       args:
-        FORGEOS_API_URL: http://app:5000
         NEXT_PUBLIC_REQUIRE_AUTH: "0"
     ports:
       - "127.0.0.1:3000:3000"
     environment:
-      # Read at server start by next.config.js rewrites() — must point at the
-      # API service over the compose network (not localhost, which is this box).
+      # Read at RUNTIME by the /api proxy route handler (src/app/api/[...path]/route.ts).
+      # Must point at the API service over the compose network (not localhost, this box).
       - FORGEOS_API_URL=http://app:5000
     depends_on:
       - app

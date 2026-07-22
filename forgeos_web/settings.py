@@ -99,6 +99,7 @@ INSTALLED_APPS = [
     # View-only apps (endpoint ports)
     "forgeos_web.approvals",
     "forgeos_web.mcps",
+    "forgeos_web.oauth",
     "forgeos_web.kernel",
     "forgeos_web.namespaces",
     "forgeos_web.credentials",

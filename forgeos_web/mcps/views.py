@@ -273,7 +273,13 @@ def _connect_platform_mcp(
         return {"connected": False, "tools_discovered": 0,
                 "detail": "Live MCP connection not available on this server."}
     try:
-        schemas = async_to_sync(ctx.mcp_manager.connect_one)(
+        # For streamable-http, prefer discover_tools (one-shot: connect → read
+        # schemas → tear down) so the transport's background SSE task doesn't
+        # race async_to_sync's event-loop teardown (anyio cancel-scope bug).
+        connect_fn = ctx.mcp_manager.connect_one
+        if transport == "streamable-http" and hasattr(ctx.mcp_manager, "discover_tools"):
+            connect_fn = ctx.mcp_manager.discover_tools
+        schemas = async_to_sync(connect_fn)(
             server_name, package, env_vars, args,
             transport=transport, url=url,
         )
@@ -517,10 +523,8 @@ def _discover_server_tools(ctx, client_mcp_store, client_id, server_name, cfg):
         # Make sure the manager knows this client's configs (secrets included).
         _refresh_client_mcp_cache(ctx, client_mcp_store, client_id)
         ns = _scope_owner(client_id)[1] if client_id.startswith("ns:") else "default"
-        schemas = async_to_sync(mgr.get_tool_schemas)(client_id, server_name, ns)
-        # Honour the server's per-server allow/deny so discovery matches what the
-        # agent could actually call (best-effort — the filter helper may be absent
-        # on older builds).
+        discover = getattr(mgr, "discover_tools_oneshot", None) or mgr.get_tool_schemas
+        schemas = async_to_sync(discover)(client_id, server_name, ns)
         try:
             from src.mcp.client_mcp_manager import filter_tool_schemas
             schemas = filter_tool_schemas(schemas, cfg)

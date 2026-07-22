@@ -279,6 +279,41 @@ class ClientMCPManager:
         conn = self._connections.get(key)
         return conn.tool_schemas if conn else []
 
+    async def discover_tools_oneshot(
+        self, client_id: str, server_name: str, namespace: str = "default"
+    ) -> list[dict]:
+        """One-shot tool discovery: connect, read schemas, close immediately.
+
+        Unlike ``get_tool_schemas`` this does NOT cache the session — the
+        transport is torn down (with cancel-scope tolerance) right after
+        ``list_tools()`` completes. Safe to call from ``async_to_sync`` where
+        a persistent streamable-http session would crash on teardown.
+        """
+        config = self._load_server_config(client_id, server_name)
+        if not config:
+            return []
+        try:
+            conn = await self._connect(client_id, config, namespace=namespace)
+        except Exception as e:
+            logger.warning("MCP discover_tools_oneshot %s/%s connect failed: %s",
+                           client_id, server_name, e)
+            return []
+        if not conn:
+            return []
+        schemas = list(conn.tool_schemas)
+        for ctx_mgr in (conn.session, conn.transport):
+            try:
+                await ctx_mgr.__aexit__(None, None, None)
+            except Exception as exc:
+                if "cancel scope" in str(exc).lower() or "connection closed" in str(exc).lower():
+                    logger.debug(
+                        "MCP '%s/%s' benign teardown during discover: %s",
+                        client_id, server_name, exc,
+                    )
+                else:
+                    logger.warning("MCP '%s/%s' teardown error: %s", client_id, server_name, exc)
+        return schemas
+
     async def disconnect_all(self) -> None:
         """Disconnect all client MCP connections."""
         async with self._lock:
