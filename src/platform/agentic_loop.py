@@ -604,12 +604,22 @@ async def append_client_mcp_tools(
     for cid in chain:
         if not cid:
             continue
-        try:
-            by_server = await mgr.get_all_client_tools(cid)
-        except Exception:
-            logger.debug("append_client_mcp_tools failed for %s", cid, exc_info=True)
+        by_server = None
+        for _discovery_attempt in range(2):
+            try:
+                by_server = await mgr.get_all_client_tools(cid)
+                break
+            except Exception:
+                if _discovery_attempt == 0:
+                    logger.info("MCP tool discovery retry for %s (cold start?)", cid)
+                    await asyncio.sleep(2)
+                else:
+                    logger.warning(
+                        "MCP tool discovery failed for %s after retry", cid, exc_info=True,
+                    )
+        if not by_server:
             continue
-        for server_name, schemas in (by_server or {}).items():
+        for server_name, schemas in by_server.items():
             if allowed_servers is not None and server_name not in allowed_servers:
                 continue  # not in the agent's access group
             if server_name in seen_servers:

@@ -206,6 +206,22 @@ class ClientMCPManager:
 
         return None
 
+    async def invalidate_connection(
+        self, client_id: str, server_name: str, namespace: str = "default",
+    ) -> bool:
+        """Remove a dead connection so the next get_client reconnects.
+
+        Uses a short 5s cooldown (vs default 60s) so the agentic_loop retry
+        (0.5s–2s backoff) can reconnect quickly without a tight loop.
+        """
+        key = (client_id, server_name, namespace)
+        async with self._lock:
+            if key not in self._connections:
+                return False
+            await self._disconnect_one(key)
+            self._connect_cooldowns[key] = time.time() + 5
+            return True
+
     async def get_tool_schemas(
         self, client_id: str, server_name: str, namespace: str = "default"
     ) -> list[dict]:

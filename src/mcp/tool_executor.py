@@ -819,7 +819,10 @@ class ToolExecutor:
                         "Client MCP %s/%s tool %s failed: %s",
                         client_id, server_name, method_name, e,
                     )
-                    return {"success": False, "error": str(e)}
+                    await self._client_mcp_manager.invalidate_connection(
+                        client_id, server_name, ns_for_call,
+                    )
+                    raise
                 ok, body = _flatten(result)
                 return {"success": ok, "result": body}
 
@@ -838,7 +841,7 @@ class ToolExecutor:
             return {"success": ok, "result": body}
         except Exception as e:
             logger.error("MCP tool %s failed: %s", tool_name, e)
-            return {"success": False, "error": str(e)}
+            raise
 
     # ── Custom Tool Handlers ─────────────────────────────────────────────
 
