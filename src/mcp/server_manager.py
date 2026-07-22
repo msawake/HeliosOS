@@ -280,8 +280,16 @@ class MCPServerManager:
         transport = stdio_client(server_params)
         read_stream, write_stream = await transport.__aenter__()
         session = ClientSession(read_stream, write_stream)
-        await session.__aenter__()
-        await session.initialize()
+        try:
+            await session.__aenter__()
+            await session.initialize()
+        except BaseException:
+            # Connect/init failed (e.g. a bad package spec means uvx never
+            # launches the subprocess → "Connection closed"). Tear the
+            # already-opened transport down HERE so its task-bound cancel scope
+            # isn't left to explode later in another task and kill the caller.
+            await self._safe_close(config.name, transport, session)
+            raise
 
         self._sessions.append((transport, session))
         return session
@@ -333,8 +341,14 @@ class MCPServerManager:
         transport = streamablehttp_client(config.url, headers=headers)
         read_stream, write_stream, _ = await transport.__aenter__()
         session = ClientSession(read_stream, write_stream)
-        await session.__aenter__()
-        await session.initialize()
+        try:
+            await session.__aenter__()
+            await session.initialize()
+        except BaseException:
+            # Same task-bound cancel-scope hazard as stdio: close the opened
+            # transport in-task on failure so a broken remote MCP can't kill boot.
+            await self._safe_close(config.name, transport, session)
+            raise
 
         self._sessions.append((transport, session))
         return session
@@ -397,3 +411,24 @@ class MCPServerManager:
         self._clients.clear()
         self._tool_schemas.clear()
         logger.info("All MCP servers disconnected")
+
+    async def _safe_close(self, name: str, transport, session) -> None:
+        """Best-effort teardown of a half-opened transport/session after a
+        FAILED connect, run in the SAME task that opened them.
+
+        Critical: the stdio transport's anyio cancel scope is task-bound. If a
+        failed connect leaves the transport ``__aenter__``'d but never exited,
+        anyio exits that scope later during GC in a *different* task and raises
+        ``RuntimeError: Attempted to exit cancel scope in a different task`` into
+        whatever coroutine is running then (e.g. ``bootstrap.boot``) — killing
+        it. Closing here, in-task, prevents that. Benign cross-task errors during
+        this cleanup are swallowed, matching ``disconnect_one``/``disconnect_all``.
+        """
+        for closer in (getattr(session, "__aexit__", None), getattr(transport, "__aexit__", None)):
+            if closer is None:
+                continue
+            try:
+                await closer(None, None, None)
+            except Exception as e:  # noqa: BLE001
+                if "cancel scope in a different task" not in str(e):
+                    logger.debug("MCP '%s' cleanup after failed connect: %s", name, e)
