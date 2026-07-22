@@ -239,16 +239,15 @@ class SecretsManager:
         """Write or overwrite a secret.
 
         Prefers the encrypted Postgres backend when wired — it keeps
-        user/tenant-scoped data in the platform's own DB, works without
+        user/tenant-scoped data in the platform's own DB, works WITHOUT
         project-level Secret Manager IAM (which the platform-api GSA does NOT
-        carry by default), and respects per-tenant RLS. Falls back to GCP
+        carry by default), and respects per-tenant RLS. Only falls back to GCP
         Secret Manager when no DB backend is configured (or the Postgres write
-        itself fails, e.g. cryptography missing). ``user_id``/``kind``/
-        ``scope``/``namespace`` are recorded by the Postgres backend for
-        lookup; they are ignored by Secret Manager (where the scope is already
-        encoded in ``name``). Returns True on success, False if no writable
-        backend exists (env-var fallback is intentionally write-disabled —
-        secrets must land in a real store).
+        itself fails). ``user_id``/``kind``/``scope``/``namespace`` are recorded
+        by the Postgres backend for lookup; they are ignored by Secret Manager
+        (where the scope is already encoded in ``name``). Returns True on
+        success, False if no writable backend exists (env-var fallback is
+        intentionally write-disabled — secrets must land in a real store).
         """
         if self._db_backend is not None:
             ok = self._db_backend.put(
@@ -262,7 +261,7 @@ class SecretsManager:
                 )
                 return True
             logger.warning(
-                "Postgres secret backend write failed for '%s' — trying GCP fallback", name
+                "Postgres secret backend write failed for '%s' — trying GCP Secret Manager fallback", name
             )
         if not (self._client and self._project_id):
             logger.warning("No writable secret backend; refusing to put '%s'", name)
