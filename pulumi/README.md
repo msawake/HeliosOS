@@ -227,7 +227,7 @@ pulumi/
     └── agent_local.py        # local target only
 ```
 
-## Things deliberately NOT done
+## Tasks deliberately NOT done
 
 - **Per-agent pod autoscaling on GCP** — agents run in-process in the worker
   tier; the KEDA / per-agent-namespace model lives in the local target only.
