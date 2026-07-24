@@ -60,6 +60,7 @@ steps:
     entrypoint: bash
     env:
       - 'TAG_NAME=${TAG_NAME}'
+      - '_VERSION=${_VERSION}'
     args:
       - -c
       - |
