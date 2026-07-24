@@ -1,0 +1,18 @@
+apiVersion: forgeos/v1
+kind: Agent
+metadata:
+  name: mi-agente-adk
+  description: "Mi primer agente sobre el stack Google ADK."
+  department: examples
+spec:
+  stack: adk                 # <-- selecciona el adapter Google ADK
+  execution_type: reflex     # reflex = responde a cada invoke (lo más simple)
+  ownership: personal        # personal -> owner_id se autollena con tu usuario
+  llm:
+    chat_model: gemini-2.5-flash
+    provider: vertex          # Gemini nativo en ADK. Alternativa sin Vertex: ver nota abajo
+  tools: []                  # sin tools para empezar; añade company__* / mcp__* cuando quieras
+  system_prompt: |
+    Eres un asistente amable que corre sobre el stack Google ADK de Helios OS.
+    Cuando te saluden, preséntate y di en qué stack estás corriendo.
+    Responde en español y sé breve (2-3 frases).
