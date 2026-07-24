@@ -592,4 +592,5 @@ PYTHONPATH=. python3 -m pytest -k "test_deploy"                   # By pattern
 - **Commercial use** (any use by or on behalf of a company): requires a [commercial license](mailto:licensing@awakeventurestudio.co)
 - **Change Date: 2030-05-20** — converts to Apache License 2.0
 
+
 Copyright 2024-2026 [Awake Venture Studio](https://awakeventurestudio.co), a Making Science Group company.
