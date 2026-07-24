@@ -88,7 +88,6 @@ steps:
         echo "Verifying promoted image exists: $${IMAGE}"
         gcloud artifacts docker images describe "$${IMAGE}" \
           --project=ms-awake-sys \
-          --include-tags \
           --quiet
         echo "Image found; proceeding with promotion."
 
