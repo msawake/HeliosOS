@@ -2,7 +2,7 @@ config:
   gcp:project: ms-awake-pre
   gcp:region: europe-west1
   forgeos-gcp:network_cidr: "10.20.0.0/20"
-  forgeos-gcp:pods_cidr: "10.50.0.0/14"
+  forgeos-gcp:pods_cidr: "10.48.0.0/14"
   forgeos-gcp:services_cidr: "10.54.0.0/20"
   forgeos-gcp:cloud_sql_tier: "db-f1-micro"
   forgeos-gcp:enable_redis: "true"
@@ -11,10 +11,16 @@ config:
   forgeos-gcp:worker_replicas: "1"
   forgeos-gcp:platform_api_tag: "latest"
   forgeos-gcp:migrations_tag: "latest"
-  forgeos-gcp:dashboard_tag: "latest"
+  # Pinned to a specific build (not "latest") so pulumi up can't revert the
+  # dashboard to an image lacking the NEXT_PUBLIC_GCP_PROJECT_ID build-arg
+  # (which the wizard's SA-provisioning flow needs). Bump on new dashboard builds.
+  forgeos-gcp:dashboard_tag: "e67621f"
   # Central Artifact Registry where Cloud Build pushes release images.
   forgeos-gcp:registry_project: ms-awake-sys
   forgeos-gcp:deletion_protection: "false"
   forgeos-gcp:environment: "pre"
+  # LLM gateway (atlas-router, OpenAI-compatible). Provider `vllm` reads
+  # this + VLLM_API_KEY at boot. Same dev gateway across forgeos envs.
+  forgeos-gcp:vllm_base_url: https://atlas-router.ally-code-dev.makingscience.com/v1
 secretsprovider: gcpkms://projects/ms-tool-sys/locations/europe-west1/keyRings/helios-pulumi/cryptoKeys/pulumi-secrets
 encryptedkey: CiQAQBwV51RwZewM+m3rSOrKey8qV7RfbpU+2bHhOiBKr3KH+/USSQD1UoIGRIVuKPhlIXxUbuczltvGbVQCeTYc6TJ9N8SXo+utM3zY/UG7HdOvglIMS+9iySsSRmnmg0yD8kMHdzlqzHbyO1Wrd3A=

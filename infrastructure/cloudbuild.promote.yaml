@@ -60,6 +60,7 @@ steps:
     entrypoint: bash
     env:
       - 'TAG_NAME=${TAG_NAME}'
+      - '_VERSION=${_VERSION}'
     args:
       - -c
       - |
@@ -88,7 +89,6 @@ steps:
         echo "Verifying promoted image exists: $${IMAGE}"
         gcloud artifacts docker images describe "$${IMAGE}" \
           --project=ms-awake-sys \
-          --include-tags \
           --quiet
         echo "Image found; proceeding with promotion."
 
